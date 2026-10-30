@@ -78,6 +78,8 @@ class Job:
     task: asyncio.Task | None = None
     created: float = field(default_factory=time.time)
     touched: float = field(default_factory=time.time)
+    # set once a poll has seen the finished state, so the window knows where the output is
+    fetched: bool = False
 
     def touch(self) -> None:
         self.touched = time.time()
@@ -168,7 +170,12 @@ def _remove_files(job: Job) -> None:
 
 
 def _prune() -> None:
-    finished = [j for j in JOBS.values() if j.state in ("done", "failed", "cancelled")]
+    now = time.time()
+    # a finished export nobody has read the result of is kept (record and output) until fetched or a day old
+    finished = [
+        j for j in JOBS.values()
+        if j.state in ("failed", "cancelled") or (j.state == "done" and (j.fetched or now - j.created > config.JOB_MAX_AGE_SECONDS))
+    ]
     finished.sort(key=lambda j: j.created)
     for j in finished[: max(0, len(finished) - MAX_KEPT_RECORDS)]:
         JOBS.pop(j.id, None)
@@ -481,7 +488,10 @@ async def run_job(job_id: str) -> dict:
 
 @router.get("/{job_id}")
 def get_job(job_id: str) -> dict:
-    return describe(_get(job_id))
+    job = _get(job_id)
+    if job.state == "done":
+        job.fetched = True
+    return describe(job)
 
 
 @router.delete("/{job_id}")

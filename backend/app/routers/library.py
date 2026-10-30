@@ -376,6 +376,35 @@ def duplicate_project(name: str) -> dict:
     return entry(dst)
 
 
+class CopyToBody(BaseModel):
+    dir: str
+
+
+@router.post("/{name}/copy-to")
+def copy_project_to(name: str, body: CopyToBody) -> dict:
+    """Copies the movie file into a folder of the person's choice (a second storage). Never overwrites: a name taken there gets a number."""
+    from app.routers.system import _safe_folder
+    src = project_path(name)
+    if not src.is_file():
+        raise HTTPException(404, "No project by that name.")
+    folder = _safe_folder(body.dir)
+    if folder == src.parent.resolve():
+        raise HTTPException(400, "That is the folder the movie is already in.")
+    dst = folder / src.name
+    n = 2
+    while dst.exists():
+        dst = folder / f"{src.stem} {n}{src.suffix}"
+        n += 1
+    tmp = dst.with_name(f".{dst.name}.{os.getpid()}.part")
+    try:
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(400, "formmorpheus could not copy the movie there.")
+    return {"path": str(dst), "name": dst.stem}
+
+
 def _copy_with_new_id(src: Path, dst: Path) -> bool:
     """A duplicate is a different movie: a fresh id (and its own name) in movie.json, every other entry copied as is."""
     tmp = dst.with_name(f".{dst.name}.{os.getpid()}.part")

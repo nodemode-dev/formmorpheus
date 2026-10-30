@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -6,7 +7,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from app.core import config
 from app.core.upload import read_limited
@@ -15,6 +16,27 @@ router = APIRouter()
 
 _SESSION = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 _lock = threading.Lock()
+
+# Windows holding a live stream open (GET /{session}/live). A closed stream means the window is gone, which is
+# known at once; the heartbeat age is only the fallback for a window that never opened one.
+BOOT = time.time()
+GRACE_SECONDS = 4        # a dropped stream is given this long to reconnect
+UNKNOWN_SECONDS = 15     # after an engine restart, windows that have not reconnected by now are gone
+_streams: dict[str, int] = {}
+_closed: dict[str, float] = {}
+STREAM_BEAT = 5.0
+
+
+def _gone(session: str, idle: float) -> bool | None:
+    """True/False when the stream registry knows; None when it does not (then the heartbeat age decides)."""
+    now = time.time()
+    if _streams.get(session, 0) > 0:
+        return False
+    if session in _closed:
+        return now - _closed[session] > GRACE_SECONDS
+    if now - BOOT > UNKNOWN_SECONDS:
+        return True   # the engine restarted since this window last spoke, so it is not connected
+    return None
 
 
 def recovery_dir() -> Path:
@@ -57,13 +79,18 @@ def _entry(session: str, fmo: Path, side: Path) -> dict:
     taken = num("time", fmo.stat().st_mtime)
     # the heartbeat of the window that owns this snapshot; older files only have the snapshot time
     alive = num("alive", taken)
+    idle = max(0.0, time.time() - alive)
+    known = _gone(session, idle)
     return {
+        "gone": (idle > 240) if known is None else known,
+        # seconds until a window whose stream just closed counts as gone (it may be reconnecting); 0 otherwise
+        "wait": max(0.0, GRACE_SECONDS - (time.time() - _closed[session])) if known is False and session in _closed and _streams.get(session, 0) == 0 else 0.0,
         "session": session,
         "name": str(meta.get("name") or "Untitled"),
         "library": meta.get("library") if isinstance(meta.get("library"), str) else None,
         "time": taken,
         "alive": alive,
-        "idle": max(0.0, time.time() - alive),
+        "idle": idle,
         "size": fmo.stat().st_size,
     }
 
@@ -79,6 +106,30 @@ def list_snapshots() -> dict:
                 continue
     items.sort(key=lambda e: e["time"], reverse=True)
     return {"items": items}
+
+
+@router.get("/{session}/live")
+async def live(session: str, request: Request) -> StreamingResponse:
+    """A window keeps this open while it lives; the engine learns the moment it closes, however the window died."""
+    _session(session)
+
+    async def body():
+        _streams[session] = _streams.get(session, 0) + 1
+        _closed.pop(session, None)
+        try:
+            yield b"\n"
+            while not await request.is_disconnected():
+                await asyncio.sleep(STREAM_BEAT)
+                yield b"\n"
+        finally:
+            n = _streams.get(session, 1) - 1
+            if n > 0:
+                _streams[session] = n
+            else:
+                _streams.pop(session, None)
+                _closed[session] = time.time()
+
+    return StreamingResponse(body(), media_type="text/plain", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/{session}")
