@@ -209,6 +209,7 @@
   justify-content: center;
   cursor: pointer;
 }
+.fm-paint-side-btn[hidden] { display: none; }
 .fm-paint-side-btn:hover:not(:disabled) { background: var(--surface-1); }
 .fm-paint-side-btn:disabled { color: var(--text-secondary); opacity: 0.45; cursor: default; }
 

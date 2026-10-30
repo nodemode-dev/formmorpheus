@@ -9,8 +9,9 @@ import { shareMovie } from './theater-share';
 import '../styles/theater.css';
 
 /** Theater management on Home's Movies page: Select mode (several movies at once), a context menu per movie
- *  (Open, Rename, Duplicate, Share / Export, Delete), and stacks: one flat level of folders made by dragging a
- *  movie onto another or by Select > Stack. The movies stay where they are; the engine keeps the stack list. */
+ *  (Open, Rename, Duplicate, Share / Export, Delete), a title popup to rename, and stacks: one flat level of real
+ *  folders in the library, made by dropping a movie onto another or by Select > Stack. The engine keeps the manual
+ *  order in a hidden order file per folder. */
 export interface TheaterHost {
   /** Re-reads the library and the stacks and patches the grid. */
   refresh(): Promise<void>;
@@ -19,9 +20,15 @@ export interface TheaterHost {
   open(name: string): void;
   isOpen(name: string): boolean;
   forget(name: string): void;
+  /** The card keys shown now, in order. */
+  visibleKeys(): string[];
+  /** Turns the sort to Manual (the order the engine keeps for the folder) and re-renders. */
+  setManual(): void;
 }
 
 export interface Target { movie?: string; stack?: string }
+export type DropZone = 'before' | 'after' | 'into';
+const OLD_ORDER = 'formmorpheus.theater-order';
 
 export const keyOf = (t: Target): string => (t.stack ? `stk:${t.stack}` : `lib:${t.movie}`);
 
@@ -29,6 +36,8 @@ const MENU_ICONS = { open: 'folderOpen', rename: 'tPencil', dup: 'duplicate', sh
 
 export class TheaterTools {
   stacks: LibraryStack[] = [];
+  /** The manual order the engine keeps, by folder ('' is the top). */
+  order: Record<string, string[]> = {};
   current: string | null = null;
   selecting = false;
   readonly selected = new Set<string>();
@@ -51,6 +60,9 @@ export class TheaterTools {
   private readonly menu = new Popover('cv-th-menu', 200);
   private readonly rows: Record<keyof typeof MENU_ICONS, PopRow>;
   private target: Target = {};
+  private readonly title = new Popover('cv-th-title', 260);
+  private readonly titleInput = el<HTMLInputElement>('<input class="cv-th-title-input" type="text" maxlength="80" spellcheck="false" aria-label="Name">');
+  private titleFor: Target = {};
 
   constructor(private readonly h: TheaterHost, bar: HTMLElement) {
     const before = bar.querySelector('.cv-hf-filter');
@@ -79,12 +91,49 @@ export class TheaterTools {
     this.rows = { open: mk('open', 'Open'), rename: mk('rename', 'Rename'), dup: mk('dup', 'Duplicate'), share: mk('share', 'Share / Export'),
       out: mk('out', 'Remove from stack'), ungroup: mk('ungroup', 'Ungroup'), select: mk('select', 'Select'), del: mk('del', 'Delete', true) };
     this.menu.body.append(this.rows.open.el, this.rows.rename.el, this.rows.dup.el, this.rows.share.el, this.rows.out.el, this.rows.ungroup.el, popSep(), this.rows.select.el, popSep(), this.rows.del.el);
+    this.title.body.append(this.titleInput);
+    this.titleInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const to = this.titleInput.value.trim(), t = this.titleFor;
+      this.title.hide();
+      void this.renameTo(t, to).catch((err: Error) => toast(err.message, 'error'));
+    });
     this.paint();
   }
 
   async load(): Promise<void> {
-    this.stacks = await api.stacks();
+    const data = await api.theater();
+    this.stacks = data.stacks;
+    this.order = data.order;
     if (this.current && !this.stacks.some((s) => s.id === this.current)) this.current = null;
+    await this.adoptOldOrder();
+  }
+
+  /** The manual order used to live in this browser only; hand it to the engine once. */
+  private async adoptOldOrder(): Promise<void> {
+    let old: string[] = [];
+    try { const v = JSON.parse(localStorage.getItem(OLD_ORDER) ?? '[]') as unknown; old = Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; } catch { return; }
+    if (!old.length) { try { localStorage.removeItem(OLD_ORDER); } catch { /* nothing to drop */ } return; }
+    const has = Object.values(this.order).some((o) => o.length > 0);
+    if (!has) {
+      const by: Record<string, string[]> = { '': [] };
+      for (const k of old) {
+        const home = k.startsWith('lib:') ? (this.stackOf(k.slice(4))?.id ?? '') : '';
+        (by[home] ??= []).push(k);
+      }
+      try { for (const [f, keys] of Object.entries(by)) if (keys.length) { await api.saveOrder(f || null, keys); this.order[f] = keys; } } catch { return; }
+    }
+    try { localStorage.removeItem(OLD_ORDER); } catch { /* it stays; harmless */ }
+  }
+
+  orderOf(): string[] {
+    return this.order[this.current ?? ''] ?? [];
+  }
+
+  async setOrder(keys: string[]): Promise<void> {
+    this.order[this.current ?? ''] = keys;
+    try { await api.saveOrder(this.current, keys); } catch (err) { toast((err as Error).message, 'error'); }
   }
 
   stackOf(name: string): LibraryStack | undefined {
@@ -101,9 +150,10 @@ export class TheaterTools {
     return this.current ? s?.id === this.current : !s;
   }
 
-  enter(id: string | null): void {
+  /** Opens a stack (null is the top). A carried pile keeps the selection. */
+  enter(id: string | null, keepSelection = false): void {
     this.current = id;
-    this.selected.clear();
+    if (!keepSelection) this.selected.clear();
     this.paint();
     this.h.render();
   }
@@ -179,16 +229,38 @@ export class TheaterTools {
     if (this.h.isOpen(name)) { toast('Close the movie before renaming it.', 'error'); return; }
     const to = await promptName('Rename movie', name, 'Rename');
     if (!to || to === name) return;
-    await api.renameMovie(name, to);
-    this.h.forget(name);
-    await this.h.refresh();
+    await this.renameTo({ movie: name }, to);
   }
 
   async renameStack(id: string): Promise<void> {
     const to = await promptName('Rename stack', this.stackById(id)?.name ?? 'Stack', 'Rename');
     if (!to) return;
-    await api.updateStack(id, { name: to });
+    await this.renameTo({ stack: id }, to);
+  }
+
+  /** Renames a movie or a stack (a stack is a folder, so its id follows). */
+  async renameTo(t: Target, to: string): Promise<void> {
+    if (!to) return;
+    if (t.movie) {
+      if (to === t.movie) return;
+      if (this.h.isOpen(t.movie)) { toast('Close the movie before renaming it.', 'error'); return; }
+      await api.renameMovie(t.movie, to);
+      this.h.forget(t.movie);
+    } else if (t.stack) {
+      if (to === t.stack) return;
+      const id = await api.updateStack(t.stack, { name: to });
+      if (this.current === t.stack && id) this.current = id;
+    }
     await this.h.refresh();
+  }
+
+  /** The title popup: click a card's name to rename it in place. */
+  titlePopup(t: Target, anchor: HTMLElement): void {
+    this.titleFor = t;
+    this.titleInput.value = t.movie ?? this.stackById(t.stack ?? '')?.name ?? '';
+    this.title.showFor(anchor, 'below');
+    this.titleInput.focus();
+    this.titleInput.select();
   }
 
   async duplicate(names: string[]): Promise<void> {
@@ -217,7 +289,7 @@ export class TheaterTools {
     const movies = this.selectedMovies();
     try {
       if (movies.length) await this.trash(movies);
-      for (const s of stacks) await api.ungroupStack(s);
+      for (const s of stacks) await this.ungroupInPlace(s);
       if (stacks.length) { this.selected.clear(); this.paint(); await this.h.refresh(); }
     } catch (err) { toast((err as Error).message, 'error'); }
   }
@@ -232,8 +304,21 @@ export class TheaterTools {
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  async ungroup(id: string): Promise<void> {
+  /** Ungroups a stack; its movies take the stack's place in the top order, in their stack order. */
+  private async ungroupInPlace(id: string): Promise<void> {
+    const s = this.stackById(id);
+    const top = [...(this.order[''] ?? [])];
+    const at = top.indexOf(`stk:${id}`);
     await api.ungroupStack(id);
+    if (!s || at < 0) return;
+    const freed = s.items.map((n) => `lib:${n}`);
+    top.splice(at, 1, ...freed.filter((k) => !top.includes(k)));
+    this.order[''] = top;
+    try { await api.saveOrder(null, top); } catch { /* the order falls back to the engine's */ }
+  }
+
+  async ungroup(id: string): Promise<void> {
+    await this.ungroupInPlace(id);
     if (this.current === id) this.current = null;
     this.selected.clear();
     this.paint();
@@ -241,30 +326,73 @@ export class TheaterTools {
   }
 
   async moveOut(names: string[]): Promise<void> {
-    const s = this.stackOf(names[0]);
-    if (!s) return;
     try {
-      await api.updateStack(s.id, { items: s.items.filter((i) => !names.includes(i)) });
-      if (this.current === s.id && s.items.every((i) => names.includes(i))) this.current = null;
+      await this.takeOut(names);
       await this.h.refresh();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  /** A movie dragged onto another movie makes a stack of both; onto a stack it joins it. */
-  async dropOn(draggedKey: string, over: Target): Promise<void> {
-    if (!draggedKey.startsWith('lib:')) return;
-    const names = this.selecting && this.selected.has(draggedKey) ? this.selectedMovies() : [draggedKey.slice(4)];
+  /** Moves movies out of whichever stacks hold them, to the top. */
+  private async takeOut(names: string[]): Promise<void> {
+    const byStack = new Map<string, LibraryStack>();
+    for (const n of names) { const s = this.stackOf(n); if (s) byStack.set(s.id, s); }
+    for (const s of byStack.values()) {
+      await api.updateStack(s.id, { items: s.items.filter((i) => !names.includes(i)) });
+      if (this.current === s.id && s.items.every((i) => names.includes(i))) this.current = null;
+    }
+  }
+
+  /** A carried pile released over the back control goes to the top. */
+  async carryOut(keys: string[]): Promise<void> {
+    const names = keys.filter((k) => k.startsWith('lib:')).map((k) => k.slice(4));
+    this.selected.clear();
+    this.paint();
+    await this.moveOut(names);
+  }
+
+  /** A carried pile released: onto a movie it makes a stack of both, onto a stack it joins, between cards (or on
+   *  the grid, `over` null) it is placed there in the folder being shown, and the engine keeps that order. */
+  async carryDrop(keys: string[], over: { key: string; zone: DropZone } | null): Promise<void> {
+    const names = keys.filter((k) => k.startsWith('lib:')).map((k) => k.slice(4));
     try {
-      if (over.stack) {
-        const s = this.stackById(over.stack);
-        if (!s) return;
-        await api.updateStack(s.id, { items: [...s.items, ...names.filter((n) => !s.items.includes(n))] });
-      } else if (over.movie && !names.includes(over.movie)) {
-        await api.createStack([over.movie, ...names]);
-      } else return;
+      if (over?.zone === 'into') {
+        if (over.key.startsWith('stk:')) {
+          const s = this.stackById(over.key.slice(4));
+          if (!s || !names.length) return;
+          await api.updateStack(s.id, { items: [...s.items, ...names.filter((n) => !s.items.includes(n))] });
+        } else {
+          const to = over.key.slice(4);
+          if (!names.length || names.includes(to)) return;
+          await api.createStack([to, ...names]);
+        }
+        this.selected.clear();
+        this.paint();
+        await this.h.refresh();
+        return;
+      }
+      const here = this.current;
+      const moving = names.filter((n) => (this.stackOf(n)?.id ?? null) !== here);
+      const placed = keys.filter((k) => k.startsWith('lib:') || !here);
+      if (!placed.length) return;
+      if (moving.length) {
+        if (here) {
+          const s = this.stackById(here);
+          if (!s) return;
+          await api.updateStack(here, { items: [...s.items, ...moving] });
+        } else await this.takeOut(moving);
+        await this.h.refresh();
+      }
+      const shown = this.h.visibleKeys();
+      const rest = shown.filter((k) => !placed.includes(k));
+      let at = over ? rest.indexOf(over.key) : -1;
+      if (at >= 0 && over?.zone === 'after') at += 1;
+      if (at < 0) at = rest.length;
+      rest.splice(at, 0, ...placed.filter((k) => shown.includes(k)));
+      const hidden = this.orderOf().filter((k) => !rest.includes(k) && !placed.includes(k) && !shown.includes(k));
+      await this.setOrder([...rest, ...hidden]);
       this.selected.clear();
       this.paint();
-      await this.h.refresh();
+      this.h.setManual();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 }

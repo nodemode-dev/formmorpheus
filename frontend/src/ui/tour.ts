@@ -59,6 +59,9 @@ export class Tour {
     });
     window.addEventListener('keydown', (e) => {
       if (!this.active) return;
+      const tg = e.target as HTMLElement | null;
+      // typing in a field or working in a dialog keeps its own keys
+      if (tg?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], dialog[open], [role="dialog"]:not(.fm-tour-card)') || document.querySelector('dialog[open]')) return;
       const k = e.key;
       if (k === 'Escape') this.stop();
       else if (k === 'ArrowRight' || k === 'Enter') this.go(this.at + 1);

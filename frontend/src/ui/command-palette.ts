@@ -105,13 +105,13 @@ export class CommandPalette extends Dialog {
     const query = this.input.value.trim(), hits: Hit[] = [];
     const first = (key: string): number => { const i = this.recent.indexOf(key); return query || i < 0 ? 0 : 1000 - i; };
     for (const c of this.commands.all()) {
-      const label = t(this.commands.label(c)).replace(/\.\.\.$/, ''), path = this.paths.get(c.id) ?? '';
+      const label = t(this.commands.label(c)).replace(/\.\.\.$/, ''), path = (this.paths.get(c.id) ?? '').split(' > ').map((s) => t(s)).join(' > ');
       if (!label || c.id === 'recent-heading') continue;
       const own = fuzzyScore(query, label), wide = own === null ? fuzzyScore(query, `${label} ${path}`) : null;
       if (own === null && wide === null) continue;
       const score = own ?? (wide as number) - 10;
       const on = c.checked ? c.checked() : undefined;
-      hits.push({ key: c.id, label, meta: [on === undefined ? '' : on ? 'On' : 'Off', path, this.commands.keyLabel(c)].filter(Boolean).join(' · '), icon: c.icon ?? '', enabled: this.commands.enabled(c), why: t(this.commands.why(c)), score: score + first(c.id), on, run: () => { this.commands.run(c.id); } });
+      hits.push({ key: c.id, label, meta: [on === undefined ? '' : on ? t('On') : t('Off'), path, this.commands.keyLabel(c)].filter(Boolean).join(' · '), icon: c.icon ?? '', enabled: this.commands.enabled(c), why: t(this.commands.why(c)), score: score + first(c.id), on, run: () => { this.commands.run(c.id); } });
     }
     hits.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
     this.hits = hits.slice(0, SHOWN);

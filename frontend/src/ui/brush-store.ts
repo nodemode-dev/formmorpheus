@@ -343,6 +343,15 @@ class BrushStore {
     this.refresh(...list.map((b) => b.id));
   }
 
+  /** Puts an imported brush set in the Imported library under the name it came with; returns the set's id. */
+  addImportedSet(name: string, list: Brush[]): string {
+    const rec: BrushSet = { id: uid('set'), name: this.uniqueSetName(name.trim().slice(0, 40) || 'Imported'), lib: LIB_IMPORTED, ids: [] };
+    this.st.sets.push(rec);
+    for (const b of list) { this.custom.set(b.id, { ...b, set: rec.name, custom: true }); rec.ids.push(b.id); }
+    this.refresh(...list.map((b) => b.id));
+    return rec.id;
+  }
+
   /** Back to the starter library; imported and duplicated brushes are removed. */
   resetAll(): void {
     for (const id of this.custom.keys()) unregisterBrush(id);

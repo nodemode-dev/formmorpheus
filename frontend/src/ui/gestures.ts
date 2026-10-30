@@ -332,6 +332,8 @@ export class GestureHub {
       const which = i.fingers === 2 ? 'undo' : i.fingers === 3 ? 'redo' : null;
       if (which) { toast(t(which === 'undo' ? 'Undo' : 'Redo'), 'info', { ms: 900 }); this.act(which); }
     }
+    // four fingers tapped: the full-screen preview, in and out
+    if (!i.moved && i.fingers === 4 && i.ms < TAP_MS) document.dispatchEvent(new CustomEvent('fm:command', { detail: 'stage-fullscreen' }));
     this.repeated = false;
   }
 

@@ -197,6 +197,7 @@ const TEMPLATE = `
       <div class="fm-col-disc">
         <div class="fm-col-dwrap"><i class="fm-col-dbase"></i></div>
         <i class="fm-col-ret is-ring"></i><i class="fm-col-ret is-sb"></i>
+        <span class="fm-col-zoom" hidden title="Fine control: Ctrl+scroll or pinch changes it, double-click snaps"></span>
       </div>
     </section>
     <section class="fm-col-body" data-pane="classic" hidden>
@@ -256,6 +257,8 @@ export class ColourPanel {
   private detached = false;
   private sec: RGB = { r: 255, g: 255, b: 255 };
   private mode: Mode = 'disc';
+  /** Inner-disc magnification for fine control (1 = off). */
+  private dzoom = 1;
   private harm: Harmony = 'complementary';
   private view: 'compact' | 'cards' = 'compact';
   private pals: Palette[] = DEFAULTS.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => (c ? copy(c) : null)) }));
@@ -477,6 +480,9 @@ export class ColourPanel {
     drawDiscLayers(sat.cv, val.cv, inner);
     wrap.append(sat.cv, val.cv);
     let lock: 'hue' | 'sb' = 'hue', drect: DOMRect;
+    // fine control: the inner disc is magnified around the picked point, so the same pointer travel moves the color less
+    let from = { a: 0, b: 0, s: 0, v: 0 };
+    const zoomBadge = q(r, '.fm-col-zoom');
     drag(disc, (e, final, start) => {
       if (start) {
         drect = disc.getBoundingClientRect();
@@ -487,9 +493,31 @@ export class ColourPanel {
       else {
         const l = Math.hypot(dx, dy), f = l > DISC_IN ? DISC_IN / l : 1;
         const [a, b] = discToSquare((dx * f) / DISC_IN, -(dy * f) / DISC_IN);
-        this.pick(this.h, clamp((a + 1) / 2, 0, 1), clamp((b + 1) / 2, 0, 1), final);
+        if (this.dzoom > 1) {
+          if (start) from = { a, b, s: this.s, v: this.v };
+          this.pick(this.h, clamp(from.s + (a - from.a) / 2 / this.dzoom, 0, 1), clamp(from.v + (b - from.b) / 2 / this.dzoom, 0, 1), final);
+        } else this.pick(this.h, clamp((a + 1) / 2, 0, 1), clamp((b + 1) / 2, 0, 1), final);
       }
     });
+    // double tap inside the disc: snap to white, black, mid gray, half or full saturation (whichever is nearest)
+    disc.addEventListener('dblclick', (e) => {
+      const rc = disc.getBoundingClientRect(), kk = DISC / rc.width;
+      const dx = (e.clientX - rc.left) * kk - DISC / 2, dy = (e.clientY - rc.top) * kk - DISC / 2;
+      if (Math.hypot(dx, dy) >= DISC_IN + 3) return;
+      const [a, b] = discToSquare(dx / DISC_IN, -dy / DISC_IN), s = clamp((a + 1) / 2, 0, 1), v = clamp((b + 1) / 2, 0, 1);
+      const cand: [number, number][] = [[0, 1], [s, 0], [0, 0.5], [0.5, v], [1, v]];
+      let best = cand[0], bd = Infinity;
+      for (const c of cand) { const dd = Math.hypot(c[0] - s, c[1] - v); if (dd < bd) { bd = dd; best = c; } }
+      this.pick(this.h, best[0], best[1], true);
+    });
+    // Ctrl+scroll (a trackpad pinch arrives the same way) magnifies the inner disc for fine control
+    disc.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      this.dzoom = clamp(Math.round((this.dzoom * Math.exp(-e.deltaY * 0.01)) * 4) / 4, 1, 8);
+      setHidden(zoomBadge, this.dzoom <= 1);
+      setText(zoomBadge, `${this.dzoom}x`);
+    }, { passive: false });
 
     // classic square
     let srect: DOMRect;

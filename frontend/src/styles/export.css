@@ -5,7 +5,11 @@
 .fm-ex-segbtn.is-active { background: var(--accent-color); color: var(--text-on-accent); }
 
 .fm-ex-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--space-3); }
-.fm-ex-tiles[hidden], .fm-ex-adv[hidden], .fm-ex-run[hidden], .fm-ex-notes[hidden] { display: none; }
+.fm-ex-tiles[hidden], .fm-ex-adv[hidden], .fm-ex-notes[hidden] { display: none; }
+/* The progress line keeps its place while idle so the dialog does not shift when it appears;
+   a result note takes that place instead. */
+.fm-ex-run[hidden] { display: grid; visibility: hidden; }
+.fm-ex-run[hidden]:has(~ .fm-ex-notes:not([hidden])) { display: none; }
 .fm-ex-tile { display: grid; justify-items: start; align-content: start; gap: var(--space-1); min-height: 112px; padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-xl); background: var(--surface-1); color: var(--text-primary); font: inherit; text-align: left; cursor: default; }
 .fm-ex-tile:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--accent-line); }
 .fm-ex-tile:focus-visible { outline: none; border-color: var(--accent-color); }
@@ -60,7 +64,7 @@
 .fm-ex-ctl .cv-note.is-bad { color: var(--danger-text); }
 
 .fm-ex-run { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--surface-1); }
-.fm-ex-run-head { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
+.fm-ex-run-head { min-height: 1.4em; display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
 .fm-ex-run-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .fm-ex-run .cv-run-bar > i { transition: transform 120ms linear; }
 

@@ -25,6 +25,8 @@ export interface PaintPrefs {
   undoDelay: number;
   /** Show the picture with its keyframed opacity and filters at the Playhead while drawing. */
   keyframeEffects: boolean;
+  /** Hide the Undo and Redo buttons on the sidebar (the gestures and keys still work). */
+  hideUndoButtons: boolean;
 }
 
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
@@ -44,6 +46,7 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   maskVisibility: 0.25,
   undoDelay: 420,
   keyframeEffects: false,
+  hideUndoButtons: false,
 };
 
 const KEY = 'formmorpheus.paint';
@@ -67,7 +70,7 @@ export function loadPaintPrefs(): PaintPrefs {
     const raw = localStorage.getItem(KEY);
     if (!raw) return out;
     const o = JSON.parse(raw) as Partial<PaintPrefs>;
-    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd', 'keyframeEffects'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
+    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd', 'keyframeEffects', 'hideUndoButtons'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
     // older files only had the two booleans: they decide the new choices
     out.cursorMode = o.cursorMode && ['hover', 'painting', 'both', 'off'].includes(o.cursorMode) ? o.cursorMode : out.cursor ? 'both' : 'off';
     out.scaling = o.scaling && ['off', 'canvas', 'screen'].includes(o.scaling) ? o.scaling : out.dynamicScaling ? 'screen' : 'off';
@@ -189,6 +192,7 @@ export interface PaintSettingsOptions {
   onionScope: () => 'flipbook' | 'movie' | null;
   setOnionScope?: (scope: 'flipbook' | 'movie') => void;
   onInsertPhoto: () => void;
+  onInsertFile?: () => void;
   onCropResize?: () => void;
 }
 
@@ -227,6 +231,7 @@ export class PaintSettings {
   private readonly sideBar: Seg;
   private readonly smooth: SliderRow;
   private readonly undoDelay: SliderRow;
+  private readonly hideUndo: ToggleRow;
   private readonly curveRow: HTMLElement;
   private readonly curveWrap: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -266,6 +271,7 @@ export class PaintSettings {
     // Add
     const add = this.panes.get('add')!;
     add.appendChild(actionRow(ROW_ICONS.photo, 'Insert photos', () => { this.close(); o.onInsertPhoto(); }).el);
+    add.appendChild(actionRow(ROW_ICONS.photo, 'Insert a file', () => { this.close(); o.onInsertFile?.(); }).el);
 
     // Canvas
     const canvasPane = this.panes.get('canvas')!;
@@ -326,6 +332,7 @@ export class PaintSettings {
     sideRow.appendChild(this.sideBar.el);
     this.smooth = sliderRow('Stabilization', 0, 1, 0.01, (v) => o.setPrefs({ smoothing: v }));
     this.undoDelay = sliderRow('Rapid undo delay', 150, 1000, 10, (v) => o.setPrefs({ undoDelay: v }));
+    this.hideUndo = toggleRow('Hide Undo and Redo buttons', (v) => o.setPrefs({ hideUndoButtons: v }));
     const pressure = actionRow('', 'Pressure', () => this.toggleCurve(), true);
     this.curveRow = pressure.el;
     q(this.curveRow, '.fm-ps-ico').remove();
@@ -342,7 +349,7 @@ export class PaintSettings {
     const SPD = ['precise', 'medium', 'fast'] as const;
     const spd = seg('Scrub speed', ['Precise', 'Medium', 'Fast'], (i) => { updatePrefs({ scrubSpeed: SPD[i] }); this.refresh(); });
     this.scrubSpeed = spd.seg;
-    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, spd.row, this.curveRow, this.curveWrap);
+    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, spd.row, this.curveRow, this.curveWrap);
 
     this.showTab(this.tab, true);
   }
@@ -398,6 +405,7 @@ export class PaintSettings {
     this.sideBar.set(p.sidebarRight ? 1 : 0);
     this.smooth.set(p.smoothing, pct(p.smoothing));
     this.undoDelay.set(p.undoDelay, `${Math.round(p.undoDelay)} ms`);
+    this.hideUndo.set(p.hideUndoButtons);
     if (this.dragIdx < 0) this.pts = p.pressure.map((pt) => [pt[0], pt[1]] as [number, number]);
     setClass(this.curveRow, 'is-open', this.curveOpen);
     setHidden(this.curveWrap, !this.curveOpen);

@@ -25,6 +25,8 @@ export interface StripHost {
   playing(): boolean;
   togglePlay(): void;
   thumb(row: number, index: number, w: number, h: number): CanvasImageSource | null;
+  /** A signature of a frame's unsaved painting (open or parked), or '' when it has none: the cell redraws when it changes. */
+  liveKey?(row: number, index: number): string;
   fps(): number;
   /** The mini preview: the movie size, and a loop frame drawn (live frame included) into a scaled context. */
   movieSize(): { w: number; h: number } | null;
@@ -315,7 +317,9 @@ export class FlipStrip {
 
   private drawCell(cell: HTMLElement, c: CellItem): void {
     const sig = c.f.layers.map((l) => `${l.id}:${l.pixels ?? ''}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|') + `#${Math.max(1, c.f.hold)}`;
-    if (cell.dataset.sig === sig) return;
+    const live = this.host.liveKey?.(c.r, c.i) ?? '';
+    const sigAll = live ? `${sig}~${live}` : sig;
+    if (cell.dataset.sig === sigAll) return;
     let cv = this.shots.get(cell);
     if (!cv) {
       cv = document.createElement('canvas');
@@ -327,9 +331,9 @@ export class FlipStrip {
     }
     const ctx = cv.getContext('2d');
     if (!ctx) return;
-    if (c.f.layers.every((l) => l.pixels === null)) {
+    if (!live && c.f.layers.every((l) => l.pixels === null)) {
       ctx.clearRect(0, 0, TW, TH);
-      cell.dataset.sig = sig;
+      cell.dataset.sig = sigAll;
       return;
     }
     const src = this.host.thumb(c.r, c.i, TW, TH);
@@ -340,7 +344,7 @@ export class FlipStrip {
     const h = (s.height || TH) * k;
     ctx.clearRect(0, 0, TW, TH);
     ctx.drawImage(src, (TW - w) / 2, (TH - h) / 2, w, h);
-    cell.dataset.sig = sig;
+    cell.dataset.sig = sigAll;
   }
 
   // ---- lookup ----

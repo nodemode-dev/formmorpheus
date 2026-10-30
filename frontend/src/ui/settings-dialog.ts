@@ -57,6 +57,8 @@ export class SettingsDialog extends Dialog {
   private readonly secondFingerRow = checkRow('A second finger held while dragging snaps (Shift) and Free Trims (Alt)', (v) => this.change({ secondFinger: v }));
   private readonly touchHoldRow = checkRow('Touch and hold opens the context menu', (v) => this.change({ touchHold: v }));
   private readonly penHoverRow = checkRow('Pen hover scrubs the Timeline', (v) => this.change({ penHover: v }));
+  private readonly penRollRow = checkRow('Rotate while performing with a twisting pen', (v) => this.change({ penRoll: v }));
+  private readonly penPlayRow = checkRow('Pen button plays and pauses', (v) => this.change({ penPlay: v }));
   private readonly fingerPaintRow = checkRow('Paint with finger', (v) => setFingerPaints(v));
   private readonly confirmDeleteRow =checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
 
@@ -129,7 +131,7 @@ export class SettingsDialog extends Dialog {
       grp('History', this.undoRow.el, nt('Undo steps are saved inside the movie file, so more steps make the file larger.'), this.recentRow.el, nt('The newest share of the steps stays one by one; the older rest is thinned so Undo reaches further back. 100% keeps every step.'), this.stageUndoRow.el),
       grp('Keyboard', this.keysBtn, nt('See every command with its keys, change them, and set them back.')),
       grp('Playhead', this.scrubRow.el),
-      grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.penHoverRow.el, this.fingerPaintRow.el),
+      grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.penHoverRow.el, this.penRollRow.el, this.penPlayRow.el, this.fingerPaintRow.el),
       grp('Editing', this.confirmDeleteRow.el));
     for (const name of SECTION_ORDER) {
       const tab = this.nav.querySelector<HTMLElement>(`[data-section="${name}"]`), card = this.sections.get(name);
@@ -213,6 +215,8 @@ export class SettingsDialog extends Dialog {
     this.secondFingerRow.set(p.secondFinger);
     this.touchHoldRow.set(p.touchHold);
     this.penHoverRow.set(p.penHover);
+    this.penRollRow.set(p.penRoll);
+    this.penPlayRow.set(p.penPlay);
     this.fingerPaintRow.set(gesturePrefs().fingerPaints);
     this.confirmDeleteRow.set(p.confirmDelete);
     this.sync();

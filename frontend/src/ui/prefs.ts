@@ -44,6 +44,10 @@ export interface Prefs {
   touchHold: boolean;
   /** A pen hovering over the Timeline scrubs the Playhead. */
   penHover: boolean;
+  /** Twisting the pen while performing a take turns the content (scaled by Roll sensitivity). */
+  penRoll: boolean;
+  /** The pen's barrel or eraser button plays and pauses. */
+  penPlay: boolean;
   confirmDelete: boolean;
   /** Compose the Stage and exports on the GPU (WebGL2) when it matches the CPU path. */
   gpu: boolean;
@@ -53,7 +57,7 @@ export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
   shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 250, recentUndo: 100, stageUndoButtons: true, autosaveSeconds: 30,
-  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, confirmDelete: false, gpu: true,
+  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, penRoll: true, penPlay: false, confirmDelete: false, gpu: true,
 };
 
 const KEY = 'formmorpheus.prefs';
@@ -138,6 +142,8 @@ export function loadPrefs(): Prefs {
       secondFinger: flag(r.secondFinger, d.secondFinger),
       touchHold: flag(r.touchHold, d.touchHold),
       penHover: flag(r.penHover, d.penHover),
+      penRoll: flag(r.penRoll, d.penRoll),
+      penPlay: flag(r.penPlay, d.penPlay),
       confirmDelete: flag(r.confirmDelete, d.confirmDelete),
       gpu: flag(r.gpu, d.gpu),
     };

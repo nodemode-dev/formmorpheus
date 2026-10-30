@@ -2,7 +2,7 @@ import type { Engine } from '../engine/engine';
 import { locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Content, TextStyle } from '../engine/types';
-import { ensureTextFont, familyFaces, fontCatalog } from '../media/fonts';
+import { ensureTextFont, familyFaces, fontCatalog, previewFont } from '../media/fonts';
 import { el, q, setClass, setText } from './dom';
 import { icon } from './icons';
 import { Popover } from './popover';
@@ -53,6 +53,7 @@ export class TextCard {
     const root = el<HTMLElement>(`<div class="fm-tc-body">
       <textarea class="fm-tc-text" rows="3" spellcheck="false" aria-label="Text"></textarea>
       <div class="fm-tc-tabs" role="tablist"></div>
+      <div class="fm-tc-panes">
       <div class="fm-tc-pane" data-pane="fonts">
         <div class="fm-tc-fonts" role="listbox" aria-label="Typeface"></div>
         <div class="fm-tc-row"><span>Add</span><button class="fm-tc-mini" type="button" data-f="importFont" title="Bring in a font file: otf, ttf, woff or woff2">Import font...</button></div>
@@ -68,6 +69,7 @@ export class TextCard {
         <div class="fm-tc-row"><span>Lines</span><div class="fm-tc-seg" data-g="lines"></div></div>
         <div class="fm-tc-row"><span>Outline</span><label class="fm-tc-swatch"><input type="color" data-f="strokeColor" aria-label="Outline color"></label><input class="fm-tc-num" type="number" min="0" max="80" step="1" data-f="strokeW" aria-label="Outline width in pixels"></div>
         <div class="fm-tc-row"><span>Wrap</span><input class="fm-tc-num fm-tc-wide" type="number" min="20" max="8000" step="10" data-f="wrapW" aria-label="Wrap width in pixels"><button class="fm-tc-mini" type="button" data-f="wrapAuto">Auto</button></div>
+      </div>
       </div>
     </div>`);
     this.pop.body.appendChild(root);
@@ -138,7 +140,7 @@ export class TextCard {
     mkToggle(q(root, '[data-g="lines"]'), this.flags, 'vertical', icon('tTypeV', 16), 'Vertical text', () => this.commit({ vertical: this.cur()?.vertical ? undefined : true }, 'vertical'));
 
     // events
-    this.area.addEventListener('input', () => this.commit({ text: this.area.value }, 'text'));
+    this.area.addEventListener('input', () => { const c = this.cur(); if (c) void ensureTextFont({ ...c, text: this.area.value }); this.commit({ text: this.area.value }, 'text'); });
     this.area.addEventListener('change', () => this.endGesture());
     this.weight.addEventListener('change', () => { void this.setFace(Number(this.weight.value)); this.endGesture(); });
     this.color.addEventListener('input', () => { this.commit({ color: this.color.value }, 'color'); setText(this.hex, this.color.value.toUpperCase()); });
@@ -170,6 +172,7 @@ export class TextCard {
     this.sync(true);
     if (anchor instanceof HTMLElement) this.pop.showFor(anchor, 'below');
     else this.pop.showAt(anchor.x, anchor.y);
+    this.fit();
     this.area.focus();
     this.area.select();
   }
@@ -187,7 +190,8 @@ export class TextCard {
   /** Keeps the card on screen after its height changed (a tab switch). */
   private fit(): void {
     const e = this.pop.el, r = e.getBoundingClientRect();
-    const top = Math.max(8, Math.min(r.top, window.innerHeight - 8 - r.height));
+    const floor = document.querySelector('.cv-status')?.getBoundingClientRect().top ?? window.innerHeight;
+    const top = Math.max(8, Math.min(r.top, Math.min(window.innerHeight, floor) - 8 - r.height));
     if (Math.abs(top - r.top) > 0.5) e.style.transform = `translate(${Math.round(r.left)}px, ${Math.round(top)}px)`;
   }
 
@@ -266,6 +270,7 @@ export class TextCard {
         const b = el<HTMLButtonElement>('<button class="fm-tc-face" type="button" role="option"></button>');
         b.textContent = fam;
         b.style.fontFamily = `"${fam}", Inter, sans-serif`;
+        previewFont(fam);
         b.addEventListener('click', () => this.pickFont(fam));
         this.faces.set(fam, b);
         box.appendChild(b);

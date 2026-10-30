@@ -5,6 +5,34 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.10.0', name: 'Folders, crop on the canvas, more fonts and sturdier files',
+    additions: [
+      { title: 'Theater folders', text: 'Movies can be stacked into real folders, and you can hold and carry several movies at once into a folder.', command: 'home' },
+      { title: 'Crop on the canvas', text: 'Crop right on the picture in Draw & Paint, with a Flipbook time bar to check the frames as you go.', command: 'new-flipbook' },
+      { title: 'Export brushes, sets and libraries', text: 'Send your brushes, brush sets and whole libraries back out as files to share or keep.', command: 'new-flipbook' },
+      { title: '15 font families', text: 'Fifteen built-in font families, including Arabic, Chinese, Japanese, Korean, Thai and Devanagari.', command: 'add-drawing' },
+      { title: 'Video with transparency', text: 'Video that has transparency now keeps it on the Stage instead of showing black.', command: 'export' },
+      { title: 'HEIC pictures', text: 'HEIC photos open through the engine when you have ffmpeg 7.1 or newer.', command: 'add-drawing' },
+      { title: 'Push, extend and contract content', text: 'Move what is inside a block by a frame, stretch it longer or shorter, and flip the order of its content.', command: 'mode-keyframe' },
+      { title: 'Loop range and pen play', text: 'Set a loop range to repeat a part of the movie, and press the pen button to play. A four-finger tap previews the movie.', command: 'play' },
+      { title: 'Insert a file', text: 'Bring any picture, video or sound in from the Create menu with Insert a file.', command: 'import-file' },
+      { title: 'Recover Lost Movies', text: 'Find movies that were left behind after a crash or a moved folder and bring them back.', command: 'recover-lost' },
+      { title: 'Safer engine', text: 'The engine now checks the host and origin of every request, and old movie files load cleanly.', command: 'settings' },
+    ],
+  },
+  {
+    version: '0.9.0', name: 'Text, onboarding, export and import formats',
+    additions: [
+      { title: 'Text formatting', text: 'Style text on the Stage and edit it in place.', command: 'add-text' },
+      { title: 'Examples, tour and What\'s New', text: 'Three example movies, a short tour, this page and an About window help you get started.', command: 'tour' },
+      { title: 'More ways to export', text: 'A preview window, H.264, HEVC, ProRes and VP9 video as .mp4, .mov or .webm, GIF presets and picture frames in PNG, JPG, TIFF, TGA, BMP and WebP.', command: 'export' },
+      { title: 'More ways to import', text: 'Open TGA pictures and layered PSD, ORA, KRA and PDN files as Drawings; ProRes video and AIFF, CAF and AC-3 sound are converted by the engine.', command: 'add-drawing' },
+      { title: 'A canvas for each Drawing', text: 'Every Drawing or Flipbook can have a canvas size of its own.', command: 'new-flipbook' },
+      { title: 'Touch and pen gestures', text: 'Multi-finger taps and pinches work on the Stage and in Draw & Paint.', command: 'help' },
+      { title: 'A library folder', text: 'Choose where your movies are kept, and share a movie with or without its history.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.8.0', name: 'Motion paths, the Graph, bones and a friendlier start',
     additions: [
       { title: 'Example movies and a tour', text: 'Three small example movies wait in your Theater, and a short tour points out the Stage, the Timeline, the modes and the Create menu. Both can be brought back from Help.', command: 'tour' },

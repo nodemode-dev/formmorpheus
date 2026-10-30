@@ -5,6 +5,7 @@ import * as ops from '../engine/ops';
 import type { View } from '../engine/render';
 import { fontCss, layoutText } from '../engine/text-layout';
 import type { Content } from '../engine/types';
+import { ensureTextFont } from '../media/fonts';
 import { setClass } from './dom';
 
 /** What the Stage lends the text tools. */
@@ -82,6 +83,7 @@ export class TextStage {
     const value = this.ta.value;
     this.engine.run('Edit Text', (m) => ops.updateContent(m, id, (c) => {
       if (!c.text) return c;
+      void ensureTextFont({ ...c.text, text: value }); // brings in the faces of any other script typed
       return { ...c, name: value.split('\n')[0].slice(0, 40) || c.name, text: { ...c.text, text: value } };
     }), `text-${id}-text`);
   }

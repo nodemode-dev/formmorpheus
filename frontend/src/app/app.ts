@@ -9,7 +9,7 @@ import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { AudioEngine } from '../media/audio';
-import { loadTextFonts, registerFonts } from '../media/fonts';
+import { evictFonts, loadTextFonts, registerFonts } from '../media/fonts';
 import { createImporter, type ImportOptions } from './import-flow';
 import { VideoPool } from '../media/video';
 import { firstFrames, planPrefetch } from '../media/plan';
@@ -50,6 +50,9 @@ import { TitleTools } from '../ui/titlebar-tools';
 import { ShortcutsDialog } from '../ui/shortcuts-dialog';
 import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
+import { pushCommands } from './push-commands';
+import { loopCommands } from './loop-commands';
+import { installPenPlay } from '../ui/pen-play';
 import { toast } from '../ui/toast';
 import { gestures } from '../ui/gestures';
 import { TrackMenu } from '../ui/track-menu';
@@ -227,6 +230,7 @@ export function startApp(): void {
     renderer.forget(keep);
     video.forgetExcept(keep);
     audio.forget();
+    evictFonts(keep);
   }
 
   async function openFromLibrary(name: string): Promise<void> {
@@ -235,6 +239,14 @@ export function startApp(): void {
     try {
       const file = await unpackMovie(await api.readMovie(name));
       await prepareOpen(file);
+      // a copy made outside the app (or by an older duplicate) shares the open movie's id: give it its own
+      if (engine.movie && file.movie.id === engine.movie.id && name !== engine.libraryName) {
+        const id = uid('m');
+        file.movie = { ...file.movie, id };
+        file.past = file.past.map((p) => ({ ...p, movie: { ...p.movie, id } }));
+      }
+      // the library name is the movie's name (a copy or a rename outside the app leaves the old one inside)
+      if (file.movie.name !== name) file.movie = { ...file.movie, name };
       engine.open(file.movie, name, file.assets, file.past, file.recovery);
       remember(name);
     } catch (e) {
@@ -418,8 +430,8 @@ export function startApp(): void {
     { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
     { id: 'settings', label: 'Preferences...', keys: ['Mod+,'], run: () => settings.show() },
     { id: 'search', label: 'Search Commands...', keys: ['Mod+K'], run: () => palette.show() },
-    { id: 'undo', label: () => (engine.history.canUndo ? `Undo ${engine.history.undoLabel}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
-    { id: 'redo', label: () => (engine.history.canRedo ? `Redo ${engine.history.redoLabel}` : 'Redo'), keys: ['Shift+Mod+Z', 'Mod+Y'], enabled: () => engine.history.canRedo, run: () => engine.redo() },
+    { id: 'undo', label: () => (engine.history.canUndo ? `${t('Undo')} ${t(engine.history.undoLabel ?? '')}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
+    { id: 'redo', label: () => (engine.history.canRedo ? `${t('Redo')} ${t(engine.history.redoLabel ?? '')}` : 'Redo'), keys: ['Shift+Mod+Z', 'Mod+Y'], enabled: () => engine.history.canRedo, run: () => engine.redo() },
     { id: 'cut', label: 'Cut', keys: ['Mod+X'], enabled: sel, run: () => engine.copy(true) },
     { id: 'copy', label: 'Copy', keys: ['Mod+C'], enabled: sel, run: () => engine.copy(false) },
     { id: 'paste', label: 'Paste', keys: ['Mod+V'], enabled: () => has() && engine.hasClipboard, run: () => engine.paste() },
@@ -506,6 +518,8 @@ export function startApp(): void {
   commands.add(
     ...add,
     ...paint.paintCommands(),
+    ...pushCommands(engine),
+    ...loopCommands(engine),
     ...ckCommands({
       engine,
       nudge: (dx, dy) => stage?.nudge(dx, dy),
@@ -516,6 +530,7 @@ export function startApp(): void {
     }),
     { id: 'shortcuts', label: 'Keyboard Shortcuts...', run: () => shortcutsDialog.show() },
     { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
+    { id: 'recover-lost', label: 'Recover Lost Movies...', run: () => { void recovery.offer('menu'); } },
   );
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
   paint.useCommands(commands);
@@ -523,9 +538,9 @@ export function startApp(): void {
   setupOnboarding({ commands, engine, openMovie: openFromLibrary, closeHome: () => home.hide() });
   menus.push(
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
-    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', '-', 'shortcuts', 'settings'] },
-    { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
-    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
+    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'settings'] },
+    { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', 'group', 'ungroup'] },
     { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
@@ -610,6 +625,7 @@ export function startApp(): void {
   // two-finger tap undoes, three-finger tap redoes (held: repeats); pinch, hold and the rest live in ui/gestures.ts
   gestures.actions = { undo: () => { engine.undo(); }, redo: () => { engine.redo(); } };
   gestures.install();
+  installPenPlay();
 
   const split = q(root, '.fm-split');
   const main = q(root, '.fm-main');

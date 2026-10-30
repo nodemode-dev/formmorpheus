@@ -4,6 +4,7 @@ import { canvasCentreOffset, canvasOf } from '../engine/canvas';
 import * as ops from '../engine/ops';
 import type { Renderer, View } from '../engine/render';
 import { StageNav } from './stage-nav';
+import { loadPrefs } from './prefs';
 import { TOUCH_SLOP, snapMod } from './gestures';
 import * as keyOps from '../engine/key-ops';
 import { animate, laneOf } from '../engine/keys';
@@ -421,7 +422,7 @@ export class StageView {
     const id = g.kind === 'move' ? (g.ids.length === 1 ? g.ids[0] : null) : g.id;
     const at = id ? locate(m, id) : null;
     if (!id || !at) return;
-    g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' ? e.twist : null, twistSum: 0, twisted: false };
+    g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' && loadPrefs().penRoll ? e.twist : null, twistSum: 0, twisted: false };
     perform.setRecording(true);
     // a take ends at the movie's end: playback stops there instead of looping under the pen
     this.offWrap?.();

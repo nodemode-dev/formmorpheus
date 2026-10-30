@@ -24,7 +24,7 @@ export async function importBrushFiles(files: File[]): Promise<void> {
     try {
       const r = await importBrushFile(f);
       if (r.sets && r.sets.length) { brushStore.addImportedLibrary(r.libName ?? f.name.replace(/\.[^.]+$/, ''), r.sets); added += r.brushes.length; }
-      else if (r.brushes.length) { brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
+      else if (r.brushes.length) { if (r.setName) brushStore.addImportedSet(r.setName, r.brushes); else brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
     } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
   }
   if (added) toast(tn(added, 'Imported {n} brush', 'Imported {n} brushes') + (failed ? `, ${tn(failed, '{n} skipped', '{n} skipped')}` : ''));

@@ -534,6 +534,17 @@ export class TimelineView {
     c.clearRect(0, 0, this.width, RULER_H);
     c.fillStyle = p.ruler;
     c.fillRect(0, 0, this.width, RULER_H);
+    if (m.loopFrom !== undefined && m.loopTo !== undefined && m.loopTo >= m.loopFrom) {
+      // Loop range: a tinted band with in / out edges (the last frame is inclusive)
+      const lx0 = Math.round(this.fx(m.loopFrom));
+      const lx1 = Math.round(this.fx(m.loopTo + 1));
+      c.fillStyle = p.accent;
+      c.globalAlpha = 0.22;
+      c.fillRect(lx0, 0, Math.max(2, lx1 - lx0), RULER_H);
+      c.globalAlpha = 1;
+      c.fillRect(lx0, 0, 2, RULER_H);
+      c.fillRect(Math.max(lx0, lx1 - 2), 0, 2, RULER_H);
+    }
     const { major, minor, seconds } = this.tickStep(m);
     const first = Math.max(0, Math.floor(this.start / minor) * minor);
     const last = Math.min(m.duration, Math.ceil(this.xf(this.width) / minor) * minor);
@@ -738,7 +749,9 @@ export class TimelineView {
     setClass(this.keyPill, 'is-pending', !perf && !keyed && spot.c.keys.length > 0);
     this.keyPill.title = !perf && !keyed && spot.c.keys.length > 0 ? 'Make a keyframe here' : 'Action';
     setClass(this.keyPill, 'is-rec', perf && perform.recording);
-    const at = `translate(${Math.round(spot.x - 32)}px, ${Math.round(spot.y - 20)}px)`;
+    // kept whole at frame 0 and at the right edge instead of being cut off by the panel
+    const left = Math.max(2, Math.min(spot.x - 32, this.width - 66));
+    const at = `translate(${Math.round(left)}px, ${Math.round(spot.y - 20)}px)`;
     if (at !== this.keyPillAt) { this.keyPillAt = at; this.keyPill.style.transform = at; }
     setHidden(this.keyPill, false);
     this.actionMenu.follow();

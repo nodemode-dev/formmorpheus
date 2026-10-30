@@ -25,6 +25,7 @@ import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle
 import { t as tr } from './i18n';
 import { FlipStrip, type StripHost } from './flip-strip';
 import { CropResizeDialog, bakeCanvas } from './paint-crop';
+import { CropSurface } from './paint-crop-surface';
 import { canvasOf, hasCanvas } from '../engine/canvas';
 import { animate } from '../engine/keys';
 import { FlipMini } from './flip-mini';
@@ -48,6 +49,8 @@ import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys
 import { ROLL_NAME, brushScale, penButton } from '../paint/feel';
 import { setPressureGamma } from '../paint/dynamics';
 import type { Command, Commands } from './commands';
+import { decodeTiff } from '../media/tiff-decode';
+import { decodeTga } from '../media/tga-decode';
 
 interface BrushState { size: number; opacity: number; /** Smudge only: how far the smear carries (the brush's pickup is 1 minus this). */ strength?: number }
 
@@ -195,6 +198,9 @@ export class PaintView {
   private readonly settings: PaintSettings;
   private readonly strip: FlipStrip;
   private cropDialog: CropResizeDialog | null = null;
+  /** Crop and resize in place, over the canvas; the dialog is the fallback for a very small window. */
+  private cropSurface: CropSurface | null = null;
+  private fitKey = '';
   /** The layers the open document was loaded from (or last saved as), to tell an outside change from our own save. */
   private seenLayers: DrawingLayer[] | null = null;
   private ownRun = false;
@@ -274,6 +280,7 @@ export class PaintView {
       onionScope: () => (this.content()?.kind === 'flipbook' ? (this.content()?.onion ? 'flipbook' : 'movie') : null),
       setOnionScope: (scope) => this.setOnionScope(scope),
       onInsertPhoto: () => this.insertPhoto(),
+      onInsertFile: () => this.insertPhoto(true),
       onCropResize: () => { void this.cropResize(); },
     });
     this.strip = new FlipStrip(this.stripHost());
@@ -293,7 +300,14 @@ export class PaintView {
       const cur = this.frameLayers(c);
       if (cur !== this.seenLayers && this.doc && !this.doc.isChanged()) {
         this.seenLayers = cur;
-        void this.loadDoc().then(() => { this.strip.invalidate(); this.full = true; this.redraw(); this.syncChrome(); });
+        void this.loadDoc().then(() => {
+          // an Undo or Redo of a Crop changes the canvas rectangle: refit the view around it
+          const mv = this.engine.movie;
+          const kv = mv ? canvasOf(this.content(), mv) : null;
+          const key = kv ? `${kv.x},${kv.y},${kv.w},${kv.h}` : '';
+          if (key !== this.fitKey) { this.fitKey = key; this.fit(); }
+          this.strip.invalidate(); this.full = true; this.redraw(); this.syncChrome();
+        });
       }
     });
     this.tools = new PaintTools(this.toolHost());
@@ -588,6 +602,11 @@ export class PaintView {
       playing: () => this.playTimer !== 0,
       togglePlay: () => { if (this.playTimer) this.stopPlay(); else void this.startPlay(); },
       thumb: (row, index, w, h) => this.frameThumb(row, index, w, h),
+      liveKey: (row, index) => {
+        const f = this.content()?.flip[row]?.frames[index];
+        const d = f && row === this.row && index === this.index && this.doc && !this.playTimer ? this.doc : f ? this.parked.get(f.id) : null;
+        return d && d.isChanged() ? d.layers.map((l) => l.version).join('.') : '';
+      },
       fps: () => this.engine.movie?.fps ?? 24,
       movieSize: () => { const m = this.engine.movie; if (!m) return null; const k = canvasOf(this.content(), m); return { w: k.w, h: k.h }; },
       drawPreview: (ctx, w, h, local) => this.drawPreview(ctx, w, h, local),
@@ -844,6 +863,7 @@ export class PaintView {
     const padX = bare ? 16 : 72, padTop = bare ? 16 : 64, padBottom = bare ? 16 : this.content()?.kind === 'flipbook' ? 200 : 32;
     // fit the canvas and the Stage together (view pixels are canvas pixels; the Stage sits at -canvas.x, -canvas.y)
     const kv = canvasOf(this.content(), m);
+    this.fitKey = `${kv.x},${kv.y},${kv.w},${kv.h}`;
     const ux0 = Math.min(0, -kv.x), uy0 = Math.min(0, -kv.y), ux1 = Math.max(kv.w, m.width - kv.x), uy1 = Math.max(kv.h, m.height - kv.y);
     const uw = ux1 - ux0, uh = uy1 - uy0;
     const s = Math.min((this.cssW - padX * 2) / uw, (this.cssH - padTop - padBottom) / uh);
@@ -1124,7 +1144,7 @@ export class PaintView {
       setClass(b, 'is-active', (w === 'settings' && this.settings.isOpen()) || (w === this.tools.mode()));
     }
     const c = this.content();
-    setText(this.frameLabel, c?.kind === 'flipbook' ? `${c.flip[this.row]?.name ?? ''} · frame ${(this.playTimer ? this.playIndex() : this.index) + 1} of ${c.flip[this.row]?.frames.length ?? 0}` : '');
+    setText(this.frameLabel, c?.kind === 'flipbook' ? `${c.flip[this.row]?.name ?? ''} · ${tr('frame {n} of {m}').replace('{n}', String((this.playTimer ? this.playIndex() : this.index) + 1)).replace('{m}', String(c.flip[this.row]?.frames.length ?? 0))}` : '');
     const st = this.state(this.brush());
     setStyleVar(this.sizeSlider, '--v', String(st.size));
     setStyleVar(this.opacitySlider, '--v', String(st.opacity));
@@ -1138,6 +1158,8 @@ export class PaintView {
     }
     this.slots?.sync();
     setClass(this.root, 'is-side-right', this.prefs.sidebarRight);
+    setHidden(this.undoBtn, !!this.prefs.hideUndoButtons);
+    setHidden(this.redoBtn, !!this.prefs.hideUndoButtons);
     this.syncUndo();
   }
 
@@ -1145,8 +1167,8 @@ export class PaintView {
     const d = this.doc;
     setDisabled(this.undoBtn, !d?.canUndo());
     setDisabled(this.redoBtn, !d?.canRedo());
-    setTitle(this.undoBtn, d?.undoLabel() ? `Undo ${d.undoLabel()}` : 'Nothing to undo');
-    setTitle(this.redoBtn, d?.redoLabel() ? `Redo ${d.redoLabel()}` : 'Nothing to redo');
+    setTitle(this.undoBtn, d?.undoLabel() ? `${tr('Undo')} ${tr(d.undoLabel() ?? '')}` : tr('Nothing to undo'));
+    setTitle(this.redoBtn, d?.redoLabel() ? `${tr('Redo')} ${tr(d.redoLabel() ?? '')}` : tr('Nothing to redo'));
   }
 
   private setColourChip(rgb: RGB): void {
@@ -1271,8 +1293,9 @@ export class PaintView {
     const c = this.content();
     const m = this.engine.movie;
     if (!c || !m || this.busy || !this.contentId) return;
-    this.cropDialog ??= new CropResizeDialog();
     const k = canvasOf(c, m);
+    const inPlace = this.cssW >= 560 && this.cssH >= 420;
+    if (inPlace) this.cropSurface ??= new CropSurface(this.root); else this.cropDialog ??= new CropResizeDialog();
     // a small flat picture of the open frame for the dialog's preview
     let picture: OffscreenCanvas | null = null;
     if (this.doc) {
@@ -1282,7 +1305,34 @@ export class PaintView {
       g.scale(sc, sc);
       this.doc.composite(g);
     }
-    const p = await this.cropDialog.open2({ stage: { w: m.width, h: m.height, background: m.background, transparent: m.transparent }, canvas: k, picture, flipbook: c.kind === 'flipbook' });
+    const ask = { stage: { w: m.width, h: m.height, background: m.background, transparent: m.transparent }, canvas: k, picture, flipbook: c.kind === 'flipbook' };
+    let p;
+    if (inPlace && this.cropSurface) {
+      // Flipbook: every movie frame of the longest row can be scrubbed; each is drawn on demand
+      const sc = Math.min(1, 1024 / Math.max(k.w, k.h));
+      const pictureAt = c.kind !== 'flipbook' ? undefined : (time: number): CanvasImageSource | null => {
+        const cur = this.content();
+        if (!cur) return null;
+        const out = new OffscreenCanvas(Math.max(1, Math.round(k.w * sc)), Math.max(1, Math.round(k.h * sc)));
+        const g = out.getContext('2d') as OffscreenCanvasRenderingContext2D;
+        g.scale(sc, sc);
+        for (let i = cur.flip.length - 1; i >= 0; i--) {
+          const tr = cur.flip[i];
+          if (tr.hidden || tr.opacity <= 0) continue;
+          const fi = flipIndexAt(tr, time);
+          if (fi < 0) continue;
+          g.save();
+          g.globalAlpha = tr.opacity;
+          if (i === this.row && fi === this.index && this.doc) this.doc.composite(g as unknown as CanvasRenderingContext2D);
+          else this.renderer.layersInto(g, tr.frames[fi].layers, m, { w: k.w, h: k.h });
+          g.restore();
+        }
+        return out;
+      };
+      const frames = c.kind === 'flipbook' ? Math.max(1, flipOps.flipDuration(c)) : 1;
+      const at = c.kind === 'flipbook' ? flipStartOf(c.flip[this.row], this.index) : 0;
+      p = await this.cropSurface.open({ ...ask, frames, at: Math.min(at, frames - 1), pictureAt });
+    } else p = await (this.cropDialog as CropResizeDialog).open2(ask);
     if (!p || !this.contentId) return;
     if (p.rect.x === k.x && p.rect.y === k.y && p.rect.w === k.w && p.rect.h === k.h) return;
     this.busy = true;
@@ -1310,10 +1360,23 @@ export class PaintView {
     this.redraw();
   }
 
-  private insertPhoto(): void {
+  /** A picked picture as a bitmap; TGA and TIFF go through the app's own decoders (the browser has none). */
+  private async bitmapOf(f: File): Promise<ImageBitmap> {
+    const name = f.name.toLowerCase();
+    if (/\.(tga|targa|tif|tiff)$/.test(name)) {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const pic = /\.(tif|tiff)$/.test(name) ? decodeTiff(bytes) : decodeTga(bytes);
+      const px = new ImageData(pic.width, pic.height);
+      px.data.set(pic.rgba);
+      return createImageBitmap(px);
+    }
+    return createImageBitmap(f);
+  }
+
+  private insertPhoto(any = false): void {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
+    input.accept = any ? 'image/*,.tga,.targa,.tif,.tiff,.heic,.heif,.bmp,.gif,.webp,.avif' : 'image/*';
     input.multiple = true;
     input.addEventListener('change', () => {
       // each picked picture becomes its own layer, in the order picked
@@ -1321,7 +1384,7 @@ export class PaintView {
       const doc = this.doc;
       const m = this.engine.movie;
       if (!files.length || !doc || !m) return;
-      for (const f of files) void createImageBitmap(f).then((bmp) => {
+      for (const f of files) void this.bitmapOf(f).then((bmp) => {
         const layer = doc.addLayer(undefined, f.name.replace(/\.[^.]+$/, '') || 'Photo');
         const m = doc; // the photo fits the canvas, not the movie
         const cv = new OffscreenCanvas(m.width, m.height);
@@ -1699,14 +1762,17 @@ export class PaintView {
     if (this.stroke) return;
     if (this.tools.mode() === 'transform' || this.tools.mode() === 'filters') { this.tools.cancel(); return; }
     if (this.doc?.undo()) this.syncUndo();
+    // a crop is a movie step, not a paint step (the frame was reloaded after it): step the movie back like the status bar
+    else if (!this.busy && this.engine.history.canUndo && this.engine.history.undoLabel === 'Crop and resize') this.engine.undo();
   }
   private redo(): void {
     if (this.stroke || this.tools.mode() === 'transform' || this.tools.mode() === 'filters') return;
     if (this.doc?.redo()) this.syncUndo();
+    else if (!this.busy && this.engine.history.canRedo && this.engine.history.redoLabel === 'Crop and resize') this.engine.redo();
   }
 
   private key(e: KeyboardEvent): void {
-    if (!this.isOpen()) return;
+    if (!this.isOpen() || this.cropSurface?.isOpen) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     // Delete, Extend, Contract, Push, Pull, Fill duration and Escape on the focused frame strip

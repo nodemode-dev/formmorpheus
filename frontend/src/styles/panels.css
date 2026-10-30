@@ -591,7 +591,8 @@
 .cv-swatch-hint { align-items: flex-start; min-width: 0; line-height: 1.4; }
 .cv-swatch-hint > svg { flex: none; margin-top: var(--space-1); }
 .cv-swatch-hint span { min-width: 0; overflow-wrap: anywhere; }
-#toast-root { right: auto !important; left: 50%; transform: translateX(-50%); align-items: center; }
+/* Notices stay in the bottom-right corner: the centre is the Compose / Perform / Keyframe switch and the frame strip. */
+#toast-root { right: var(--space-4); left: auto; max-width: min(420px, calc(100vw - 32px)); align-items: flex-end; }
 /* The options bar ends at the open column's edge, so no control lies hidden under it. */
 :root { --cv-props-open-w: 284px; }
 /* (A window too narrow for this shows the column as its strip: PropertiesColumn.MIN_CANVAS.) */

@@ -86,7 +86,8 @@ const ARROW: Record<string, string> = {
   u: 'M3 10.5 8 5.5l5 5',
   d: 'M3 5.5l5 5 5-5',
 };
-const NUDGE_PAD = `<span class="fm-ptools-nudge" title="Nudge 1 px (Shift 10 px; arrow keys too)">${(['l', 'u', 'd', 'r'] as const).map((k) => `<button type="button" data-nudge="${k}" aria-label="Nudge ${({ l: 'left', r: 'right', u: 'up', d: 'down' })[k]}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${ARROW[k]}"/></svg></button>`).join('')}</span>`;
+const nudgePad = (): string => `<span class="fm-ptools-nudge" title="${tr('Nudge 1 px (Shift 10 px; arrow keys too)')}">${(['l', 'u', 'd', 'r'] as const).map((k) => `<button type="button" data-nudge="${k}" aria-label="${tr({ l: 'Nudge left', r: 'Nudge right', u: 'Nudge up', d: 'Nudge down' }[k])}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${ARROW[k]}"/></svg></button>`).join('')}</span>`;
+const htmlOf = (html: string): HTMLElement => el<HTMLElement>(`<div>${html}</div>`);
 
 const TEMPLATE = `<div class="fm-ptools" hidden>
 <div class="fm-ptools-modes"></div>
@@ -245,33 +246,58 @@ export class PaintTools {
     setHidden(this.params, this.current !== 'filters');
     setHidden(this.modes, this.current === 'filters');
     if (this.current === 'select') {
-      this.modes.innerHTML = SELECT_MODES.map((m) => `<button type="button" class="fm-ptools-mode${m.id === this.selectMode ? ' is-active' : ''}" data-sel="${m.id}">${m.label}</button>`).join('');
-      this.actions.innerHTML = [
-        ['add', 'Add', this.combineMode === 'add'], ['remove', 'Remove', this.combineMode === 'remove'], ['invert', 'Invert', false],
-        ['reload', 'Reload', false], ['copy', 'Copy & Paste', false], ['fill', 'Color Fill', false], ['clear', 'Clear', false], ['none', 'Deselect', false], ['done', 'Done', false],
-      ].map(([id, label, on]) => `<button type="button" class="fm-ptools-act${on ? ' is-active' : ''}" data-act="${id}">${label}</button>`).join('');
+      this.variant(this.modes, 'select', () => htmlOf(SELECT_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-sel="${m.id}">${tr(m.label)}</button>`).join('')));
+      this.variant(this.actions, 'select', () => htmlOf([
+        ['add', 'Add'], ['remove', 'Remove'], ['invert', 'Invert'],
+        ['reload', 'Reload'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'], ['none', 'Deselect'], ['done', 'Done'],
+      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${tr(label)}</button>`).join('')));
+      for (const b of this.modes.querySelectorAll<HTMLElement>('[data-sel]')) b.classList.toggle('is-active', b.dataset.sel === this.selectMode);
+      for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="add"],[data-act="remove"]')) b.classList.toggle('is-active', b.dataset.act === this.combineMode);
     } else if (this.current === 'transform') {
-      this.modes.innerHTML = TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode${m.id === this.transformMode ? ' is-active' : ''}" data-tr="${m.id}">${m.label}</button>`).join('');
-      const acts = [['flipH', 'Flip horizontal'], ['flipV', 'Flip vertical'], ['rot', 'Rotate 45°'], ['interp', INTERP_LABEL[this.interp]]];
-      if (this.transformMode === 'warp') acts.push(['mesh', tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN))]);
-      acts.push(['reset', 'Reset'], ['cancel', 'Cancel'], ['done', 'Done']);
-      this.actions.innerHTML = NUDGE_PAD + acts.map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label}</button>`).join('');
+      this.variant(this.modes, 'transform', () => htmlOf(TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-tr="${m.id}">${tr(m.label)}</button>`).join('')));
+      this.variant(this.actions, 'transform', () => htmlOf(nudgePad() + [
+        ['flipH', 'Flip horizontal'], ['flipV', 'Flip vertical'], ['rot', 'Rotate 45°'], ['interp', ''], ['mesh', ''], ['reset', 'Reset'], ['cancel', 'Cancel'], ['done', 'Done'],
+      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label ? tr(label) : ''}</button>`).join('')));
+      for (const b of this.modes.querySelectorAll<HTMLElement>('[data-tr]')) b.classList.toggle('is-active', b.dataset.tr === this.transformMode);
+      setText(this.actions.querySelector('[data-act="interp"]'), tr(INTERP_LABEL[this.interp]));
+      const mesh = this.actions.querySelector<HTMLElement>('[data-act="mesh"]');
+      if (mesh) { setHidden(mesh, this.transformMode !== 'warp'); setText(mesh, tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN))); }
     } else if (this.current === 'filters' && this.filter) {
       const f = FILTERS.find((x) => x.id === this.filter)!;
-      const hint = f.id === 'hsb' ? 'tap the canvas for the menu' : `drag on the canvas to set ${f.params[0].label.toLowerCase()}`;
-      const choices = f.id === 'noise'
-        ? `<div class="fm-ptools-choices">${(['clouds', 'billows', 'ridges'] as const).map((s) => `<button type="button" class="fm-ptools-mode${this.fopts.style === s ? ' is-active' : ''}" data-ns="${s}">${tr({ clouds: 'Clouds', billows: 'Billows', ridges: 'Ridges' }[s])}</button>`).join('')}<span class="fm-ptools-gap"></span><button type="button" class="fm-ptools-mode${this.fopts.additive ? ' is-active' : ''}" data-nt="additive" title="Off fills all the empty paintable area">${tr('Additive')}</button><button type="button" class="fm-ptools-mode${this.fopts.multichannel ? ' is-active' : ''}" data-nt="multichannel">${tr('Multichannel')}</button></div>`
-        : '';
-      this.params.innerHTML = `<div class="fm-ptools-title">${f.label} <span>${hint}</span></div>${choices}${f.params.map((p) => `<label class="fm-ptools-param"><span>${p.label}</span><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${this.values[p.id] ?? p.def}" data-p="${p.id}"><output data-o="${p.id}"></output></label>`).join('')}`;
-      this.actions.innerHTML = [['undo', 'Undo'], ['preview', 'Preview'], ['reset', 'Reset'], ['cancel', 'Cancel'], ['apply', 'Apply']].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${id === 'preview' ? ' title="Hold to see the original"' : ''}>${label}</button>`).join('');
-      for (const input of this.params.querySelectorAll<HTMLInputElement>('input[data-p]')) {
-        input.addEventListener('pointerdown', () => this.pushUndo());
-        input.addEventListener('input', () => { this.values[input.dataset.p as string] = Number(input.value); this.syncOutputs(); this.scheduleFilter(); });
-      }
-      for (const b of this.params.querySelectorAll<HTMLButtonElement>('[data-ns]')) b.addEventListener('click', () => { this.fopts.style = b.dataset.ns as 'clouds' | 'billows' | 'ridges'; this.syncChoices(); this.scheduleFilter(); });
-      for (const b of this.params.querySelectorAll<HTMLButtonElement>('[data-nt]')) b.addEventListener('click', () => { const k = b.dataset.nt as 'additive' | 'multichannel'; this.fopts[k] = !this.fopts[k]; this.syncChoices(); this.scheduleFilter(); });
+      this.variant(this.params, f.id, () => {
+        const hint = f.id === 'hsb' ? tr('tap the canvas for the menu') : tr('drag on the canvas to set {name}').replace('{name}', tr(f.params[0].label).toLowerCase());
+        const choices = f.id === 'noise'
+          ? `<div class="fm-ptools-choices">${(['clouds', 'billows', 'ridges'] as const).map((s) => `<button type="button" class="fm-ptools-mode" data-ns="${s}">${tr({ clouds: 'Clouds', billows: 'Billows', ridges: 'Ridges' }[s])}</button>`).join('')}<span class="fm-ptools-gap"></span><button type="button" class="fm-ptools-mode" data-nt="additive" title="${tr('Off fills all the empty paintable area')}">${tr('Additive')}</button><button type="button" class="fm-ptools-mode" data-nt="multichannel">${tr('Multichannel')}</button></div>`
+          : '';
+        const v = htmlOf(`<div class="fm-ptools-title">${tr(f.label)} <span>${hint}</span></div>${choices}${f.params.map((p) => `<label class="fm-ptools-param"><span>${tr(p.label)}</span><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.def}" data-p="${p.id}"><output data-o="${p.id}"></output></label>`).join('')}`);
+        for (const input of v.querySelectorAll<HTMLInputElement>('input[data-p]')) {
+          input.addEventListener('pointerdown', () => this.pushUndo());
+          input.addEventListener('input', () => { this.values[input.dataset.p as string] = Number(input.value); this.syncOutputs(); this.scheduleFilter(); });
+        }
+        for (const b of v.querySelectorAll<HTMLButtonElement>('[data-ns]')) b.addEventListener('click', () => { this.fopts.style = b.dataset.ns as 'clouds' | 'billows' | 'ridges'; this.syncChoices(); this.scheduleFilter(); });
+        for (const b of v.querySelectorAll<HTMLButtonElement>('[data-nt]')) b.addEventListener('click', () => { const k = b.dataset.nt as 'additive' | 'multichannel'; this.fopts[k] = !this.fopts[k]; this.syncChoices(); this.scheduleFilter(); });
+        return v;
+      });
+      this.variant(this.actions, 'filters', () => htmlOf([['undo', 'Undo'], ['preview', 'Preview'], ['reset', 'Reset'], ['cancel', 'Cancel'], ['apply', 'Apply']].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${id === 'preview' ? ` title="${tr('Hold to see the original')}"` : ''}>${tr(label)}</button>`).join('')));
+      this.syncChoices();
       this.syncOutputs();
     }
+  }
+
+  /** Shows the named child of a capsule row, making it the first time only; the others stay mounted, hidden. */
+  private variant(parent: HTMLElement, key: string, make: () => HTMLElement): void {
+    let found = false;
+    for (const c of Array.from(parent.children) as HTMLElement[]) {
+      const on = c.dataset.v === key;
+      if (on) found = true;
+      const d = on ? 'contents' : 'none';
+      if (c.style.display !== d) c.style.display = d;
+    }
+    if (found) return;
+    const v = make();
+    v.dataset.v = key;
+    v.style.display = 'contents';
+    parent.appendChild(v);
   }
 
   private syncChoices(): void {
@@ -328,10 +354,11 @@ export class PaintTools {
   private syncOutputs(): void {
     const f = FILTERS.find((x) => x.id === this.filter);
     if (!f) return;
+    const scope = this.params.querySelector<HTMLElement>(`[data-v="${f.id}"]`) ?? this.params;
     for (const p of f.params) {
       const v = this.values[p.id] ?? p.def;
-      setText(this.params.querySelector(`[data-o="${p.id}"]`), `${Math.round(v * p.scale)}${p.unit}`);
-      const input = this.params.querySelector<HTMLInputElement>(`input[data-p="${p.id}"]`);
+      setText(scope.querySelector(`[data-o="${p.id}"]`), `${Math.round(v * p.scale)}${p.unit}`);
+      const input = scope.querySelector<HTMLInputElement>(`input[data-p="${p.id}"]`);
       if (input && Number(input.value) !== v) input.value = String(v);
     }
   }

@@ -134,7 +134,7 @@ export function onLanguage(fn: () => void): () => void {
  * touched: inputs, text areas, editable text, the canvas, and anything inside [data-no-i18n] (layer, document, channel,
  * path and preset names). */
 const ATTRS = ['title', 'aria-label', 'placeholder'] as const;
-const SKIP = 'textarea, input, script, style, canvas, [contenteditable], [data-no-i18n], .cv-type-editor, .cv-layer-label, .cv-tab-name, .cv-comp-name, .cv-path-name, .cv-style-name, .cv-home-name, .cv-vtl-clip-name, .cv-vtl-lane-name, .cv-vtl-head-name';
+const SKIP = 'textarea, input, script, style, canvas, [contenteditable], [data-no-i18n], .cv-type-editor, .cv-layer-label, .cv-tab-name, .cv-comp-name, .cv-path-name, .cv-style-name, .cv-home-name, .cv-vtl-clip-name, .cv-vtl-lane-name, .cv-vtl-head-name, .cv-hf-name, .cv-th-stackname';
 const textEn = new WeakMap<Text, { en: string; shown: string }>();
 const attrEn = new WeakMap<Element, Map<string, { en: string; shown: string }>>();
 let observer: MutationObserver | null = null;

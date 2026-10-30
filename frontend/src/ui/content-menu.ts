@@ -51,6 +51,7 @@ export class ContentMenu {
   onEditInFormvis: ((id: string) => void) | null = null;
   private readonly group: PopRow;
   private readonly ungroup: PopRow;
+  private readonly flipOrder: PopRow;
   private readonly del: PopRow;
   private readonly track: TrackMenu;
   private readonly parents: ParentPicker;
@@ -180,6 +181,8 @@ export class ContentMenu {
     this.formvis.el.addEventListener('click', () => { const id = this.ids[0]; this.pop.hide(); if (id) this.onEditInFormvis?.(id); });
     this.group = popRow('group', 'Group');
     this.ungroup = popRow('ungroup', 'Ungroup');
+    this.flipOrder = popRow(null, 'Flip Content');
+    this.flipOrder.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'flip-order' })); });
     const trackRow = popRow('track', 'Track options', { sub: true });
     this.del = popRow('trash', 'Delete content', { danger: true });
 
@@ -212,7 +215,7 @@ export class ContentMenu {
     this.parents = new ParentPicker(engine, this.pop);
     this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows, popSep(),
-      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -320,6 +323,7 @@ export class ContentMenu {
     setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);
+    setClass(this.flipOrder.el, 'is-gone', sel.length < 2);
     this.parents.patch(this.ids);
     this.xform.patch();
     setClass(this.ungroup.el, 'is-gone', !isGroup);

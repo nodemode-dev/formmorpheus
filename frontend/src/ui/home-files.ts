@@ -5,7 +5,8 @@ import { confirmAction } from './dialogs';
 import { icon } from './icons';
 import { dateText, onLanguage, t } from './i18n';
 import { toast } from './toast';
-import { TheaterTools, keyOf, type Target } from './home-theater';
+import { TheaterTools, type Target } from './home-theater';
+import { TheaterCarry } from './theater-carry';
 import { TheaterPreview } from './theater-preview';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
@@ -22,12 +23,10 @@ export interface HomeFilesDeps {
 
 type Tab = 'recent' | 'projects' | 'outputs';
 type Sort = 'opened' | 'name' | 'size' | 'kind' | 'manual';
-const ORDER = 'formmorpheus.theater-order';
-const readOrder = (): string[] => { try { const v = JSON.parse(localStorage.getItem(ORDER) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; } catch { return []; } };
 type View = 'grid' | 'list';
 type Thumb = { name: string } | { path: string; project: boolean } | null;
 
-interface Item { key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null; target?: Target }
+interface Item { inside?: string[]; key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null; target?: Target }
 
 const PREFS = 'formmorpheus.home';
 const PICTURE = /\.(png|jpe?g|webp|gif|avif)$/i;
@@ -96,11 +95,12 @@ export class HomeFiles {
   private run = 0;
   /** Select mode, the movie menu and stacks: the Movies page only. */
   private readonly theater: TheaterTools | null;
-  private pressTimer = 0;
 
   /** `fixed` shows one tab only (Home's own pages, 1.87.3); `limit` with `compact` is the Start page's short grid. */
   constructor(private readonly d: HomeFilesDeps, private readonly opts: { fixed?: Tab; limit?: number; compact?: boolean; onCount?: (n: number) => void } = {}) {
     if (opts.fixed) this.prefs.tab = opts.fixed;
+    // the Theater is in the person's own order until they pick a sort
+    try { if (opts.fixed === 'projects' && !opts.compact && !('sort' in (JSON.parse(localStorage.getItem(PREFS) ?? '{}') as object))) this.prefs.sort = 'manual'; } catch { /* default sort */ }
     if (opts.compact) this.prefs.view = 'grid';
     setClass(this.root, 'is-fixed', !!opts.fixed);
     setClass(this.root, 'is-compact', !!opts.compact);
@@ -115,12 +115,17 @@ export class HomeFiles {
       if (!item) return;
       if (this.theater?.suppressClick) { this.theater.suppressClick = false; return; }
       if (t.closest('.cv-hf-remove')) { item.remove?.(); return; }
+      // the title popup: a click on a card's name renames it (outside Select mode)
+      const nameEl = t.closest<HTMLElement>('.cv-hf-name');
+      if (nameEl && item.target && this.theater && !this.theater.selecting) { this.theater.titlePopup(item.target, nameEl); return; }
       if (this.theater?.selecting && item.target) { this.theater.toggle(item.key); return; }
       if (t.closest('.cv-hf-open')) item.open();
     });
     this.theater = opts.fixed === 'projects' ? new TheaterTools({
       refresh: () => this.refresh(), render: () => this.render(), open: (n) => this.d.openRecent(n),
       isOpen: (n) => this.d.openName?.() === n, forget: (n) => this.d.removeRecent(n),
+      visibleKeys: () => Array.from(this.items.querySelectorAll<HTMLElement>('.cv-hf-item')).filter((n) => !n.hidden).map((n) => n.dataset.key ?? '').filter(Boolean),
+      setManual: () => { this.prefs.sort = 'manual'; this.sort.value = 'manual'; this.save(); this.render(); },
     }, q(this.root, '.cv-hf-bar')) : null;
     if (this.theater) { this.wireTheater(this.theater); new TheaterPreview(this.items); }
     this.chrome();
@@ -159,7 +164,7 @@ export class HomeFiles {
           const inside = s.items.map((n) => byName.get(n)).filter((i): i is Item => !!i);
           if (!inside.length) continue;
           const id = s.id;
-          items.push({ key: `stk:${id}`, name: s.name, kind: `${t('Stack')} · ${inside.length}`, size: inside.reduce((a, i) => a + i.size, 0), when: Math.max(...inside.map((i) => i.when)), missing: false,
+          items.push({ inside: inside.map((i) => i.name), key: `stk:${id}`, name: s.name, kind: `Stack · ${inside.length}`, size: inside.reduce((a, i) => a + i.size, 0), when: Math.max(...inside.map((i) => i.when)), missing: false,
             where: 'Stack', thumb: inside[0].thumb, target: { stack: id }, open: () => this.theater?.enter(id), remove: () => { void this.theater?.ungroup(id); } });
         }
       }
@@ -186,19 +191,27 @@ export class HomeFiles {
   private render(): void {
     const f = this.filter.value.trim().toLowerCase(), sort = this.prefs.sort;
     const th = this.theater;
-    const shown = this.all.filter((i) => (!f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f) && (!th || !i.target || (i.target.stack ? !th.current : th.visible(i.target.movie ?? ''))));
+    // a stack matches when its own name or any movie inside it does
+    const matches = (i: Item): boolean => !f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f || !!i.inside?.some((n) => n.toLowerCase().includes(f));
+    const inView = (i: Item): boolean => !th || !i.target || (i.target.stack ? !th.current : th.visible(i.target.movie ?? ''));
+    const shown = this.all.filter((i) => matches(i) && inView(i));
     setClass(this.root, 'is-selecting', !!th?.selecting);
     if (sort === 'name') shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     else if (sort === 'size') shown.sort((a, b) => b.size - a.size);
     else if (sort === 'kind') shown.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
     else if (sort === 'manual') {
       // the person's own order; anything new sits first, newest first
-      const order = readOrder();
+      const order = th ? th.orderOf() : [];
       const at = (k: string): number => { const i = order.indexOf(k); return i < 0 ? -1 : i; };
       shown.sort((a, b) => at(a.key) - at(b.key) || b.when - a.when);
     } else if (this.prefs.tab !== 'recent') shown.sort((a, b) => b.when - a.when);
     if (this.opts.limit) shown.splice(this.opts.limit);
-    patchList(this.items, shown, { key: (i) => i.key, create: (i) => this.row(i), update: (n, i) => this.fillRow(n, i) });
+    if (th && !this.opts.limit) {
+      // Theater: every card stays mounted and keyed; those out of view (another stack, the filter) are hidden in place
+      const on = new Set(shown.map((i) => i.key));
+      patchList(this.items, [...shown, ...this.all.filter((i) => !on.has(i.key))], { key: (i) => i.key, create: (i) => this.row(i), update: (n, i) => this.fillRow(n, i) });
+      for (const n of Array.from(this.items.children) as HTMLElement[]) { const off = !on.has(n.dataset.key ?? ''); if (n.hidden !== off) n.hidden = off; }
+    } else patchList(this.items, shown, { key: (i) => i.key, create: (i) => this.row(i), update: (n, i) => this.fillRow(n, i) });
     const none = this.all.length === 0 ? (this.prefs.tab === 'recent' ? 'Movies you open or save appear here.' : this.prefs.tab === 'projects' ? 'No movies in the library yet. Save a movie to add it.' : 'Exports appear here once you export a movie.') : 'No files match the filter.';
     setText(this.empty, none);
     setHidden(this.empty, shown.length > 0);
@@ -217,67 +230,18 @@ export class HomeFiles {
       e.preventDefault();
       th.show(hit.item.target, e.clientX, e.clientY);
     });
-    this.items.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse') return;
-      const hit = itemOf(e.target);
-      if (!hit?.item.target) return;
-      const target = hit.item.target, x = e.clientX, y = e.clientY;
-      window.clearTimeout(this.pressTimer);
-      this.pressTimer = window.setTimeout(() => { th.suppressClick = true; th.show(target, x, y); }, 550);
+    // Hold or drag a card to carry it (or the selection); a touch hold released in place shows the menu.
+    new TheaterCarry(this.items, th, {
+      target: (k) => this.all.find((i) => i.key === k)?.target,
+      list: () => this.prefs.view === 'list',
+      menu: (target, x, y) => th.show(target, x, y),
     });
-    for (const ev of ['pointerup', 'pointercancel', 'pointermove'] as const) this.items.addEventListener(ev, () => window.clearTimeout(this.pressTimer));
-    this.items.addEventListener('dragstart', (e) => {
-      const hit = itemOf(e.target);
-      if (!hit?.item.target?.movie || !e.dataTransfer) { e.preventDefault(); return; }
-      e.dataTransfer.setData('text/plain', hit.item.key);
-      e.dataTransfer.effectAllowed = 'move';
-      setClass(hit.row, 'is-dragging', true);
-    });
-    this.items.addEventListener('dragend', () => {
-      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop'))) { n.classList.remove('is-dragging'); n.classList.remove('is-drop'); }
-    });
-    this.items.addEventListener('dragover', (e) => {
-      const hit = itemOf(e.target);
-      if (!hit || hit.row.classList.contains('is-dragging')) return;
-      e.preventDefault();
-      for (const n of Array.from(this.items.querySelectorAll('.is-drop, .is-before, .is-after'))) if (n !== hit.row) n.classList.remove('is-drop', 'is-before', 'is-after');
-      // the edges of a movie reorder, its middle stacks
-      const r = hit.row.getBoundingClientRect(), f = (e.clientX - r.left) / Math.max(1, r.width);
-      const side = f < 0.25 ? 'before' : f > 0.75 ? 'after' : null;
-      setClass(hit.row, 'is-before', side === 'before');
-      setClass(hit.row, 'is-after', side === 'after');
-      setClass(hit.row, 'is-drop', side === null);
-    });
-    this.items.addEventListener('drop', (e) => {
-      const hit = itemOf(e.target);
-      if (!hit?.item.target) return;
-      e.preventDefault();
-      const key = e.dataTransfer?.getData('text/plain') ?? '';
-      const side = hit.row.classList.contains('is-before') ? 'before' : hit.row.classList.contains('is-after') ? 'after' : null;
-      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop, .is-before, .is-after'))) n.classList.remove('is-dragging', 'is-drop', 'is-before', 'is-after');
-      if (side && key && key !== hit.item.key) { this.moveTo(key, hit.item.key, side); return; }
-      void th.dropOn(key, hit.item.target);
-    });
-  }
-
-  /** Manual ordering: the dragged movie goes before or after another; the sort turns to Manual. */
-  private moveTo(key: string, over: string, side: 'before' | 'after'): void {
-    const shown = Array.from(this.items.querySelectorAll<HTMLElement>('.cv-hf-item')).map((n) => n.dataset.key ?? '').filter(Boolean);
-    const order = shown.filter((k) => k !== key);
-    const at = order.indexOf(over);
-    if (at < 0) return;
-    order.splice(side === 'before' ? at : at + 1, 0, key);
-    try { localStorage.setItem(ORDER, JSON.stringify(order)); } catch { /* lasts this session only */ }
-    this.prefs.sort = 'manual';
-    this.sort.value = 'manual';
-    this.save();
-    this.render();
   }
 
   private row(i: Item): HTMLElement {
     const n = el(`<div class="cv-hf-item" role="listitem">
       <span class="cv-hf-check">${icon('check', 12)}</span>
-      <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" hidden><span class="cv-hf-glyph">${icon('fileImage', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
+      <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" draggable="false" hidden><span class="cv-hf-glyph">${icon('fileImage', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
       <button class="cv-hf-remove" type="button" title="Remove from Recent" aria-label="Remove from Recent">${icon('close', 12)}</button>
     </div>`);
     this.fillRow(n, i);
@@ -286,14 +250,13 @@ export class HomeFiles {
 
   private fillRow(n: HTMLElement, i: Item): void {
     setText(q(n, '.cv-hf-name'), i.name);
-    setText(q(n, '.cv-hf-kind'), i.kind);
+    setText(q(n, '.cv-hf-kind'), i.kind.startsWith('Stack · ') ? `${t('Stack')}${i.kind.slice(5)}` : i.kind);
     setText(q(n, '.cv-hf-size'), i.missing ? 'Missing' : sizeText(i.size));
     setText(q(n, '.cv-hf-when'), whenText(i.when));
     setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : i.where);
     setClass(n, 'is-missing', i.missing);
     setClass(n, 'is-selected', !!this.theater?.selected.has(i.key));
     setClass(n, 'is-stack', !!i.target?.stack);
-    if (this.theater && i.target && (n.draggable) !== !!i.target.movie) n.draggable = !!i.target.movie;
     setHidden(q(n, '.cv-hf-remove'), !i.remove);
     const rm = this.prefs.tab === 'recent' ? 'Remove from Recent' : 'Delete';
     setTitle(q(n, '.cv-hf-remove'), rm);

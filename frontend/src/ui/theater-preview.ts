@@ -7,6 +7,7 @@ import { PREVIEW_CELLS } from './preview-strip';
 interface Strip { bitmap: ImageBitmap; cw: number; ch: number }
 
 const STEP_MS = 140;
+const STRIP_CAP = 24;
 
 export class TheaterPreview {
   private readonly strips = new Map<string, Strip | null>();
@@ -34,7 +35,7 @@ export class TheaterPreview {
     this.row = row;
     const name = key.slice(4), ck = `${name}|${row.dataset.thumb ?? ''}`;
     const have = this.strips.get(ck);
-    if (have) { this.play(row, have); return; }
+    if (have) { this.strips.delete(ck); this.strips.set(ck, have); this.play(row, have); return; }   // re-insert: most recent
     if (have === null || this.loading.has(ck)) return;
     this.loading.add(ck);
     void api.preview(name).then(async (blob) => {
@@ -43,9 +44,24 @@ export class TheaterPreview {
       if (blob) {
         try { const bitmap = await createImageBitmap(blob); strip = { bitmap, cw: Math.round(bitmap.width / PREVIEW_CELLS), ch: bitmap.height }; } catch { strip = null; }
       }
-      this.strips.set(ck, strip);
+      this.store(name, ck, strip);
       if (strip && this.row === row) this.play(row, strip);
     });
+  }
+
+  /** Keep one entry per movie name (a new thumb key replaces the old) and at most STRIP_CAP in all. */
+  private store(name: string, ck: string, strip: Strip | null): void {
+    for (const k of [...this.strips.keys()]) {
+      if (k !== ck && k.startsWith(`${name}|`)) { this.strips.get(k)?.bitmap.close(); this.strips.delete(k); }
+    }
+    this.strips.get(ck)?.bitmap.close();
+    this.strips.delete(ck);
+    this.strips.set(ck, strip);
+    while (this.strips.size > STRIP_CAP) {
+      const oldest = this.strips.keys().next().value as string;
+      this.strips.get(oldest)?.bitmap.close();
+      this.strips.delete(oldest);
+    }
   }
 
   private play(row: HTMLElement, s: Strip): void {
@@ -64,7 +80,7 @@ export class TheaterPreview {
     if (!g) return;
     this.cell = 0;
     const draw = (): void => {
-      g.drawImage(s.bitmap, this.cell * s.cw, 0, s.cw, s.ch, 0, 0, s.cw, s.ch);
+      try { g.drawImage(s.bitmap, this.cell * s.cw, 0, s.cw, s.ch, 0, 0, s.cw, s.ch); } catch { this.leave(); return; }   // bitmap closed by eviction
       if (cv.hidden) cv.hidden = false;
       this.cell = (this.cell + 1) % PREVIEW_CELLS;
     };

@@ -109,6 +109,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
       c.fill();
       const cy = ry + row.h / 2;
       const frames = laneFrames(slot.lane, row.channel ?? undefined);
+      let nameAt: number | null = null;
       c.save();
       c.beginPath();
       c.rect(0, ry, g.width, row.h);
@@ -127,9 +128,8 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           c.globalAlpha = 1;
           tx += tw + 6;
         }
-        c.fillStyle = p.text;
-        c.textAlign = 'left';
-        c.fillText(row.label, tx, cy);
+        // drawn after the key diamonds, on a chip, so dense keys never run over the name
+        nameAt = tx;
       }
       if (hasChev(slot, row, g)) {
         const cx = chevX(slot, g);
@@ -172,6 +172,17 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           c.lineWidth = 1;
         }
         drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy);
+      }
+      if (nameAt !== null) {
+        const tw = c.measureText(row.label).width;
+        c.fillStyle = p.bar;
+        c.globalAlpha = 0.92;
+        round(c, nameAt - 4, cy - 9, tw + 8, 18, 6);
+        c.fill();
+        c.globalAlpha = 1;
+        c.fillStyle = p.text;
+        c.textAlign = 'left';
+        c.fillText(row.label, nameAt, cy);
       }
       if (row.channel) {
         const lx = Math.max(g.x0, 0) + 12;

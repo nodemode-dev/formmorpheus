@@ -6,6 +6,8 @@ import { t, tn } from './i18n';
 import { brushStore, IMPORTED_ID, LIB_IMPORTED, type BrushLib, type BrushSet } from './brush-store';
 import { renderBrushPreview } from '../paint/preview';
 import { importBrushFile } from '../io/brush-import';
+import { exportBrush, exportBrushLib, exportBrushSet, fileNameFor } from '../io/brush-export';
+import { downloadBlob } from '../io/api';
 import type { Brush } from '../paint/types';
 
 const RECENT_KEY = 'formmorpheus.brushes.recent';
@@ -23,12 +25,13 @@ const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>';
 
 type Tool = 'paint' | 'smudge' | 'erase';
-type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib';
+type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib' | 'export' | 'exportlib';
 
 const LABEL: Record<Act, string> = {
   rename: 'Rename', duplicate: 'Duplicate', delete: 'Delete', up: 'Move up', down: 'Move down',
   pressure: 'Pressure & Smoothing', import: 'Import brushes', newset: 'New set', restore: 'Restore starter brushes',
   newlib: 'New library', renamelib: 'Rename library', deletelib: 'Delete library',
+  export: 'Export brush', exportlib: 'Export library',
 };
 
 const ICON_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
@@ -160,6 +163,7 @@ export class BrushPanel {
       if (!r) return;
       this.closeLibMenu();
       if (r.dataset.new) { this.newLib(); return; }
+      if (r.dataset.export) { this.exportLib(brushStore.activeLib()); return; }
       if (r.dataset.lib) { this.searchEl.value = ''; brushStore.setActiveLib(r.dataset.lib); this.pickFirstSet(); }
     });
     this.setsEl.addEventListener('click', (e) => {
@@ -186,6 +190,7 @@ export class BrushPanel {
       const row = t.closest<HTMLElement>('.fm-bp-row'), set = t.closest<HTMLElement>('.fm-bp-set');
       if (row?.dataset.key) this.openMenu(e.clientX, e.clientY, { kind: 'brush', id: row.dataset.key });
       else if (set && set.dataset.set && set.dataset.set !== RECENT) this.openMenu(e.clientX, e.clientY, { kind: 'set', id: set.dataset.set });
+      else if (t.closest('.fm-bp-libname')) this.openMenu(e.clientX, e.clientY, { kind: 'panel', id: '' });
     });
     this.menuEl.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('.fm-bp-mi');
@@ -389,16 +394,16 @@ export class BrushPanel {
   private openMenu(x: number, y: number, target: { kind: 'brush' | 'set' | 'panel'; id: string }): void {
     this.menuTarget = target;
     let acts: Act[];
-    if (target.kind === 'brush') acts = ['pressure', 'rename', 'duplicate', 'up', 'down', 'delete'];
-    else if (target.kind === 'set') acts = ['rename', 'duplicate', 'up', 'down', 'delete'];
-    else acts = ['import', 'newset', 'newlib', 'renamelib', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
-    if (target.kind === 'set' && target.id === IMPORTED_ID) acts = ['up', 'down'];
+    if (target.kind === 'brush') acts = ['pressure', 'rename', 'duplicate', 'export', 'up', 'down', 'delete'];
+    else if (target.kind === 'set') acts = ['rename', 'duplicate', 'export', 'up', 'down', 'delete'];
+    else acts = ['import', 'newset', 'newlib', 'renamelib', 'exportlib', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
+    if (target.kind === 'set' && target.id === IMPORTED_ID) acts = ['export', 'up', 'down'];
     this.menuItems.forEach((b, i) => {
       const a = acts[i];
       setHidden(b, !a);
       if (!a) return;
       b.dataset.act = a;
-      setText(b, target.kind === 'set' && a === 'delete' ? 'Delete set' : target.kind === 'set' && a === 'rename' ? 'Rename set' : target.kind === 'set' && a === 'duplicate' ? 'Duplicate set' : LABEL[a]);
+      setText(b, target.kind === 'set' && a === 'delete' ? 'Delete set' : target.kind === 'set' && a === 'rename' ? 'Rename set' : target.kind === 'set' && a === 'duplicate' ? 'Duplicate set' : target.kind === 'set' && a === 'export' ? 'Export set' : LABEL[a]);
       setClass(b, 'is-danger', a === 'delete');
     });
     const host = this.root.getBoundingClientRect();
@@ -425,11 +430,11 @@ export class BrushPanel {
   private toggleLibMenu(anchor: HTMLElement): void {
     if (!this.libMenuEl.hidden) { this.closeLibMenu(); return; }
     const active = brushStore.activeLib();
-    const rows: { id: string; name: string; add: boolean }[] = [...brushStore.libs().map((l: BrushLib) => ({ id: l.id, name: l.name, add: false })), { id: 'new', name: 'New library', add: true }];
+    const rows: { id: string; name: string; add: boolean }[] = [...brushStore.libs().map((l: BrushLib) => ({ id: l.id, name: l.name, add: false })), { id: 'new', name: 'New library', add: true }, { id: 'export', name: 'Export library', add: true }];
     patchList(this.libMenuEl, rows, {
       key: (r) => r.id,
       create: (r) => {
-        const row = el<HTMLElement>(r.add ? '<button type="button" class="fm-bp-li" data-new="1"></button>' : `<button type="button" class="fm-bp-li" data-lib="${r.id}"></button>`);
+        const row = el<HTMLElement>(r.id === 'export' ? '<button type="button" class="fm-bp-li" data-export="1"></button>' : r.add ? '<button type="button" class="fm-bp-li" data-new="1"></button>' : `<button type="button" class="fm-bp-li" data-lib="${r.id}"></button>`);
         setText(row, r.name);
         setClass(row, 'is-active', r.id === active);
         return row;
@@ -459,6 +464,7 @@ export class BrushPanel {
       if (act === 'import') this.fileEl.click();
       else if (act === 'newset') this.newSet();
       else if (act === 'newlib') this.newLib();
+      else if (act === 'exportlib') this.exportLib(brushStore.activeLib());
       else if (act === 'renamelib') this.beginRename('lib', brushStore.activeLib());
       else if (act === 'deletelib') { brushStore.removeLib(brushStore.activeLib()); this.pickFirstSet(); }
       else if (act === 'restore') { brushStore.resetAll(); this.activeSet = brushStore.sets()[0]?.id ?? RECENT; this.sync(); this.note('Starter brushes restored'); }
@@ -468,16 +474,33 @@ export class BrushPanel {
       if (act === 'pressure') this.openCard(t.id);
       else if (act === 'rename') this.beginRename('brush', t.id);
       else if (act === 'duplicate') brushStore.duplicate(t.id);
+      else if (act === 'export') { const b = brushStore.brush(t.id); if (b) this.saveFile(fileNameFor(b.name, 'brush'), exportBrush(b)); }
       else if (act === 'delete') brushStore.remove(t.id);
       else if (act === 'up') brushStore.step(t.id, -1);
       else if (act === 'down') brushStore.step(t.id, 1);
       return;
     }
-    if (act === 'rename') this.beginRename('set', t.id);
+    if (act === 'export') {
+      const s = brushStore.set(t.id), list = brushStore.brushesOf(t.id);
+      if (s && list.length) this.saveFile(fileNameFor(s.name, 'brushset'), exportBrushSet(s.name, list)); else this.note('No brushes in this set');
+    } else if (act === 'rename') this.beginRename('set', t.id);
     else if (act === 'duplicate') { const id = brushStore.duplicateSet(t.id); if (id) this.activeSet = id; this.sync(); }
     else if (act === 'delete') brushStore.removeSet(t.id);
     else if (act === 'up') brushStore.stepSet(t.id, -1);
     else if (act === 'down') brushStore.stepSet(t.id, 1);
+  }
+
+  private exportLib(id: string): void {
+    const lib = brushStore.lib(id);
+    if (!lib) return;
+    const sets = brushStore.setsOf(id).map((s) => ({ name: s.name, brushes: brushStore.brushesOf(s.id) })).filter((s) => s.brushes.length);
+    if (!sets.length) { this.note(t('No brushes found')); return; }
+    this.saveFile(fileNameFor(lib.name, 'brushlib'), exportBrushLib(lib.name, sets));
+  }
+
+  private saveFile(name: string, bytes: Uint8Array): void {
+    downloadBlob(new Blob([bytes.slice()], { type: 'application/zip' }), name);
+    this.note(`${t('Exported')} ${name}`);
   }
 
   private newSet(): void {
@@ -521,6 +544,9 @@ export class BrushPanel {
           brushStore.addImportedLibrary(r.libName ?? f.name.replace(/\.[^.]+$/, ''), r.sets);
           added += r.brushes.length;
           this.activeSet = brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT;
+        } else if (r.brushes.length && r.setName) {
+          const sid = brushStore.addImportedSet(r.setName, r.brushes);
+          brushStore.setActiveLib(LIB_IMPORTED); this.activeSet = sid; added += r.brushes.length;
         } else if (r.brushes.length) {
           plain = true; brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
       } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
