@@ -2,13 +2,19 @@ import type { Engine } from '../engine/engine';
 import { end, locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import { fitView, type Renderer, type View } from '../engine/render';
-import type { Content, Movie, Transform } from '../engine/types';
+import * as keyOps from '../engine/key-ops';
+import { animate, laneOf } from '../engine/keys';
+import type { Content, Movie } from '../engine/types';
+import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setHidden, setText } from './dom';
 
+/** Where a content sits on the Stage: its transform, or its animated values in Keyframe and Perform modes. */
+interface Pose { x: number; y: number; sx: number; sy: number; rot: number }
+
 type Grab =
-  | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Transform>; tag: string }
-  | { kind: 'scale'; id: string; base: Transform; d0: number; tag: string }
-  | { kind: 'rotate'; id: string; base: Transform; a0: number; tag: string };
+  | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Pose>; tag: string }
+  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string }
+  | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string };
 
 const SNAP_PX = 8;
 
@@ -99,13 +105,41 @@ export class StageView {
     this.drawBox(m);
   }
 
+  private keyed(): boolean { return this.engine.mode !== 'compose'; }
+
+  private pose(c: Content): Pose {
+    if (this.keyed()) {
+      const a = animate(c, this.engine.frame - c.start);
+      return { x: a.x, y: a.y, sx: a.scaleX, sy: a.scaleY, rot: a.rotation };
+    }
+    const t = c.transform;
+    return { x: t.x, y: t.y, sx: t.scale, sy: t.scale, rot: t.rotation };
+  }
+
+  /** Write Move keys at the Playhead for each content (creating the lane the first time). */
+  private writeKeys(label: string, ids: string[], vals: (id: string) => Record<string, number>, tag: string): void {
+    const f = this.engine.frame;
+    const ease = newKeyState().lastEase;
+    this.engine.run(label, (mv) => {
+      let out = mv;
+      for (const id of ids) {
+        const at = locate(out, id);
+        if (!at) continue;
+        const local = f - at.content.start;
+        if (local < 0 || local >= at.content.duration) continue;
+        out = ops.updateContent(out, id, (c) => keyOps.setKeys(laneOf(c, 'move') ? c : ensureLane(c, 'move', local, mv.addKeyAtStart, ease), 'move', local, vals(id)));
+      }
+      return out;
+    }, tag);
+  }
+
   private corners(m: Movie, c: Content): [number, number][] {
     const v = this.view as View;
-    const t = c.transform;
+    const t = this.pose(c);
     const size = this.extent(m, c);
     const cx = v.ox + (m.width / 2 + t.x) * v.scale, cy = v.oy + (m.height / 2 + t.y) * v.scale;
-    const hw = (size.w / 2) * t.scale * v.scale, hh = (size.h / 2) * t.scale * v.scale;
-    const a = (t.rotation * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
+    const hw = (size.w / 2) * t.sx * v.scale, hh = (size.h / 2) * t.sy * v.scale;
+    const a = (t.rot * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [cx + x * cos - y * sin, cy + x * sin + y * cos]);
   }
 
@@ -121,8 +155,9 @@ export class StageView {
 
   private drawBox(m: Movie): void {
     const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
-    const show = this.engine.mode !== 'perform' && sel.length === 1 && !!this.view;
+    const show = sel.length === 1 && !!this.view;
     hideSvg(this.box, !show);
+    setClass(this.box as unknown as HTMLElement, 'is-keyed', this.keyed());
     if (!show) return;
     const pts = this.corners(m, sel[0]);
     q(this.box as unknown as HTMLElement, '.fm-box-line').setAttribute('points', pts.map((p) => p.map((n) => n.toFixed(1)).join(',')).join(' '));
@@ -147,24 +182,24 @@ export class StageView {
   private down(e: PointerEvent): void {
     const m = this.engine.movie;
     const v = this.view;
-    if (!m || !v || e.button !== 0 || this.engine.mode === 'perform') return;
+    if (!m || !v || e.button !== 0) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
     const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
     const tag = `stage-${Date.now()}`;
     if (sel.length === 1 && target.classList.contains('fm-box-rot')) {
-      const c = sel[0], cx = v.ox + (m.width / 2 + c.transform.x) * v.scale, cy = v.oy + (m.height / 2 + c.transform.y) * v.scale;
-      this.grab = { kind: 'rotate', id: c.id, base: c.transform, a0: Math.atan2(y - cy, x - cx), tag };
+      const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + p.x) * v.scale, cy = v.oy + (m.height / 2 + p.y) * v.scale;
+      this.grab = { kind: 'rotate', id: c.id, base: p, a0: Math.atan2(y - cy, x - cx), tag };
     } else if (sel.length === 1 && target.classList.contains('fm-box-h')) {
-      const c = sel[0], cx = v.ox + (m.width / 2 + c.transform.x) * v.scale, cy = v.oy + (m.height / 2 + c.transform.y) * v.scale;
-      this.grab = { kind: 'scale', id: c.id, base: c.transform, d0: Math.hypot(x - cx, y - cy) || 1, tag };
+      const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + p.x) * v.scale, cy = v.oy + (m.height / 2 + p.y) * v.scale;
+      this.grab = { kind: 'scale', id: c.id, base: p, d0: Math.hypot(x - cx, y - cy) || 1, tag };
     } else {
       const hitId = this.pick(m, x, y);
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
       if (!hitId && !e.shiftKey) { this.engine.select([]); return; }
       const ids = this.engine.selected.filter((c) => this.engine.isOver(c)).map((c) => c.id);
       if (!ids.length) return;
-      const base = new Map(ids.map((id) => [id, (locate(m, id) as NonNullable<ReturnType<typeof locate>>).content.transform]));
+      const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
       this.grab = { kind: 'move', x0: x, y0: y, ids, base, tag };
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -187,7 +222,7 @@ export class StageView {
     const [x, y] = this.local(e);
     if (g.kind === 'move') {
       let dx = (x - g.x0) / v.scale, dy = (y - g.y0) / v.scale;
-      const first = g.base.get(g.ids[0]) as Transform;
+      const first = g.base.get(g.ids[0]) as Pose;
       let snapV: number | null = null, snapH: number | null = null;
       if (!e.altKey) {
         const tol = SNAP_PX / v.scale;
@@ -196,23 +231,36 @@ export class StageView {
         for (const target of [0, -m.height / 4, m.height / 4]) if (Math.abs(ny - target) < tol) { dy = target - first.y; snapH = target; break; }
       }
       this.snapLines(m, v, snapV, snapH);
+      if (this.keyed()) {
+        this.writeKeys('Move Keyframe', g.ids, (id) => { const b = g.base.get(id) as Pose; return { x: Math.round(b.x + dx), y: Math.round(b.y + dy), scaleX: b.sx, scaleY: b.sy, rotation: b.rot }; }, g.tag);
+        return;
+      }
       this.engine.run('Move', (mv) => {
         let out = mv;
-        for (const id of g.ids) { const b = g.base.get(id) as Transform; out = ops.patchContent(out, [id], { transform: { x: Math.round(b.x + dx), y: Math.round(b.y + dy) } }); }
+        for (const id of g.ids) { const b = g.base.get(id) as Pose; out = ops.patchContent(out, [id], { transform: { x: Math.round(b.x + dx), y: Math.round(b.y + dy) } }); }
         return out;
       }, g.tag);
     } else if (g.kind === 'scale') {
-      const c = locate(m, g.id)?.content;
-      if (!c) return;
-      const cx = v.ox + (m.width / 2 + c.transform.x) * v.scale, cy = v.oy + (m.height / 2 + c.transform.y) * v.scale;
-      const k = Math.max(0.01, (Math.hypot(x - cx, y - cy) / g.d0) * g.base.scale);
+      const b = g.base;
+      const cx = v.ox + (m.width / 2 + b.x) * v.scale, cy = v.oy + (m.height / 2 + b.y) * v.scale;
+      const ratio = Math.hypot(x - cx, y - cy) / g.d0;
+      if (this.keyed()) {
+        const sx = Math.round(Math.max(0.01, b.sx * ratio) * 1000) / 1000, sy = Math.round(Math.max(0.01, b.sy * ratio) * 1000) / 1000;
+        this.writeKeys('Scale Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: sx, scaleY: sy, rotation: b.rot }), g.tag);
+        return;
+      }
+      const k = Math.max(0.01, ratio * b.sx);
       this.engine.run('Scale', (mv) => ops.patchContent(mv, [g.id], { transform: { scale: Math.round(k * 1000) / 1000 } }), g.tag);
     } else {
-      const c = locate(m, g.id)?.content;
-      if (!c) return;
-      const cx = v.ox + (m.width / 2 + c.transform.x) * v.scale, cy = v.oy + (m.height / 2 + c.transform.y) * v.scale;
-      let deg = g.base.rotation + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
+      const b = g.base;
+      const cx = v.ox + (m.width / 2 + b.x) * v.scale, cy = v.oy + (m.height / 2 + b.y) * v.scale;
+      let deg = b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
       if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      if (this.keyed()) {
+        const r = Math.round(deg * 10) / 10;
+        this.writeKeys('Rotate Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: b.sx, scaleY: b.sy, rotation: r }), g.tag);
+        return;
+      }
       deg = ((deg % 360) + 540) % 360 - 180;
       this.engine.run('Rotate', (mv) => ops.patchContent(mv, [g.id], { transform: { rotation: Math.round(deg * 10) / 10 } }), g.tag);
     }

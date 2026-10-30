@@ -9,7 +9,7 @@ export const SERVICE_NOTE = 'The engine service saves and opens movies in the li
 const MODE_HINT: Record<string, string> = {
   compose: 'Compose · drag content in time and between tracks, trim its edges, right-click for options',
   perform: 'Perform · keyframes are recorded from live gestures (arrives with Phase 7)',
-  keyframe: 'Keyframe · keyframes and easing are edited here (arrives with Phase 6)',
+  keyframe: 'Keyframe · tap the pill on the Playhead for Action, drag the Stage box to set keys, right-click a lane for easing',
 };
 
 export class StatusBar {

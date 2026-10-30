@@ -3,9 +3,13 @@ import { end, fits, kindName, locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
 import { timecode } from '../engine/time';
-import type { Content, Highlight, Mode, Movie, Track } from '../engine/types';
-import { el, q, setClass, setHidden, setText, setTitle } from './dom';
+import type { Content, Highlight, KeyKind, Mode, Movie, Track } from '../engine/types';
+import * as keyOps from '../engine/key-ops';
+import { kindSpec, laneFrames } from '../engine/keys';
+import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
+import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
+import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
 
 const RULER_H = 28;
 const BLOCK_H = 44;
@@ -35,9 +39,13 @@ type Drag =
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'duration'; x0: number; d0: number; tag: string }
-  | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number };
+  | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number }
+  | { kind: 'key'; id: string; lk: KeyKind; channel: string | null; from0: number; cur: number; base: Content; x0: number; tag: string };
 
 interface Palette {
+  keyBar: string;
+  keyRow: string;
+  onAccent: string;
   lane: string;
   laneAlt: string;
   block: string;
@@ -75,7 +83,7 @@ export class TimelineView {
     </div>
     <div class="fm-tl-body">
       <canvas class="fm-tl-ruler" aria-label="Ruler"></canvas>
-      <div class="fm-tl-lanes"><canvas class="fm-tl-tracks" aria-label="Tracks"></canvas><button class="fm-edit-pill" type="button" hidden></button></div>
+      <div class="fm-tl-lanes"><canvas class="fm-tl-tracks" aria-label="Tracks"></canvas><button class="fm-edit-pill" type="button" hidden></button><button class="fm-key-pill" type="button" hidden aria-label="Action" title="Action"><span class="fm-key-glyph"></span></button></div>
       <div class="fm-tl-empty" hidden><p>Use the plus button to add a drawing, a flipbook, text or a picture, or drop pictures here.</p></div>
       <div class="fm-modes" role="tablist" aria-label="Mode">
         <button class="fm-mode" type="button" role="tab" data-mode="compose">${icon('compose', 18)}<span>Compose</span></button>
@@ -89,6 +97,19 @@ export class TimelineView {
   private readonly tracksCanvas = q<HTMLCanvasElement>(this.root, '.fm-tl-tracks');
   private readonly lanes = q(this.root, '.fm-tl-lanes');
   private readonly editPill = q<HTMLButtonElement>(this.root, '.fm-edit-pill');
+  private readonly keyPill = q<HTMLButtonElement>(this.root, '.fm-key-pill');
+  private readonly keyGlyph = q(this.root, '.fm-key-glyph');
+  private readonly keyState = newKeyState();
+  private readonly actionMenu: ActionMenu;
+  private readonly laneMenu: LaneMenu;
+  private keyPillAt = '';
+  private longPress = 0;
+  private pressAt: [number, number] = [0, 0];
+  private tops: number[] = [];
+  private rowH: number[] = [];
+  private totalH = 0;
+  private layoutFor: Movie | null = null;
+  private layoutLanes = false;
   private readonly empty = q(this.root, '.fm-tl-empty');
   private readonly readout = q(this.root, '.fm-frame-readout');
   private readonly multiBtn = q<HTMLButtonElement>(this.root, '[data-act="multi"]');
@@ -109,6 +130,10 @@ export class TimelineView {
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
+    this.actionMenu = new ActionMenu(engine, this.keyState);
+    this.laneMenu = new LaneMenu(engine, this.keyState);
+    setGlyphLoadHandler(() => this.schedule());
+    this.keyPill.addEventListener('click', () => this.actionMenu.open(this.keyPill));
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(this.lanes);
     ro.observe(this.ruler);
@@ -173,10 +198,43 @@ export class TimelineView {
 
   private fx(frame: number): number { return LEFT + (frame - this.start) * this.ppf; }
   private xf(x: number): number { return this.start + (x - LEFT) / this.ppf; }
-  private laneTop(i: number): number { return TOP_PAD + i * STRIDE - this.scrollY; }
-  private laneAt(y: number): number { return Math.floor((y + this.scrollY - TOP_PAD) / STRIDE); }
+  /** Row offsets: track rows grow by the height of their keyframe lanes in Keyframe and Perform modes. */
+  private layout(m: Movie): void {
+    const lanes = this.engine.mode !== 'compose';
+    if (this.layoutFor === m && this.layoutLanes === lanes) return;
+    this.layoutFor = m;
+    this.layoutLanes = lanes;
+    this.tops = [];
+    this.rowH = [];
+    let y = 0;
+    for (const t of m.tracks) {
+      let extra = 0;
+      if (lanes) for (const c of t.content) extra = Math.max(extra, lanesHeight(c));
+      this.tops.push(y);
+      this.rowH.push(STRIDE + extra);
+      y += STRIDE + extra;
+    }
+    this.totalH = y;
+  }
+
+  private laneTop(i: number): number {
+    const m = this.engine.movie;
+    if (m) this.layout(m);
+    return TOP_PAD + (this.tops[i] ?? i * STRIDE) - this.scrollY;
+  }
+
+  private laneAt(y: number): number {
+    const m = this.engine.movie;
+    const v = y + this.scrollY - TOP_PAD;
+    if (!m) return Math.floor(v / STRIDE);
+    this.layout(m);
+    if (v < 0) return Math.floor(v / STRIDE);
+    for (let i = 0; i < this.tops.length; i++) if (v < this.tops[i] + this.rowH[i]) return i;
+    return this.tops.length + Math.floor((v - this.totalH) / STRIDE);
+  }
 
   private syncMode(m: Mode): void {
+    if (m !== 'keyframe') this.actionMenu.hide();
     for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-mode'))) {
       const on = b.dataset.mode === m;
       setClass(b, 'is-active', on);
@@ -240,6 +298,7 @@ export class TimelineView {
     this.pal = {
       lane: v('--fm-lane', '#1b1b1f'), laneAlt: v('--fm-lane-alt', '#202026'), block: v('--fm-block', '#2c2c33'), blockLine: v('--fm-block-line', '#3a3a44'),
       text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#f97316'), playhead: v('--fm-playhead', '#f2f2f2'),
+      keyBar: v('--fm-key-bar', '#1e1e22'), keyRow: v('--fm-key-row', '#1a1a1e'), onAccent: v('--text-on-accent', '#ffffff'),
       ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-chip', 'rgba(10,10,12,.72)'),
       hl: {
         none: v('--fm-block', '#2c2c33'), red: v('--fm-hl-red', '#e5484d'), orange: v('--fm-hl-orange', '#f97316'), yellow: v('--fm-hl-yellow', '#e8c547'),
@@ -258,9 +317,11 @@ export class TimelineView {
     this.drawTracks(m);
     setText(this.readout, `${timecode(this.engine.frame, m.fps)} · ${this.engine.frame + 1} / ${m.duration}`);
     this.placePill(m);
+    this.placeKeyPill(m);
   }
 
   private clear(): void {
+    setHidden(this.keyPill, true);
     for (const c of [this.ruler, this.tracksCanvas]) (c.getContext('2d') as CanvasRenderingContext2D).clearRect(0, 0, c.width, c.height);
     setHidden(this.editPill, true);
   }
@@ -325,14 +386,17 @@ export class TimelineView {
     const endX = this.fx(m.duration);
     const sel = new Set(this.engine.selection.content);
     const rows = this.visibleRows(m);
+    const lanes = this.engine.mode !== 'compose';
+    const lp = { bar: p.keyBar, row: p.keyRow, accent: p.accent, text: p.text, onAccent: p.onAccent };
     for (let i = 0; i < rows; i++) {
       const y = this.laneTop(i);
-      if (y + BLOCK_H < 0 || y > this.height) continue;
+      if (y + this.rowH[i] < 0 || y > this.height) continue;
       const t = m.tracks[i];
       c.fillStyle = t.id === this.engine.selection.track ? p.laneAlt : p.lane;
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
+      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height);
     }
     if (endX < this.width) {
       c.fillStyle = p.end;
@@ -340,7 +404,7 @@ export class TimelineView {
       c.fillRect(endX + 6, 0, this.width - endX, this.height);
       c.globalAlpha = 1;
       c.fillStyle = p.tick;
-      this.round(c, endX + 2, TOP_PAD - this.scrollY, 5, Math.max(BLOCK_H, rows * STRIDE - LANE_GAP), 3);
+      this.round(c, endX + 2, TOP_PAD - this.scrollY, 5, Math.max(BLOCK_H, this.totalH - LANE_GAP), 3);
       c.fill();
     }
     if (this.drag?.kind === 'box') {
@@ -353,11 +417,54 @@ export class TimelineView {
     const px = Math.round(this.fx(this.engine.frame)) + 0.5;
     c.strokeStyle = this.engine.mode === 'perform' ? p.accent : p.playhead;
     c.lineWidth = 1.5;
+    const spot = this.keySpot(m);
+    const solidTo = spot ? Math.max(0, spot.y - 20) : this.height;
     c.beginPath();
     c.moveTo(px, 0);
-    c.lineTo(px, this.height);
+    c.lineTo(px, solidTo);
     c.stroke();
+    if (spot && solidTo < this.height) {
+      c.lineWidth = 1;
+      c.globalAlpha = 0.4;
+      c.beginPath();
+      c.moveTo(px, solidTo);
+      c.lineTo(px, this.height);
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     c.lineWidth = 1;
+  }
+
+  private geom(item: Content): LaneGeom {
+    return { x: (f) => this.fx(item.start + f), x0: this.fx(item.start), x1: this.fx(end(item)), width: this.width };
+  }
+
+  /** Centre of the Playhead pill: on the first lane row of the selected content, Keyframe mode only. */
+  private keySpot(m: Movie): { c: Content; x: number; y: number } | null {
+    if (this.engine.mode !== 'keyframe') return null;
+    const sel = this.engine.selected;
+    const item = sel.length === 1 ? sel[0] : null;
+    const at = item ? locate(m, item.id) : null;
+    if (!item || !at || !this.engine.isOver(item)) return null;
+    return { c: item, x: Math.round(this.fx(this.engine.frame)) + 0.5, y: this.laneTop(at.trackIndex) + BLOCK_H + LANES_GAP + LANE_H / 2 };
+  }
+
+  private placeKeyPill(m: Movie): void {
+    const spot = this.keySpot(m);
+    if (!spot || spot.x < 0 || spot.x > this.width || spot.y < -20 || spot.y > this.height + 20) {
+      setHidden(this.keyPill, true);
+      this.actionMenu.hide();
+      return;
+    }
+    const local = this.engine.frame - spot.c.start;
+    const keyed = spot.c.keys.find((l) => laneFrames(l).includes(local));
+    const key = keyed ? keyed.kind : 'clapper';
+    setHtml(this.keyGlyph, keyed ? kindSpec(keyed.kind).icon : CLAPPER, key);
+    setClass(this.keyPill, 'is-keyed', !!keyed);
+    const at = `translate(${Math.round(spot.x - 32)}px, ${Math.round(spot.y - 20)}px)`;
+    if (at !== this.keyPillAt) { this.keyPillAt = at; this.keyPill.style.transform = at; }
+    setHidden(this.keyPill, false);
+    this.actionMenu.follow();
   }
 
   private drawBlock(c: CanvasRenderingContext2D, m: Movie, t: Track, item: Content, y: number, selected: boolean, p: Palette): void {
@@ -520,6 +627,8 @@ export class TimelineView {
       this.drag = { kind: 'duration', x0: e.clientX, d0: m.duration, tag: `dur-${Date.now()}` };
       return;
     }
+    const lh = this.laneHit(e);
+    if (lh && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) { this.laneDown(e, lh); return; }
     const additive = this.multi || e.shiftKey || e.metaKey || e.ctrlKey;
     if (h?.item) {
       this.tracksCanvas.setPointerCapture(e.pointerId);
@@ -544,12 +653,82 @@ export class TimelineView {
     this.engine.seek(Math.floor(this.xf(x)));
   }
 
+  private laneHit(e: { clientX: number; clientY: number }): { c: Content; track: Track; hit: LaneHit } | null {
+    const m = this.engine.movie;
+    if (!m || this.engine.mode === 'compose') return null;
+    const r = this.tracksCanvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const i = this.laneAt(y);
+    const t = m.tracks[i];
+    if (!t) return null;
+    const top = this.laneTop(i) + BLOCK_H + LANES_GAP;
+    if (y < top) return null;
+    for (const c of t.content) {
+      if (!c.keys.length) continue;
+      const hit = hitLanes(c, top, x, y, this.geom(c), (px) => this.xf(px) - c.start);
+      if (hit) return { c, track: t, hit };
+    }
+    return null;
+  }
+
+  private laneDown(e: PointerEvent, lh: { c: Content; track: Track; hit: LaneHit }): void {
+    const { c, track, hit } = lh;
+    this.tracksCanvas.setPointerCapture(e.pointerId);
+    if (!this.engine.selection.content.includes(c.id) || this.engine.selection.content.length !== 1) this.engine.select([c.id], track.id);
+    const last = c.duration - 1;
+    if (hit.key !== null) {
+      this.engine.seek(c.start + hit.key);
+      this.drag = { kind: 'key', id: c.id, lk: hit.slot.lane.kind, channel: hit.row.channel, from0: hit.key, cur: hit.key, base: c, x0: e.clientX, tag: `key-${Date.now()}` };
+    } else {
+      this.engine.seek(c.start + Math.max(0, Math.min(last, hit.at)));
+      this.drag = { kind: 'scrub' };
+    }
+    if (e.pointerType !== 'mouse') {
+      const x = e.clientX, y = e.clientY;
+      this.pressAt = [x, y];
+      this.cancelLongPress();
+      this.longPress = window.setTimeout(() => {
+        this.longPress = 0;
+        this.drag = null;
+        this.openLaneMenu(lh, x, y);
+      }, 500);
+    }
+  }
+
+  private cancelLongPress(): void {
+    if (this.longPress) { window.clearTimeout(this.longPress); this.longPress = 0; }
+  }
+
+  private openLaneMenu(lh: { c: Content; track: Track; hit: LaneHit }, x: number, y: number): void {
+    const { c, track, hit } = lh;
+    if (!this.engine.selection.content.includes(c.id) || this.engine.selection.content.length !== 1) this.engine.select([c.id], track.id);
+    const lane = hit.slot.lane;
+    const channel = hit.row.channel;
+    const at = Math.max(0, Math.min(c.duration - 1, hit.key ?? hit.at));
+    this.laneMenu.open(x, y, {
+      id: c.id, kind: lane.kind, at, onKey: hit.key !== null, channel,
+      prev: keyBefore(lane, at, channel ?? undefined), expanded: lane.expanded,
+    });
+  }
+
   private pointerMove(e: PointerEvent): void {
     const d = this.drag;
     const m = this.engine.movie;
     if (!d || !m) return;
+    if (this.longPress && Math.hypot(e.clientX - this.pressAt[0], e.clientY - this.pressAt[1]) > 6) this.cancelLongPress();
     const speed = this.hooks.scrubSpeed();
-    if (d.kind === 'scrub') {
+    if (d.kind === 'key') {
+      const c = this.engine.selected.find((it) => it.id === d.id);
+      if (!c) return;
+      const to = Math.max(0, Math.min(c.duration - 1, Math.round(d.from0 + (e.clientX - d.x0) / this.ppf)));
+      if (to === d.cur) return;
+      this.cancelLongPress();
+      const base = d.base, kind = d.lk, from0 = d.from0, channel = d.channel ?? undefined;
+      if (this.engine.run('Move Keyframe', (mv) => ops.updateContent(mv, d.id, () => keyOps.moveKey(base, kind, from0, to, channel)), d.tag)) {
+        d.cur = to;
+        this.engine.seek(c.start + to);
+      }
+    } else if (d.kind === 'scrub') {
       const r = this.ruler.getBoundingClientRect();
       this.engine.seek(Math.floor(this.xf(e.clientX - r.left)));
     } else if (d.kind === 'zoom') {
@@ -602,9 +781,10 @@ export class TimelineView {
   private pointerUp(e: PointerEvent): void {
     const d = this.drag;
     this.drag = null;
+    this.cancelLongPress();
     try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* released */ }
     if (!d) return;
-    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration') this.engine.endGesture();
+    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);
@@ -614,6 +794,8 @@ export class TimelineView {
 
   private contextMenu(e: MouseEvent): void {
     e.preventDefault();
+    const lh = this.laneHit(e);
+    if (lh) { this.openLaneMenu(lh, e.clientX, e.clientY); return; }
     const h = this.hit(e);
     if (!h) return;
     if (h.item) {
@@ -631,7 +813,8 @@ export class TimelineView {
   }
 
   private clampScroll(y: number, m: Movie): number {
-    const content = TOP_PAD + m.tracks.length * STRIDE + 80;
+    this.layout(m);
+    const content = TOP_PAD + this.totalH + 80;
     return Math.max(0, Math.min(Math.max(0, content - this.height), y));
   }
 
