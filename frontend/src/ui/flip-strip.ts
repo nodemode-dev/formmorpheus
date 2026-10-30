@@ -234,6 +234,7 @@ export class FlipStrip {
       setStyleVar(cell, 'width', `${hold * COL - 2}px`);
       setClass(cell, 'is-cur', c.r === ar && c.i === ai);
       setClass(cell, 'is-held', hold > 1);
+      if ((cell.dataset.name ?? '') !== (c.f.name ?? '')) { if (c.f.name) { cell.dataset.name = c.f.name; cell.title = c.f.name; } else { delete cell.dataset.name; cell.removeAttribute('title'); } }
       setText(q(cell, '.fm-fs-hold'), hold > 1 ? `×${hold}` : '');
       if (c.start + hold >= lo && c.start <= hi) this.drawCell(cell, c);
     };

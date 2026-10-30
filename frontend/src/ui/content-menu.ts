@@ -8,6 +8,8 @@ import { el, q, setClass, setHidden, setText } from './dom';
 import { icon } from './icons';
 import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
+import { BoilMake } from './boil-make';
+import { ParentPicker } from './parent-picker';
 
 const MASKS: Array<[MaskMode, string]> = [['none', 'None'], ['clipping', 'Clipping'], ['alpha', 'Alpha'], ['luminance', 'Luminance']];
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -34,12 +36,20 @@ export class ContentMenu {
   private readonly after: PopRow;
   private readonly reverse: PopRow;
   private readonly toFlip: PopRow;
+  private readonly toBoil: PopRow;
+  private readonly boilMake: BoilMake;
   private readonly toTracks: PopRow;
   private readonly fill: PopRow;
+  private readonly lip: PopRow;
+  /** Opens the lip-sync dialog for the selection (set by the app). */
+  onLipsync: (() => void) | null = null;
+  private readonly formvis: PopRow;
+  onEditInFormvis: ((id: string) => void) | null = null;
   private readonly group: PopRow;
   private readonly ungroup: PopRow;
   private readonly del: PopRow;
   private readonly track: TrackMenu;
+  private readonly parents: ParentPicker;
 
   constructor(private readonly engine: Engine) {
     this.pop = new Popover('fm-cm', 264);
@@ -144,6 +154,13 @@ export class ContentMenu {
       this.engine.run('Convert to Flipbook', (m) => { const r = flipOps.tracksToFlipbook(m, ids); return { movie: r.movie, select: [r.id] }; });
       this.pop.hide();
     });
+    this.boilMake = new BoilMake(engine);
+    this.toBoil = popRow('flipbook', 'Make Boil Frames...');
+    this.toBoil.el.addEventListener('click', (e) => {
+      const id = this.ids[0];
+      this.pop.hide();
+      if (id) this.boilMake.open(e.clientX, e.clientY, id);
+    });
     this.toTracks = popRow('flipbook', 'Convert Flipbook to tracks');
     this.toTracks.el.addEventListener('click', () => {
       const id = this.ids[0];
@@ -151,6 +168,10 @@ export class ContentMenu {
       this.pop.hide();
     });
     this.fill = popRow('fillDuration', 'Fill duration');
+    this.lip = popRow('audio', 'Lip-sync from Sound...');
+    this.lip.el.addEventListener('click', () => { this.pop.hide(); this.onLipsync?.(); });
+    this.formvis = popRow('layers', 'Edit in formvis');
+    this.formvis.el.addEventListener('click', () => { const id = this.ids[0]; this.pop.hide(); if (id) this.onEditInFormvis?.(id); });
     this.group = popRow('group', 'Group');
     this.ungroup = popRow('ungroup', 'Ungroup');
     const trackRow = popRow('track', 'Track options', { sub: true });
@@ -182,8 +203,9 @@ export class ContentMenu {
     this.track = new TrackMenu(engine);
     this.track.embed(this.pop, trackRow.el, () => this.trackOf());
 
-    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
-      this.toFlip.el, this.toTracks.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+    this.parents = new ParentPicker(engine, this.pop);
+    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, popSep(),
+      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -284,9 +306,14 @@ export class ContentMenu {
     this.reverse.setDisabled(!sel.some((c) => c.keys.length > 0));
     this.fill.setDisabled(none);
     setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => c.kind === 'drawing'));
+    setClass(this.toBoil.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     setClass(this.toTracks.el, 'is-gone', !(sel.length === 1 && first.kind === 'flipbook'));
+    const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
+    setClass(this.lip.el, 'is-gone', !lipOk);
+    setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);
+    this.parents.patch(this.ids);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     this.del.setDisabled(none);
   }

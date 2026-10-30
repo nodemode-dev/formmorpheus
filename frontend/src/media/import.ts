@@ -2,6 +2,7 @@
 // (a Flipbook row), video, sound and fonts. Nothing here touches the movie; the caller places the result.
 import type { Asset, Content, FlipTrack, FlipbookFrame, Movie } from '../engine/types';
 import { content, drawingLayer, identity, uid } from '../engine/model';
+import { formvfxToTracks, formvisToDrawing, sniffRoundTrip } from '../io/round-trip';
 import { registerFont } from './fonts';
 import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
@@ -12,6 +13,8 @@ export interface ImportResult {
   contents: Content[];
   ownTrack: boolean[];
   notice?: string;
+  /** A formvis document that left from this Drawing: the caller swaps its layers for the new content's. */
+  replaces?: string;
 }
 
 type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'font' | 'media' | 'unknown';
@@ -336,6 +339,9 @@ async function importFont(file: File): Promise<ImportResult> {
 
 export async function importMedia(file: File, movie: Movie, at: number): Promise<ImportResult> {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+  const trip = await sniffRoundTrip(file, head);
+  if (trip === 'formvis') return formvisToDrawing(file, movie, at);
+  if (trip === 'formvfx') return formvfxToTracks(file, movie);
   const kind = sniff(file, head);
   switch (kind) {
     case 'font': return importFont(file);
