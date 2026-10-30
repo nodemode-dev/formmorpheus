@@ -16,7 +16,9 @@
 .fm-pivot-sectors[hidden] { display: none; }
 .fm-anchor-bar { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); z-index: var(--z-raised); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: var(--radius-pill); background: var(--fm-glass); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--line-1, var(--border-color)); color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
 .fm-anchor-bar[hidden] { display: none; }
-.fm-pivot-hit { fill: transparent; pointer-events: all; cursor: crosshair; }
+.fm-pivot-hit { fill: transparent; pointer-events: none; cursor: crosshair; }
+/* the anchor moves only in Edit anchor (box ··· menu), as the reference; otherwise a press on the centre grabs the box */
+.fm-pivot.is-editing .fm-pivot-hit { pointer-events: all; }
 .fm-path-bar {
   position: absolute;
   right: var(--space-3);

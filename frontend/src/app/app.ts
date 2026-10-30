@@ -203,7 +203,7 @@ export function startApp(): void {
     // an export reads this movie's pictures and sound until it finishes
     if (exportDialog.running) { toast('An export is running: wait for it, or cancel it, before closing this movie.'); return false; }
     if (!engine.movie || !engine.modified) return true;
-    const keep = await confirmAction('Unsaved changes', `Save the changes to "${engine.movie.name}" first?`, 'Save', false, 'Discard');
+    const keep = await confirmAction('Unsaved changes', t('Save the changes to "{name}" first?').replace('{name}', engine.movie.name), 'Save', false, 'Discard');
     if (keep) return save(false);
     return true;
   };
@@ -231,7 +231,7 @@ export function startApp(): void {
 
   async function openFromLibrary(name: string): Promise<void> {
     if (!(await askToKeep())) return;
-    const job = engine.startJob(`Open ${name}`, 1);
+    const job = engine.startJob(t('Open {name}').replace('{name}', name), 1);
     try {
       const file = await unpackMovie(await api.readMovie(name));
       await prepareOpen(file);
@@ -282,7 +282,7 @@ export function startApp(): void {
       name = await promptName(asNew ? 'Save As' : 'Save Movie', m.name, 'Save');
       if (!name) return false;
     }
-    const job = engine.startJob(`Save ${name}`, 1);
+    const job = engine.startJob(t('Save {name}').replace('{name}', name), 1);
     try {
       engine.nameMovie(name);
       const poster = stage ? await stage.snapshot(480) : null;
@@ -602,6 +602,8 @@ export function startApp(): void {
     if (home.isShown && e.key !== 'Escape' && e.key !== 'F1' && !(e.metaKey || e.ctrlKey)) return;
     const cmd = commands.forEvent(e);
     if (!cmd) return;
+    // full-screen preview only plays and scrubs, as the reference: no key may change the movie
+    if (stage.nav.preview && !/^(play|play-pause|toggle-play|prev-frame|next-frame|stage-fullscreen|stage-full-screen|stage-preview|first-frame|last-frame|back-one-second|forward-one-second)$/.test(cmd.id)) return;
     e.preventDefault();
     if (!e.repeat || /^(undo|redo|prev-frame|next-frame)$/.test(cmd.id)) commands.run(cmd.id);
   });
@@ -650,7 +652,7 @@ export function startApp(): void {
 
   status.setEngine('Engine: checking');
   const probe = (): void => {
-    void capabilities().then((c) => status.setEngine(c ? `Engine ${c.version}${c.desktop ? ' · desktop' : ''}` : 'Engine offline', c ? c.libraryDir : t('The engine service saves and opens movies in the library. Start it with ./formmorpheus.')));
+    void capabilities().then((c) => status.setEngine(c ? `${t('Engine')} ${c.version}${c.desktop ? ` · ${t('desktop')}` : ''}` : 'Engine offline', c ? c.libraryDir : t('The engine service saves and opens movies in the library. Start it with ./formmorpheus.')));
   };
   probe();
   onServiceChange(() => probe());

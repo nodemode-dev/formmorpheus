@@ -20,8 +20,9 @@ export function liveSet(movie: Movie): LiveSet {
     contents.add(c.id);
     if (c.asset) assets.add(c.asset);
     layers(c.layers);
-    for (const t of c.flip) for (const f of t.frames) layers(f.layers);
-    if (c.tracks.length) walk(c.tracks);
+    // older movies store only the fields their kind uses
+    for (const t of c.flip ?? []) for (const f of t.frames) layers(f.layers);
+    if (c.tracks?.length) walk(c.tracks);
   };
   walk(movie.tracks);
   return { contents, assets };

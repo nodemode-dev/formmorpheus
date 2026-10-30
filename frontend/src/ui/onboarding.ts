@@ -70,7 +70,15 @@ export function setupOnboarding(d: OnboardingDeps): { whatsNew: WhatsNewDialog; 
     const r = read();
     if (r.tourArmed && !tourSeen() && d.engine.movie && !tour.isActive) {
       write({ ...r, tourArmed: false });
-      window.setTimeout(() => { if (d.engine.movie && !anyDialogOpen()) tour.start(); }, 900);
+      // wait until the Stage is what shows: a new Flipbook opens straight into Draw and Paint
+      const paintOpen = (): boolean => { const p = document.querySelector<HTMLElement>('.fm-paint'); return !!p && !p.hidden && p.offsetParent !== null; };
+      let tries = 0;
+      const attempt = (): void => {
+        if (!d.engine.movie || tour.isActive) return;
+        if ((paintOpen() || anyDialogOpen()) && tries++ < 600) { window.setTimeout(attempt, 1000); return; }
+        if (!paintOpen()) tour.start();
+      };
+      window.setTimeout(attempt, 900);
     }
   });
 
