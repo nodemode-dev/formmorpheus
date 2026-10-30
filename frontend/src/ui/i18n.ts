@@ -4,7 +4,24 @@ import { LANG_NAMES, LANG_PARENT, RTL_LANGS, isLang as isLangCode, type Lang } f
 export type { Lang } from './i18n/langs';
 
 type Table = Record<string, string>;
-const LOADERS: Partial<Record<Exclude<Lang, 'en'>, () => Promise<Table>>> = {};
+// One lazily loaded chunk per language, so English loads nothing extra.
+const LOADERS: Partial<Record<Exclude<Lang, 'en'>, () => Promise<Table>>> = {
+  es: () => import('./i18n/es').then((m) => m.es), 'es-MX': () => import('./i18n/es-MX').then((m) => m.esMX),
+  'pt-BR': () => import('./i18n/pt-BR').then((m) => m.ptBR), fr: () => import('./i18n/fr').then((m) => m.fr),
+  'fr-CA': () => import('./i18n/fr-CA').then((m) => m.frCA), it: () => import('./i18n/it').then((m) => m.it),
+  de: () => import('./i18n/de').then((m) => m.de), nl: () => import('./i18n/nl').then((m) => m.nl),
+  da: () => import('./i18n/da').then((m) => m.da), fi: () => import('./i18n/fi').then((m) => m.fi),
+  nb: () => import('./i18n/nb').then((m) => m.nb), sv: () => import('./i18n/sv').then((m) => m.sv),
+  ru: () => import('./i18n/ru').then((m) => m.ru), pl: () => import('./i18n/pl').then((m) => m.pl),
+  cs: () => import('./i18n/cs').then((m) => m.cs), hu: () => import('./i18n/hu').then((m) => m.hu),
+  uk: () => import('./i18n/uk').then((m) => m.uk), 'sr-Latn': () => import('./i18n/sr-Latn').then((m) => m.srLatn),
+  tr: () => import('./i18n/tr').then((m) => m.tr), el: () => import('./i18n/el').then((m) => m.el),
+  ar: () => import('./i18n/ar').then((m) => m.ar), hi: () => import('./i18n/hi').then((m) => m.hi),
+  id: () => import('./i18n/id').then((m) => m.id), th: () => import('./i18n/th').then((m) => m.th),
+  vi: () => import('./i18n/vi').then((m) => m.vi), 'zh-CN': () => import('./i18n/zh-CN').then((m) => m.zhCN),
+  'zh-TW': () => import('./i18n/zh-TW').then((m) => m.zhTW), ja: () => import('./i18n/ja').then((m) => m.ja),
+  ko: () => import('./i18n/ko').then((m) => m.ko),
+};
 const MORE: Partial<Record<Exclude<Lang, 'en'>, () => Promise<Table>>> = {};
 const EXTRA: Partial<Record<Exclude<Lang, 'en'>, () => Promise<Table>>> = {};
 const tables = new Map<Lang, Table>([['en', {}]]);
