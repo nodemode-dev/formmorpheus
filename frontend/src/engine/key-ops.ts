@@ -1,7 +1,8 @@
 // Pure keyframe edits: every function returns a new Content (structural sharing) and never mutates.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
-import { KEY_KINDS, baseValues, easeAt, evalLane, kindSpec, laneFrames, laneOf, warpSize } from './keys';
+import { KEY_KINDS, baseValues, boneSpec, easeAt, evalLane, kindSpec, laneFrames, laneOf, warpSize } from './keys';
 import { WARP_MAX, WARP_MIN, meshOffset, warpId } from './warp-draw';
+import { mirrorSpan, withEase } from './graph-ops';
 
 const KIND_ORDER = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
@@ -11,9 +12,6 @@ function defaultOptions(kind: KeyKind): Record<string, string | number | boolean
   return out;
 }
 
-function mirror(e: Ease): Ease {
-  return e === 'in' ? 'out' : e === 'out' ? 'in' : e;
-}
 
 /** Replace (or insert) a lane, keeping lanes in KEY_KINDS order. A null lane removes it. */
 function withLane(c: Content, kind: KeyKind, lane: KeyLane | null): Content {
@@ -73,14 +71,17 @@ export function setKeys(c: Content, kind: KeyKind, at: number, values: Record<st
   const lane = laneOf(c, kind) ?? newLane(kind);
   const channels: Record<string, Key[]> = { ...lane.channels };
   let changed = false;
-  for (const spec of kindSpec(kind).channels) {
+  for (const spec of kind === 'bones' ? Object.keys(values).map(boneSpec) : kindSpec(kind).channels) {
     const v = values[spec.id];
     if (v === undefined || !Number.isFinite(v)) continue;
     const list = channels[spec.id] ?? [];
+    // the pivot channels are keyed only once the pivot is moved from its unkeyed value
+    if (!list.length && kind === 'move' && (spec.id === 'px' || spec.id === 'py') && v === (c.pivot?.[spec.id === 'px' ? 'x' : 'y'] ?? 0)) continue;
     const existing = list.find((k) => k.frame === frame);
     const e = ease ?? existing?.ease ?? easeBefore(list, frame) ?? 'linear';
     if (existing && existing.value === v && existing.ease === e) continue;
-    channels[spec.id] = putKey(list, { frame, value: v, ease: e });
+    // keep what else the key carries (spatial tangents, custom ease handles)
+    channels[spec.id] = putKey(list, { ...existing, frame, value: v, ease: e });
     changed = true;
   }
   if (!changed) return c;
@@ -144,7 +145,7 @@ export function setEase(c: Content, kind: KeyKind, at: number, ease: Ease, chann
     if (channel && id !== channel) continue;
     const list = lane.channels[id];
     if (!list.some((q) => q.frame === at && q.ease !== ease)) continue;
-    channels[id] = list.map((q) => (q.frame === at ? { ...q, ease } : q));
+    channels[id] = list.map((q) => (q.frame === at ? withEase(q, ease) : q));
     changed = true;
   }
   return changed ? withLane(c, kind, { ...lane, channels }) : c;
@@ -154,7 +155,7 @@ export function setAllEases(c: Content, kind: KeyKind, ease: Ease): Content {
   const lane = laneOf(c, kind);
   if (!lane) return c;
   const channels: Record<string, Key[]> = {};
-  for (const id in lane.channels) channels[id] = lane.channels[id].map((k) => (k.ease === ease ? k : { ...k, ease }));
+  for (const id in lane.channels) channels[id] = lane.channels[id].map((k) => (k.ease === ease ? k : withEase(k, ease)));
   return withLane(c, kind, { ...lane, channels });
 }
 
@@ -176,8 +177,8 @@ function reverseLane(lane: KeyLane): KeyLane {
     // The span that ends at an old key becomes the span that leaves its mirrored key, with the ease flipped.
     for (let i = 0; i < n; i++) {
       const src = list[n - 1 - i];
-      const ease = i < n - 1 ? mirror(list[n - 2 - i].ease) : list[n - 1].ease;
-      out[i] = { frame: first + last - src.frame, value: src.value, ease };
+      const span = i < n - 1 ? mirrorSpan(list[n - 2 - i]) : { ease: list[n - 1].ease === 'custom' ? 'linear' as const : list[n - 1].ease };
+      out[i] = { frame: first + last - src.frame, value: src.value, ...span };
     }
     channels[id] = out;
   }

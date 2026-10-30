@@ -73,6 +73,8 @@ export interface FlipbookFrame {
   id: string;
   hold: number;
   layers: DrawingLayer[];
+  /** Label of the frame (a mouth shape's name); absent unless set. */
+  name?: string;
 }
 
 /** One row of a Flipbook: its frames play in order, each for `hold` movie frames, and loop. */
@@ -92,7 +94,10 @@ export interface FlipTrack {
 export type FlipMask = 'none' | 'alpha' | 'luminance';
 
 /** Easing of the span that leaves a key; 'hold' keeps the value until the next key. */
-export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold';
+export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold' | 'custom';
+
+/** A Bezier handle of a span as a point in the span's unit square: x is the time fraction (0..1), y the value fraction (may leave 0..1 to overshoot). */
+export type EaseHandle = [number, number];
 
 export const EASES: { id: Ease; label: string }[] = [
   { id: 'linear', label: 'Linear' },
@@ -107,9 +112,26 @@ export interface Key {
   frame: number;
   value: number;
   ease: Ease;
+  /** Only with ease 'custom': the Bezier handles of the span that leaves this key (leaving handle `out`, arriving handle `in`). */
+  out?: EaseHandle;
+  in?: EaseHandle;
+  /** Move keys only (on the x channel): the curve of the motion path through this key. */
+  sp?: SpatialTangents;
 }
 
-export type KeyKind = 'move' | 'warp' | 'distort' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'volume';
+/**
+ * Spatial tangents of a Move key, stored on its x channel key (the y key of the same frame takes part in the path).
+ * `in` / `out` are offsets from the key's position in px; absent means automatic. `corner`: the handles move alone
+ * (smooth keeps them in line); `linear`: straight path on both sides of this key.
+ */
+export interface SpatialTangents {
+  in: [number, number];
+  out: [number, number];
+  corner?: boolean;
+  linear?: boolean;
+}
+
+export type KeyKind = 'camera' | 'move' | 'warp' | 'distort' | 'bones' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'boil' | 'volume';
 
 /** One lane under a content: a set of channels keyed together (Move & Scale has x, y, scaleX, scaleY, rotation). */
 export interface KeyLane {
@@ -127,6 +149,23 @@ export interface TextStyle {
   weight: number;
   color: string;
   align: 'left' | 'center' | 'right';
+}
+
+/** A bone at rest, in content pixels: `x`, `y` is its head, `angle` (degrees) points to its tip at `length`. */
+export interface Bone {
+  id: string;
+  parent?: string;
+  x: number;
+  y: number;
+  length: number;
+  angle: number;
+}
+
+/** A bone chain (or tree) on a picture or drawing; a 'bones' lane keys one rotation channel per bone id. */
+export interface Rig {
+  bones: Bone[];
+  /** Cell size of the skin mesh in pixels (default 24). */
+  mesh?: number;
 }
 
 export interface Content {
@@ -150,12 +189,20 @@ export interface Content {
   text: TextStyle | null;
   tracks: Track[];
   volume: number;
+  /** Pivot (anchor) that rotation and scale turn around: an offset in px from the movie centre, which is also a picture's centre. Absent: the centre. Keyed by the Move lane's px / py channels. */
+  pivot?: { x: number; y: number };
+  /** Bones skinned onto this content; absent when unused. Applied before Warp / Distort. */
+  rig?: Rig;
+  /** Id of the content this one follows: its transform is applied inside the parent's. Absent: none. */
+  parent?: string;
 }
 
 export interface Track {
   id: string;
   name: string;
   hidden: boolean;
+  /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
+  screen?: true;
   content: Content[];
 }
 
@@ -202,6 +249,8 @@ export interface Movie {
   addKeyAtStart: boolean;
   /** Playback loops only the part of the movie the Timeline shows. Absent in older files. */
   loopVisible?: boolean;
+  /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
+  camera?: { keys: KeyLane[] };
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;

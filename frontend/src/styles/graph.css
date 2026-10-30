@@ -1,0 +1,22 @@
+/* Graph editor: covers the Timeline body while open. */
+.fm-timeline { position: relative; }
+.fm-graph { position: absolute; left: 0; right: 0; bottom: 0; top: var(--fm-transport-h); z-index: var(--z-selected); display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg-secondary); border-top: 1px solid var(--border-color); }
+.fm-graph[hidden] { display: none; }
+.fm-gr-bar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); min-height: 36px; overflow-x: auto; }
+.fm-gr-title { font-size: var(--fs-12); font-weight: 600; color: var(--text-primary); }
+.fm-gr-chans, .fm-gr-eases, .fm-gr-seg { display: flex; align-items: center; gap: 2px; }
+.fm-gr-grow { flex: 1 1 auto; }
+.fm-gr-sep { width: 1px; height: 16px; background: var(--border-color); flex: none; }
+.fm-gr-read { font-size: var(--fs-11); color: var(--text-secondary); font-family: var(--font-mono); white-space: nowrap; }
+.fm-timeline:has(.fm-graph:not([hidden])) :is(.fm-edit-pill, .fm-key-pill) { visibility: hidden; }
+.fm-gr-btn, .fm-gr-chip { height: var(--ctl-sm); padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font-size: var(--fs-11); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.fm-gr-btn:hover, .fm-gr-chip:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.fm-gr-btn[aria-pressed="true"], .fm-gr-chip.is-active { color: var(--text-primary); background: var(--accent-color-dim); border-color: var(--accent-color); }
+.fm-gr-btn:disabled { opacity: 0.4; cursor: default; }
+.fm-gr-x { width: var(--ctl-sm); height: var(--ctl-sm); display: inline-grid; place-items: center; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); cursor: pointer; }
+.fm-gr-x:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+:focus-visible:is(.fm-gr-btn, .fm-gr-chip, .fm-gr-x) { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.fm-gr-plot { position: relative; min-height: 0; overflow: hidden; }
+.fm-gr-canvas { display: block; touch-action: none; cursor: crosshair; }
+.fm-gr-empty[hidden] { display: none; }
+.fm-gr-empty { pointer-events: none; position: absolute; inset: 0; margin: 0; display: grid; place-items: center; color: var(--text-muted); font-size: var(--fs-12); }

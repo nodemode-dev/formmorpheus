@@ -344,3 +344,37 @@ void main() {
   vec3 r = uAdd == 1 ? c + (n - 0.5) * 2.0 * uAmount : c + (n - c) * uAmount;
   o = vec4(clamp(r, 0.0, 1.0) * s.a, s.a);
 }`;
+
+// ---------------------------------------------------------------- boil (same maths as paint/boil.ts)
+
+export const FS_BOIL = `${HEAD}
+uniform sampler2D uTex;
+uniform float uAmount;
+uniform float uSpacing;
+uniform int uSeed;
+out vec4 o;
+float hv(int ix, int iy, int ch) {
+  uint h = (uint(ix) * 0x27d4eb2du) ^ (uint(iy) * 0x165667b1u) ^ (uint(uSeed * 2 + ch + 1) * 0x9e3779b1u);
+  h ^= h >> 15; h *= 0x85ebca6bu; h ^= h >> 13; h *= 0xc2b2ae35u; h ^= h >> 16;
+  return float(h >> 8) / 16777216.0;
+}
+vec2 lat(int i, int j) { return (vec2(hv(i, j, 0), hv(i, j, 1)) * 2.0 - 1.0) * uAmount; }
+vec4 fetch(ivec2 q, ivec2 sz) {
+  if (q.x < 0 || q.y < 0 || q.x >= sz.x || q.y >= sz.y) return vec4(0.0);
+  return texelFetch(uTex, q, 0);
+}
+void main() {
+  vec2 p = floor(gl_FragCoord.xy);
+  vec2 u = p / uSpacing;
+  vec2 iu = floor(u);
+  vec2 f = u - iu;
+  f = f * f * (3.0 - 2.0 * f);
+  int i = int(iu.x), j = int(iu.y);
+  vec2 d = mix(mix(lat(i, j), lat(i + 1, j), f.x), mix(lat(i, j + 1), lat(i + 1, j + 1), f.x), f.y);
+  vec2 s = p + d;
+  vec2 is = floor(s);
+  vec2 fr = s - is;
+  ivec2 q = ivec2(is);
+  ivec2 sz = textureSize(uTex, 0);
+  o = mix(mix(fetch(q, sz), fetch(q + ivec2(1, 0), sz), fr.x), mix(fetch(q + ivec2(0, 1), sz), fetch(q + ivec2(1, 1), sz), fr.x), fr.y);
+}`;

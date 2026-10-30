@@ -2,6 +2,8 @@
 // Ported from the temporal ease maths of the owner's formvfx key model (speed and influence per side,
 // Newton then bisection for x(t)). Pure, no DOM.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
+import { boilSeed } from '../paint/boil';
+import { pathAt, type Pt } from './path';
 import { DISTORT_IDS, WARP_DEFAULT, WARP_MAX, WARP_MIN, warpId } from './warp-draw';
 
 export interface ChannelSpec {
@@ -20,7 +22,7 @@ export interface ChannelSpec {
 export interface KindSpec {
   kind: KeyKind;
   label: string;
-  group: 'motion' | 'filter' | 'audio';
+  group: 'motion' | 'filter' | 'audio' | 'camera';
   icon: string;
   channels: ChannelSpec[];
   options?: { id: string; label: string; choices?: string[]; def: string | number | boolean }[];
@@ -30,11 +32,13 @@ const svg = (body: string): string =>
   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
 const ICONS: Record<KeyKind, string> = {
+  camera: svg('<path d="M3.5 8.5h11a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 2 16v-6a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M16 11.5l5.5-3v7l-5.5-3"/>'),
   move: svg(
     '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M12 7.5v9M7.5 12h9M12 7.5l-1.6 1.7M12 7.5l1.6 1.7M12 16.5l-1.6-1.7M12 16.5l1.6-1.7M7.5 12l1.7-1.6M7.5 12l1.7 1.6M16.5 12l-1.7-1.6M16.5 12l-1.7 1.6"/>',
   ),
   warp: svg('<path d="M3.5 7c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0M3.5 12c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0M3.5 17c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0"/><path d="M7 4.5v15M12 4.5v15M17 4.5v15" opacity=".45"/>'),
   distort: svg('<path d="M5 6.5l14-2v15l-14-2z"/><circle cx="5" cy="6.5" r="1.4" fill="currentColor"/><circle cx="19" cy="4.5" r="1.4" fill="currentColor"/><circle cx="19" cy="19.5" r="1.4" fill="currentColor"/><circle cx="5" cy="17.5" r="1.4" fill="currentColor"/>'),
+  bones: svg('<circle cx="6.5" cy="17.5" r="2.2"/><circle cx="12" cy="9.5" r="2.2"/><circle cx="18" cy="5.5" r="1.6" fill="currentColor"/><path d="M8 15.6l2.6-4.2M13.9 8.6l2.7-2"/>'),
   opacity: svg('<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>'),
   blur: svg('<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.2" opacity=".7"/><circle cx="12" cy="12" r="9.2" opacity=".4"/>'),
   sharpen: svg('<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/><path d="M12 8.5l3.5 3.5-3.5 3.5L8.5 12z"/>'),
@@ -45,6 +49,7 @@ const ICONS: Record<KeyKind, string> = {
   lensblur: svg(
     '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5l3.2 5.5M20.2 9.8l-6.4-.6M17.9 18l-3.2-5.6M12 20.5l-3.2-5.5M3.8 14.2l6.4.6M6.1 6l3.2 5.6"/>',
   ),
+  boil: svg('<path d="M3.5 9c2-2.5 3.5 2.5 5.5 0s3.5 2.5 5.5 0 3.5 2.5 5.5 0"/><path d="M3.5 15c2-2.5 3.5 2.5 5.5 0s3.5 2.5 5.5 0 3.5 2.5 5.5 0" opacity=".5"/>'),
   volume: svg('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'),
 };
 
@@ -80,6 +85,18 @@ const distortChannels = (): ChannelSpec[] => DISTORT_IDS.map((id, i) => {
 
 export const KEY_KINDS: KindSpec[] = [
   {
+    kind: 'camera',
+    label: 'Camera',
+    group: 'camera',
+    icon: ICONS.camera,
+    channels: [
+      ch('panX', 'Pan X', 'PX', -20000, 20000, 1, 'px', 1, 0),
+      ch('panY', 'Pan Y', 'PY', -20000, 20000, 1, 'px', 1, 0),
+      ch('zoom', 'Zoom', 'Zoom', 0.05, 20, 0.01, '%', 100, 1),
+      ch('rotation', 'Rotation', 'R', -3600, 3600, 0.1, 'deg', 1, 0),
+    ],
+  },
+  {
     kind: 'move',
     label: 'Move and Scale',
     group: 'motion',
@@ -90,7 +107,11 @@ export const KEY_KINDS: KindSpec[] = [
       ch('scaleX', 'Scale X', 'SX', 0, 20, 0.01, '%', 100, 1),
       ch('scaleY', 'Scale Y', 'SY', 0, 20, 0.01, '%', 100, 1),
       ch('rotation', 'Rotation', 'R', -3600, 3600, 0.1, 'deg', 1, 0),
+      // pivot offset from the movie centre (Content.pivot is its unkeyed value)
+      ch('px', 'Pivot X', 'PX', -20000, 20000, 1, 'px', 1, 0),
+      ch('py', 'Pivot Y', 'PY', -20000, 20000, 1, 'px', 1, 0),
     ],
+    options: [{ id: 'path', label: 'Smooth path', def: false }],
   },
   {
     kind: 'warp',
@@ -106,6 +127,14 @@ export const KEY_KINDS: KindSpec[] = [
     group: 'motion',
     icon: ICONS.distort,
     channels: distortChannels(),
+  },
+  {
+    // one rotation channel per bone of the content's rig (channel id = bone id); see boneSpec
+    kind: 'bones',
+    label: 'Bones',
+    group: 'motion',
+    icon: ICONS.bones,
+    channels: [],
   },
   {
     kind: 'opacity',
@@ -171,6 +200,18 @@ export const KEY_KINDS: KindSpec[] = [
     ],
   },
   {
+    kind: 'boil',
+    label: 'Boil',
+    group: 'filter',
+    icon: ICONS.boil,
+    channels: [
+      ch('amount', 'Amount', 'Amount', 0, 8, 0.1, 'px', 1, 3),
+      ch('rate', 'Rate', 'Rate', 1, 6, 1, '', 1, 2),
+      ch('variations', 'Variations', 'Variations', 2, 8, 1, '', 1, 3),
+      ch('scale', 'Scale', 'Scale', 4, 400, 1, 'px', 1, 40),
+    ],
+  },
+  {
     kind: 'volume',
     label: 'Volume',
     group: 'audio',
@@ -183,6 +224,17 @@ const SPEC_BY_KIND = new Map<KeyKind, KindSpec>(KEY_KINDS.map((k) => [k.kind, k]
 
 export function kindSpec(kind: KeyKind): KindSpec {
   return SPEC_BY_KIND.get(kind) as KindSpec;
+}
+
+/** Spec of a bone's rotation channel (degrees relative to rest); the id is the bone's id ("b3" reads "Bone 3"). */
+export function boneSpec(id: string): ChannelSpec {
+  const m = /^b(\d+)$/.exec(id);
+  return ch(id, m ? `Bone ${m[1]}` : id, m ? `B${m[1]}` : id, -3600, 3600, 0.1, 'deg', 1, 0);
+}
+
+/** The spec of one channel of a kind; bone channels are made on demand. */
+export function channelSpec(kind: KeyKind, id: string): ChannelSpec | undefined {
+  return kind === 'bones' ? boneSpec(id) : kindSpec(kind).channels.find((s) => s.id === id);
 }
 
 export function laneOf(c: Content, kind: KeyKind): KeyLane | null {
@@ -199,6 +251,8 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
     out.scaleX = c.transform.scale;
     out.scaleY = c.transform.scale;
     out.rotation = c.transform.rotation;
+    out.px = c.pivot?.x ?? 0;
+    out.py = c.pivot?.y ?? 0;
     return out;
   }
   if (kind === 'volume') {
@@ -225,6 +279,7 @@ export function warpChannelIds(n: number): string[] {
 
 /** The channels a lane shows and keys: all of them, except a Warp lane only has its own mesh's nodes. */
 export function laneChannels(lane: KeyLane): ChannelSpec[] {
+  if (lane.kind === 'bones') return Object.keys(lane.channels).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(boneSpec);
   const spec = kindSpec(lane.kind).channels;
   if (lane.kind !== 'warp') return spec;
   const ids = new Set(warpChannelIds(warpSize(lane)));
@@ -234,16 +289,19 @@ export function laneChannels(lane: KeyLane): ChannelSpec[] {
 // ---- Temporal Bezier -------------------------------------------------------
 
 const EASY = 1 / 3;
+const LIN_OUT: [number, number] = [1 / 3, 1 / 3];
+const LIN_IN: [number, number] = [2 / 3, 2 / 3];
 
 /** Normalised ease between two values. oe/ie: whether the leaving/arriving side is eased (speed 0, 33% influence). */
 function bezierSpan(u: number, y0: number, y1: number, oe: boolean, ie: boolean): number {
   // Handles in x are at 1/3 on both sides, so x(s) = 3(1-s)^2 s x1 + 3(1-s) s^2 x2 + s^3 with x1 = x2 swapped to 1/3, 2/3.
   // A non-eased side has speed = average slope with influence 1/3, which puts its handle on the straight line.
-  const x1 = EASY;
-  const x2 = 1 - EASY;
   const d = y1 - y0;
-  const yy1 = oe ? y0 : y0 + d * EASY;
-  const yy2 = ie ? y1 : y1 - d * EASY;
+  return bezierSeg(u, y0, y1, EASY, 1 - EASY, oe ? y0 : y0 + d * EASY, ie ? y1 : y1 - d * EASY);
+}
+
+/** The same Bezier with free handles: x1, x2 are the handles' time fractions, yy1, yy2 their values. */
+export function bezierSeg(u: number, y0: number, y1: number, x1: number, x2: number, yy1: number, yy2: number): number {
   let s = u;
   for (let n = 0; n < 8; n++) {
     const v = 1 - s;
@@ -319,25 +377,44 @@ export function evalChannel(keys: Key[], frame: number): number | null {
   if (e === 'hold') return a.value;
   const u = (frame - a.frame) / dt;
   if (e === 'linear') return a.value + (b.value - a.value) * u;
+  if (e === 'custom') {
+    const o = a.out ?? LIN_OUT, i = a.in ?? LIN_IN, d = b.value - a.value;
+    return bezierSeg(u, a.value, b.value, o[0] < 0 ? 0 : o[0] > 1 ? 1 : o[0], i[0] < 0 ? 0 : i[0] > 1 ? 1 : i[0], a.value + d * o[1], a.value + d * i[1]);
+  }
   return spanValue(e, u, a.value, b.value);
 }
 
 export function evalLane(c: Content, lane: KeyLane, frame: number): Record<string, number> {
   const out = baseValues(c, lane.kind);
   const spec = kindSpec(lane.kind);
-  for (const s of spec.channels) {
+  for (const s of lane.kind === 'bones' ? laneChannels(lane) : spec.channels) {
     const keys = lane.channels[s.id];
     if (keys && keys.length) {
       const v = evalChannel(keys, frame);
       if (v !== null) out[s.id] = v;
     }
   }
+  if (lane.kind === 'move' && pathAt(lane, frame, pathProgress, PATH_PT)) {
+    out.x = PATH_PT[0];
+    out.y = PATH_PT[1];
+  }
   return out;
+}
+
+const PATH_PT: Pt = [0, 0];
+
+/** Eased fraction 0..1 of the span from x key a to b at `frame`: the key's own ease (custom ones too) run on 0 to 1. */
+function pathProgress(a: Key, b: Key, frame: number): number {
+  const v = evalChannel([{ ...a, value: 0 }, { ...b, value: 1 }], frame) ?? 0;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 export interface Animated {
   x: number;
   y: number;
+  /** Pivot offset from the movie centre in px (absent: the centre). */
+  px?: number;
+  py?: number;
   scaleX: number;
   scaleY: number;
   rotation: number;
@@ -360,11 +437,15 @@ export interface Animated {
   } | null;
   hsb: { hue: number; saturation: number; brightness: number } | null;
   lens: { radius: number; brightness: number; contrast: number } | null;
+  /** Boil in movie px; `seed` is the redraw this frame shows. */
+  boil: { amount: number; scale: number; seed: number } | null;
   volume: number;
   /** Warp mesh offsets (n x n nodes, row by row, content-space px) or null. */
   warp: { n: number; dx: number[]; dy: number[] } | null;
   /** Distort corner offsets tl, tr, br, bl as x, y pairs (content-space px) or null. */
   distort: number[] | null;
+  /** Bone rotations by bone id (degrees from rest) when the content has a rig and any bone is turned, else null. */
+  bones: Record<string, number> | null;
 }
 
 /** Evaluate one channel of a lane, falling back to `base` when it has no keys. */
@@ -384,6 +465,8 @@ export function animate(c: Content, local: number): Animated {
   const a: Animated = {
     x: t.x,
     y: t.y,
+    px: c.pivot?.x ?? 0,
+    py: c.pivot?.y ?? 0,
     scaleX: t.scale,
     scaleY: t.scale,
     rotation: t.rotation,
@@ -395,9 +478,11 @@ export function animate(c: Content, local: number): Animated {
     noise: null,
     hsb: null,
     lens: null,
+    boil: null,
     volume: c.volume,
     warp: null,
     distort: null,
+    bones: null,
   };
   const lanes = c.keys;
   const n = lanes.length;
@@ -406,8 +491,15 @@ export function animate(c: Content, local: number): Animated {
     const lane = lanes[i];
     switch (lane.kind) {
       case 'move':
-        a.x = chv(lane, 'x', local, t.x);
-        a.y = chv(lane, 'y', local, t.y);
+        if (pathAt(lane, local, pathProgress, PATH_PT)) {
+          a.x = PATH_PT[0];
+          a.y = PATH_PT[1];
+        } else {
+          a.x = chv(lane, 'x', local, t.x);
+          a.y = chv(lane, 'y', local, t.y);
+        }
+        a.px = chv(lane, 'px', local, c.pivot?.x ?? 0);
+        a.py = chv(lane, 'py', local, c.pivot?.y ?? 0);
         a.scaleX = chv(lane, 'scaleX', local, t.scale);
         a.scaleY = chv(lane, 'scaleY', local, t.scale);
         a.rotation = chv(lane, 'rotation', local, t.rotation);
@@ -429,6 +521,18 @@ export function animate(c: Content, local: number): Animated {
       case 'distort': {
         const o = DISTORT_IDS.map((id) => chv(lane, id, local, 0));
         if (o.some((v) => v !== 0)) a.distort = o;
+        break;
+      }
+      case 'bones': {
+        const rig = c.rig;
+        if (!rig || !rig.bones.length) break;
+        const rot: Record<string, number> = {};
+        let turned = false;
+        for (const b of rig.bones) {
+          const v = chv(lane, b.id, local, 0);
+          if (v) { rot[b.id] = v; turned = true; }
+        }
+        if (turned) a.bones = rot;
         break;
       }
       case 'opacity':
@@ -470,6 +574,11 @@ export function animate(c: Content, local: number): Animated {
           contrast: chv(lane, 'contrast', local, 0),
         };
         break;
+      case 'boil': {
+        const amount = chv(lane, 'amount', local, 3);
+        if (amount > 0) a.boil = { amount, scale: chv(lane, 'scale', local, 40), seed: boilSeed(local, chv(lane, 'rate', local, 2), chv(lane, 'variations', local, 3)) };
+        break;
+      }
       case 'volume':
         a.volume = chv(lane, 'level', local, c.volume);
         break;

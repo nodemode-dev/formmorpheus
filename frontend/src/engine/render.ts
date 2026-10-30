@@ -1,8 +1,11 @@
 import { end, flipIndexAt } from './model';
 import { drawMaskedRows, hasRowMask } from './flip-draw';
 import { animate, type Animated } from './keys';
-import { contentRect, drawWarped } from './warp-draw';
+import { contentRect, drawTriangles, drawWarped, setStagePost } from './warp-draw';
+import { memberMatrix, mul, ownMatrix, postMatrix, topMatrix, viewMat, type Mat } from './transform';
+import { boneQuads } from './bones';
 import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
+import { boil } from '../paint/boil';
 import type { Raster } from '../paint/types';
 import { hasTree } from '../paint/layer-tree';
 import { drawLayerTree } from './layer-draw';
@@ -139,7 +142,7 @@ export class Renderer {
 
   /** Content the GPU compositor does not draw itself: Warp and Distort, layer groups and masks, row masks (a group that holds any). */
   private needsCpu(c: Content, a: Animated, local: number): boolean {
-    if (a.warp || a.distort) return true;
+    if (a.warp || a.distort || a.bones) return true;
     switch (c.kind) {
       case 'drawing': return hasTree(c.layers);
       case 'flipbook': {
@@ -221,7 +224,8 @@ export class Renderer {
   private surface(): Surface {
     const s = this.pool.pop() ?? new OffscreenCanvas(this.pw, this.ph);
     if (s.width !== this.pw || s.height !== this.ph) { s.width = this.pw; s.height = this.ph; }
-    const c = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    // CPU surfaces are read back by the live filters, masks and the GPU hand-off: keep them in system memory
+    const c = s.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
@@ -234,8 +238,25 @@ export class Renderer {
   }
 
   /** `keepAlpha`: export of a transparent movie: nothing is filled behind the content. */
-  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean }): void {
-    this.pw = Math.max(1, Math.round(view.width));
+  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean; noCamera?: boolean }): void {
+    // `noCamera`: the Stage's Camera mode shows the world as the camera sees it from outside
+    let mv = movie;
+    if (opts.noCamera && movie.camera) { const { camera: _camera, ...rest } = movie; mv = rest as Movie; }
+    this.frameNow = frame;
+    this.nest.length = 0;
+    this.flat = null;
+    try { this.drawFrameInner(ctx, mv, frame, view, opts); } finally { this.frameNow = -1; }
+  }
+
+  /** Movie frame being drawn (parents and the camera follow it), or -1 outside drawFrame (thumbnails draw a content on its own). */
+  private frameNow = -1;
+  /** Group-local frames of the groups being drawn, innermost last; a group member is placed inside its group only. */
+  private readonly nest: number[] = [];
+  /** The content being drawn flat for Warp, Distort or bones: no parent or camera applies to that flat picture. */
+  private flat: Content | null = null;
+
+  private drawFrameInner(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean }): void {
+    this.pw =Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
     this.gen++;
     const gpu = this.gpuCompose(movie, frame, view);
@@ -327,7 +348,7 @@ export class Renderer {
   /** True when content `c` (track `i`) may skip its own surface: opaque, normal blend, no mask or filter, and the next content above does not mask it. */
   private direct(c: Content, a: Animated, tracks: Track[], i: number, frame: number): boolean {
     if (c.mask !== 'none' || c.blend !== 'normal' || a.opacity < 1) return false;
-    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens) return false;
+    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens || a.boil) return false;
     if (c.kind === 'drawing') { if (c.layers.some((l) => l.blend !== 'normal' || l.opacity < 1)) return false; }
     else if (c.kind !== 'image' && c.kind !== 'text' && c.kind !== 'video') return false;
     for (let j = i - 1; j >= 0; j--) {
@@ -363,6 +384,38 @@ export class Renderer {
 
   drawContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie, anim?: Animated): void {
     const t = anim ?? animate(c, local);
+    if (t.bones && c.rig) {
+      // bones first: drawn flat, skinned to the posed bones; Warp / Distort then bend that result (bones.ts)
+      const fw = Math.max(1, Math.ceil(movie.width * view.scale)), fh = Math.max(1, Math.ceil(movie.height * view.scale));
+      const rect = contentRect(c, movie);
+      const take = (): OffscreenCanvasRenderingContext2D => {
+        const s = this.warpPool.pop() ?? new OffscreenCanvas(fw, fh);
+        if (s.width !== fw || s.height !== fh) { s.width = fw; s.height = fh; }
+        const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+        sc.setTransform(1, 0, 0, 1, 0, 0);
+        sc.clearRect(0, 0, fw, fh);
+        return sc;
+      };
+      const fc = take();
+      const was = this.flat;
+      this.flat = c;
+      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, px: 0, py: 0, warp: null, distort: null, bones: null });
+      this.flat = was;
+      if (t.warp || t.distort) {
+        const sk = take();
+        drawTriangles(sk, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, null), { scale: view.scale, ox: 0, oy: 0 });
+        setStagePost(this.postFor(movie, c, local));
+        drawWarped(ctx, sk.canvas, t, view, movie.width, movie.height, rect);
+        setStagePost(null);
+        this.warpPool.push(sk.canvas as OffscreenCanvas);
+      } else {
+        setStagePost(this.postFor(movie, c, local));
+        drawTriangles(ctx, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, t), view);
+        setStagePost(null);
+      }
+      this.warpPool.push(fc.canvas as OffscreenCanvas);
+      return;
+    }
     if (t.warp || t.distort) {
       // drawn flat on a surface, then re-projected through the Warp / Distort (warp-draw.ts)
       // sized to the whole movie at this scale, not to the view: a zoomed Stage or a group member's unit view
@@ -373,16 +426,24 @@ export class Renderer {
       const fc = flat.getContext('2d') as OffscreenCanvasRenderingContext2D;
       fc.setTransform(1, 0, 0, 1, 0, 0);
       fc.clearRect(0, 0, fw, fh);
-      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, warp: null, distort: null });
+      const was = this.flat;
+      this.flat = c;
+      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, warp: null, distort: null, bones: null });
+      this.flat = was;
+      setStagePost(this.postFor(movie, c, local));
       drawWarped(ctx, flat, t, view, movie.width, movie.height, contentRect(c, movie));
+      setStagePost(null);
       this.warpPool.push(flat);
       return;
     }
     ctx.save();
-    ctx.translate(view.ox + (movie.width / 2 + t.x) * view.scale, view.oy + (movie.height / 2 + t.y) * view.scale);
-    ctx.rotate((t.rotation * Math.PI) / 180);
-    ctx.scale(t.scaleX * view.scale * (t.flipH ? -1 : 1), t.scaleY * view.scale * (t.flipV ? -1 : 1));
-    ctx.translate(-movie.width / 2, -movie.height / 2);
+    // own move, scale and rotation around the pivot, inside the parents, the group and the camera (engine/transform.ts)
+    const live = this.frameNow >= 0 && this.flat !== c;
+    const nested = this.nest.length > 0;
+    const m = !live
+      ? mul(viewMat(view), ownMatrix(t, movie))
+      : nested ? memberMatrix(movie, c, this.nest[this.nest.length - 1], t) : topMatrix(movie, c, this.frameNow, t, view);
+    ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
     switch (c.kind) {
       case 'image': this.drawImageContent(ctx, c, movie); break;
       case 'video': this.drawVideoContent(ctx, c, local, movie); break;
@@ -393,6 +454,13 @@ export class Renderer {
       default: break;
     }
     ctx.restore();
+  }
+
+  /** The parents-and-camera matrix Warp / Distort / bones add after a content's own transform; null when none or outside a frame draw. */
+  private postFor(movie: Movie, c: Content, _local: number): Mat | null {
+    if (this.frameNow < 0) return null;
+    const nested = this.nest.length > 0;
+    return postMatrix(movie, c, this.frameNow, nested, nested ? this.nest[this.nest.length - 1] : 0);
   }
 
   /** Seconds into the video asset shown at a content-local frame. */
@@ -511,9 +579,9 @@ export class Renderer {
 
   /** Applies the live filters of a content (its keyframed Blur, Sharpen, Noise, HSB and Lens Blur) to its drawn surface. */
   private applyFilters(s: Surface, a: Animated, view: View, movie: Movie): void {
-    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens) return;
+    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil) return;
     const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    const onlyBlur = a.blur > 0 && !a.sharpen && !(a.noise && a.noise.amount > 0) && !a.hsb && !(a.lens && a.lens.radius > 0);
+    const onlyBlur = a.blur > 0 && !a.boil && !a.sharpen && !(a.noise && a.noise.amount > 0) && !a.hsb && !(a.lens && a.lens.radius > 0);
     if (onlyBlur && CANVAS_FILTER) {
       // the browser's own blur runs on the GPU: about 60 ms a frame cheaper than the CPU path at 1080p
       const t = this.surface();
@@ -532,6 +600,7 @@ export class Renderer {
     let other: Raster = { width: s.width, height: s.height, data: this.spare.data };
     const step = (fn: (src: Raster, dst: Raster) => void): void => { fn(cur, other); const t = cur; cur = other; other = t; };
     const side = Math.max(movie.width, movie.height) * 0.05 * view.scale;
+    if (a.boil) { const b = a.boil; step((src, dst) => { boil(src, dst, { amount: b.amount * view.scale, scale: b.scale * view.scale, seed: b.seed }); }); }
     if (a.hsb) hsb(cur, cur, a.hsb.hue, a.hsb.saturation, a.hsb.brightness);
     if (a.blur > 0) step((src, dst) => gaussianBlur(src, dst, a.blur * side));
     if (a.lens && a.lens.radius > 0) { const l = a.lens; step((src, dst) => lensBlur(src, dst, l.radius * side, l.brightness, l.contrast)); }
@@ -559,16 +628,21 @@ export class Renderer {
 
   private drawGroup(ctx: OffscreenCanvasRenderingContext2D, g: Content, local: number, movie: Movie): void {
     const unit: View = { scale: 1, ox: 0, oy: 0, width: movie.width, height: movie.height };
-    for (let i = g.tracks.length - 1; i >= 0; i--) {
-      const t = g.tracks[i];
-      if (t.hidden) continue;
-      const c = t.content.find((x) => local >= x.start && local < end(x));
-      if (!c || c.opacity <= 0) continue;
-      ctx.save();
-      ctx.globalAlpha = c.opacity;
-      ctx.globalCompositeOperation = BLEND_OP[c.blend];
-      this.drawContent(ctx, c, local - c.start, unit, movie);
-      ctx.restore();
+    this.nest.push(local);
+    try {
+      for (let i = g.tracks.length - 1; i >= 0; i--) {
+        const t = g.tracks[i];
+        if (t.hidden) continue;
+        const c = t.content.find((x) => local >= x.start && local < end(x));
+        if (!c || c.opacity <= 0) continue;
+        ctx.save();
+        ctx.globalAlpha = c.opacity;
+        ctx.globalCompositeOperation = BLEND_OP[c.blend];
+        this.drawContent(ctx, c, local - c.start, unit, movie);
+        ctx.restore();
+      }
+    } finally {
+      this.nest.pop();
     }
   }
 

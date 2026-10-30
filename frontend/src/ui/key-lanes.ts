@@ -1,5 +1,5 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
-import { easeAt, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
+import { channelSpec, easeAt, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
 
 export const LANE_H = 28;
@@ -111,7 +111,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           round(c, xa, cy - 8, xb - xa, 16, 8);
           c.fill();
           const e = easeAt(slot.lane, frames[i], row.channel);
-          const label = EASES.find((x) => x.id === e)?.label ?? '';
+          const label = EASES.find((x) => x.id === e)?.label ?? (e === 'custom' ? 'Custom' : '');
           if (label && xb - xa > c.measureText(label).width + GLYPH * 2 + 6) {
             c.fillStyle = p.onAccent;
             c.textAlign = 'center';
@@ -131,14 +131,26 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         c.fillStyle = overBar ? p.onAccent : p.accent;
         c.textAlign = 'left';
         c.fillText(row.label, lx, cy);
+        if (hasGraphPill(slot, row, g)) {
+          const px = graphPillX(g);
+          c.fillStyle = p.text;
+          c.globalAlpha = 0.18;
+          round(c, px, cy - 8, GRAPH_PILL_W, 16, 8);
+          c.fill();
+          c.globalAlpha = 1;
+          c.fillStyle = p.text;
+          c.textAlign = 'center';
+          c.fillText('Graph', px + GRAPH_PILL_W / 2, cy);
+          c.textAlign = 'left';
+        }
         if (local !== undefined) {
           // the channel's value at the Playhead, at the row's right end
-          const ch = kindSpec(kind).channels.find((x) => x.id === row.channel);
+          const ch = channelSpec(kind, row.channel);
           const v = evalLane(item, slot.lane, local)[row.channel];
           if (ch && Number.isFinite(v)) {
             const shown = Math.round(v * ch.display * 10) / 10;
             const text = `${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ch.unit === 'x' ? 'x' : ''}`;
-            const rx = Math.min(g.x1, g.width) - 10;
+            const rx = Math.min(g.x1, g.width) - 10 - (hasGraphPill(slot, row, g) ? GRAPH_PILL_W + 6 : 0);
             const lastX = frames.length ? g.x(frames[frames.length - 1]) : g.x0;
             c.fillStyle = rx - lastX > 40 || frames.length < 2 ? p.text : p.onAccent;
             c.textAlign = 'right';
@@ -159,6 +171,15 @@ export interface LaneHit {
   key: number | null;
   /** Content-local frame under the pointer, unsnapped to keys. */
   at: number;
+  /** The pointer is on the row's Graph button. */
+  graph?: boolean;
+}
+
+const GRAPH_PILL_W = 38;
+const graphPillX = (g: LaneGeom): number => Math.min(g.x1, g.width) - 8 - GRAPH_PILL_W;
+/** The Graph button sits at the right end of the first row of an expanded lane, when the block is wide enough. */
+function hasGraphPill(slot: LaneSlot, row: LaneRow, g: LaneGeom): boolean {
+  return slot.lane.expanded && row === slot.rows[0] && !!row.channel && Math.min(g.x1, g.width) - Math.max(g.x0, 0) > 150;
 }
 
 /**
@@ -171,6 +192,7 @@ export function hitLanes(item: Content, top: number, x: number, y: number, g: La
     for (const row of slot.rows) {
       const ry = top + slot.y + row.y;
       if (y < ry || y >= ry + row.h) continue;
+      if (hasGraphPill(slot, row, g) && x >= graphPillX(g) && x <= graphPillX(g) + GRAPH_PILL_W) return { slot, row, key: null, at: Math.round(local(x)), graph: true };
       let key: number | null = null, best = KEY_HIT + 0.001;
       for (const f of laneFrames(slot.lane, row.channel ?? undefined)) {
         const d = Math.abs(g.x(f) - x);

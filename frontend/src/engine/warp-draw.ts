@@ -120,22 +120,42 @@ export function contentRect(c: Content, movie: Movie): Rect {
   return { x: 0, y: 0, w: movie.width, h: movie.height };
 }
 
+/** A matrix applied after the content's own transform (its parents and the camera, set by the renderer around a draw, engine/transform.ts). */
+let stagePost: [number, number, number, number, number, number] | null = null;
+let stagePostInv: [number, number, number, number, number, number] | null = null;
+
+export function setStagePost(m: [number, number, number, number, number, number] | null): void {
+  stagePost = m;
+  stagePostInv = null;
+  if (!m) return;
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Math.abs(det) < 1e-12) return;
+  const a = m[3] / det, b = -m[1] / det, c = -m[2] / det, d = m[0] / det;
+  stagePostInv = [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+}
+
 /** Content space to Stage space (movie pixels): the content's move, scale, flip and rotation around the movie centre. */
 export function localToStage(a: Animated, w: number, h: number, x: number, y: number, out: number[]): void {
   const sx = a.scaleX * (a.flipH ? -1 : 1), sy = a.scaleY * (a.flipV ? -1 : 1);
   const r = (a.rotation * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
-  const px = (x - w / 2) * sx, py = (y - h / 2) * sy;
-  out[0] = w / 2 + a.x + px * cos - py * sin;
-  out[1] = h / 2 + a.y + px * sin + py * cos;
+  const cx = w / 2 + (a.px ?? 0), cy = h / 2 + (a.py ?? 0);
+  const px = (x - cx) * sx, py = (y - cy) * sy;
+  out[0] = cx + a.x + px * cos - py * sin;
+  out[1] = cy + a.y + px * sin + py * cos;
+  const m = stagePost;
+  if (m) { const ox = out[0], oy = out[1]; out[0] = m[0] * ox + m[2] * oy + m[4]; out[1] = m[1] * ox + m[3] * oy + m[5]; }
 }
 
 /** Stage space back to content space (before the Distort or Warp). */
 export function stageToLocal(a: Animated, w: number, h: number, x: number, y: number, out: number[]): void {
   const sx = a.scaleX * (a.flipH ? -1 : 1) || 1e-6, sy = a.scaleY * (a.flipV ? -1 : 1) || 1e-6;
   const r = (a.rotation * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
-  const qx = x - w / 2 - a.x, qy = y - h / 2 - a.y;
-  out[0] = w / 2 + (qx * cos + qy * sin) / sx;
-  out[1] = h / 2 + (-qx * sin + qy * cos) / sy;
+  const cx = w / 2 + (a.px ?? 0), cy = h / 2 + (a.py ?? 0);
+  const iv = stagePostInv;
+  if (iv) { const ix = x, iy = y; x = iv[0] * ix + iv[2] * iy + iv[4]; y = iv[1] * ix + iv[3] * iy + iv[5]; }
+  const qx = x - cx - a.x, qy = y - cy - a.y;
+  out[0] = cx + (qx * cos + qy * sin) / sx;
+  out[1] = cy + (-qx * sin + qy * cos) / sy;
 }
 
 /** Grid steps per side for the triangle list: enough to look smooth, few enough to draw every frame. */
@@ -187,7 +207,11 @@ export interface WarpView { scale: number; ox: number; oy: number }
  * onto `ctx`. Each triangle is clipped a half pixel wider than itself so neighbours do not leave hairlines.
  */
 export function drawWarped(ctx: Ctx, src: CanvasImageSource, a: Animated, view: WarpView, w: number, h: number, rect?: Rect): void {
-  const t = warpQuads(a, w, h, rect);
+  drawTriangles(ctx, src, warpQuads(a, w, h, rect), view);
+}
+
+/** Draws a triangle list in warpQuads's layout (source corners in content px, destination corners in Stage px); bones.ts uses it too. */
+export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView): void {
   const k = view.scale;
   for (let p = 0; p + 11 < t.length; p += 12) {
     const s0x = t[p] * k, s0y = t[p + 1] * k, s1x = t[p + 2] * k, s1y = t[p + 3] * k, s2x = t[p + 4] * k, s2y = t[p + 5] * k;

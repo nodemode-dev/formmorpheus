@@ -6,6 +6,7 @@ import type { Asset, Content } from '../engine/types';
 import { api, capabilities, onServiceChange } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
+import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { AudioEngine } from '../media/audio';
 import { registerFonts } from '../media/fonts';
 import { importMedia } from '../media/import';
@@ -17,6 +18,7 @@ import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
 import { ContentMenu } from '../ui/content-menu';
+import { LipsyncDialog } from '../ui/lipsync-dialog';
 import { anyDialogOpen, confirmAction, promptName } from '../ui/dialogs';
 import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../ui/dom';
 import { enhanceAllSelects } from '../ui/dropdown';
@@ -34,8 +36,10 @@ import { applyShellPrefs, loadPrefs, updatePrefs, type Prefs } from '../ui/prefs
 import { SettingsDialog } from '../ui/settings-dialog';
 import { PaintView } from '../ui/paint-view';
 import { StageView } from '../ui/stage-view';
+import { CameraLane } from '../ui/camera-lane';
 import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
+import { GraphEditor } from '../ui/graph-editor';
 import { TitleTools } from '../ui/titlebar-tools';
 import { toast } from '../ui/toast';
 import { TrackMenu } from '../ui/track-menu';
@@ -104,6 +108,9 @@ export function startApp(): void {
   stage = new StageView(q(root, '.fm-stage-wrap'), engine, renderer);
   const commands = new Commands();
   const contentMenu = new ContentMenu(engine);
+  const lipsyncDialog = new LipsyncDialog(engine, () => audio);
+  contentMenu.onLipsync = () => lipsyncDialog.show();
+  contentMenu.onEditInFormvis = (id) => { void roundTripOut('drawing', id); };
   const trackMenu = new TrackMenu(engine);
   const movieSettings = new MovieSettings(engine);
   const newMovie = new NewMovieDialog(engine);
@@ -116,7 +123,10 @@ export function startApp(): void {
     create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(r.right, r.top - 6); },
     edit: (c) => editContent(c),
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
+    graph: (id, kind, channel) => graphEditor.open(id, kind, channel),
   });
+  const graphEditor = new GraphEditor(timeline.root, engine);
+  new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);
   const textCard = new TextCard(engine);
@@ -323,6 +333,13 @@ export function startApp(): void {
       await firstPictures(video, m, r.contents);
       if (r.assets.some((a) => a.asset.kind === 'font')) await registerFonts({ ...m, assets: { ...m.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, (id) => engine.assets.get(id));
       const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
+      if (r.replaces) {
+        // a formvis document that left from this Drawing: its layers are swapped in as one undo step
+        const target = r.replaces, layers = r.contents[0].layers;
+        engine.run('Update Drawing from formvis', (mv) => ({ movie: ops.updateContent({ ...mv, assets: { ...mv.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, target, (c) => ({ ...c, layers })), select: [target] }));
+        if (r.notice) toast(r.notice);
+        return;
+      }
       engine.run(`Add ${f.name.replace(/\.[^.]+$/, '')}`, (mv) => {
         let next: typeof mv = { ...mv, assets: { ...mv.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } };
         const ids: string[] = [];
@@ -343,7 +360,36 @@ export function startApp(): void {
     }
   }
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.woff,.woff2,.flac,.ogg,.opus,.m4a';
+  /** Round trips with formvis and formvfx (io/round-trip): a file goes out as a download, and comes back through Import or a drop. */
+  async function roundTripOut(what: 'drawing' | 'frame' | 'movie', contentId?: string): Promise<void> {
+    const m = engine.movie;
+    if (!m) return;
+    const job = engine.startJob(what === 'movie' ? 'Movie as formvfx composition' : 'formvis document', 1);
+    try {
+      const blobOf = (id: string): Blob | undefined => engine.assets.get(id);
+      const drawing = contentId ? engine.selected.find((c) => c.id === contentId) : engine.selected.find((c) => c.kind === 'drawing');
+      const out = what === 'movie' ? await movieToFormvfx(m, blobOf)
+        : what === 'drawing' || (drawing && drawing.kind === 'drawing') ? await drawingToFormvis(m, drawing as Content, blobOf)
+        : await frameToFormvis(m, engine.frame, renderer);
+      const a = el<HTMLAnchorElement>('<a hidden></a>');
+      a.href = URL.createObjectURL(out.blob);
+      a.download = out.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      if (what === 'movie') toast(`${out.name}: ${out.note ?? ''} Unzip it and open the .fvxproj in formvfx.`);
+      else if (drawing && drawing.kind === 'drawing') toast(`${out.name} saved. Edit it in formvis, save it, then drop the file here to bring the layers back.`);
+      else toast(`${out.name}: ${out.note ?? ''}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The export failed.', 'error');
+    } finally {
+      engine.endJob(job);
+    }
+  }
+  const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
+
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.woff,.woff2,.flac,.ogg,.opus,.m4a,.fvd,.fvxproj,.zip';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
@@ -375,6 +421,10 @@ export function startApp(): void {
     { id: 'save-as', label: 'Save As...', keys: ['Shift+Mod+S'], enabled: has, run: () => { void save(true); } },
     { id: 'export-fmo', label: 'Share Movie File', enabled: has, run: () => { void exportFile(false); } },
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
+    { id: 'export-fvd', label: 'Current frame as formvis document...', enabled: has, run: () => { void roundTripOut('frame'); } },
+    { id: 'export-fvfx', label: 'Movie as formvfx composition...', enabled: has, run: () => { void roundTripOut('movie'); } },
+    { id: 'import-fvd', label: 'Import formvis document...', enabled: has, run: () => pickFor('.fvd,application/zip') },
+    { id: 'import-fvfx', label: 'Import formvfx composition...', enabled: has, run: () => pickFor('.fvxproj,.zip,application/zip') },
     { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },
     { id: 'export', label: 'Export...', keys: ['Mod+E'], enabled: has, run: () => exportDialog.open('share') },
     { id: 'close', label: 'Close Movie', keys: ['Mod+W'], enabled: has, run: () => { void askToKeep().then((ok) => { if (ok) engine.close(); }); } },
@@ -411,6 +461,7 @@ export function startApp(): void {
     { id: 'timeline-in', label: 'Zoom Timeline In', keys: ['Mod+='], enabled: has, run: () => timeline?.zoomBy(1.4) },
     { id: 'timeline-out', label: 'Zoom Timeline Out', keys: ['Mod+-'], enabled: has, run: () => timeline?.zoomBy(1 / 1.4) },
     { id: 'timeline-fit', label: 'Fit Timeline', keys: ['Mod+0'], enabled: has, run: () => timeline?.fit() },
+    { id: 'graph-editor', label: 'Graph Editor', keys: ['Mod+Shift+G'], enabled: has, run: () => graphEditor.toggle() },
     { id: 'movie-settings', label: 'Movie Settings...', keys: ['Mod+J'], enabled: has, run: () => movieSettings.toggle(q(root, '[data-act="settings"]')) },
     { id: 'fit-to-content', label: 'Fit Duration to Content', enabled: has, run: () => engine.run('Fit to Content', (m) => ops.fitToContent(m)) },
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
@@ -423,11 +474,11 @@ export function startApp(): void {
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
 
   menus.push(
-    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', '-', 'import-media', '-', 'close'] },
+    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', '-', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', 'graph-editor', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help', 'about'] },
   );
   const syncRecentCommands = (): void => {

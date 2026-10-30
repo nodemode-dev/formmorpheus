@@ -3,9 +3,10 @@
 // The CPU path in render.ts stays the reference and the fallback. No DOM.
 import { end, flipIndexAt } from '../model';
 import { animate, type Animated } from '../keys';
+import { memberMatrix, topMatrix } from '../transform';
 import type { BlendMode, Content, DrawingLayer, Movie, Track } from '../types';
 import {
-  FS_BOOST, FS_BOX, FS_COPY, FS_DOWN, FS_GAUSS, FS_HSB, FS_MASK, FS_NOISE_APPLY, FS_NOISE_GRID, FS_PRESENT, FS_SHARPEN,
+  FS_BOIL, FS_BOOST, FS_BOX, FS_COPY, FS_DOWN, FS_GAUSS, FS_HSB, FS_MASK, FS_NOISE_APPLY, FS_NOISE_GRID, FS_PRESENT, FS_SHARPEN,
   FS_SRC_BLEND, FS_SRC_PLAIN, FS_UP, VS_BOX, VS_SRC,
 } from './shaders';
 import { TextureCache, type TexSource } from './textures';
@@ -66,18 +67,6 @@ function mul(m: Mat, n: Mat): Mat {
     m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
     m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5],
   ];
-}
-
-/** Movie space to target pixels for a content: the same chain drawContent builds on the 2D context. */
-function contentMatrix(a: Animated, view: ViewLike, movie: Movie): Mat {
-  const tx = view.ox + (movie.width / 2 + a.x) * view.scale;
-  const ty = view.oy + (movie.height / 2 + a.y) * view.scale;
-  const r = (a.rotation * Math.PI) / 180;
-  const cs = Math.cos(r), sn = Math.sin(r);
-  let m: Mat = [1, 0, 0, 1, tx, ty];
-  m = mul(m, [cs, sn, -sn, cs, 0, 0]);
-  m = mul(m, [a.scaleX * view.scale * (a.flipH ? -1 : 1), 0, 0, a.scaleY * view.scale * (a.flipV ? -1 : 1), 0, 0]);
-  return mul(m, [1, 0, 0, 1, -movie.width / 2, -movie.height / 2]);
 }
 
 // perm table of paint/filters.ts noise (same seed, same shuffle)
@@ -403,7 +392,8 @@ export class GpuCompositor {
 
   private content(host: GpuHost, target: Surf, c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, parent: Mat, alpha: number, mode: number): void {
     if (parent === IDENT && host.cpu(c, a, local)) { this.raster(host, target, c, local, view, movie, a, alpha, mode); return; }
-    const m = mul(parent, contentMatrix(a, view, movie));
+    // top level: view, camera, parents and own (engine/transform.ts); a group member: own and same-group parents, inside the group's matrix
+    const m = parent === IDENT ? topMatrix(movie, c, local + c.start, a, view) : mul(parent, memberMatrix(movie, c, local + c.start, a));
     const mw = movie.width, mh = movie.height;
     switch (c.kind) {
       case 'image': {
@@ -542,9 +532,11 @@ export class GpuCompositor {
 
   /** Runs the content's filters in the CPU order (HSB, blur, lens, sharpen, noise); returns the surface holding the result. */
   private filters(layer: Surf, a: Animated, view: ViewLike, movie: Movie): Surf {
-    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens) return layer;
+    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil) return layer;
     const side = Math.max(movie.width, movie.height) * 0.05 * view.scale;
     const stages: ((src: Surf, fmt: 'u8' | 'f16') => Surf)[] = [];
+    const bo = a.boil;
+    if (bo) stages.push((s, f) => this.boilPass(s, f, bo.amount * view.scale, bo.scale * view.scale, bo.seed));
     const hsb = a.hsb;
     if (hsb && (hsb.hue !== 0 || hsb.saturation !== 0 || hsb.brightness !== 0)) stages.push((s, f) => this.hsbPass(s, f, hsb.hue, hsb.saturation, hsb.brightness));
     if (a.blur > 0) { const r = a.blur * side; stages.push((s, f) => this.blur(s, f, r / 2)); }
@@ -591,6 +583,18 @@ export class GpuCompositor {
     this.setTex(p, 'uTex', 0, src.tex);
     gl.uniformMatrix3fv(p.loc('uM'), false, cm);
     gl.uniform1f(p.loc('uOff'), brightness > 0 ? brightness : 0);
+    this.full(p, out);
+    return out;
+  }
+
+  private boilPass(src: Surf, fmt: 'u8' | 'f16', amount: number, scale: number, seed: number): Surf {
+    const out = this.acquire(src.w, src.h, fmt, false);
+    const p = this.prog('boil', FS_BOIL);
+    this.gl.useProgram(p.p);
+    this.setTex(p, 'uTex', 0, src.tex);
+    this.gl.uniform1f(p.loc('uAmount'), amount);
+    this.gl.uniform1f(p.loc('uSpacing'), Math.max(2, scale));
+    this.gl.uniform1i(p.loc('uSeed'), seed);
     this.full(p, out);
     return out;
   }

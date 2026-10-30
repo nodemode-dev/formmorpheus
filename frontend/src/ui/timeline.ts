@@ -12,6 +12,7 @@ import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
 import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
+import { cameraMode } from './camera-view';
 import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
 
 const RULER_H = 28;
@@ -33,6 +34,8 @@ export interface TimelineHooks {
   create(anchor: HTMLElement): void;
   edit(c: Content): void;
   scrubSpeed(): number;
+  /** Open the Graph on a lane (the Graph button on an expanded lane). */
+  graph?(id: string, kind: KeyKind, channel: string | null): void;
 }
 
 type Drag =
@@ -73,6 +76,7 @@ export class TimelineView {
         <button class="fm-pill-btn" type="button" data-act="home">Theater</button>
         <button class="fm-round-btn" type="button" data-act="settings" title="Movie settings" aria-label="Movie settings">${icon('movieSettings', 18)}</button>
         <button class="fm-round-btn" type="button" data-act="multi" title="Multi-select" aria-label="Multi-select" aria-pressed="false">${icon('multiSelect', 18)}</button>
+        <button class="fm-round-btn" type="button" data-act="camera" title="Camera mode" aria-label="Camera mode" aria-pressed="false">${kindSpec('camera').icon}</button>
       </div>
       <div class="fm-transport-mid">
         <button class="fm-ghost-btn" type="button" data-act="back" title="Previous frame" aria-label="Previous frame">${icon('stepBack', 16)}</button>
@@ -173,6 +177,11 @@ export class TimelineView {
     engine.on('playing', (on) => this.syncPlay(on));
     engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.schedule(); } });
     document.addEventListener('nm:ui-settings-changed', () => { this.pal = null; this.thumbs = new WeakMap(); this.schedule(); });
+    cameraMode.onChange(() => {
+      const b = q<HTMLButtonElement>(this.root, '[data-act="camera"]');
+      setClass(b, 'is-on', cameraMode.on);
+      b.setAttribute('aria-pressed', String(cameraMode.on));
+    });
     this.syncMode(engine.mode);
     this.syncPlay(false);
   }
@@ -299,6 +308,7 @@ export class TimelineView {
     else if (act === 'back') this.engine.step(-1);
     else if (act === 'fwd') this.engine.step(1);
     else if (act === 'create') this.hooks.create(btn);
+    else if (act === 'camera') cameraMode.toggle();
   }
 
   private resize(): void {
@@ -350,6 +360,15 @@ export class TimelineView {
     setText(this.readout, `${timecode(this.engine.frame, m.fps)} · ${this.engine.frame + 1} / ${m.duration}`);
     this.placePill(m);
     this.placeKeyPill(m);
+    this.onDrawn?.();
+  }
+
+  /** Called after each draw so the Camera lane above the tracks follows the same zoom and scroll. */
+  onDrawn: (() => void) | null = null;
+
+  /** Frame to x and x to frame on the tracks canvas, for lanes drawn beside it. */
+  axis(): { x(frame: number): number; frame(x: number): number; width: number; left: number } {
+    return { x: (f) => this.fx(f), frame: (x) => this.xf(x), width: this.width, left: LEFT };
   }
 
   private clear(): void {
@@ -433,6 +452,7 @@ export class TimelineView {
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
       if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)));
     }
+    this.drawLinks(c, m, p.accent);
     if (endX < this.width) {
       c.fillStyle = p.end;
       c.globalAlpha = 0.55;
@@ -468,6 +488,39 @@ export class TimelineView {
       c.globalAlpha = 1;
     }
     c.lineWidth = 1;
+  }
+
+  /** A dashed link from each block that follows a parent to the parent's block, at the child's first visible frame. */
+  private drawLinks(c: CanvasRenderingContext2D, m: Movie, color: string): void {
+    for (let i = 0; i < m.tracks.length; i++) {
+      for (const item of m.tracks[i].content) {
+        if (!item.parent) continue;
+        const to = locate(m, item.parent);
+        if (!to || to.content.id === item.id) continue;
+        const xs = Math.max(this.fx(item.start) + 12, 4);
+        const x = Math.min(xs, this.fx(end(item)) - 4);
+        if (x < 0 || x > this.width) continue;
+        const y0 = this.laneTop(i) + BLOCK_H / 2, y1 = this.laneTop(to.trackIndex) + BLOCK_H / 2;
+        if ((y0 < 0 && y1 < 0) || (y0 > this.height && y1 > this.height)) continue;
+        c.save();
+        c.strokeStyle = color;
+        c.fillStyle = color;
+        c.lineWidth = 1.5;
+        c.setLineDash([3, 3]);
+        c.beginPath();
+        c.moveTo(x, y0);
+        c.lineTo(x, y1);
+        c.stroke();
+        c.setLineDash([]);
+        c.beginPath();
+        c.arc(x, y0, 3.5, 0, Math.PI * 2);
+        c.fill();
+        c.beginPath();
+        c.arc(x, y1, 3.5, 0, Math.PI * 2);
+        c.stroke();
+        c.restore();
+      }
+    }
   }
 
   private geom(item: Content): LaneGeom {
@@ -781,6 +834,11 @@ export class TimelineView {
 
   private laneDown(e: PointerEvent, lh: { c: Content; track: Track; hit: LaneHit }): void {
     const { c, track, hit } = lh;
+    if (hit.graph && this.hooks.graph) {
+      this.engine.select([c.id], track.id);
+      this.hooks.graph(c.id, hit.slot.lane.kind, hit.row.channel);
+      return;
+    }
     this.tracksCanvas.setPointerCapture(e.pointerId);
     if (!this.engine.selection.content.includes(c.id) || this.engine.selection.content.length !== 1) this.engine.select([c.id], track.id);
     const last = c.duration - 1;
