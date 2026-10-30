@@ -17,6 +17,7 @@ import { GpuCompositor, type GpuHost } from './gpu/compositor';
 import { probeGpu, type ProbeResult } from './gpu/probe';
 import { liveSet } from './gpu/live';
 import { layoutText, paintText } from './text-layout';
+import { SparseIndex } from './sparse';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type Surface = OffscreenCanvas;
@@ -221,6 +222,7 @@ export class Renderer {
   /** `keep`: pictures of a movie being swapped in stay decoded. */
   forget(keep?: Set<string>): void {
     if (!this.gpuShared) this.gpu?.forget(keep);
+    this.sparse.clear();
     for (const [id, b] of [...this.bitmaps]) {
       if (keep?.has(id)) continue;
       b?.close();
@@ -258,6 +260,7 @@ export class Renderer {
       this.bitmaps.delete(id);
       this.bitmaps.set(id, have);
       this.used.set(id, this.gen);
+      if (have) this.sparse.note(have);
       return have;
     }
     if (!this.pending.has(id)) {
@@ -284,6 +287,7 @@ export class Renderer {
   /** Decoded pictures are capped (each 4K layer is about 33 MB); the least recently drawn are closed and decode again on demand. */
   private keep(id: string, bmp: ImageBitmap | null): void {
     this.bitmaps.set(id, bmp);
+    if (bmp) this.sparse.note(bmp);
     this.used.set(id, this.gen);
     let sum = 0;
     for (const b of this.bitmaps.values()) if (b) sum += b.width * b.height * 4;
@@ -316,7 +320,9 @@ export class Renderer {
   }
 
   /** `keepAlpha`: export of a transparent movie: nothing is filled behind the content. */
-  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean; noCamera?: boolean }): void {
+  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean; noCamera?: boolean; exact?: boolean }): void {
+    // exports draw every layer whole: the ink-band clip shifts a few anti-aliased edge pixels
+    this.exact = opts.exact === true;
     // `noCamera`: the Stage's Camera mode shows the world as the camera sees it from outside
     let mv = movie;
     if (opts.noCamera && movie.camera) {
@@ -330,6 +336,22 @@ export class Renderer {
     this.flat = null;
     try { this.drawFrameInner(ctx, mv, frame, view, opts); } finally { this.frameNow = -1; }
   }
+
+  /** The tracks alone, over what `ctx` holds: no background or backstage (the Stage drag cache composes layers itself). CPU only. `_proxy` is kept for callers and ignored. */
+  composeLayer(ctx: OffscreenCanvasRenderingContext2D, movie: Movie, frame: number, view: View, _proxy = false): void {
+    this.pw = Math.max(1, Math.round(view.width));
+    this.ph = Math.max(1, Math.round(view.height));
+    this.gen++;
+    this.frameNow = frame;
+    this.incomplete = false;
+    this.nest.length = 0;
+    this.flat = null;
+    try { this.composeTracks(ctx, movie.tracks, frame, view, movie); } finally { this.frameNow = -1; }
+  }
+
+  /** Per-picture ink bands: a layer draw fills only the pixels near ink (engine/sparse.ts). */
+  private readonly sparse = new SparseIndex();
+  private exact = false;
 
   /** Movie frame being drawn (parents and the camera follow it), or -1 outside drawFrame (thumbnails draw a content on its own). */
   private frameNow = -1;
@@ -658,18 +680,20 @@ export class Renderer {
       if (!l.visible || l.opacity <= 0) continue;
       const bmp = this.bitmap(l.pixels);
       if (!bmp) continue;
+      const src = bmp;
       if (isPixelBlend(l.blend)) {
         const s = this.surface(ctx.canvas.width, ctx.canvas.height);
         const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
         sc.setTransform(ctx.getTransform());
-        sc.drawImage(bmp, rect.x, rect.y, rect.w, rect.h);
+        sc.drawImage(src, rect.x, rect.y, rect.w, rect.h);
         blendCanvasOnto(ctx, s, l.blend, baseAlpha * l.opacity);
         this.release(s);
         continue;
       }
       ctx.globalAlpha = baseAlpha * l.opacity;
       ctx.globalCompositeOperation = l.blend === 'normal' ? baseOp : BLEND_OP[l.blend];
-      ctx.drawImage(bmp, rect.x, rect.y, rect.w, rect.h);
+      if (!this.exact && this.sparse.draw(ctx, bmp, rect.x, rect.y, rect.w, rect.h)) continue;
+      ctx.drawImage(src, rect.x, rect.y, rect.w, rect.h);
     }
     ctx.globalAlpha = baseAlpha;
     ctx.globalCompositeOperation = baseOp;

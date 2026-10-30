@@ -1,3 +1,5 @@
+import { lowFetch } from './thumb-queue';
+
 export interface Capabilities {
   app: string;
   version: string;
@@ -56,7 +58,15 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-const lib = (name: string): string => `/library/${encodeURIComponent(name)}`;
+/** Pictures go through the low-priority queue so they never hold up the control calls above. */
+async function picture(path: string, v: number | undefined, opts: { el?: Element | null; urgent?: boolean }): Promise<Response> {
+  if (!(await serviceReady())) throw new ApiError(NOT_RUNNING, 0);
+  const res = await lowFetch(`/api${path}${v ? `?v=${v}` : ''}`, opts);
+  if (!res.ok) throw new ApiError(res.statusText, res.status);
+  return res;
+}
+
+const lib = (name: string): string =>`/library/${encodeURIComponent(name)}`;
 
 export const api = {
   async library(): Promise<LibraryItem[]> {
@@ -128,22 +138,23 @@ export const api = {
   async stat(paths: string[]): Promise<Array<{ path: string; exists: boolean; size: number; modified: number }>> {
     return paths.map((path) => ({ path, exists: false, size: 0, modified: 0 }));
   },
-  async thumbnail(by: { name?: string; path?: string }): Promise<Blob | null> {
+  /** `el` is the grid cell showing it (visible cells load first); `v` is the movie's modified time, which lets the browser keep the picture. */
+  async thumbnail(by: { name?: string; path?: string; el?: Element | null; v?: number }): Promise<Blob | null> {
     if (!by.name) return null;
-    try { return await (await request(`${lib(by.name)}/poster`)).blob(); } catch { return null; }
+    try { return await (await picture(`${lib(by.name)}/poster`, by.v, { el: by.el })).blob(); } catch { return null; }
   },
   /** The hover strip saved in a movie (null when it has none, an empty answer). */
-  async preview(name: string): Promise<Blob | null> {
-    try { const b = await (await request(`${lib(name)}/preview`)).blob(); return b.size ? b : null; } catch { return null; }
+  async preview(name: string, v?: number): Promise<Blob | null> {
+    try { const b = await (await picture(`${lib(name)}/preview`, v, { urgent: true })).blob(); return b.size ? b : null; } catch { return null; }
   },
   /** A .fmo from an absolute path the operating system handed the app (double-click, Open With). */
   async readFile(path: string): Promise<Blob> {
     return (await request(`/files/read?path=${encodeURIComponent(path)}`)).blob();
   },
-  async readPath(path: string): Promise<Blob | null> {
+  async readPath(path: string, el?: Element | null): Promise<Blob | null> {
     const name = exportName(path);
     if (!name) return null;
-    try { return await (await request(`/exports/${encodeURIComponent(name)}`)).blob(); } catch { return null; }
+    try { return await (el ? picture(`/exports/${encodeURIComponent(name)}`, undefined, { el }) : request(`/exports/${encodeURIComponent(name)}`)).then((r) => r.blob()); } catch { return null; }
   },
 };
 

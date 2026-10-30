@@ -8,7 +8,7 @@
 // A jump restarts the generator at the target, and mediabunny seeks to the nearest key frame. While the Playhead
 // is dragged, a lane shows the nearest key frame (one packet to decode) and refines to the exact frame once the
 // drag rests.
-import { ALL_FORMATS, BlobSource, CanvasSink, EncodedPacketSink, Input, type InputVideoTrack } from 'mediabunny';
+import { ALL_FORMATS, BlobSource, CanvasSink, EncodedPacketSink, Input, VideoSampleSink, type InputVideoTrack, type VideoSample } from 'mediabunny';
 import type { MediaInfo, VideoSource } from './types';
 import { blobHash, ThumbCache } from './thumb-cache';
 import { planThumbTimes, THUMB_LANES, THUMB_VERSION } from './key-thumbs';
@@ -63,7 +63,10 @@ interface Thumb { canvas: Cv; bytes: number }
 
 interface ThumbJob { key: string; t: number; w: number; h: number; seen: number }
 
-type Gen = AsyncGenerator<{ canvas: Cv; timestamp: number; duration: number }, void, unknown>;
+type Gen = AsyncGenerator<VideoSample, void, unknown>;
+
+/** Frames behind an exact() target worth keeping: a far seek decodes from a key frame, most of that run is thrown away. */
+const EXACT_BEHIND = 0.12;
 
 /** A frame's canvas, or null once `free()` has shrunk it to 0x0. */
 const live = (f: Frame | null | undefined): Cv | null => (f && f.canvas.width > 0 ? f.canvas : null);
@@ -89,13 +92,15 @@ interface Base {
   thumbSize: { w: number; h: number } | null;
   prefillTimer: number;
   prefillPass: number;
+  /** Output geometry for a decoded sample (what CanvasSink would use with no resize). */
+  conv: { rot: 0 | 90 | 180 | 270; flip: boolean; w: number; h: number } | null;
 }
 
 interface Lane {
   key: string;
   b: Base;
   gone: boolean;
-  sink: CanvasSink | null;
+  sink: VideoSampleSink | null;
   qsink: CanvasSink | null;
   frames: Frame[];
   quick: Frame[];
@@ -292,7 +297,7 @@ export class VideoPool implements VideoSource {
     const b: Base = {
       id, input, track: null, packets: null, ready: false, failed: false, disposed: false, opening: Promise.resolve(),
       fps: 30, firstTs: 0, duration: 0, lanes: new Map(), lastAny: null, hash: null,
-      thumbSinks: new Map(), thumbJobs: new Map(), thumbBusy: false, thumbSize: null, prefillTimer: 0, prefillPass: 0,
+      thumbSinks: new Map(), thumbJobs: new Map(), thumbBusy: false, thumbSize: null, prefillTimer: 0, prefillPass: 0, conv: null,
     };
     b.opening = this.open(b, blob);
     this.bases.set(id, b);
@@ -313,7 +318,7 @@ export class VideoPool implements VideoSource {
       this.disposeLane(old);
     }
     const e: Lane = {
-      key, b, gone: false, sink: b.track ? new CanvasSink(b.track, { alpha: true }) : null, qsink: null, frames: [], quick: [], quickT: -1, quickBusy: false,
+      key, b, gone: false, sink: b.track ? new VideoSampleSink(b.track) : null, qsink: null, frames: [], quick: [], quickT: -1, quickBusy: false,
       gen: null, genEnd: 0, genCount: 0, lastYield: null, running: false, focus: 0, ahead: AHEAD, finalTs: -1,
       lastShown: null, pinned: [], waiters: [], want: -1, used: performance.now(), lastPrefetch: 0, missT: -1, missAt: 0,
       scrubbing: false, scrubTimer: 0, hold: 0,
@@ -331,7 +336,12 @@ export class VideoPool implements VideoSource {
       b.duration = await track.computeDuration();
       try { b.fps = Math.max(1, (await track.computePacketStats(120)).averagePacketRate || 30); } catch { b.fps = 30; }
       b.packets = new EncodedPacketSink(track);
-      for (const l of b.lanes.values()) if (!l.sink) l.sink = new CanvasSink(track, { alpha: true });
+      const rot = (await track.getRotation()) as 0 | 90 | 180 | 270;
+      const flip = await track.getFlip();
+      const sw = await track.getSquarePixelWidth();
+      const sh = await track.getSquarePixelHeight();
+      b.conv = { rot, flip, w: rot % 180 === 0 ? sw : sh, h: rot % 180 === 0 ? sh : sw };
+      for (const l of b.lanes.values()) if (!l.sink) l.sink = new VideoSampleSink(track);
       b.hash = blobHash(blob).catch(() => `${blob.size}`);
       b.ready = true;
       if (b.disposed) return;
@@ -561,16 +571,16 @@ export class VideoPool implements VideoSource {
           let s = startT;
           const first = e.frames[0];
           if (cov < 0 && first && first.ts > startT && first.ts - startT < THROUGH) s = Math.max(e.b.firstTs, startT - 0.5);
-          g = e.sink.canvases(s);
+          g = e.sink.samples(s);
           e.gen = g;
           e.genEnd = s;
           e.genCount = 0;
           e.lastYield = null;
         }
-        let r: IteratorResult<{ canvas: Cv; timestamp: number; duration: number }, void>;
+        let r: IteratorResult<VideoSample, void>;
         try { r = await g.next(); } catch { r = { done: true, value: undefined }; }
-        if (this.dead(e)) break;
-        if (e.gen !== g) continue;
+        if (this.dead(e)) { if (!r.done) r.value.close(); break; }
+        if (e.gen !== g) { if (!r.done) r.value.close(); continue; }
         if (r.done) {
           e.gen = null;
           const last = e.frames[e.frames.length - 1];
@@ -579,16 +589,35 @@ export class VideoPool implements VideoSource {
           continue;
         }
         e.genCount++;
-        if (head && ++head.pulled > EXACT_PULL_CAP) { this.abandon(e, head); continue; }
+        if (head && ++head.pulled > EXACT_PULL_CAP) { r.value.close(); this.abandon(e, head); continue; }
         const w = r.value;
         const end = w.timestamp + Math.max(w.duration, 0);
         e.genEnd = end;
-        const canon = this.insert(e, { ts: w.timestamp, end, canvas: w.canvas, bytes: w.canvas.width * w.canvas.height * 4 });
+        // only a frame inside the kept window becomes a canvas; the run up from the key frame is closed at once
+        const behind = exactMode ? EXACT_BEHIND : BEHIND;
+        const conv = e.b.conv;
+        if (end < focus - behind || !conv) { w.close(); e.lastYield = null; continue; }
+        const cv = this.toCanvas(w, conv);
+        const canon = this.insert(e, { ts: w.timestamp, end, canvas: cv, bytes: cv.width * cv.height * 4 });
         if (canon && e.lastYield && e.lastYield !== canon && e.lastYield.ts < canon.ts) e.lastYield.next = canon;
         e.lastYield = canon;
       }
     } finally {
       e.running = false;
+    }
+  }
+
+  /** Draws a decoded sample to a fresh canvas (alpha kept) and closes it. */
+  private toCanvas(s: VideoSample, c: NonNullable<Base['conv']>): Cv {
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = c.w;
+      cv.height = c.h;
+      const ctx = cv.getContext('2d', { alpha: true })!;
+      s.drawWithFit(ctx, { fit: 'fill', rotation: c.rot, flip: c.flip });
+      return cv;
+    } finally {
+      s.close();
     }
   }
 

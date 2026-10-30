@@ -234,7 +234,57 @@ export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array,
   try { drawEach(ctx, src, t, view, k, ks); } finally { ctx.imageSmoothingEnabled = smoothed; ctx.imageSmoothingQuality = quality; }
 }
 
+/** Edge usage across one triangle list: how many triangles share each edge (by destination endpoints). */
+const edgeUse = new Map<number, number>();
+const vq = (x: number, y: number): number => (Math.imul(Math.round(x * 16), 73856093) ^ Math.imul(Math.round(y * 16), 19349663)) >>> 6;
+const edgeKey = (ax: number, ay: number, bx: number, by: number): number => {
+  const a = vq(ax, ay), b = vq(bx, by);
+  return a < b ? a * 67108864 + b : b * 67108864 + a;
+};
+
+let seamCv: OffscreenCanvas | null = null;
+
 function drawEach(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView, k: number, ks: number): void {
+  // Only edges two triangles share are pushed out (the mesh outline stays where it is). The pushed strips would blend
+  // twice on a translucent source, so the triangles go onto a scratch with 'copy' (a later one overwrites, never blends)
+  // and the scratch is laid onto the target once.
+  edgeUse.clear();
+  const dx = (p: number, i: number): number => view.ox + t[p + 6 + i * 2] * k, dy = (p: number, i: number): number => view.oy + t[p + 7 + i * 2] * k;
+  let lx = Infinity, ly = Infinity, hx = -Infinity, hy = -Infinity;
+  for (let p = 0; p + 11 < t.length; p += 12) {
+    for (let i = 0; i < 3; i++) {
+      const j = (i + 1) % 3;
+      const key = edgeKey(dx(p, i), dy(p, i), dx(p, j), dy(p, j));
+      edgeUse.set(key, (edgeUse.get(key) ?? 0) + 1);
+      lx = Math.min(lx, dx(p, i)); hx = Math.max(hx, dx(p, i)); ly = Math.min(ly, dy(p, i)); hy = Math.max(hy, dy(p, i));
+    }
+  }
+  if (!(hx > lx)) return;
+  let bx = Math.floor(lx) - 3, by = Math.floor(ly) - 3, ex = Math.ceil(hx) + 3, ey = Math.ceil(hy) + 3;
+  const tm = ctx.getTransform();
+  const plain = Math.abs(tm.a - 1) < 1e-6 && Math.abs(tm.d - 1) < 1e-6 && Math.abs(tm.b) < 1e-6 && Math.abs(tm.c) < 1e-6;
+  if (plain) {
+    const cv = (ctx as { canvas?: { width: number; height: number } }).canvas;
+    if (cv) { bx = Math.max(bx, Math.floor(-tm.e)); by = Math.max(by, Math.floor(-tm.f)); ex = Math.min(ex, Math.ceil(cv.width - tm.e)); ey = Math.min(ey, Math.ceil(cv.height - tm.f)); }
+  }
+  const bw = ex - bx, bh = ey - by;
+  if (bw <= 0 || bh <= 0) return;
+  if (typeof OffscreenCanvas === 'undefined' || bw > 8192 || bh > 8192) { drawTris(ctx, src, t, view, k, ks, 0, 0, false); return; }
+  if (!seamCv) seamCv = new OffscreenCanvas(bw, bh);
+  if (seamCv.width < bw || seamCv.height < bh) { seamCv.width = Math.max(seamCv.width, bw); seamCv.height = Math.max(seamCv.height, bh); }
+  const sc = seamCv.getContext('2d') as OffscreenCanvasRenderingContext2D;
+  sc.setTransform(1, 0, 0, 1, 0, 0);
+  sc.globalAlpha = 1;
+  sc.globalCompositeOperation = 'copy';
+  sc.clearRect(0, 0, seamCv.width, seamCv.height);
+  sc.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
+  sc.imageSmoothingQuality = ctx.imageSmoothingQuality;
+  drawTris(sc, src, t, view, k, ks, bx, by, true);
+  ctx.drawImage(seamCv, 0, 0, bw, bh, bx, by, bw, bh);
+}
+
+/** The triangles one by one, each clipped to itself grown on its shared edges; `copy` writes them over each other instead of blending. */
+function drawTris(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView, k: number, ks: number, ox: number, oy: number, copy: boolean): void {
   for (let p = 0; p + 11 < t.length; p += 12) {
     const s0x = t[p] * ks, s0y = t[p + 1] * ks, s1x = t[p + 2] * ks, s1y = t[p + 3] * ks, s2x = t[p + 4] * ks, s2y = t[p + 5] * ks;
     const d0x = view.ox + t[p + 6] * k, d0y = view.oy + t[p + 7] * k;
@@ -258,15 +308,24 @@ function drawEach(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpV
     const n01x = sg * (d1y - d0y) / e01, n01y = -sg * (d1x - d0x) / e01;
     const n12x = sg * (d2y - d1y) / e12, n12y = -sg * (d2x - d1x) / e12;
     const n20x = sg * (d0y - d2y) / e20, n20y = -sg * (d0x - d2x) / e20;
-    const miter = (ax: number, ay: number, bx: number, by: number): [number, number] => {
-      const q = Math.max(0.25, 1 + ax * bx + ay * by);
-      return [((ax + bx) * GROW) / q, ((ay + by) * GROW) / q];
+    // shared edges grow; outline edges stay (a fixed edge and a grown one meet where both offset lines cross)
+    const sh = (ax: number, ay: number, bx: number, by: number): number => ((edgeUse.get(edgeKey(ax, ay, bx, by)) ?? 2) > 1 ? GROW : 0);
+    const g01 = sh(d0x, d0y, d1x, d1y), g12 = sh(d1x, d1y, d2x, d2y), g20 = sh(d2x, d2y, d0x, d0y);
+    const miter = (ax: number, ay: number, ga: number, bx: number, by: number, gb: number): [number, number] => {
+      const c = ax * bx + ay * by;
+      if (ga === gb) {
+        const q = Math.max(0.25, 1 + c);
+        return [((ax + bx) * ga) / q, ((ay + by) * ga) / q];
+      }
+      const s = Math.max(0.1, 1 - c * c), u = ga - c * gb, v = gb - c * ga;
+      return [(ax * u + bx * v) / s, (ay * u + by * v) / s];
     };
-    const m0 = miter(n20x, n20y, n01x, n01y), m1 = miter(n01x, n01y, n12x, n12y), m2 = miter(n12x, n12y, n20x, n20y);
+    const m0 = miter(n20x, n20y, g20, n01x, n01y, g01), m1 = miter(n01x, n01y, g01, n12x, n12y, g12), m2 = miter(n12x, n12y, g12, n20x, n20y, g20);
     const g0x = d0x + m0[0], g0y = d0y + m0[1], g1x = d1x + m1[0], g1y = d1y + m1[1], g2x = d2x + m2[0], g2y = d2y + m2[1];
     const minX = Math.max(0, Math.floor(Math.min(s0x, s1x, s2x) - 1)), minY = Math.max(0, Math.floor(Math.min(s0y, s1y, s2y) - 1));
     const maxX = Math.ceil(Math.max(s0x, s1x, s2x) + 1), maxY = Math.ceil(Math.max(s0y, s1y, s2y) + 1);
     ctx.save();
+    if (copy) ctx.setTransform(1, 0, 0, 1, -ox, -oy);
     ctx.beginPath();
     ctx.moveTo(g0x, g0y);
     ctx.lineTo(g1x, g1y);

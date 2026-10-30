@@ -88,6 +88,7 @@ export function brushSettings(b: Brush): Record<string, number | boolean | strin
   put('shapeRoundness', b.roundness);   // the Shape.png is written round (see shapePng), so the nib's squash is only here
   put('dynamicsTilt', finite(b.tilt) && b.tilt > 0 ? b.tilt : undefined);
   put('wetPickup', b.pickup);
+  if (b.pixelPerfect) put('pixelPerfect', true);
   put('dynamicsPressureSize', 1 - b.pressureSize[0]);
   put('dynamicsPressureOpacity', 1 - b.pressureFlow[0]);
   if (b.grainImage || b.grain > 0) put('textureDepth', b.grain);

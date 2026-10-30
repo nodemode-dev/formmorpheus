@@ -134,7 +134,7 @@ class Run {
     const { movie, renderer } = this.deps;
     await renderer.prepareFrame(movie, f);
     renderer.drawFrame(this.ctx, movie, f, this.view, {
-      backstage: false, background: movie.background, transparentChecker: null, keepAlpha: this.keepAlpha,
+      backstage: false, background: movie.background, transparentChecker: null, keepAlpha: this.keepAlpha, exact: true,
     });
   }
 

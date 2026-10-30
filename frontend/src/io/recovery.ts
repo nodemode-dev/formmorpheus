@@ -9,6 +9,8 @@ export interface RecoveryEntry { session: string; name: string; library: string 
 
 const EVERY_MS = 60_000;
 const BEAT_MS = 20_000;
+const FIRST_EDIT_MS = 5_000;
+const MIN_GAP_MS = 5_000;
 /**
  * A snapshot is a crash only when its window has not beaten for this long. A hidden tab's timers are throttled
  * (about one tick a minute, more after a long while), so the threshold is several of those, and the owning window
@@ -81,13 +83,30 @@ export class Recovery {
   private timer = 0;
   private beat = 0;
   private recheck = 0;
+  private clean = true;
+  private soon = 0;
+  private lastAt = 0;
+  /** What the last written snapshot was made from: an unchanged movie is not written again. */
+  private lastMovie: unknown = null;
+  private lastAssets: unknown = null;
   /** Sessions the person has already been asked about (so the periodic look only raises new ones). */
   private asked = new Set<string>();
 
   constructor(private readonly host: RecoveryHost) {
-    const check = (): void => { if (this.written && (!host.engine.movie || !host.engine.modified)) void this.clear(); };
+    const check = (): void => {
+      if (!host.engine.movie || !host.engine.modified) this.clean = true;
+      if (this.written && (!host.engine.movie || !host.engine.modified)) void this.clear();
+    };
     host.engine.on('saved', check);
     host.engine.on('projects', check);
+    // the first edit after a save or open is snapshotted soon (the 60 s beat covers the rest), so a crash loses seconds
+    host.engine.on('history', () => {
+      if (!this.clean || !host.engine.modified) return;
+      this.clean = false;
+      this.later(FIRST_EDIT_MS);
+    });
+    // a window sent to the background may be closed or killed from there: write what is unwritten now
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.later(0); });
     this.timer = window.setInterval(() => { void this.snapshot(); }, EVERY_MS);
     // this window's snapshot stays "alive" while the window lives, so another window does not take it for a crash
     const beat = (): void => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); };
@@ -105,35 +124,56 @@ export class Recovery {
   }
 
   private liveRun = 0;
-  private liveAbort: AbortController | null = null;
+  private liveSock: WebSocket | null = null;
 
-  /** Holds the live stream open, reopening it if it drops, until the page goes away. */
+  /** One open socket; resolves when it closes, with whether it ever opened. A socket holds none of the six HTTP connections per host. */
+  private hold(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let opened = false;
+      let ws: WebSocket;
+      try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base(SESSION)}/live`); } catch { resolve(false); return; }
+      this.liveSock = ws;
+      ws.onopen = () => { opened = true; };
+      ws.onclose = () => resolve(opened);
+      ws.onerror = () => { try { ws.close(); } catch { /* already closed */ } };
+    });
+  }
+
+  /** Holds the live socket open, reopening it with a growing pause if it drops, until the page goes away. Stops when an engine that is up never accepts it (an older engine). */
   private async keepLive(): Promise<void> {
     const run = ++this.liveRun;
-    this.liveAbort?.abort();
+    this.liveSock?.close();
+    let fails = 0;
     while (run === this.liveRun) {
-      const ac = new AbortController();
-      this.liveAbort = ac;
-      try {
-        if (await serviceReady()) {
-          const res = await fetch(`${base(SESSION)}/live`, { signal: ac.signal, cache: 'no-store' });
-          const reader = res.body?.getReader();
-          if (reader) while (!(await reader.read()).done) { /* only the connection matters */ }
-        }
-      } catch { /* dropped or aborted */ }
-      if (run !== this.liveRun) return;
-      await new Promise((r) => window.setTimeout(r, 1500));
+      if (await serviceReady()) {
+        const opened = await this.hold();
+        if (run !== this.liveRun) return;
+        fails = opened ? 0 : fails + 1;
+        if (fails >= 5) return;
+      }
+      await new Promise((r) => window.setTimeout(r, Math.min(30_000, 1500 * 2 ** Math.max(0, fails - 1))));
     }
   }
 
-  dispose(): void { this.liveRun++; this.liveAbort?.abort(); window.clearInterval(this.timer); window.clearInterval(this.beat); window.clearInterval(this.recheck); }
+  dispose(): void { this.liveRun++; this.liveSock?.close(); window.clearInterval(this.timer); window.clearInterval(this.beat); window.clearInterval(this.recheck); }
+
+  /** A snapshot after `ms`, never sooner than MIN_GAP_MS after the last one; one wait at a time. */
+  private later(ms: number): void {
+    if (this.soon) return;
+    const wait = Math.max(ms, this.lastAt + MIN_GAP_MS - Date.now());
+    this.soon = window.setTimeout(() => { this.soon = 0; void this.snapshot(); }, wait);
+  }
 
   /** Writes one snapshot now if the movie has unsaved changes and none is being written. */
   async snapshot(): Promise<void> {
     const { engine } = this.host;
     if (this.inFlight || !engine.movie || !engine.modified) return;
+    if (engine.movie === this.lastMovie && engine.assets === this.lastAssets) return;
+    if (Date.now() - this.lastAt < MIN_GAP_MS) { this.later(0); return; }
     this.inFlight = true;
+    this.lastAt = Date.now();
     try {
+      const at = { movie: engine.movie, assets: engine.assets };
       const blob = await this.host.pack();
       const m = engine.movie;
       if (!blob || !m || !engine.modified) return;
@@ -141,7 +181,7 @@ export class Recovery {
       const params = new URLSearchParams({ name: m.name });
       if (engine.libraryName) params.set('library', engine.libraryName);
       const res = await fetch(`${base(SESSION)}?${params}`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'application/octet-stream' } });
-      if (res.ok) this.written = true;
+      if (res.ok) { this.written = true; this.lastMovie = at.movie; this.lastAssets = at.assets; }
       // a save or a close may have landed while this was writing
       if (!engine.movie || !engine.modified) await this.clear();
     } catch { /* recovery is best effort and never interrupts the work */ } finally {
@@ -152,6 +192,8 @@ export class Recovery {
   /** Removes this session's snapshot. */
   async clear(): Promise<void> {
     this.written = false;
+    this.lastMovie = null;
+    this.lastAssets = null;
     try { await fetch(base(SESSION), { method: 'DELETE' }); } catch { /* the engine is gone */ }
   }
 

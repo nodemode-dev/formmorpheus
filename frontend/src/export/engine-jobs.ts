@@ -161,7 +161,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
       check();
       if (failure) throw failure;
       await renderer.prepareFrame(movie, frameAt(i, from, to));
-      renderer.drawFrame(ctx, movie, frameAt(i, from, to), view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha });
+      renderer.drawFrame(ctx, movie, frameAt(i, from, to), view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha, exact: true });
       const blobP = canvas.convertToBlob({ type: 'image/png' });
       const index = i;
       const p: Promise<void> = blobP

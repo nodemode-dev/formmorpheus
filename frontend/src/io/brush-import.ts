@@ -334,7 +334,9 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   if (grain) b.grainImage = grain;
   if (tScale !== null && (grain || tDepth !== null)) b.grainScale = clamp(tScale, 0.25, 4);
   mapEngine(m, b);
-  const rnd = num(m, 'shapeRoundness', 'roundness'), tl = num(m, 'dynamicsTilt', 'tiltAmount'), pk = num(m, 'wetPickup', 'pickup');
+  // only our own key names: a generic name in a file from elsewhere means something else
+  const rnd = num(m, 'shapeRoundness'), tl = num(m, 'dynamicsTilt'), pk = num(m, 'wetPickup');
+  if (m.get('pixelperfect') === true) b.pixelPerfect = true;
   if (rnd !== null) b.roundness = clamp(rnd, 0.05, 1);
   if (tl !== null) b.tilt = clamp(tl, 0, 1);
   if (pk !== null) b.pickup = clamp(pk, 0, 1);
