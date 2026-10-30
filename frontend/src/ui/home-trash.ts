@@ -3,6 +3,7 @@ import { api, type TrashItem } from '../io/api';
 import { confirmAction } from './dialogs';
 import { el, patchList, q, setClass, setDisabled, setHidden, setText, setTitle } from './dom';
 import { icon } from './icons';
+import { dateText, onLanguage, t, tn } from './i18n';
 import { toast } from './toast';
 
 /** Home's Recently Deleted page: movies and exports the user deleted, kept for 30 days. Built once; rows are patched
@@ -27,6 +28,7 @@ export class HomeTrash {
       else if (t.closest('[data-purge]')) void this.purge(item);
     });
     this.emptyBtn.addEventListener('click', () => void this.empty());
+    onLanguage(() => this.render());   // days left and dates follow the language
     this.render();
   }
 
@@ -39,7 +41,12 @@ export class HomeTrash {
   }
 
   private async restore(item: TrashItem): Promise<void> {
-    try { await api.restoreTrash(item.id); } catch (err) { toast((err as Error).message); }
+    try {
+      const back = await api.restoreTrash(item.id);
+      const shown = item.kind === 'movie' ? back.restored.replace(/\.fmo$/i, '') : back.restored;
+      const was = item.kind === 'movie' ? item.name : item.original;
+      if (shown !== was) toast(t('Restored as {name}').replace('{name}', shown));
+    } catch (err) { toast((err as Error).message); }
     await this.refresh();
     this.onRestored();
   }
@@ -52,7 +59,8 @@ export class HomeTrash {
 
   private async empty(): Promise<void> {
     if (!this.all.length) return;
-    if (!(await confirmAction('Empty Recently Deleted?', `All ${this.all.length} item${this.all.length === 1 ? '' : 's'} will be deleted for good. This cannot be undone.`, 'Empty', true))) return;
+    const count = this.all.length;
+    if (!(await confirmAction('Empty Recently Deleted?', tn(count, 'All {n} item will be deleted for good. This cannot be undone.', 'All {n} items will be deleted for good. This cannot be undone.'), 'Empty', true))) return;
     try { await api.purgeTrash(); } catch (err) { toast((err as Error).message); }
     await this.refresh();
   }
@@ -77,8 +85,8 @@ export class HomeTrash {
     setText(q(n, '.fm-trash-name'), i.name);
     setTitle(q(n, '.fm-trash-name'), i.original);
     setText(q(n, '.fm-trash-kind'), i.kind === 'movie' ? 'Movie' : 'Export');
-    setText(q(n, '.fm-trash-when'), new Date(i.deleted * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' }));
-    setText(q(n, '.fm-trash-left'), i.daysLeft === 1 ? '1 day left' : `${i.daysLeft} days left`);
+    setText(q(n, '.fm-trash-when'), dateText(i.deleted * 1000));
+    setText(q(n, '.fm-trash-left'), tn(i.daysLeft, '{n} day left', '{n} days left'));
     setClass(q(n, '.fm-trash-left'), 'is-soon', i.daysLeft <= 3);
   }
 }

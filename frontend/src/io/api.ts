@@ -92,8 +92,9 @@ export const api = {
   async trash(): Promise<TrashItem[]> {
     return ((await (await request('/trash')).json()) as { items: TrashItem[] }).items;
   },
-  async restoreTrash(id: string): Promise<void> {
-    await request(`/trash/${encodeURIComponent(id)}/restore`, { method: 'POST' });
+  /** Returns the name the item came back under ("name 2" when the original name was taken). */
+  async restoreTrash(id: string): Promise<{ restored: string; kind: string }> {
+    return (await (await request(`/trash/${encodeURIComponent(id)}/restore`, { method: 'POST' })).json()) as { restored: string; kind: string };
   },
   /** Deletes one item for good, or empties Recently Deleted when no id is given. */
   async purgeTrash(id?: string): Promise<void> {

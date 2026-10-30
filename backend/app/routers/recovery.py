@@ -46,11 +46,16 @@ def _entry(session: str, fmo: Path, side: Path) -> dict:
         meta = data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         pass
+    taken = float(meta.get("time") or fmo.stat().st_mtime)
+    # the heartbeat of the window that owns this snapshot; older files only have the snapshot time
+    alive = float(meta.get("alive") or taken)
     return {
         "session": session,
         "name": str(meta.get("name") or "Untitled"),
         "library": meta.get("library") if isinstance(meta.get("library"), str) else None,
-        "time": float(meta.get("time") or fmo.stat().st_mtime),
+        "time": taken,
+        "alive": alive,
+        "idle": max(0.0, time.time() - alive),
         "size": fmo.stat().st_size,
     }
 
@@ -84,11 +89,30 @@ async def write_snapshot(session: str, request: Request, name: str = "Untitled",
         raise HTTPException(413, "The movie is too large to snapshot.")
     if body[:4] != b"PK\x03\x04":
         raise HTTPException(400, "That is not a formmorpheus project.")
-    meta = {"name": name[:180], "library": library[:180] if library else None, "time": time.time()}
+    now = time.time()
+    meta = {"name": name[:180], "library": library[:180] if library else None, "time": now, "alive": now}
     with _lock:
         _atomic(fmo, body)
         _atomic(side, json.dumps(meta).encode("utf-8"))
     return _entry(session, fmo, side)
+
+
+@router.post("/{session}/alive")
+def heartbeat(session: str) -> dict:
+    """The owning window calls this every 20 s; a snapshot whose heartbeat is over 60 s old is offered as a crash."""
+    fmo, side = _paths(_session(session))
+    with _lock:
+        if not fmo.is_file():
+            raise HTTPException(404, "No recovery snapshot for that session.")
+        try:
+            meta = json.loads(side.read_text("utf-8"))
+            if not isinstance(meta, dict):
+                meta = {}
+        except (OSError, ValueError):
+            meta = {}
+        meta["alive"] = time.time()
+        _atomic(side, json.dumps(meta).encode("utf-8"))
+    return {"ok": True}
 
 
 @router.delete("/{session}")

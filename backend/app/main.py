@@ -24,6 +24,8 @@ app.include_router(recovery.router, prefix="/api/recovery")
 async def _start_trash_sweep() -> None:
     # sweeps now, then once a day while the engine runs
     app.state.trash_sweep = asyncio.create_task(trash.sweep_daily())
+    # abandoned export-job folders are swept while the engine runs, not only at start
+    app.state.job_sweep = asyncio.create_task(jobs.sweep_loop())
 
 _dist = config.dist_dir()
 if _dist is not None:

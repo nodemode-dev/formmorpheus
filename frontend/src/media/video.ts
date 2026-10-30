@@ -36,6 +36,10 @@ const EXACT_PULL_CAP = 30000;
 /** Generator restarts for one exact() request before giving up. */
 const EXACT_RESTART_CAP = 8;
 const QUICK_KEEP = 4;
+/** An exact() request protects its lane from eviction for this long. */
+const HOLD_MS = 2000;
+/** Fresh lanes tried for one exact() request whose lane was disposed under it. */
+const EXACT_LANE_RETRIES = 6;
 
 /** Thrown by probe when the file is a video whose codec the browser cannot decode. */
 export class UndecodableVideo extends Error {}
@@ -51,7 +55,8 @@ interface Frame {
   next?: Frame;
 }
 
-interface Waiter { t: number; res: () => void; pulled: number; restarts: number }
+/** `gone` is true when the lane was disposed under the waiter: the caller must ask again on a fresh lane. */
+interface Waiter { t: number; res: (gone?: boolean) => void; pulled: number; restarts: number }
 
 interface Thumb { canvas: Cv; bytes: number }
 
@@ -113,6 +118,8 @@ interface Lane {
   missAt: number;
   scrubbing: boolean;
   scrubTimer: number;
+  /** An exact() request (export, Perform takes) keeps this lane from eviction until this time. */
+  hold: number;
 }
 
 export class VideoPool implements VideoSource {
@@ -190,16 +197,21 @@ export class VideoPool implements VideoSource {
   exact(assetId: string, seconds: number, laneKey = ''): Promise<void> {
     const b = this.base(assetId);
     if (!b || b.failed) return Promise.resolve();
-    return b.opening.then(() => {
-      if (b.disposed || b.failed || !b.track) return;
-      const e = this.lane(b, laneKey);
-      const t = this.clamp(b, seconds);
-      const hit = this.find(e, t);
-      if (hit) { this.pin(e, hit); e.lastShown = hit; b.lastAny = hit; e.focus = t; this.ensure(e); return; }
-      return new Promise<void>((res) => {
-        e.waiters.push({ t, res, pulled: 0, restarts: 0 });
-        void this.pump(e);
-      });
+    return b.opening.then(async () => {
+      // a lane disposed under the waiter would otherwise end the wait on a nearby frame: ask again on a fresh lane
+      for (let attempt = 0; attempt < EXACT_LANE_RETRIES; attempt++) {
+        if (b.disposed || b.failed || !b.track) return;
+        const e = this.lane(b, laneKey);
+        e.hold = performance.now() + HOLD_MS;
+        const t = this.clamp(b, seconds);
+        const hit = this.find(e, t);
+        if (hit) { this.pin(e, hit); e.lastShown = hit; b.lastAny = hit; e.focus = t; this.ensure(e); return; }
+        const gone = await new Promise<boolean>((res) => {
+          e.waiters.push({ t, res: (g) => res(g === true), pulled: 0, restarts: 0 });
+          void this.pump(e);
+        });
+        if (!gone) return;
+      }
     });
   }
 
@@ -289,16 +301,21 @@ export class VideoPool implements VideoSource {
   private lane(b: Base, key: string): Lane {
     const have = b.lanes.get(key);
     if (have) return have;
-    if (b.lanes.size >= MAX_LANES) {
+    // lanes an exact() request holds (export asks for every block of a frame before drawing any) are never the victim;
+    // when all are held the asset grows past MAX_LANES for a moment instead of evicting a picture about to be drawn
+    const now = performance.now();
+    while (b.lanes.size >= MAX_LANES) {
       let old: Lane | null = null;
-      for (const l of b.lanes.values()) if (!old || l.used < old.used) old = l;
-      if (old) { b.lanes.delete(old.key); this.disposeLane(old); }
+      for (const l of b.lanes.values()) if (l.hold <= now && l.waiters.length === 0 && (!old || l.used < old.used)) old = l;
+      if (!old) break;
+      b.lanes.delete(old.key);
+      this.disposeLane(old);
     }
     const e: Lane = {
       key, b, gone: false, sink: b.track ? new CanvasSink(b.track) : null, qsink: null, frames: [], quick: [], quickT: -1, quickBusy: false,
       gen: null, genEnd: 0, genCount: 0, lastYield: null, running: false, focus: 0, ahead: AHEAD, finalTs: -1,
       lastShown: null, pinned: [], waiters: [], want: -1, used: performance.now(), lastPrefetch: 0, missT: -1, missAt: 0,
-      scrubbing: false, scrubTimer: 0,
+      scrubbing: false, scrubTimer: 0, hold: 0,
     };
     b.lanes.set(key, e);
     return e;
@@ -345,7 +362,7 @@ export class VideoPool implements VideoSource {
     e.quick = [];
     e.lastShown = null;
     e.pinned = [];
-    for (const w of e.waiters.splice(0)) w.res();
+    for (const w of e.waiters.splice(0)) w.res(true);
   }
 
   private free(c: Cv): void {

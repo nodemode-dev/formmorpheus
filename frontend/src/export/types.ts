@@ -1,7 +1,7 @@
 // Contract of the exporter (Phase 9): what the Export dialog asks for and what a running job reports.
 
 export type ExportFormat = 'mp4' | 'webm' | 'mov' | 'gif' | 'png-frames' | 'jpg-frames' | 'webp-frames' | 'png-still'
-  | 'prores-mov' | 'prores4444-mov' | 'hevc-mp4';
+  | 'prores-mov' | 'prores4444-mov' | 'hevc-mp4' | 'hevc-mov';
 
 export interface ExportOptions {
   format: ExportFormat;

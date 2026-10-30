@@ -127,7 +127,7 @@ class Run {
       if (fmt === 'mp4' || fmt === 'webm' || fmt === 'mov') r = await this.video(fmt);
       else if (fmt === 'gif') r = await this.gif();
       else if (fmt === 'png-still') r = await this.still();
-      else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4') throw new Error('This format is encoded by the engine, not in the window.');
+      else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4' || fmt === 'hevc-mov') throw new Error('This format is encoded by the engine, not in the window.');
       else r = await this.sequence(fmt);
       return { ...r, warnings: this.warnings };
     } catch (e) {

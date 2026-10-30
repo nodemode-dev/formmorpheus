@@ -12,6 +12,7 @@ import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -28,6 +29,8 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 CRF = {"low": 28, "medium": 24, "high": 20, "very-high": 16}
 VT_Q = {"low": 40, "medium": 55, "high": 65, "very-high": 80}
 MAX_KEPT_RECORDS = 40
+ABANDON_SECONDS = 600
+SWEEP_EVERY_SECONDS = 60
 
 
 class NewJob(BaseModel):
@@ -67,6 +70,10 @@ class Job:
     proc: asyncio.subprocess.Process | None = None
     task: asyncio.Task | None = None
     created: float = field(default_factory=time.time)
+    touched: float = field(default_factory=time.time)
+
+    def touch(self) -> None:
+        self.touched = time.time()
 
     def progress(self) -> float:
         if self.state == "done":
@@ -93,10 +100,54 @@ def sweep() -> None:
             continue
 
 
+def sweep_abandoned(now: float | None = None) -> int:
+    """While running: a job that took no upload and no poll for ABANDON_SECONDS loses its folder. Returns how many."""
+    now = now or time.time()
+    gone = 0
+    for job in list(JOBS.values()):
+        if job.state in ("queued", "receiving") and now - job.touched > ABANDON_SECONDS:
+            job.state = "cancelled"
+            job.error = "The window stopped sending this job."
+            _remove_files(job)
+            gone += 1
+    # folders no job owns (the engine restarted) that nothing has written to for as long
+    owned = {j.folder.name for j in JOBS.values()}
+    try:
+        for p in config.jobs_dir().iterdir():
+            if p.is_dir() and p.name not in owned and now - p.stat().st_mtime > ABANDON_SECONDS:
+                shutil.rmtree(p, ignore_errors=True)
+                gone += 1
+    except OSError:
+        pass
+    return gone
+
+
+async def sweep_loop() -> None:
+    while True:
+        await asyncio.sleep(SWEEP_EVERY_SECONDS)
+        try:
+            await asyncio.to_thread(sweep_abandoned)
+        except Exception:
+            pass
+
+
+def rate_text(fps: float) -> str:
+    """An exact rational for ffmpeg: 23.976 is 24000/1001, 29.97 is 30000/1001, 59.94 is 60000/1001."""
+    whole = round(fps)
+    if abs(fps - whole) < 1e-9:
+        return str(whole)
+    ntsc = round(fps * 1001 / 1000)
+    if ntsc > 0 and abs(fps - ntsc * 1000 / 1001) < 0.01:
+        return f"{ntsc * 1000}/1001"
+    frac = Fraction(fps).limit_denominator(1000)
+    return f"{frac.numerator}/{frac.denominator}"
+
+
 def _get(job_id: str) -> Job:
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(404, "No job by that id.")
+    job.touch()
     return job
 
 
@@ -246,7 +297,7 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
     vaapi = encoder == "hevc_vaapi"
     if vaapi:
         cmd += ["-vaapi_device", "/dev/dri/renderD128"]
-    fps = f"{job.fps:g}"
+    fps = rate_text(job.fps)
     cmd += ["-framerate", fps, "-start_number", "0", "-i", str(job.folder / "frames" / "%06d.png")]
     if job.has_audio:
         cmd += ["-i", str(job.folder / "audio.wav")]
@@ -279,7 +330,7 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
     # frames and a little over their length, so a longer sound is cut at the picture's end
     cmd += ["-frames:v", str(job.frames)]
     if job.has_audio:
-        cmd += ["-t", f"{(job.frames + 0.5) / job.fps:.6f}"]
+        cmd += ["-t", f"{(job.frames + 0.5) / float(Fraction(rate_text(job.fps))):.6f}"]
     cmd += [str(out)]
     return cmd
 

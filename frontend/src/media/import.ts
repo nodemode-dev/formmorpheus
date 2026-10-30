@@ -88,12 +88,13 @@ const MAX_DECODE_BYTES = 512 * 1024 * 1024;
 interface RawFrame { image: CanvasImageSource | null; rgba: Uint8ClampedArray | null; w: number; h: number; delayMs: number }
 
 /** Pictures pulled one at a time, so a huge animation is never held whole in memory. */
-interface FrameSource { next(): RawFrame | null; total: number; limit: number; cap: 'count' | 'memory' }
-
-const fromList = (all: RawFrame[]): FrameSource => {
-  let i = 0;
-  return { next: () => all[i++] ?? null, total: all.length, limit: MAX_ANIMATION_FRAMES, cap: 'count' };
-};
+interface FrameSource {
+  /** Calls arrive in order; an async source must answer them in the same order. */
+  next(): RawFrame | null | Promise<RawFrame | null>;
+  total: number; limit: number; cap: 'count' | 'memory';
+  /** Called once when the import is over, however it ended. */
+  close?: () => void;
+}
 
 /** Builds the Flipbook content for a stream of picture frames (each a PNG asset the size of the movie). */
 async function flipbookFrom(src: FrameSource, name: string, m: Movie, at: number): Promise<ImportResult> {
@@ -131,9 +132,10 @@ async function flipbookFrom(src: FrameSource, name: string, m: Movie, at: number
     jobs.push((async () => {
       for (;;) {
         if (nextIndex >= src.limit) return;
-        const f = src.next();
-        if (!f) return;
+        // the index is taken before the (possibly async) pull so frames keep their order
         const i = nextIndex++;
+        const f = await src.next();
+        if (!f) return;
         await run(i, f);
         f.rgba = null;
         if (f.image && 'close' in (f.image as object)) (f.image as ImageBitmap).close();
@@ -141,7 +143,7 @@ async function flipbookFrom(src: FrameSource, name: string, m: Movie, at: number
       }
     })());
   }
-  await Promise.all(jobs);
+  try { await Promise.all(jobs); } finally { src.close?.(); }
   const count = delays.length;
   if (!count) throw new Error(`${name} has no readable pictures.`);
   const cut = src.total > count ? ` Only the first ${count} of ${src.total} pictures were imported (${src.cap === 'memory' ? 'memory budget' : `${MAX_ANIMATION_FRAMES} picture limit`}).` : '';
@@ -167,28 +169,50 @@ interface ImageDecoderLike {
 }
 type ImageDecoderCtor = (new (init: { data: ArrayBuffer; type: string }) => ImageDecoderLike) & { isTypeSupported(t: string): Promise<boolean> };
 
-/** Animated WebP, APNG or AVIF through the browser's ImageDecoder; null when the file is a still or unsupported. */
-async function viaImageDecoder(file: File, type: string): Promise<RawFrame[] | null> {
+/** Animated WebP, APNG or AVIF through the browser's ImageDecoder, one picture at a time under the same count and
+ *  memory budget as a GIF; null when the file is a still or unsupported. */
+async function viaImageDecoder(file: File, type: string): Promise<FrameSource | null> {
   const ID = (globalThis as unknown as { ImageDecoder?: ImageDecoderCtor }).ImageDecoder;
   if (!ID || !(await ID.isTypeSupported(type))) return null;
   const dec = new ID({ data: await file.arrayBuffer(), type });
+  let closed = false;
+  const close = (): void => { if (!closed) { closed = true; dec.close(); } };
   try {
     await dec.tracks.ready;
-    const n = Math.min(MAX_ANIMATION_FRAMES, dec.tracks.selectedTrack?.frameCount ?? 1);
-    if (n < 2) return null;
-    const frames: RawFrame[] = [];
-    for (let i = 0; i < n; i++) {
-      const { image } = await dec.decode({ frameIndex: i });
-      const bmp = await createImageBitmap(image);
-      const delayMs = image.duration ? image.duration / 1000 : 100;
-      frames.push({ image: bmp, rgba: null, w: bmp.width, h: bmp.height, delayMs: delayMs <= 10 ? 100 : delayMs });
-      image.close();
-    }
-    return frames;
+    const count = dec.tracks.selectedTrack?.frameCount ?? 1;
+    if (count < 2) { close(); return null; }
+    let at = 0;
+    const pull = async (): Promise<RawFrame | null> => {
+      if (closed || at >= count) return null;
+      try {
+        const { image } = await dec.decode({ frameIndex: at++ });
+        const bmp = await createImageBitmap(image);
+        const delayMs = image.duration ? image.duration / 1000 : 100;
+        image.close();
+        return { image: bmp, rgba: null, w: bmp.width, h: bmp.height, delayMs: delayMs <= 10 ? 100 : delayMs };
+      } catch { return null; }
+    };
+    // the first picture sizes the memory budget; later pulls are chained so they answer in order
+    const first = await pull();
+    if (!first) { close(); return null; }
+    const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (first.w * first.h * 4)));
+    let chain: Promise<unknown> = Promise.resolve();
+    let served = false;
+    return {
+      next: () => {
+        if (!served) { served = true; return first; }
+        const p = chain.then(pull);
+        chain = p.catch(() => undefined);
+        return p;
+      },
+      total: count,
+      limit: Math.min(MAX_ANIMATION_FRAMES, byMemory),
+      cap: byMemory < MAX_ANIMATION_FRAMES ? 'memory' : 'count',
+      close,
+    };
   } catch {
+    close();
     return null;
-  } finally {
-    dec.close();
   }
 }
 
@@ -217,8 +241,8 @@ async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Pr
   }
   if (kind === 'webp' || kind === 'png' || kind === 'avif') {
     const type = file.type || (kind === 'png' ? 'image/png' : `image/${kind}`);
-    const frames = await viaImageDecoder(file, type);
-    if (frames) return flipbookFrom(fromList(frames), baseName(file.name), m, at);
+    const src = await viaImageDecoder(file, type);
+    if (src) return flipbookFrom(src, baseName(file.name), m, at);
   }
   return null;
 }

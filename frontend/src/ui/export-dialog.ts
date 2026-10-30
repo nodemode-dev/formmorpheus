@@ -34,17 +34,17 @@ interface Saved {
 const FORMATS: { id: ExportFormat; label: string }[] = [
   { id: 'mp4', label: 'MP4 video' }, { id: 'webm', label: 'WebM video' }, { id: 'mov', label: 'MOV video' }, { id: 'gif', label: 'Animated GIF' },
   { id: 'png-frames', label: 'PNG frames' }, { id: 'jpg-frames', label: 'JPG frames' }, { id: 'webp-frames', label: 'WebP frames' }, { id: 'png-still', label: 'PNG still' },
-  { id: 'prores-mov', label: 'ProRes 422 HQ (engine)' }, { id: 'prores4444-mov', label: 'ProRes 4444 w/ alpha (engine)' }, { id: 'hevc-mp4', label: 'HEVC (engine)' },
+  { id: 'prores-mov', label: 'ProRes 422 HQ (engine)' }, { id: 'prores4444-mov', label: 'ProRes 4444 w/ alpha (engine)' }, { id: 'hevc-mp4', label: 'HEVC (engine)' }, { id: 'hevc-mov', label: 'HEVC (engine) · MOV' },
 ];
 const PRESETS: { id: Preset; label: string }[] = [
   { id: 'movie', label: 'Movie size' }, { id: '720', label: '720p' }, { id: '1080', label: '1080p' }, { id: '2160', label: '4K' }, { id: 'square', label: 'Square 1080' }, { id: 'custom', label: 'Custom' },
 ];
 const QUALITIES: { id: Quality; label: string }[] = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }, { id: 'very-high', label: 'Very high' }];
 /** Formats the engine's ffmpeg encodes (the browser cannot). */
-const ENGINE: Partial<Record<ExportFormat, EngineTarget>> = { 'prores-mov': 'prores', 'prores4444-mov': 'prores4444', 'hevc-mp4': 'hevc' };
-const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov', 'prores-mov', 'prores4444-mov', 'hevc-mp4'];
+const ENGINE: Partial<Record<ExportFormat, EngineTarget>> = { 'prores-mov': 'prores', 'prores4444-mov': 'prores4444', 'hevc-mp4': 'hevc', 'hevc-mov': 'hevc' };
+const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov', 'prores-mov', 'prores4444-mov', 'hevc-mp4', 'hevc-mov'];
 const ALPHA: ExportFormat[] = ['webm', 'png-frames', 'webp-frames', 'png-still', 'gif', 'prores4444-mov'];
-const LOSSY: ExportFormat[] = ['mp4', 'webm', 'mov', 'jpg-frames', 'webp-frames', 'hevc-mp4'];
+const LOSSY: ExportFormat[] = ['mp4', 'webm', 'mov', 'jpg-frames', 'webp-frames', 'hevc-mp4', 'hevc-mov'];
 const STAGES: Record<ExportProgress['stage'], string> = { frames: 'Drawing frames', audio: 'Mixing sound', encoding: 'Encoding', finishing: 'Finishing' };
 
 const DEFAULTS: Saved = {

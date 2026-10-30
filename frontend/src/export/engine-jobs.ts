@@ -139,7 +139,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         target: o.target, fps: movie.fps, width, height, frames: total, has_audio: wav !== null, alpha: keepAlpha,
-        quality: o.quality, container: 'mp4', name: safeName(movie.name),
+        quality: o.quality, container: o.format === 'hevc-mov' ? 'mov' : 'mp4', name: safeName(movie.name),
       }),
     })).json() as { id: string };
     jobId = made.id;

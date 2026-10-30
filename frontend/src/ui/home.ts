@@ -12,6 +12,7 @@ export interface HomeDeps {
   openRecent: (name: string) => void;
   openPath: (path: string) => void;
   removeRecent: (name: string) => void;
+  openName?: () => string | null;
   run: (command: string) => void;
 }
 
@@ -34,7 +35,7 @@ export class HomeScreen {
     const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
     const navItem = (v: Page, ic: string, label: string): string => `<button class="cv-home-nav-item" type="button" data-v="${v}">${icon(ic, 16)}<span>${label}</span>${v === 'start' ? '' : '<span class="cv-home-count">0</span>'}</button>`;
     const cmdItem = (cmd: string, ic: string, label: string): string => `<button class="cv-home-nav-item" type="button" data-cmd="${cmd}">${icon(ic, 16)}<span>${label}</span></button>`;
-    const key = (k: string): string => `<kbd class="cv-key">${mod}</kbd><kbd class="cv-key">${k}</kbd>`;
+    const key = (k: string): string => `<span class="cv-keys" dir="ltr"><kbd class="cv-key">${mod}</kbd><kbd class="cv-key">${k}</kbd></span>`;
     const formats = ['FMO', 'PNG', 'JPEG', 'GIF', 'WEBP', 'MP4', 'MOV', 'WAV', 'MP3'].map((f) => `<span class="cv-home-format">${f}</span>`).join('');
     const sizes = PRESETS.map((p, i) => `<button class="cv-home-size" type="button" data-size="${i}"><span class="cv-home-size-box"><span style="aspect-ratio: ${p.w} / ${p.h}"></span></span><span class="cv-home-size-name">${p.name}</span><span class="cv-home-size-meta">${p.w} x ${p.h} px · ${p.fps} fps</span></button>`).join('');
     this.root.innerHTML = `<nav class="cv-home-nav" aria-label="Home">
@@ -69,7 +70,7 @@ export class HomeScreen {
       <div class="cv-home-page" data-page="trash" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Recently Deleted</h1><p class="cv-home-sub">Deleted movies and exports, kept for 30 days.</p></div></div><div class="cv-home-slot" data-slot="trash"></div></div>
     </div>`;
     this.back = this.root.querySelector('[data-back]') as HTMLElement;
-    const deps = { recent: d.recent, openRecent: d.openRecent, openPath: d.openPath, removeRecent: d.removeRecent };
+    const deps = { recent: d.recent, openRecent: d.openRecent, openPath: d.openPath, removeRecent: d.removeRecent, openName: d.openName };
     const count = (v: Page | 'trash') => (n: number): void => { for (const c of Array.from(this.root.querySelectorAll(`[data-v="${v}"] .cv-home-count`))) setText(c, String(n)); };
     const mount = (slot: Page, files: HomeFiles): void => { (this.root.querySelector(`[data-slot="${slot}"]`) as HTMLElement).appendChild(files.root); this.pages.set(slot, files); };
     mount('start', new HomeFiles(deps, { fixed: 'recent', limit: 8, compact: true, onCount: count('recent') }));

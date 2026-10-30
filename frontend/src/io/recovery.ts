@@ -1,11 +1,16 @@
 import type { Engine } from '../engine/engine';
 import { el, q, setText } from '../ui/dom';
 import { Dialog } from '../ui/dialogs';
+import { toast } from '../ui/toast';
+import { t } from '../ui/i18n';
 import { api, serviceReady } from './api';
 
-export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; size: number }
+export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number }
 
 const EVERY_MS = 60_000;
+const BEAT_MS = 20_000;
+/** A snapshot is a crash only when its window has not beaten for this long. */
+const DEAD_AFTER_S = 60;
 /** One id per page load: a snapshot from any other id belongs to a session that did not finish. */
 const SESSION = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
@@ -68,12 +73,15 @@ export class Recovery {
   private written = false;
   private dialog: RecoverDialog | null = null;
   private timer = 0;
+  private beat = 0;
 
   constructor(private readonly host: RecoveryHost) {
     const check = (): void => { if (this.written && (!host.engine.movie || !host.engine.modified)) void this.clear(); };
     host.engine.on('saved', check);
     host.engine.on('projects', check);
     this.timer = window.setInterval(() => { void this.snapshot(); }, EVERY_MS);
+    // this window's snapshot stays "alive" while the window lives, so another window does not take it for a crash
+    this.beat = window.setInterval(() => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); }, BEAT_MS);
     // a normal quit: nothing was lost, so nothing is kept
     window.addEventListener('pagehide', (e) => {
       if (e.persisted) return;
@@ -81,7 +89,7 @@ export class Recovery {
     });
   }
 
-  dispose(): void { window.clearInterval(this.timer); }
+  dispose(): void { window.clearInterval(this.timer); window.clearInterval(this.beat); }
 
   /** Writes one snapshot now if the movie has unsaved changes and none is being written. */
   async snapshot(): Promise<void> {
@@ -112,7 +120,7 @@ export class Recovery {
 
   /** At start: offers the snapshots left by sessions that did not finish. */
   async offer(): Promise<void> {
-    const items = (await listSnapshots()).filter((i) => i.session !== SESSION);
+    const items = (await listSnapshots()).filter((i) => i.session !== SESSION && (i.idle ?? Infinity) > DEAD_AFTER_S);
     if (!items.length) return;
     this.dialog ??= new RecoverDialog();
     const answer = await this.dialog.ask(items);
@@ -125,7 +133,7 @@ export class Recovery {
     for (const i of items.slice().sort((a, b) => b.time - a.time)) {
       try {
         const res = await fetch(base(i.session));
-        if (!res.ok) continue;
+        if (!res.ok) { toast(t('Could not recover "{name}".').replace('{name}', i.name), 'error'); continue; }
         const blob = await res.blob();
         const name = `${i.name} (Recovered)`;
         // a movie the person opened while the engine was starting is never replaced: the snapshot goes to the library
@@ -135,7 +143,7 @@ export class Recovery {
           await this.snapshot();   // protected under this session before the old snapshot goes
         } else await this.host.saveRecovered(blob, await freeName(name));
         await fetch(base(i.session), { method: 'DELETE' });
-      } catch { /* leave this snapshot for the next start */ }
+      } catch { toast(t('Could not recover "{name}". It stays for the next start.').replace('{name}', i.name), 'error'); }
     }
   }
 }

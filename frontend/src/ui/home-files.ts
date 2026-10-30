@@ -3,6 +3,7 @@ import { baseName, isDiskPath } from '../io/disk';
 import { el, patchList, q, setClass, setHidden, setText, setTitle, swapMedia } from './dom';
 import { confirmAction } from './dialogs';
 import { icon } from './icons';
+import { dateText, onLanguage } from './i18n';
 import { toast } from './toast';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
@@ -13,6 +14,8 @@ export interface HomeFilesDeps {
   openRecent: (nameOrPath: string) => void;
   openPath: (path: string) => void;
   removeRecent: (nameOrPath: string) => void;
+  /** The library name of the movie open behind Home, or null. */
+  openName?: () => string | null;
 }
 
 type Tab = 'recent' | 'projects' | 'outputs';
@@ -54,7 +57,7 @@ function whenText(t: number): string {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
-  return new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return dateText(ms);
 }
 
 const kindOf = (name: string): string => (/\.([A-Za-z0-9]+)$/.exec(name)?.[1] ?? 'fmo').toUpperCase();
@@ -99,6 +102,7 @@ export class HomeFiles {
     this.sort.value = this.prefs.sort;
     this.sort.addEventListener('change', () => { this.prefs.sort = this.sort.value as Sort; this.save(); this.render(); });
     this.filter.addEventListener('input', () => this.render());
+    onLanguage(() => this.render());   // dates follow the language
     this.items.addEventListener('click', (e) => {
       const t = e.target as HTMLElement, row = t.closest<HTMLElement>('.cv-hf-item'), item = row ? this.all.find((i) => i.key === row.dataset.key) : undefined;
       if (!item) return;
@@ -133,7 +137,7 @@ export class HomeFiles {
     const run = ++this.run, tab = this.prefs.tab;
     let items: Item[] = [];
     if (tab === 'projects') {
-      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, open: () => this.d.openRecent(i.name), remove: () => { void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
+      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, open: () => this.d.openRecent(i.name), remove: () => { if (this.d.openName?.() === i.name) { toast('Close the movie before deleting it.', 'error'); return; } void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
     } else if (tab === 'outputs') {
       const engine = await api.outputs(), seen = new Set(engine.map((o) => o.path)), extra = storedOutputs().filter((p) => !seen.has(p));
       const stats = await api.stat(extra);
