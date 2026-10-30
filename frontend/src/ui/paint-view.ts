@@ -23,6 +23,8 @@ import { ColourPanel } from './colour-panel';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { t as tr } from './i18n';
 import { FlipStrip, type StripHost } from './flip-strip';
+import { CropResizeDialog, bakeCropResize } from './flip-canvas';
+import { FlipMini } from './flip-mini';
 import { icon } from './icons';
 import { LayersPanel } from './layers-panel';
 import { PaintSettings, loadPaintPrefs, savePaintPrefs, type PaintPrefs } from './paint-settings';
@@ -34,6 +36,12 @@ import { PredictTail } from './paint-predict';
 import { anchorOffset, canvasToScreen, isQuickPinchIn, panDelta, pinchView, rotBounds, screenToCanvas, unrotate, wrapAngle } from '../paint/viewmath';
 import { toast } from './toast';
 import { BrushSlots } from './brush-slots';
+import { PaintClip } from './paint-clip';
+import { FeelPopover, FeelStore, drawBrushCursor } from './paint-feel';
+import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys';
+import { ROLL_NAME, brushScale, penButton } from '../paint/feel';
+import { setPressureGamma } from '../paint/dynamics';
+import type { Command, Commands } from './commands';
 
 interface BrushState { size: number; opacity: number }
 
@@ -62,8 +70,10 @@ const TEMPLATE = `<div class="fm-paint" hidden>
     <button class="fm-paint-tool" type="button" data-tool="paint" title="Paint (B); click again for brushes">${icon('paintbrush', 20)}</button>
     <button class="fm-paint-tool" type="button" data-tool="smudge" title="Smudge (S); click again for brushes">${icon('smudge', 20)}</button>
     <button class="fm-paint-tool" type="button" data-tool="erase" title="Erase (E); click again for brushes">${icon('eraser', 20)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="eyedropper" title="Eyedropper (I, or hold Alt): click the picture to pick a color">${icon('tEyedropper', 20)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="fill" title="Fill (G): click an area to fill it, drag sideways for the threshold; click again to stop">${icon('tBucket', 20)}</button>
     <button class="fm-paint-tool" type="button" data-tool="layers" title="Drawing layers (L)">${icon('layers', 20)}</button>
-    <button class="fm-paint-colour" type="button" title="Color (drag onto the canvas to fill)"><span></span></button>
+    <button class="fm-paint-colour" type="button" title="Color: click to open, hold for the previous color, drag onto the canvas to fill"><span></span></button>
   </div>
 </div>
 <div class="fm-paint-side">
@@ -128,7 +138,7 @@ export class PaintView {
   private gesture: { d: number; ang: number; cx: number; cy: number; scale: number; rot: number; anchor: Point; d0: number; count: number; t: number; moved: boolean } | null = null;
   private pan: { x: number; y: number; ox: number; oy: number; id: number } | null = null;
   private space = false;
-  private drop: { id: number; x: number; y: number; dragging: boolean; wait: number; px: number; py: number } | null = null;
+  private drop: { id: number; x: number; y: number; dragging: boolean; wait: number; px: number; py: number; hold: number; held: boolean } | null = null;
   private readonly spin = new SpinDrag();
   private readonly holdUndoBtn = new HoldRepeat(420, 80);
   private readonly holdRedoBtn = new HoldRepeat(420, 80);
@@ -138,6 +148,20 @@ export class PaintView {
   private tailFrom: Point | null = null;
   private loupe!: Loupe;
   private dropper!: ColourDrop;
+  // feel, clipboard and key additions
+  private clip!: PaintClip;
+  private readonly feel = new FeelStore();
+  private feelPop!: FeelPopover;
+  private commands: Commands | null = null;
+  /** The eyedropper button or key is armed: the next press on the picture picks a color. */
+  private pickArmed = false;
+  private lastTool: PaintTool = 'paint';
+  private lastTilt = { x: 0, y: 0, roll: 0 };
+  private prevSel: Mask | null = null;
+  private selHold = 0;
+  private swatchDrop: { color: RGB; wait: number; px: number; py: number } | null = null;
+  /** A pen barrel button or eraser end changed the tool for the stroke that is down. */
+  private penTool: PaintTool | null = null;
   private live: ((ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => void) | null = null;
   private interaction: Interaction | null = null;
 
@@ -157,6 +181,11 @@ export class PaintView {
   private readonly layersPanel: LayersPanel;
   private readonly settings: PaintSettings;
   private readonly strip: FlipStrip;
+  private cropDialog: CropResizeDialog | null = null;
+  /** The layers the open document was loaded from (or last saved as), to tell an outside change from our own save. */
+  private seenLayers: DrawingLayer[] | null = null;
+  private ownRun = false;
+  private readonly mini: FlipMini;
   private readonly tools: PaintTools;
 
   private readonly bar: HTMLElement;
@@ -214,7 +243,7 @@ export class PaintView {
 
     this.input = new PenInput({ toCanvas: (x, y) => this.toCanvas(x, y), smoothing: 0, fingerPaints: this.prefs.fingerPaints });
 
-    this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb) });
+    this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb), onSwatchDrag: (e) => this.swatchDrag(e) });
     this.brushPanel = new BrushPanel({ onPick: (b) => this.pickBrush(b) });
     this.layersPanel = new LayersPanel({ doc: () => this.doc });
     this.settings = new PaintSettings({
@@ -225,8 +254,27 @@ export class PaintView {
       onionScope: () => (this.content()?.kind === 'flipbook' ? (this.content()?.onion ? 'flipbook' : 'movie') : null),
       setOnionScope: (scope) => this.setOnionScope(scope),
       onInsertPhoto: () => this.insertPhoto(),
+      onCropResize: () => { void this.cropResize(); },
     });
     this.strip = new FlipStrip(this.stripHost());
+    this.mini = new FlipMini(this.strip, this.stripHost(), this.root);
+    // an Undo or Redo from the status bar changes the frames under the open strip
+    this.engine.on('movie', () => {
+      if (!this.isOpen() || this.busy || this.ownRun) return;
+      const c = this.content();
+      if (!c || (c.kind !== 'flipbook' && c.kind !== 'drawing')) return;
+      if (c.kind === 'flipbook') {
+        this.row = Math.max(0, Math.min(this.row, c.flip.length - 1));
+        this.index = Math.max(0, Math.min(this.index, (c.flip[this.row]?.frames.length ?? 1) - 1));
+        this.strip.refresh();
+      }
+      // the open frame's pictures were changed from outside (Undo or Redo): load them again unless there is unsaved paint
+      const cur = this.frameLayers(c);
+      if (cur !== this.seenLayers && this.doc && !this.doc.isChanged()) {
+        this.seenLayers = cur;
+        void this.loadDoc().then(() => { this.strip.invalidate(); this.full = true; this.redraw(); this.syncChrome(); });
+      }
+    });
     this.tools = new PaintTools(this.toolHost());
     for (const p of [this.colour.root, this.brushPanel.root, this.layersPanel.root, this.settings.root, this.strip.root, this.strip.preview.root, this.tools.root]) this.root.appendChild(p);
 
@@ -244,6 +292,31 @@ export class PaintView {
     this.dropper = new ColourDrop({ doc: () => this.doc, selection: () => this.selection, toCanvas: (x, y) => this.toCanvas(x, y), root: this.root });
     this.root.appendChild(this.loupe.root);
     this.root.appendChild(this.dropper.bubble);
+    this.clip = new PaintClip({
+      doc: () => this.doc,
+      selection: () => this.selection,
+      setSelection: (m) => this.setSelection(m),
+      say: (t) => this.say(t),
+      placed: () => this.tools.setMode('transform'),
+    });
+    this.feelPop = new FeelPopover({
+      store: this.feel,
+      globals: () => ({ stabilization: this.prefs.smoothing, motion: this.prefs.motionFilter, expression: this.prefs.expression }),
+      changed: () => this.applyFeel(),
+    });
+    // double-click a tool button for the current brush's own Pressure and Smoothing settings
+    for (const t of ['paint', 'smudge', 'erase'] as const) {
+      q(this.root, `.fm-paint-tool[data-tool="${t}"]`).addEventListener('dblclick', (e) => {
+        const b = this.brush(t);
+        this.brushPanel.close();
+        this.feelPop.open(b.id, b.name, e.clientX, e.clientY + 18);
+      });
+    }
+    window.addEventListener('paste', (e) => {
+      if (!this.isOpen() || (e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      e.preventDefault();
+      void this.clip.pasteEvent(e.clipboardData).then((done) => { if (!done) void this.clip.paste(); });
+    });
     this.wire();
     this.setColourChip(this.colour.get());
     new ResizeObserver(() => this.resize()).observe(this.root);
@@ -269,6 +342,7 @@ export class PaintView {
     await this.loadDoc();
     setText(this.modeName, c.kind === 'flipbook' ? 'Flipbook' : 'Drawing');
     this.modeIcon.innerHTML = icon(c.kind === 'flipbook' ? 'flipbook' : 'drawing', 18);
+    this.mini.dock();
     setHidden(this.strip.root, c.kind !== 'flipbook');
     setClass(this.root, 'has-strip', c.kind === 'flipbook');
     this.setSelection(null);
@@ -311,6 +385,7 @@ export class PaintView {
     const s = this.stroke, doc = this.doc;
     this.stroke = null;
     this.strokePointer = -1;
+    this.endPenTool();
     this.clearTail();
     if (!s || !doc) return;
     const r = s.cancel();
@@ -322,6 +397,11 @@ export class PaintView {
     this.cancelStroke();
     this.stopPlay();
     for (const p of [this.colour, this.brushPanel, this.layersPanel, this.settings]) p.close();
+    this.colour.close(true);
+    this.clip.hide();
+    this.feelPop.hide();
+    this.pickArmed = false;
+    this.prevSel = null;
     this.menu.hidden = true;
     this.dropper.cancel();
     this.dropper.stopContinue();
@@ -373,6 +453,7 @@ export class PaintView {
     if (old !== doc) this.dropDoc(old);
     doc.onChange = (what, rect) => this.docChanged(what, rect);
     this.doc = doc;
+    this.seenLayers = this.frameLayers(c);
     this.layersPanel.refresh();
   }
 
@@ -418,11 +499,17 @@ export class PaintView {
     if (c.kind === 'flipbook') c.flip.forEach((t, r) => { const i = t.frames.findIndex((f) => f.id === key); if (i >= 0) { row = r; index = i; } });
     if (c.kind === 'flipbook' && row < 0) return;
     const label = c.kind === 'flipbook' ? `Paint ${c.name} frame ${index + 1}` : `Paint ${c.name}`;
-    this.engine.run(label, (mv) => {
-      const assets = { ...mv.assets };
-      for (const { asset } of out.assets) assets[asset.id] = asset;
-      return ops.updateContent({ ...mv, assets }, contentId, (x) => (x.kind === 'flipbook' ? flipOps.setFrameLayers(x, row, index, out.layers) : { ...x, layers: out.layers }));
-    });
+    this.ownRun = true;
+    try {
+      this.engine.run(label, (mv) => {
+        const assets = { ...mv.assets };
+        for (const { asset } of out.assets) assets[asset.id] = asset;
+        return ops.updateContent({ ...mv, assets }, contentId, (x) => (x.kind === 'flipbook' ? flipOps.setFrameLayers(x, row, index, out.layers) : { ...x, layers: out.layers }));
+      });
+    } finally { this.ownRun = false; }
+    // the saved layers stand for the picture now open when it is the frame just written
+    const now = this.content();
+    if (now && this.frameKey(now) === key) this.seenLayers = this.frameLayers(now);
     if (this.isOpen()) { this.strip.refresh(); this.full = true; this.redraw(); }
   }
 
@@ -785,22 +872,27 @@ export class PaintView {
   private drawCursor(ctx: CanvasRenderingContext2D): void {
     const p = this.cursor;
     this.cursorBox = null;
-    if (!p || !this.prefs.cursor || this.interaction || this.tools.mode() !== 'paint' || this.loupe.active || this.dropper.active) return;
+    if (!p || !this.cursorShown() || this.interaction || this.tools.mode() !== 'paint' || this.loupe.active || this.dropper.active || this.pickArmed) return;
     const b = this.brush();
     const st = this.state(b);
     const rr = this.cursorRadius(b, st.size);
     const sx = this.view.ox + p.x * this.view.scale, sy = this.view.oy + p.y * this.view.scale;
-    ctx.beginPath();
-    ctx.arc(sx, sy, rr, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    drawBrushCursor(ctx, { x: sx, y: sy, r: rr, style: this.prefs.outline, colour: this.colour.get(), brush: b, tiltX: this.lastTilt.x, tiltY: this.lastTilt.y, roll: this.rollOn(b) ? this.lastTilt.roll : 0, stroking: !!this.stroke });
     const at = canvasToScreen(this.view, p.x, p.y);
-    this.cursorBox = { x: at.x - rr - 3, y: at.y - rr - 3, w: rr * 2 + 6, h: rr * 2 + 6 };
+    const ext = this.cursorExtent(rr);
+    this.cursorBox = { x: at.x - ext - 3, y: at.y - ext - 3, w: ext * 2 + 6, h: ext * 2 + 6 };
   }
+
+  /** Cursor visibility: hover shows it only between strokes, painting only during one. */
+  private cursorShown(): boolean {
+    const m = this.prefs.cursorMode;
+    return m === 'both' || (m === 'hover' && !this.stroke) || (m === 'painting' && !!this.stroke);
+  }
+
+  /** The outline can grow with tilt for a brush-shaped outline, so its repaint box does too. */
+  private cursorExtent(r: number): number { return this.prefs.outline === 'brush' ? r * 2.6 : r; }
+
+  private rollOn(b: Brush): boolean { return this.feel.get(b.id).roll ?? ROLL_NAME.test(b.name); }
 
   /** Device scale times the canvas rotation: the base matrix every view-space drawing starts from. */
   /** The part of the picture a dirty repaint touches (the clip, mapped back to movie pixels); undefined for a full repaint. */
@@ -829,7 +921,9 @@ export class PaintView {
   /** Brush outline radius in screen pixels: with dynamic scaling the brush keeps its screen size, else its canvas size. */
   private cursorRadius(b: Brush, size: number): number {
     const dia = baseDiameter(b, size);
-    return Math.max(2, (this.prefs.dynamicScaling ? dia : dia * this.view.scale) / 2);
+    const m = this.engine.movie;
+    const sc = brushScale(this.prefs.scaling, this.view.scale, m?.width ?? 1920, m?.height ?? 1080);
+    return Math.max(2, (sc.screenFixed ? dia : dia * sc.k * this.view.scale) / 2);
   }
 
   private drawRows(ctx: CanvasRenderingContext2D, c: Content, m: Movie, which: 'below' | 'above' | 'all'): void {
@@ -891,7 +985,9 @@ export class PaintView {
   private syncChrome(): void {
     for (const b of this.root.querySelectorAll<HTMLElement>('.fm-paint-tool[data-tool]')) {
       const t = b.dataset.tool;
-      setClass(b, 'is-active', (t === this.tool && this.tools.mode() === 'paint') || (t === 'layers' && this.layersPanel.isOpen()));
+      const filling = this.dropper.continuing !== null;
+      setClass(b, 'is-active', (t === this.tool && this.tools.mode() === 'paint' && !this.pickArmed && !filling) || (t === 'layers' && this.layersPanel.isOpen()) || (t === 'eyedropper' && this.pickArmed) || (t === 'fill' && filling));
+      setClass(b, 'is-filling', t === 'fill' && filling);
     }
     for (const b of this.root.querySelectorAll<HTMLElement>('.fm-paint-word')) {
       const w = b.dataset.w;
@@ -944,6 +1040,8 @@ export class PaintView {
 
   private setTool(t: PaintTool): void {
     this.dropper.stopContinue();
+    this.pickArmed = false;
+    if (this.tool !== t) this.lastTool = this.tool;
     if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
     if (this.tool === t && !this.brushPanel.isOpen()) {
       const b = q<HTMLElement>(this.root, `.fm-paint-tool[data-tool="${t}"]`);
@@ -970,6 +1068,15 @@ export class PaintView {
     this.redraw();
   }
 
+  /** A per-brush feel change: the next stroke reads it; the pressure curve may need to switch now. */
+  private applyFeel(): void {
+    this.gammaOwn = true;
+    this.full = true;
+    this.redraw();
+  }
+
+  private gammaOwn = false;
+
   private say(text: string): void {
     setText(this.toastEl, text);
     setHidden(this.toastEl, false);
@@ -992,6 +1099,38 @@ export class PaintView {
     x.arc(60, 60, dia / 2, 0, Math.PI * 2);
     x.fill();
     x.globalAlpha = 1;
+  }
+
+  /** Settings > Crop and resize: asks, saves the open frame, re-bakes the pixels as new assets, then reloads the frame. */
+  private async cropResize(): Promise<void> {
+    const c = this.content();
+    const m = this.engine.movie;
+    if (!c || !m || this.busy || !this.contentId) return;
+    this.cropDialog ??= new CropResizeDialog();
+    const p = await this.cropDialog.ask({ w: m.width, h: m.height }, c.kind === 'flipbook');
+    if (!p || !this.contentId) return;
+    this.busy = true;
+    this.cancelStroke();
+    this.tools.finish();
+    await this.commitDoc();
+    const now = this.content();
+    if (!now) { this.busy = false; return; }
+    const baked = await bakeCropResize(this.engine, now, p, { row: this.row, index: this.index });
+    const blobs = new Map<string, Blob>();
+    for (const { asset, blob } of baked.assets) { this.engine.assets.set(asset.id, blob); blobs.set(asset.id, blob); }
+    await this.renderer.preload(blobs);
+    const id = this.contentId;
+    this.engine.run('Crop and resize', (mv) => {
+      const assets = { ...mv.assets };
+      for (const { asset } of baked.assets) assets[asset.id] = asset;
+      return ops.updateContent({ ...mv, assets }, id, () => baked.content);
+    });
+    await this.loadDoc();
+    this.busy = false;
+    this.syncChrome();
+    this.strip.invalidate();
+    this.full = true;
+    this.redraw();
   }
 
   private insertPhoto(): void {
@@ -1023,6 +1162,7 @@ export class PaintView {
   // ---------------------------------------------------------------- selection
 
   private setSelection(m: Mask | null): void {
+    if (this.selection && this.selection !== m) this.prevSel = this.selection;
     this.selection = m;
     this.outline = m ? this.tools.outlineOf(m) : [];
     this.maskOverlay = null;
@@ -1058,6 +1198,8 @@ export class PaintView {
       setInteraction: (h) => { this.interaction = h; this.cursor = null; this.full = true; this.redraw(); },
       say: (t) => this.say(t),
       modeChanged: () => { this.dropper.stopContinue(); this.closePanels(); this.syncChrome(); },
+      clipMenu: (x, y) => this.clip.openMenu(x, y),
+      reloadSelection: () => this.reloadSelection(),
     };
   }
 
@@ -1090,9 +1232,21 @@ export class PaintView {
           this.syncChrome();
           return;
         }
+        if (t === 'eyedropper') { this.toggleEyedropper(); return; }
+        if (t === 'fill') { this.toggleFill(); return; }
         this.setTool(t as PaintTool);
       });
     }
+    // press and hold Select brings back the previous selection
+    const selWord = q<HTMLButtonElement>(this.root, '.fm-paint-word[data-w="select"]');
+    let selHeld = false;
+    selWord.addEventListener('pointerdown', () => {
+      selHeld = false;
+      clearTimeout(this.selHold);
+      this.selHold = window.setTimeout(() => { selHeld = true; if (this.tools.mode() !== 'select') this.tools.setMode('select'); this.reloadSelection(); this.syncChrome(); }, 550);
+    });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) selWord.addEventListener(ev, () => clearTimeout(this.selHold));
+    selWord.addEventListener('click', (e) => { if (selHeld) { selHeld = false; e.stopImmediatePropagation(); } }, true);
     for (const b of this.root.querySelectorAll<HTMLButtonElement>('.fm-paint-word')) {
       b.addEventListener('click', () => {
         const w = b.dataset.w;
@@ -1112,13 +1266,19 @@ export class PaintView {
 
     // colour: click opens the panel; dragging the chip onto the canvas fills (color drop)
     this.colourBtn.addEventListener('pointerdown', (e) => {
-      this.drop = { id: e.pointerId, x: e.clientX, y: e.clientY, dragging: false, wait: 0, px: e.clientX, py: e.clientY };
+      const d = this.drop = { id: e.pointerId, x: e.clientX, y: e.clientY, dragging: false, wait: 0, px: e.clientX, py: e.clientY, hold: 0, held: false as boolean };
       this.colourBtn.setPointerCapture(e.pointerId);
+      // holding the chip still swaps to the previous color
+      d.hold = window.setTimeout(() => {
+        if (this.drop !== d || d.dragging) return;
+        d.held = true;
+        this.previousColour();
+      }, 500);
     });
     this.colourBtn.addEventListener('pointermove', (e) => {
       const d = this.drop;
       if (!d || d.id !== e.pointerId) return;
-      if (!d.dragging && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) { d.dragging = true; this.say('Drop on the canvas to fill'); }
+      if (!d.dragging && !d.held && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) { d.dragging = true; clearTimeout(d.hold); this.say('Drop on the canvas to fill'); }
       if (!d.dragging) return;
       if (this.dropper.active) { this.dropper.drag(e.clientX, e.clientY); return; }
       // holding still over the picture drops the fill, then a horizontal drag sets its threshold
@@ -1131,7 +1291,7 @@ export class PaintView {
     this.colourBtn.addEventListener('pointercancel', () => {
       const d = this.drop;
       this.drop = null;
-      if (d) clearTimeout(d.wait);
+      if (d) { clearTimeout(d.wait); clearTimeout(d.hold); }
       this.dropper.cancel();
     });
     this.colourBtn.addEventListener('pointerup', (e) => {
@@ -1139,9 +1299,11 @@ export class PaintView {
       this.drop = null;
       if (!d || d.id !== e.pointerId) return;
       clearTimeout(d.wait);
+      clearTimeout(d.hold);
+      if (d.held) return;
       if (this.dropper.active) { this.finishDrop(); return; }
       if (d.dragging) { this.colourDrop(e.clientX, e.clientY); return; }
-      if (this.colour.isOpen()) this.colour.close();
+      if (this.colour.isOpen()) this.colour.close(true);
       else { this.closePanels(this.colour); this.colour.open(this.colourBtn); }
     });
 
@@ -1171,7 +1333,13 @@ export class PaintView {
     cv.addEventListener('pointercancel', (e) => this.up(e, true));
     cv.addEventListener('pointerleave', () => { if (this.cursor) { this.cursor = null; this.full = true; this.redraw(); } });
     cv.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
-    cv.addEventListener('contextmenu', (e) => e.preventDefault());
+    cv.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const m = this.tools.mode();
+      // a right-click opens the Copy & Paste menu; a pen's barrel button has its own job
+      if ((e as PointerEvent).pointerType === 'pen' || this.stroke || (m !== 'paint' && m !== 'select')) return;
+      this.clip.openMenu(e.clientX, e.clientY);
+    });
     cv.addEventListener('dblclick', (e) => { if (this.tools.mode() === 'paint' && e.altKey) this.fit(); });
 
     window.addEventListener('keydown', (e) => this.key(e), true);
@@ -1187,9 +1355,136 @@ export class PaintView {
     this.finishDrop();
   }
 
+  // ---------------------------------------------------------------- commands, colour tools
+
+  /** The Draw & Paint commands for the app's command table (remappable, listed in the palette). */
+  paintCommands(): Command[] {
+    return paintCommandDefs({ isOpen: () => this.isOpen(), run: (id) => this.runCmd(id) });
+  }
+
+  /** Hands over the app's command table so rebound keys reach Draw & Paint. */
+  useCommands(c: Commands): void { this.commands = c; }
+
+  private nudgeState(kind: 'size' | 'opacity', delta: number): void {
+    const st = this.state(this.brush());
+    const v = Math.max(kind === 'size' ? 0 : 0.01, Math.min(1, st[kind] + delta));
+    this.setState({ [kind]: v } as Partial<BrushState>);
+    this.say(`${kind === 'size' ? tr('Size') : tr('Opacity')} ${Math.round(v * 100)}%`);
+  }
+
+  private runCmd(id: PaintCmdId): void {
+    if (!this.isOpen() || this.busy) return;
+    const editing = this.tools.mode() === 'paint' || this.tools.mode() === 'select';
+    switch (id) {
+      case 'paint-tool-paint': this.setTool('paint'); break;
+      case 'paint-tool-smudge': this.setTool('smudge'); break;
+      case 'paint-tool-erase':
+        // a second press returns to the tool that was active before
+        if (this.tool === 'erase' && this.tools.mode() === 'paint' && !this.brushPanel.isOpen()) this.setTool(this.lastTool === 'erase' ? 'paint' : this.lastTool);
+        else this.setTool('erase');
+        break;
+      case 'paint-last-tool': this.setTool(this.lastTool); break;
+      case 'paint-colour-panel':
+        if (this.colour.isOpen()) this.colour.close(true);
+        else { this.closePanels(this.colour); this.colour.open(this.colourBtn); }
+        break;
+      case 'paint-layers-panel': q<HTMLButtonElement>(this.root, '.fm-paint-tool[data-tool="layers"]').click(); break;
+      case 'paint-size-down': this.nudgeState('size', -0.05); break;
+      case 'paint-size-up': this.nudgeState('size', 0.05); break;
+      case 'paint-opacity-down': this.nudgeState('opacity', -0.05); break;
+      case 'paint-opacity-up': this.nudgeState('opacity', 0.05); break;
+      case 'paint-size-prev': this.slots?.step('size', -1); break;
+      case 'paint-size-next': this.slots?.step('size', 1); break;
+      case 'paint-opacity-prev': this.slots?.step('opacity', -1); break;
+      case 'paint-opacity-next': this.slots?.step('opacity', 1); break;
+      case 'paint-prev-colour': this.previousColour(); break;
+      case 'paint-eyedropper': this.toggleEyedropper(); break;
+      case 'paint-fill': this.toggleFill(); break;
+      case 'paint-play': if (this.content()?.kind === 'flipbook') { if (this.playTimer) this.stopPlay(); else void this.startPlay(); } break;
+      case 'paint-cut': if (editing) this.clip.cut(); break;
+      case 'paint-copy': if (editing) this.clip.copy(); break;
+      case 'paint-paste': if (editing) void this.clip.paste(); break;
+      case 'paint-duplicate': if (editing) this.clip.duplicate(); break;
+      case 'paint-cut-paste': if (editing) this.clip.cutPaste(); break;
+      case 'paint-clear': if (editing) this.clip.clear(); break;
+      case 'paint-merge-down': {
+        const doc = this.doc;
+        if (doc && doc.canMergeDown(doc.active)) doc.mergeDown(doc.active); else this.say(tr('Nothing below to merge with'));
+        break;
+      }
+    }
+  }
+
+  private previousColour(): void {
+    if (this.colour.togglePrevious()) this.say(tr('Previous color'));
+    else this.say(tr('No previous color yet'));
+  }
+
+  private toggleEyedropper(): void {
+    this.pickArmed = !this.pickArmed;
+    if (this.pickArmed) {
+      this.dropper.stopContinue();
+      if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
+      this.closePanels();
+      this.say(tr('Click the picture to pick a color'));
+    }
+    this.full = true;
+    this.redraw();
+    this.syncChrome();
+  }
+
+  private toggleFill(): void {
+    if (this.dropper.continuing) this.dropper.stopContinue();
+    else {
+      this.pickArmed = false;
+      if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
+      this.closePanels();
+      this.dropper.startContinue(this.colour.get());
+      this.say(tr('Click an area to fill it, drag sideways for the threshold'));
+    }
+    this.syncChrome();
+  }
+
+  /** SwatchDrop: a swatch carried out of the Color panel fills like the chip does. */
+  private swatchDrag(e: { color: RGB; x: number; y: number; phase: 'start' | 'move' | 'end' | 'cancel' }): void {
+    if (e.phase === 'start') {
+      this.swatchDrop = { color: e.color, wait: 0, px: e.x, py: e.y };
+      this.say(tr('Drop on the canvas to fill'));
+      return;
+    }
+    const s = this.swatchDrop;
+    if (!s) return;
+    if (e.phase === 'move') {
+      if (this.dropper.active) { this.dropper.drag(e.x, e.y); return; }
+      s.px = e.x; s.py = e.y;
+      clearTimeout(s.wait);
+      if (document.elementFromPoint(e.x, e.y) === this.canvas) {
+        s.wait = window.setTimeout(() => { if (this.swatchDrop === s) this.dropper.begin(s.px, s.py, s.color); }, 380);
+      }
+      return;
+    }
+    clearTimeout(s.wait);
+    this.swatchDrop = null;
+    if (e.phase === 'cancel') { this.dropper.cancel(); return; }
+    this.colour.set(s.color);
+    this.setColourChip(s.color);
+    if (this.dropper.active) this.finishDrop(s.color);
+    else if (document.elementFromPoint(e.x, e.y) === this.canvas) {
+      if (!this.dropper.begin(e.x, e.y, s.color)) this.dropper.cancel(); else this.finishDrop(s.color);
+    }
+  }
+
+  /** Keep the selection that was active before the current one so it can be brought back. */
+  private reloadSelection(): void {
+    const p = this.prevSel;
+    if (!p) { this.say(tr('No previous selection')); return; }
+    this.setSelection(p);
+    this.say(tr('Previous selection'));
+  }
+
   /** The pointer lifted on a color drop: keep the fill and stay in continue-fill. */
-  private finishDrop(): void {
-    const c = this.colour.get();
+  private finishDrop(color?: RGB): void {
+    const c = color ?? this.colour.get();
     const was = this.dropper.continuing;
     if (!this.dropper.end()) return;
     this.syncUndo();
@@ -1212,30 +1507,36 @@ export class PaintView {
     if (!this.isOpen()) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // Delete, Extend, Contract, Push, Pull, Fill duration and Escape on the focused frame strip
+    if (t && !e.metaKey && !e.ctrlKey && !e.altKey && this.strip.root.contains(t) && this.strip.handleKey(e)) { e.preventDefault(); e.stopPropagation(); return; }
     if (e.key === 'Alt') {
       if (this.lastMouse && !this.stroke && !this.interaction && this.tools.mode() === 'paint' && !e.repeat) this.showLoupe(this.lastMouse.x, this.lastMouse.y, false);
       return;
     }
     const mod = e.metaKey || e.ctrlKey;
     let handled = true;
+    // the remappable Draw & Paint commands (tools, size and opacity, colors, clipboard)
+    const cmd = paintCommandFor(e, this.commands);
+    if (cmd) {
+      if (!e.repeat || cmd.repeat) this.runCmd(cmd.id);
+      e.preventDefault(); e.stopPropagation();
+      return;
+    }
     if (mod && e.key.toLowerCase() === 'z') { if (e.shiftKey) this.redo(); else this.undo(); }
     else if (mod && e.key.toLowerCase() === 'y') this.redo();
+    else if (mod && e.shiftKey && e.key.toLowerCase() === 'd') this.reloadSelection();
     else if (mod && e.key.toLowerCase() === 'd') this.setSelection(null);
     else if (mod && e.key.toLowerCase() === 's') { void this.done(true); handled = false; }
     else if (mod) handled = false;
     else if (e.code === 'Space') { this.space = true; }
     else if (e.key === 'Escape') {
-      const open = [this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen()) || !this.menu.hidden;
-      if (open) { this.closePanels(); this.menu.hidden = true; this.syncChrome(); }
+      const open = [this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
+      if (open) { this.closePanels(); this.clip.hide(); this.menu.hidden = true; this.syncChrome(); }
+      else if (this.pickArmed || this.dropper.continuing) { this.pickArmed = false; this.dropper.stopContinue(); this.syncChrome(); }
       else if (this.tools.mode() !== 'paint') this.tools.cancel();
       else void this.done();
     }
     else if (e.key === 'Enter') { if (this.tools.mode() !== 'paint') this.tools.finish(); else void this.done(); }
-    else if (e.key === 'b' || e.key === 'B') this.setTool('paint');
-    else if (e.key === 's' || e.key === 'S') this.setTool('smudge');
-    else if (e.key === 'e' || e.key === 'E') this.setTool('erase');
-    else if (e.key === 'l' || e.key === 'L') q<HTMLButtonElement>(this.root, '.fm-paint-tool[data-tool="layers"]').click();
-    else if (e.key === '[' || e.key === ']') { const st = this.state(this.brush()); this.setState({ size: Math.max(0, Math.min(1, st.size + (e.key === ']' ? 0.05 : -0.05))) }); this.say(`Size ${Math.round(this.state(this.brush()).size * 100)}%`); }
     else if (e.key === '0') this.fit();
     else if (e.key === 'r' || e.key === 'R') {
       resetRotation(this.view, { width: this.cssW, height: this.cssH });
@@ -1262,8 +1563,10 @@ export class PaintView {
     e.preventDefault();
     const r = this.canvas.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
-    if (e.ctrlKey || e.metaKey) {
-      const f = Math.exp(-e.deltaY * 0.0025);
+    // a notched mouse wheel zooms; a trackpad's smooth two-finger scroll still pans
+    const notched = e.deltaMode === 1 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50 && Number.isInteger(e.deltaY) && e.deltaY % 4 === 0);
+    if (e.ctrlKey || e.metaKey || (notched && !e.shiftKey)) {
+      const f = Math.exp(-(e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY) * (e.ctrlKey || e.metaKey ? 0.0025 : 0.0012));
       this.zoomAt(px, py, this.view.scale * f);
     } else {
       const dl = panDelta(this.view, e.shiftKey ? e.deltaY : e.deltaX, e.shiftKey ? 0 : e.deltaY);
@@ -1309,12 +1612,29 @@ export class PaintView {
       cv.setPointerCapture(e.pointerId);
       return;
     }
+    const pb = this.interaction || this.tools.mode() !== 'paint' ? null : penButton(e);
+    if (pb === 'eraser' && this.prefs.eraserEnd) {
+      // the pen's eraser end erases for this stroke only
+      cv.setPointerCapture(e.pointerId);
+      this.penTool = this.tool;
+      this.tool = 'erase';
+      this.syncChrome();
+      this.startStroke(e);
+      return;
+    }
+    if (pb === 'barrel' && this.prefs.penButton !== 'off') {
+      cv.setPointerCapture(e.pointerId);
+      if (this.prefs.penButton === 'eyedropper') this.showLoupe(e.clientX, e.clientY, true, e.pointerId);
+      else this.cycleTool();
+      return;
+    }
     if (e.button !== 0) return;
     cv.setPointerCapture(e.pointerId);
     if (this.interaction) { this.interaction.down(e); return; }
     if (this.playTimer) this.stopPlay();
-    if (e.altKey) { this.showLoupe(e.clientX, e.clientY, true, e.pointerId); return; }
-    const fillWith = this.dropper.continuing;
+    if (e.altKey || this.pickArmed) { this.showLoupe(e.clientX, e.clientY, true, e.pointerId); return; }
+    // continue-fill follows the color as it changes
+    const fillWith = this.dropper.continuing ? this.colour.get() : null;
     if (fillWith) {
       if (this.dropper.begin(e.clientX, e.clientY, fillWith)) this.dropPointer = e.pointerId;
       else this.dropper.cancel();
@@ -1331,7 +1651,14 @@ export class PaintView {
     if (!layer.visible && !target.mask) { this.say('This layer is hidden'); return; }
     const b = this.brush();
     const st = this.state(b);
-    this.input.smoothing = Math.min(1, b.smoothing + this.prefs.smoothing);
+    const fo = this.feel.get(b.id);
+    this.input.smoothing = Math.min(1, b.smoothing + (fo.stabilization ?? this.prefs.smoothing));
+    this.input.motion = fo.motion ?? this.prefs.motionFilter;
+    this.input.expression = fo.expression ?? this.prefs.expression;
+    if (fo.gamma !== undefined) { setPressureGamma(fo.gamma); this.gammaOwn = true; }
+    else if (this.gammaOwn) { setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y }))); this.gammaOwn = false; }
+    if (this.cursorBox) this.dirtyScreen(this.cursorBox);
+    const sc = brushScale(this.prefs.scaling, this.view.scale, this.doc?.width ?? 1920, this.doc?.height ?? 1080);
     // a mask takes grey: the color's brightness, and the eraser hides
     let color = this.colour.get();
     let tool = this.tool;
@@ -1343,8 +1670,8 @@ export class PaintView {
     this.strokeId = target.id;
     this.stroke = new Stroke(target.raster, target.id, {
       tool, brush: b, color, size: st.size, opacity: st.opacity,
-      alphaLock: target.alphaLock, selection: this.selection, zoom: this.view.scale, dynamicScaling: this.prefs.dynamicScaling,
-      seed: (Math.random() * 0x7fffffff) | 0,
+      alphaLock: target.alphaLock, selection: this.selection, zoom: sc.zoom, dynamicScaling: sc.dynamic,
+      seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b),
     });
     this.strokePointer = e.pointerId;
     this.feed(this.input.down(e));
@@ -1422,10 +1749,11 @@ export class PaintView {
     if (e.pointerType !== 'touch') {
       const old = this.cursorBox;
       this.cursor = this.toCanvas(e.clientX, e.clientY);
-      if (this.prefs.cursor) {
+      if (e.pointerType === 'pen') this.lastTilt = { x: e.tiltX || 0, y: e.tiltY || 0, roll: e.twist || 0 };
+      if (this.cursorShown() || old) {
         if (old) this.dirtyScreen(old);
         const b = this.brush();
-        const r = (this.cursorRadius(b, this.state(b).size) + 4) / this.view.scale;
+        const r = (this.cursorExtent(this.cursorRadius(b, this.state(b).size)) + 4) / this.view.scale;
         this.redraw({ x: this.cursor.x - r, y: this.cursor.y - r, w: r * 2, h: r * 2 });
       }
     }
@@ -1460,6 +1788,7 @@ export class PaintView {
     this.cursor = this.toCanvas(e.clientX, e.clientY);
     this.full = true;
     this.redraw();
+    if (this.pickArmed) { this.pickArmed = false; this.syncChrome(); }
     if (cancelled || !c) return;
     this.colour.set(c);
     this.setColourChip(c);
@@ -1531,6 +1860,23 @@ export class PaintView {
     }
     this.stroke = null;
     this.strokePointer = -1;
+    this.endPenTool();
+    if (this.cursorBox) this.dirtyScreen(this.cursorBox);
+  }
+
+  /** The pen's eraser end lifted: back to the tool that was active. */
+  private endPenTool(): void {
+    if (!this.penTool) return;
+    this.tool = this.penTool;
+    this.penTool = null;
+    this.syncChrome();
+  }
+
+  /** Pen barrel button: Paint, Smudge, Erase in turn. */
+  private cycleTool(): void {
+    const order: PaintTool[] = ['paint', 'smudge', 'erase'];
+    this.setTool(order[(order.indexOf(this.tool) + 1) % order.length]);
+    this.say(tr(this.tool === 'paint' ? 'Paint' : this.tool === 'smudge' ? 'Smudge' : 'Erase'));
   }
 
   private startGesture(): void {

@@ -70,6 +70,15 @@ export class BrushSlots {
     this.host.say(t(kind === 'size' ? 'Size {p}% stored in slot {n}' : 'Opacity {p}% stored in slot {n}').replace('{p}', String(Math.round(next[i][kind] * 100))).replace('{n}', String(i + 1)));
   }
 
+  /** Jump to the next (dir 1) or previous (dir -1) remembered value, wrapping round the ends. */
+  step(kind: SlotKind, dir: 1 | -1): void {
+    const cur = this.host.current()[kind];
+    const vals = [...new Set(this.slots().map((s) => s[kind]))].sort((a, b) => a - b);
+    const pick = dir > 0 ? vals.find((v) => v > cur + 0.005) ?? vals[0] : [...vals].reverse().find((v) => v < cur - 0.005) ?? vals[vals.length - 1];
+    this.host.recall(kind, pick);
+    this.host.say(`${kind === 'size' ? t('Size') : t('Opacity')} ${Math.round(pick * 100)}%`);
+  }
+
   /** Positions the markers and lights the one that matches the slider. Patches in place. */
   sync(): void {
     const slots = this.slots();
@@ -107,7 +116,7 @@ export class BrushSlots {
       if (e.shiftKey || e.altKey) { this.store(kind, i); return; }
       const v = this.slots()[i][kind];
       this.host.recall(kind, v);
-      this.host.say(`${kind === 'size' ? 'Size' : 'Opacity'} ${Math.round(v * 100)}%`);
+      this.host.say(`${kind === 'size' ? t('Size') : t('Opacity')} ${Math.round(v * 100)}%`);
     });
     b.addEventListener('pointercancel', () => { id = -1; clear(); });
     b.addEventListener('pointerleave', clear);

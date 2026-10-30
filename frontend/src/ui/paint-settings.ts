@@ -1,9 +1,20 @@
 import type { OnionSettings } from '../engine/types';
+import type { CursorMode, OutlineStyle, PenButton, ScalingMode } from '../paint/feel';
 import { el, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 
 export interface PaintPrefs {
+  /** Kept in step with cursorMode (false when the mode is off) for older readers. */
   cursor: boolean;
+  /** Kept in step with scaling (true for screen). */
   dynamicScaling: boolean;
+  cursorMode: CursorMode;
+  outline: OutlineStyle;
+  scaling: ScalingMode;
+  motionFilter: boolean;
+  expression: number;
+  penButton: PenButton;
+  /** The pen's eraser end erases. */
+  eraserEnd: boolean;
   sidebarRight: boolean;
   fingerPaints: boolean;
   pressure: [number, number][];
@@ -14,6 +25,13 @@ export interface PaintPrefs {
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   cursor: true,
   dynamicScaling: true,
+  cursorMode: 'both',
+  outline: 'contrast',
+  scaling: 'screen',
+  motionFilter: false,
+  expression: 0.5,
+  penButton: 'cycle',
+  eraserEnd: true,
   sidebarRight: false,
   fingerPaints: true,
   pressure: [[0, 0], [1, 1]],
@@ -42,8 +60,15 @@ export function loadPaintPrefs(): PaintPrefs {
     const raw = localStorage.getItem(KEY);
     if (!raw) return out;
     const o = JSON.parse(raw) as Partial<PaintPrefs>;
-    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
-    for (const k of ['smoothing', 'maskVisibility'] as const) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clamp01(o[k]);
+    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
+    // older files only had the two booleans: they decide the new choices
+    out.cursorMode = o.cursorMode && ['hover', 'painting', 'both', 'off'].includes(o.cursorMode) ? o.cursorMode : out.cursor ? 'both' : 'off';
+    out.scaling = o.scaling && ['off', 'canvas', 'screen'].includes(o.scaling) ? o.scaling : out.dynamicScaling ? 'screen' : 'off';
+    if (o.outline && ['contrast', 'colour', 'brush'].includes(o.outline)) out.outline = o.outline;
+    if (o.penButton && ['cycle', 'eyedropper', 'off'].includes(o.penButton)) out.penButton = o.penButton;
+    out.cursor = out.cursorMode !== 'off';
+    out.dynamicScaling = out.scaling !== 'off';
+    for (const k of ['smoothing', 'maskVisibility', 'expression'] as const) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clamp01(o[k]);
     if (validCurve(o.pressure)) out.pressure = o.pressure.map((p) => [p[0], p[1]] as [number, number]);
   } catch { /* storage unavailable or corrupt: defaults */ }
   return out;
@@ -180,8 +205,13 @@ export class PaintSettings {
   private readonly scopeSeg: Seg | null = null;
   private readonly scopeWrap: HTMLElement;
   private readonly crop: { setDisabled(on: boolean): void };
-  private readonly cursor: ToggleRow;
-  private readonly dyn: ToggleRow;
+  private readonly cursor: Seg;
+  private readonly outline: Seg;
+  private readonly dyn: Seg;
+  private readonly motion: ToggleRow;
+  private readonly expr: SliderRow;
+  private readonly penBtn: Seg;
+  private readonly eraser: ToggleRow;
   private readonly finger: ToggleRow;
   private readonly sideBar: Seg;
   private readonly smooth: SliderRow;
@@ -255,13 +285,31 @@ export class PaintSettings {
 
     // Prefs
     const pr = this.panes.get('prefs')!;
-    this.cursor = toggleRow('Brush cursor', (v) => o.setPrefs({ cursor: v }));
-    this.dyn = toggleRow('Dynamic brush scaling', (v) => o.setPrefs({ dynamicScaling: v }));
+    const CUR: CursorMode[] = ['hover', 'painting', 'both', 'off'], OUT: OutlineStyle[] = ['contrast', 'colour', 'brush'];
+    const SCL: ScalingMode[] = ['off', 'canvas', 'screen'], PEN: PenButton[] = ['cycle', 'eyedropper', 'off'];
+    const seg = (label: string, labels: string[], onPick: (i: number) => void): { row: HTMLElement; seg: Seg } => {
+      const row = el('<div class="fm-ps-row fm-ps-sidebar"><span class="fm-ps-label"></span></div>');
+      setText(q(row, '.fm-ps-label'), label);
+      const s = segmented(labels, onPick);
+      row.appendChild(s.el);
+      return { row, seg: s };
+    };
+    const cur = seg('Brush cursor', ['Hover', 'Painting', 'Both', 'Off'], (i) => o.setPrefs({ cursorMode: CUR[i], cursor: CUR[i] !== 'off' }));
+    this.cursor = cur.seg;
+    const out = seg('Cursor outline', ['High contrast', 'Color', 'Brush'], (i) => o.setPrefs({ outline: OUT[i] }));
+    this.outline = out.seg;
+    const scl = seg('Dynamic brush scaling', ['Off', 'Canvas', 'Screen'], (i) => o.setPrefs({ scaling: SCL[i], dynamicScaling: SCL[i] !== 'off' }));
+    this.dyn = scl.seg;
+    this.motion = toggleRow('Motion filtering', (v) => o.setPrefs({ motionFilter: v }));
+    this.expr = sliderRow('Expression', 0, 1, 0.01, (v) => o.setPrefs({ expression: v }));
+    const pen = seg('Pen button', ['Cycle tool', 'Eyedropper', 'Off'], (i) => o.setPrefs({ penButton: PEN[i] }));
+    this.penBtn = pen.seg;
+    this.eraser = toggleRow('Pen eraser end erases', (v) => o.setPrefs({ eraserEnd: v }));
     this.finger = toggleRow('Paint with finger', (v) => o.setPrefs({ fingerPaints: v }));
     const sideRow = el('<div class="fm-ps-row fm-ps-sidebar"><span class="fm-ps-label">Size and opacity sidebar</span></div>');
     this.sideBar = segmented(['Left', 'Right'], (i) => o.setPrefs({ sidebarRight: i === 1 }));
     sideRow.appendChild(this.sideBar.el);
-    this.smooth = sliderRow('Smoothing', 0, 1, 0.01, (v) => o.setPrefs({ smoothing: v }));
+    this.smooth = sliderRow('Stabilization', 0, 1, 0.01, (v) => o.setPrefs({ smoothing: v }));
     const pressure = actionRow('', 'Pressure', () => this.toggleCurve(), true);
     this.curveRow = pressure.el;
     q(this.curveRow, '.fm-ps-ico').remove();
@@ -275,7 +323,7 @@ export class PaintSettings {
       this.pts = DEFAULT_PAINT_PREFS.pressure.map((p) => [...p] as [number, number]);
       this.commitCurve();
     });
-    pr.append(this.cursor.el, this.dyn.el, this.finger.el, sideRow, this.smooth.el, this.curveRow, this.curveWrap);
+    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.curveRow, this.curveWrap);
 
     this.showTab(this.tab, true);
   }
@@ -317,8 +365,14 @@ export class PaintSettings {
     const p = this.o.prefs(), on = this.o.onion(), scope = this.o.onionScope();
     const pct = (v: number): string => `${Math.round(v * 100)}%`;
     this.mask.set(p.maskVisibility, pct(p.maskVisibility));
-    this.cursor.set(p.cursor);
-    this.dyn.set(p.dynamicScaling);
+    this.cursor.set(['hover', 'painting', 'both', 'off'].indexOf(p.cursorMode));
+    this.outline.set(['contrast', 'colour', 'brush'].indexOf(p.outline));
+    this.dyn.set(['off', 'canvas', 'screen'].indexOf(p.scaling));
+    this.motion.set(p.motionFilter);
+    this.expr.set(p.expression, pct(p.expression));
+    this.expr.el.classList.toggle('is-disabled', !p.motionFilter);
+    this.penBtn.set(['cycle', 'eyedropper', 'off'].indexOf(p.penButton));
+    this.eraser.set(p.eraserEnd);
     this.finger.set(p.fingerPaints);
     this.sideBar.set(p.sidebarRight ? 1 : 0);
     this.smooth.set(p.smoothing, pct(p.smoothing));

@@ -52,7 +52,12 @@ export interface PenSample {
 
 export type PaintTool = 'paint' | 'smudge' | 'erase';
 
-export type TipShape = 'round' | 'square' | 'chisel' | 'grain-round' | 'speckle' | 'bristle' | 'chalk' | 'blob';
+export type TipShape = 'round' | 'square' | 'chisel' | 'grain-round' | 'speckle' | 'bristle' | 'chalk' | 'blob'
+  | 'sponge' | 'ring' | 'hatch' | 'star' | 'leaf' | 'splat' | 'fibre' | 'dots' | 'cross' | 'grunge' | 'pixel' | 'comb' | 'blade'
+  | 'sampled';
+
+/** A picture-made dab or grain: 8-bit coverage, row-major. `key` names it for the tip cache. */
+export interface TipImage { w: number; h: number; data: Uint8Array; key: string }
 
 export interface Brush {
   id: string;
@@ -92,6 +97,22 @@ export interface Brush {
   pickup: number;
   /** Remembered size and opacity (0 to 1) slots: the four values the sidebar recalls per brush. */
   presets: { size: number; opacity: number }[];
+  /** Pixels of a `sampled` tip (imported brushes). */
+  tipImage?: TipImage;
+  /** A 256 x 256 grain tile of an imported brush; replaces the paper grain. */
+  grainImage?: Uint8Array;
+  /** Grain size multiplier, 0.25 to 4 (1 when absent). */
+  grainScale?: number;
+  /** 0 to 1: the stroke starts thin and thick up over its first stretch. */
+  taper?: number;
+  /** Pressure response exponent, 0.4 (soft) to 2.5 (firm); 1 when absent. */
+  pressureGamma?: number;
+  /** Per-brush smoothing card, each 0 to 100; the input pipeline reads these. */
+  stabilization?: number;
+  motionFilter?: number;
+  expression?: number;
+  /** Made or imported by the person, not part of the starter library. */
+  custom?: boolean;
 }
 
 export interface StrokeSettings {
@@ -111,6 +132,8 @@ export interface StrokeSettings {
   dynamicScaling: boolean;
   /** Seed for scatter, rotation jitter and grain so a replay is identical. */
   seed: number;
+  /** Barrel roll (pen twist) sets the stamp angle. */
+  roll?: boolean;
 }
 
 /** A live stroke on one layer. `add` returns the changed rectangle (or null), `finish` the undo patch. */

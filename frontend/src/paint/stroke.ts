@@ -13,6 +13,24 @@ const TILE = 64;
 const TILE_BYTES = TILE * TILE * 4;
 const CARRY_MAX = 160;
 
+/** The 256 x 256 grain tile stretched by `k` (above 1 is coarser); mirrored at the edges so it stays seamless. */
+function scaleGrain(g: ArrayLike<number>, k: number): Float32Array {
+  const out = new Float32Array(65536);
+  const wrap = (p: number): number => { const m = ((p % 512) + 512) % 512; return m >= 256 ? 511 - m : m; };
+  for (let y = 0; y < 256; y++) {
+    const fy = y / k, y0 = Math.floor(fy), ty = fy - y0;
+    const ya = wrap(y0) << 8, yb = wrap(y0 + 1) << 8;
+    for (let x = 0; x < 256; x++) {
+      const fx = x / k, x0 = Math.floor(fx), tx = fx - x0;
+      const xa = wrap(x0), xb = wrap(x0 + 1);
+      const top = g[ya | xa] + (g[ya | xb] - g[ya | xa]) * tx;
+      const bot = g[yb | xa] + (g[yb | xb] - g[yb | xa]) * tx;
+      out[(y << 8) | x] = top + (bot - top) * ty;
+    }
+  }
+  return out;
+}
+
 interface P { x: number; y: number; p: number; tx: number; ty: number }
 
 // One coverage buffer is reused between strokes and cleared over the dirty rect only.
@@ -42,6 +60,8 @@ export class Stroke implements StrokeLike {
   private readonly colorG: number;
   private readonly colorB: number;
   private readonly tooth: Float32Array | null;
+  private readonly taperLen: number;
+  private travel = 0;
   private readonly sel: Uint8Array | null;
   private readonly useCoverage: boolean;
 
@@ -51,6 +71,7 @@ export class Stroke implements StrokeLike {
   private cx0 = 0; private cy0 = 0; private cx1 = 0; private cy1 = 0;
   private callDirty = false;
   private done = false;
+  private twist = 0;
 
   // path state
   private count = 0;
@@ -89,7 +110,11 @@ export class Stroke implements StrokeLike {
       this.covPooled = c.pooled;
     }
     if (s.brush.grain > 0) {
-      const g = grainTable(s.seed);
+      let g: ArrayLike<number> = grainTable(s.seed);
+      const gi = s.brush.grainImage;
+      if (gi && gi.length === 65536) g = Float32Array.from(gi, (v) => v / 255);
+      const gs = s.brush.grainScale ?? 1;
+      if (gs !== 1) g = scaleGrain(g, gs);
       const t = new Float32Array(g.length);
       for (let i = 0; i < g.length; i++) {
         const x = Math.min(1, Math.max(0, (g[i] - 0.3) / 0.4));
@@ -97,12 +122,14 @@ export class Stroke implements StrokeLike {
       }
       this.tooth = t;
     } else this.tooth = null;
+    this.taperLen = (s.brush.taper ?? 0) > 0 ? (s.brush.taper ?? 0) * Math.max(24, this.baseDia * 5) : 0;
   }
 
   // ---- StrokeLike ----------------------------------------------------------
 
   add(sample: PenSample): Rect | null {
     if (this.done || sample.predicted) return null;
+    this.twist = sample.twist;
     const p: P = { x: sample.x, y: sample.y, p: Math.min(1, Math.max(0, sample.pressure)), tx: sample.tiltX, ty: sample.tiltY };
     this.callDirty = false;
     if (this.count === 0) {
@@ -218,8 +245,10 @@ export class Stroke implements StrokeLike {
   private dab(x: number, y: number, pressure: number, tiltX: number, tiltY: number, dir: number | null): void {
     const { brush, tool, opacity } = this.s;
     const tilt = tiltShape(brush, tiltX, tiltY);
-    const dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pressure) * tilt.sizeMul);
+    let dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pressure) * tilt.sizeMul);
+    if (this.taperLen > 0) dia = Math.max(0.6, dia * (0.12 + 0.88 * Math.min(1, this.travel / this.taperLen)));
     this.lastStep = Math.max(0.5, brush.spacing * dia);
+    this.travel += this.lastStep;
     const flow = Math.min(1, Math.max(0, brush.flow * pressureFlow(brush, pressure)));
     if (flow <= 0.0005) return;
 
@@ -231,6 +260,7 @@ export class Stroke implements StrokeLike {
     let angle = baseAngle(brush);
     if (brush.followStroke && dir !== null) angle = dir + Math.PI / 2;
     if (tilt.angle !== null) angle = tilt.angle;
+    if (this.s.roll && this.twist) angle = (this.twist * Math.PI) / 180;
     if (brush.rotationJitter > 0) angle += (this.rng() - 0.5) * Math.PI * 2 * brush.rotationJitter;
     const rn = Math.min(1, Math.max(0.05, brush.roundness * tilt.roundnessMul));
 
@@ -248,7 +278,7 @@ export class Stroke implements StrokeLike {
     const ab = this.abuf;
 
     // Stage 1: tip alpha * flow * grain into the scratch buffer.
-    const tip = getTip(brush.tip, dia, brush.softness, rn, angle);
+    const tip = getTip(brush.tip, dia, brush.softness, rn, angle, brush.tipImage);
     const scale = dia / tip.diameter;
     const inv = 1 / scale;
     const N = tip.size, td = tip.data;

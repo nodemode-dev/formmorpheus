@@ -2,7 +2,7 @@
 // A tip is an N x N alpha map (0..255) of the dab at a bucketed diameter,
 // roundness and angle; the stroke engine resamples it to the exact dab size.
 
-import type { TipShape } from './types';
+import type { TipImage, TipShape } from './types';
 
 export interface Tip {
   /** Side of the square alpha map. */
@@ -60,19 +60,20 @@ export function bucketRoundness(r: number): number {
   return Math.min(1, Math.max(0.05, Math.round(r * 20) / 20));
 }
 
-export function getTip(shape: TipShape, diameter: number, softness: number, roundness: number, angle: number): Tip {
+export function getTip(shape: TipShape, diameter: number, softness: number, roundness: number, angle: number, image?: TipImage): Tip {
   const d = bucketDiameter(diameter);
   const soft = Math.round(Math.min(1, Math.max(0, softness)) * 20) / 20;
   const rn = bucketRoundness(roundness);
   const ang = bucketAngle(angle);
-  const key = `${shape}|${d}|${soft}|${rn}|${ang.toFixed(3)}`;
+  const img = shape === 'sampled' ? image : undefined;
+  const key = `${shape}${img ? ':' + img.key : ''}|${d}|${soft}|${rn}|${ang.toFixed(3)}`;
   const hit = cache.get(key);
   if (hit) {
     cache.delete(key);
     cache.set(key, hit);
     return hit;
   }
-  const tip = buildTip(shape, d, soft, rn, ang);
+  const tip = buildTip(shape, d, soft, rn, ang, img);
   cache.set(key, tip);
   if (cache.size > CACHE_LIMIT) {
     const first = cache.keys().next().value;
@@ -81,7 +82,17 @@ export function getTip(shape: TipShape, diameter: number, softness: number, roun
   return tip;
 }
 
-function buildTip(shape: TipShape, d: number, soft: number, rn: number, ang: number): Tip {
+/** Bilinear coverage of a picture tip at fractional pixel (x, y); 0 outside. */
+function sampleImage(im: TipImage, x: number, y: number): number {
+  const x0 = Math.floor(x - 0.5), y0 = Math.floor(y - 0.5);
+  const fx = x - 0.5 - x0, fy = y - 0.5 - y0;
+  const at = (i: number, j: number): number => (i < 0 || j < 0 || i >= im.w || j >= im.h ? 0 : im.data[j * im.w + i]);
+  const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * fx;
+  const bot = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * fx;
+  return (top + (bot - top) * fy) / 255;
+}
+
+function buildTip(shape: TipShape, d: number, soft: number, rn: number, ang: number, img?: TipImage): Tip {
   const n = Math.ceil(d) + 2;
   const data = new Uint8Array(n * n);
   const a = d / 2;
@@ -171,6 +182,124 @@ function buildTip(shape: TipShape, d: number, soft: number, rn: number, ang: num
           const rr = r / edge;
           const t = hf - rr * 0.5 + 0.28 + (1 - soft) * 0.08;
           alpha = smooth(0.08, 0.34, t) * (1 - smooth(0.9, 1.05, rr));
+          break;
+        }
+        case 'sponge': {
+          const env = 1 - smooth(inner, outer, r);
+          if (env > 0) {
+            const c = Math.max(2, d / 6);
+            const nz = vnoise(xr / c, yr / c, 51) * 0.6 + vnoise(xr / (c * 0.45), yr / (c * 0.45), 52) * 0.4;
+            alpha = env * smooth(0.4, 0.54, nz);
+          }
+          break;
+        }
+        case 'ring':
+          alpha = (1 - smooth(inner, outer, r)) * smooth(0.5, 0.68, r);
+          break;
+        case 'hatch': {
+          const env = 1 - smooth(inner, outer, r);
+          if (env > 0) {
+            const k = Math.max(3, Math.round(d / 5));
+            const f = (v * 0.5 + 0.5) * k;
+            const fr = f - Math.floor(f);
+            alpha = env * smooth(0.08, 0.22, fr) * (1 - smooth(0.5, 0.64, fr));
+          }
+          break;
+        }
+        case 'star': {
+          const th = Math.atan2(v, u);
+          const rr = 0.36 + 0.64 * Math.pow(Math.abs(Math.cos(2.5 * th)), 1.4);
+          alpha = 1 - smooth(inner * rr, outer * rr + aaN * 0.3, r);
+          break;
+        }
+        case 'leaf': {
+          const hw = 1 - u * u;
+          alpha = hw <= 0.001 ? 0 : 1 - smooth(inner, outer, Math.abs(v) / hw);
+          break;
+        }
+        case 'splat': {
+          const th = Math.atan2(v, u);
+          const core = 1 - smooth(0.34, 0.46 + 0.06 * Math.sin(3 * th + 1), r);
+          let best = core;
+          for (let k = 0; k < 9; k++) {
+            const pa = hash2(k, 1, 71) * Math.PI * 2, pd = 0.5 + hash2(k, 2, 72) * 0.42, pr = 0.04 + hash2(k, 3, 73) * 0.1;
+            const dist = Math.hypot(u - Math.cos(pa) * pd, v - Math.sin(pa) * pd);
+            const cov = 1 - smooth(pr - aaN, pr + aaN, dist);
+            if (cov > best) best = cov;
+          }
+          alpha = best;
+          break;
+        }
+        case 'fibre': {
+          const env = 1 - smooth(inner, outer, r);
+          if (env > 0) {
+            const n2 = Math.max(10, Math.min(70, Math.round(d / 1.7)));
+            const fu = (u * 0.5 + 0.5) * n2;
+            const si = Math.min(n2 - 1, Math.max(0, Math.floor(fu)));
+            const frac = fu - si;
+            const stripe = smooth(0.1, 0.4, frac) * (1 - smooth(0.6, 0.9, frac));
+            const brk = vnoise(si * 5.3, v * 1.6, 74);
+            alpha = env * stripe * smooth(0.2, 0.5, brk + 0.25 * hash2(si, 5, 75));
+          }
+          break;
+        }
+        case 'dots': {
+          const env = 1 - smooth(inner, outer, r);
+          if (env > 0) {
+            const c = Math.max(2.5, d / 6);
+            const ca = 0.866, sa = 0.5;
+            const gx = (xr * ca + yr * sa) / c, gy = (-xr * sa + yr * ca) / c;
+            const dist = Math.hypot(gx - Math.round(gx), gy - Math.round(gy));
+            alpha = env * (1 - smooth(0.26, 0.42, dist));
+          }
+          break;
+        }
+        case 'cross': {
+          const s = Math.max(Math.abs(u), Math.abs(v));
+          const arm = Math.min(Math.abs(u), Math.abs(v));
+          alpha = (1 - smooth(inner, outer, s)) * (1 - smooth(0.12, 0.2, arm));
+          break;
+        }
+        case 'grunge': {
+          const c = Math.max(2, d / 5);
+          const n1 = vnoise(xr / c, yr / c, 81) * 0.55 + vnoise(xr / (c * 0.4), yr / (c * 0.4), 82) * 0.45;
+          const env = 1 - smooth(0.5, 1.0, r + (n1 - 0.5) * 0.7);
+          alpha = env * smooth(0.32, 0.48, n1);
+          break;
+        }
+        case 'pixel': {
+          const c = Math.max(2, d / 8);
+          const ci = Math.floor(xr / c), cj = Math.floor(yr / c);
+          const inside = Math.max(Math.abs(u), Math.abs(v)) < 1 ? 1 : 0;
+          alpha = hash2(ci, cj, 61) > 0.4 ? inside * (0.5 + 0.5 * hash2(ci, cj, 62)) : 0;
+          break;
+        }
+        case 'comb': {
+          const env = 1 - smooth(inner, outer, Math.max(Math.abs(u), Math.abs(v)));
+          const t = (u * 0.5 + 0.5) * 5;
+          const du = Math.abs(t - Math.floor(t) - 0.5);
+          alpha = env * (1 - smooth(0.2, 0.34, du)) * (0.7 + 0.3 * hash2(Math.floor(t), 6, 76));
+          break;
+        }
+        case 'blade': {
+          const t = v * 0.5 + 0.5;
+          const taper = Math.max(0, 1 - t * 0.95);
+          let best = 0;
+          for (let k = -1; k <= 1; k++) {
+            const cu = k * 0.52 + Math.sin(t * 3 + k) * 0.06;
+            const hw = 0.2 * taper;
+            const cov = hw > 0.003 ? 1 - smooth(hw * 0.5, hw, Math.abs(u - cu)) : 0;
+            if (cov > best) best = cov;
+          }
+          alpha = best * (1 - smooth(0.85, 1, Math.abs(v)));
+          break;
+        }
+        case 'sampled': {
+          if (!img) break;
+          const wide = img.w >= img.h;
+          const ix = wide ? (u * 0.5 + 0.5) * img.w : img.w / 2 + (u * img.h) / 2;
+          const iy = wide ? img.h / 2 + (v * img.w) / 2 : (v * 0.5 + 0.5) * img.h;
+          alpha = sampleImage(img, ix, iy);
           break;
         }
         case 'blob': {

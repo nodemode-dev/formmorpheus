@@ -87,6 +87,9 @@ export class ColourDrop {
 
   stopContinue(): void { this.again = null; }
 
+  /** The fill tool: taps fill with the current color until the tool is left. */
+  startContinue(color: RGB): void { this.again = color; }
+
   private restore(): void {
     const l = this.live, doc = this.host.doc();
     if (!l?.patch || !doc) return;

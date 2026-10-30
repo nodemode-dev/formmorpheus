@@ -12,6 +12,7 @@ import type { CombineMode, Interpolation, Mask, Point, Raster, Rect, RGB, Select
 import { el, q, setHidden, setText } from './dom';
 import { t as tr } from './i18n';
 import { HoldRepeat } from './paint-gestures';
+import { popRow, popSep, Popover } from './popover';
 
 export interface Interaction {
   down(e: PointerEvent): void;
@@ -35,6 +36,10 @@ export interface ToolHost {
   setInteraction(h: Interaction | null): void;
   say(text: string): void;
   modeChanged(): void;
+  /** The Copy & Paste menu at a screen point. */
+  clipMenu?(x: number, y: number): void;
+  /** Bring back the selection that was active before the current one. */
+  reloadSelection?(): void;
 }
 
 export type ToolMode = 'paint' | 'select' | 'transform' | 'filters';
@@ -105,9 +110,20 @@ export class PaintTools {
   private current: ToolMode = 'paint';
   private selectMode: SelectMode = 'rectangle';
   private combineMode: CombineMode = 'replace';
-  private transformMode: TransformMode = 'freeform';
+  private transformMode: TransformMode = 'uniform';
   private interp: Interpolation = 'bilinear';
   private threshold = 0.3;
+  /** Freehand polygon being built by taps, the pointer for its rubber band, and the last tap (double tap closes). */
+  private poly: Point[] = [];
+  private hover: Point | null = null;
+  private lastTap = { t: 0, x: 0, y: 0 };
+  /** Filter state: noise choices, the value undo stack and the tap menu. */
+  private fopts = { style: 'clouds' as 'clouds' | 'billows' | 'ridges', additive: false, multichannel: false };
+  private readonly valueUndo: Record<string, number>[] = [];
+  private fmenu: Popover | null = null;
+  private previewing = false;
+  /** The transform box hugs the content (tight) or spans the whole layer (canvas). */
+  private fit: 'tight' | 'canvas' = 'tight';
   private drag: { kind: string; start: Point; last: Point; pts: Point[]; i: number; j: number; quad0: Point[]; grid0: Point[][] | null; th0: number; cx: number } | null = null;
   private float: Float | null = null;
   private meshN = MESH_MIN;
@@ -133,6 +149,7 @@ export class PaintTools {
     this.filterMenu = el<HTMLElement>(`<div class="fm-pfilters fm-pop" hidden><div class="fm-pfilters-title">Adjustments</div>${FILTERS.map((f) => `<button class="fm-pop-row" type="button" data-f="${f.id}">${f.label}</button>`).join('')}</div>`);
     this.root.addEventListener('click', (e) => this.click(e));
     this.root.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('[data-act="preview"]')) { this.preview(true); return; }
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-nudge]');
       if (!b || e.button !== 0) return;
       const [dx, dy] = NUDGE[b.dataset.nudge as string] ?? [0, 0];
@@ -140,7 +157,8 @@ export class PaintTools {
       try { b.setPointerCapture(e.pointerId); } catch { /* released already */ }
       this.repeat.start(step);
     });
-    for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) this.root.addEventListener(t, () => this.repeat.stop());
+    for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) this.root.addEventListener(t, () => { this.repeat.stop(); this.preview(false); });
+    window.addEventListener('blur', () => this.preview(false));
     this.filterMenu.addEventListener('click', (e) => {
       const id = (e.target as HTMLElement).closest<HTMLElement>('[data-f]')?.dataset.f as FilterId | undefined;
       this.filterMenu.hidden = true;
@@ -172,6 +190,7 @@ export class PaintTools {
     if (m === this.current) return;
     this.finish();
     this.current = m;
+    if (m === 'transform') this.fit = 'tight';
     if (m === 'transform' && !this.lift()) { this.current = 'paint'; }
     this.build();
     this.host.setInteraction(this.current === 'select' || this.current === 'transform' || this.current === 'filters' ? this.interaction() : null);
@@ -188,6 +207,7 @@ export class PaintTools {
 
   /** Commits whatever is in progress (transform, filter). */
   finish(): void {
+    if (this.current === 'select') this.closePoly();
     if (this.current === 'transform') this.commitFloat();
     if (this.current === 'filters') this.applyFilter();
     if (this.current !== 'paint') {
@@ -200,6 +220,7 @@ export class PaintTools {
   }
 
   cancel(): void {
+    if (this.poly.length) { this.poly = []; this.host.redraw(); if (this.current === 'select') return; }
     if (this.current === 'transform') this.dropFloat();
     if (this.current === 'filters') this.cancelFilter();
     if (this.current !== 'paint') {
@@ -221,7 +242,7 @@ export class PaintTools {
       this.modes.innerHTML = SELECT_MODES.map((m) => `<button type="button" class="fm-ptools-mode${m.id === this.selectMode ? ' is-active' : ''}" data-sel="${m.id}">${m.label}</button>`).join('');
       this.actions.innerHTML = [
         ['add', 'Add', this.combineMode === 'add'], ['remove', 'Remove', this.combineMode === 'remove'], ['invert', 'Invert', false],
-        ['copy', 'Copy & Paste', false], ['fill', 'Color Fill', false], ['clear', 'Clear', false], ['none', 'Deselect', false], ['done', 'Done', false],
+        ['reload', 'Reload', false], ['copy', 'Copy & Paste', false], ['fill', 'Color Fill', false], ['clear', 'Clear', false], ['none', 'Deselect', false], ['done', 'Done', false],
       ].map(([id, label, on]) => `<button type="button" class="fm-ptools-act${on ? ' is-active' : ''}" data-act="${id}">${label}</button>`).join('');
     } else if (this.current === 'transform') {
       this.modes.innerHTML = TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode${m.id === this.transformMode ? ' is-active' : ''}" data-tr="${m.id}">${m.label}</button>`).join('');
@@ -231,11 +252,71 @@ export class PaintTools {
       this.actions.innerHTML = NUDGE_PAD + acts.map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label}</button>`).join('');
     } else if (this.current === 'filters' && this.filter) {
       const f = FILTERS.find((x) => x.id === this.filter)!;
-      this.params.innerHTML = `<div class="fm-ptools-title">${f.label} <span>drag on the canvas to set ${f.params[0].label.toLowerCase()}</span></div>${f.params.map((p) => `<label class="fm-ptools-param"><span>${p.label}</span><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${this.values[p.id] ?? p.def}" data-p="${p.id}"><output data-o="${p.id}"></output></label>`).join('')}`;
-      this.actions.innerHTML = [['reset', 'Reset'], ['cancel', 'Cancel'], ['apply', 'Apply']].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label}</button>`).join('');
-      for (const input of this.params.querySelectorAll<HTMLInputElement>('input[data-p]')) input.addEventListener('input', () => { this.values[input.dataset.p as string] = Number(input.value); this.syncOutputs(); this.scheduleFilter(); });
+      const hint = f.id === 'hsb' ? 'tap the canvas for the menu' : `drag on the canvas to set ${f.params[0].label.toLowerCase()}`;
+      const choices = f.id === 'noise'
+        ? `<div class="fm-ptools-choices">${(['clouds', 'billows', 'ridges'] as const).map((s) => `<button type="button" class="fm-ptools-mode${this.fopts.style === s ? ' is-active' : ''}" data-ns="${s}">${tr({ clouds: 'Clouds', billows: 'Billows', ridges: 'Ridges' }[s])}</button>`).join('')}<span class="fm-ptools-gap"></span><button type="button" class="fm-ptools-mode${this.fopts.additive ? ' is-active' : ''}" data-nt="additive" title="Off fills all the empty paintable area">${tr('Additive')}</button><button type="button" class="fm-ptools-mode${this.fopts.multichannel ? ' is-active' : ''}" data-nt="multichannel">${tr('Multichannel')}</button></div>`
+        : '';
+      this.params.innerHTML = `<div class="fm-ptools-title">${f.label} <span>${hint}</span></div>${choices}${f.params.map((p) => `<label class="fm-ptools-param"><span>${p.label}</span><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${this.values[p.id] ?? p.def}" data-p="${p.id}"><output data-o="${p.id}"></output></label>`).join('')}`;
+      this.actions.innerHTML = [['undo', 'Undo'], ['preview', 'Preview'], ['reset', 'Reset'], ['cancel', 'Cancel'], ['apply', 'Apply']].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${id === 'preview' ? ' title="Hold to see the original"' : ''}>${label}</button>`).join('');
+      for (const input of this.params.querySelectorAll<HTMLInputElement>('input[data-p]')) {
+        input.addEventListener('pointerdown', () => this.pushUndo());
+        input.addEventListener('input', () => { this.values[input.dataset.p as string] = Number(input.value); this.syncOutputs(); this.scheduleFilter(); });
+      }
+      for (const b of this.params.querySelectorAll<HTMLButtonElement>('[data-ns]')) b.addEventListener('click', () => { this.fopts.style = b.dataset.ns as 'clouds' | 'billows' | 'ridges'; this.syncChoices(); this.scheduleFilter(); });
+      for (const b of this.params.querySelectorAll<HTMLButtonElement>('[data-nt]')) b.addEventListener('click', () => { const k = b.dataset.nt as 'additive' | 'multichannel'; this.fopts[k] = !this.fopts[k]; this.syncChoices(); this.scheduleFilter(); });
       this.syncOutputs();
     }
+  }
+
+  private syncChoices(): void {
+    for (const b of this.params.querySelectorAll<HTMLElement>('[data-ns]')) b.classList.toggle('is-active', b.dataset.ns === this.fopts.style);
+    for (const b of this.params.querySelectorAll<HTMLElement>('[data-nt]')) b.classList.toggle('is-active', this.fopts[b.dataset.nt as 'additive' | 'multichannel']);
+  }
+
+  /** Remember the values before a change so Undo can step back through them. */
+  private pushUndo(): void {
+    this.valueUndo.push({ ...this.values });
+    if (this.valueUndo.length > 40) this.valueUndo.shift();
+  }
+
+  private undoValue(): void {
+    const prev = this.valueUndo.pop();
+    if (!prev) { this.host.say(tr('Nothing to undo')); return; }
+    this.values = prev;
+    this.syncOutputs();
+    this.scheduleFilter();
+  }
+
+  /** Hold Preview: the original shows while held, the filtered result returns on release. */
+  private preview(on: boolean): void {
+    const doc = this.host.doc();
+    const layer = doc?.layer(this.filterLayer);
+    if (this.current !== 'filters' || !doc || !layer || !this.filterOrig || this.previewing === on) return;
+    this.previewing = on;
+    if (on) {
+      if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; }
+      layer.raster.data.set(this.filterOrig);
+      doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    } else this.runFilter();
+  }
+
+  private openFilterMenu(x: number, y: number): void {
+    if (!this.fmenu) {
+      const pop = new Popover('fm-pfmenu', 190);
+      const row = (label: string, run: () => void): ReturnType<typeof popRow> => {
+        const r = popRow(null, tr(label));
+        r.el.addEventListener('click', () => { pop.hide(); run(); });
+        return r;
+      };
+      const prev = popRow(null, tr('Preview'));
+      prev.setValue(tr('hold'));
+      prev.el.addEventListener('pointerdown', () => this.preview(true));
+      for (const t of ['pointerup', 'pointerleave', 'pointercancel']) prev.el.addEventListener(t, () => this.preview(false));
+      pop.el.append(row('Apply', () => this.finish()).el, row('Undo', () => this.undoValue()).el, row('Reset', () => { this.pushUndo(); this.values = {}; this.syncOutputs(); this.scheduleFilter(); }).el, popSep(), prev.el, popSep(), row('Cancel', () => this.cancel()).el);
+      pop.onHide(() => this.preview(false));
+      this.fmenu = pop;
+    }
+    this.fmenu.showAt(x, y);
   }
 
   private syncOutputs(): void {
@@ -276,7 +357,10 @@ export class PaintTools {
         if (p.rect.w && p.rect.h) { doc.markDirty(layer.id, p.rect); doc.commitPatch(p, 'Clear'); }
         break;
       }
+      case 'reload': this.host.reloadSelection?.(); break;
+      case 'undo': this.undoValue(); break;
       case 'copy': {
+        if (this.host.clipMenu) { const r = t.getBoundingClientRect(); this.host.clipMenu(r.left, r.top - 190); break; }
         if (!sel) { this.host.say('Select an area first'); break; }
         const piece = extract(layer.raster, sel);
         if (!piece.rect.w) break;
@@ -291,7 +375,7 @@ export class PaintTools {
       case 'interp': this.interp = INTERP[(INTERP.indexOf(this.interp) + 1) % INTERP.length]; this.build(); this.refreshPreview(); break;
       case 'reset':
         if (this.current === 'transform' && this.float) { this.float.quad = rectQuad(this.float.srcRect); this.float.grid = this.transformMode === 'warp' ? makeGrid(this.float.quad, this.meshN) : null; this.float.bend = null; this.node = null; this.refreshPreview(); }
-        if (this.current === 'filters') { this.values = {}; this.build(); this.scheduleFilter(); }
+        if (this.current === 'filters') { this.pushUndo(); this.values = {}; this.syncOutputs(); this.scheduleFilter(); }
         break;
       case 'mesh': {
         this.meshN = this.meshN >= MESH_MAX ? MESH_MIN : this.meshN + 1;
@@ -323,6 +407,7 @@ export class PaintTools {
     if (this.current === 'filters') { this.drag = { kind: 'filter', ...base, th0: this.values[this.firstParam()] ?? 0 }; return; }
     if (this.current === 'transform' && this.float) {
       const hit = this.hitHandle(e);
+      if (hit.kind === 'fit') { this.toggleFit(); return; }
       this.drag = { kind: hit.kind, ...base, i: hit.i, j: hit.j };
       if (hit.kind === 'grid') this.node = { i: hit.i, j: hit.j };
       if ((hit.kind === 'bendu' || hit.kind === 'bendv') && this.float?.grid) {
@@ -334,9 +419,11 @@ export class PaintTools {
   }
 
   private move(e: PointerEvent): void {
+    if (this.poly.length) { this.hover = this.host.toCanvas(e.clientX, e.clientY); this.host.redraw(); }
     const d = this.drag;
     if (!d) return;
-    const p = this.host.toCanvas(e.clientX, e.clientY);
+    let p = this.host.toCanvas(e.clientX, e.clientY);
+    if (this.current === 'select' && e.shiftKey && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
     d.last = p;
     if (this.current === 'select') {
       if (d.kind === 'freehand') d.pts.push(p);
@@ -347,7 +434,8 @@ export class PaintTools {
     if (this.current === 'filters') {
       const f = FILTERS.find((x) => x.id === this.filter);
       const prm = f?.params[0];
-      if (!prm) return;
+      if (!prm || f?.id === 'hsb') return;
+      if (d.i < 0 && Math.abs(e.clientX - d.cx) > 3) { d.i = 1; this.pushUndo(); }
       this.values[prm.id] = clamp(d.th0 + ((e.clientX - d.cx) / 600) * (prm.max - prm.min), prm.min, prm.max);
       this.syncOutputs();
       this.scheduleFilter();
@@ -361,7 +449,13 @@ export class PaintTools {
     this.drag = null;
     const doc = this.host.doc();
     if (!d || !doc) return;
-    const p = this.host.toCanvas(e.clientX, e.clientY);
+    let p = this.host.toCanvas(e.clientX, e.clientY);
+    if (this.current === 'filters') {
+      if (d.i < 0 && Math.abs(e.clientX - d.cx) <= 3) this.openFilterMenu(e.clientX, e.clientY);
+      return;
+    }
+    if (this.current === 'select' && e.shiftKey && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
+    if (this.current === 'select' && d.kind === 'freehand' && this.tapPoly(d, p)) return;
     if (this.current === 'select') {
       let m: Mask | null = null;
       const r = normRect(d.start, p);
@@ -378,6 +472,32 @@ export class PaintTools {
       return;
     }
     if (this.current === 'transform' && (this.transformMode === 'distort' || this.transformMode === 'warp')) this.refreshPreview();
+  }
+
+  /** A Freehand tap adds a polygon corner; tapping the first dot or double tapping closes it. False when the press was a trace. */
+  private tapPoly(d: NonNullable<PaintTools['drag']>, p: Point): boolean {
+    const s = this.host.view().scale;
+    const tap = d.pts.length < 4 && Math.hypot(p.x - d.start.x, p.y - d.start.y) * s < 6;
+    if (!tap) { this.poly = []; this.hover = null; return false; }
+    const now = performance.now();
+    const again = now - this.lastTap.t < 380 && Math.hypot(p.x - this.lastTap.x, p.y - this.lastTap.y) * s < 10;
+    this.lastTap = { t: now, x: p.x, y: p.y };
+    if (this.poly.length >= 3 && (again || Math.hypot(p.x - this.poly[0].x, p.y - this.poly[0].y) * s < 12)) { this.closePoly(); return true; }
+    if (!again) this.poly.push({ x: d.start.x, y: d.start.y });
+    this.hover = p;
+    this.host.redraw();
+    return true;
+  }
+
+  /** Turns the tapped corners into a selection (choosing another tool does this too). */
+  private closePoly(): void {
+    const doc = this.host.doc();
+    const pts = this.poly;
+    this.poly = [];
+    this.hover = null;
+    if (!doc || pts.length < 3) { this.host.redraw(); return; }
+    const next = combine(this.host.selection(), polygonMask(doc.width, doc.height, pts), this.combineMode);
+    this.host.setSelection(isEmpty(next) ? null : next);
   }
 
   private firstParam(): string {
@@ -401,6 +521,18 @@ export class PaintTools {
         if (d.kind === 'rectangle') ctx.rect(x, y, w, h); else ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       }
       ctx.stroke();
+    }
+    if (this.current === 'select' && this.poly.length) {
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      this.poly.forEach((p, i) => { const s = S(p); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+      if (this.hover) { const h = S(this.hover); ctx.lineTo(h.x, h.y); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const first = S(this.poly[0]);
+      ctx.fillStyle = '#9a9aa2';
+      dot(ctx, first, 6);
+      for (const p of this.poly.slice(1)) dot(ctx, S(p), 3.5);
     }
     const f = this.float;
     if (this.current === 'transform' && f) {
@@ -432,8 +564,11 @@ export class PaintTools {
         }
       } else {
         for (const p of q4) dot(ctx, p, 6);
+        for (let i = 0; i < 4; i++) dot(ctx, mid(q4[i], q4[(i + 1) % 4]), 4.5);
+        // the amber node fits the box to the content (tight) or the whole layer
+        const fn = fitNode(q4);
+        ctx.beginPath(); ctx.arc(fn.x, fn.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#f2a900'; ctx.fill(); ctx.stroke();
         if (this.transformMode !== 'distort') {
-          for (let i = 0; i < 4; i++) dot(ctx, mid(q4[i], q4[(i + 1) % 4]), 4.5);
           const r = this.rotateHandle(q4);
           ctx.beginPath(); ctx.moveTo(r.from.x, r.from.y); ctx.lineTo(r.at.x, r.at.y); ctx.stroke();
           ctx.fillStyle = '#30c46c';
@@ -455,7 +590,7 @@ export class PaintTools {
     const bounds = mask ? maskBounds(mask) : null;
     if (!mask || !bounds) { this.host.say('Nothing to transform on this layer'); return false; }
     const orig = new Uint8ClampedArray(layer.raster.data);
-    const piece = extract(layer.raster, mask);
+    const piece = this.fit === 'canvas' ? extractIn(layer.raster, mask, { x: 0, y: 0, w: doc.width, h: doc.height }) : extract(layer.raster, mask);
     clearMask(layer.raster, mask, layer.id);
     doc.markDirty(layer.id, bounds);
     const canvas = new OffscreenCanvas(Math.max(1, piece.raster.width), Math.max(1, piece.raster.height));
@@ -464,6 +599,22 @@ export class PaintTools {
     this.transformMode = this.transformMode === 'warp' ? 'freeform' : this.transformMode;
     this.host.setLive((ctx) => this.drawFloat(ctx));
     return true;
+  }
+
+  /** The amber node: the box hugs the content, or spans the whole layer. */
+  private toggleFit(): void {
+    const f = this.float;
+    const doc = this.host.doc();
+    const layer = f && doc ? doc.layer(f.layer) : null;
+    if (!f || !doc || !layer) return;
+    layer.raster.data.set(f.orig);
+    doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    this.fit = this.fit === 'tight' ? 'canvas' : 'tight';
+    this.float = null;
+    if (!this.lift()) this.fit = 'tight';
+    this.node = null;
+    this.host.say(tr(this.fit === 'canvas' ? 'The box fits the whole layer' : 'The box fits the content'));
+    this.refreshPreview();
   }
 
   private drawFloat(ctx: Ctx): void {
@@ -526,9 +677,10 @@ export class PaintTools {
       return { kind: 'move', i: -1, j: -1 };
     }
     const q4 = f.quad.map(S);
+    if (near(fitNode(q4))) return { kind: 'fit', i: -1, j: -1 };
     if (this.transformMode !== 'distort' && near(this.rotateHandle(q4).at)) return { kind: 'rotate', i: -1, j: -1 };
     for (let i = 0; i < 4; i++) if (near(q4[i])) return { kind: 'corner', i, j: -1 };
-    if (this.transformMode !== 'distort') for (let i = 0; i < 4; i++) if (near(mid(q4[i], q4[(i + 1) % 4]))) return { kind: 'edge', i, j: -1 };
+    for (let i = 0; i < 4; i++) if (near(mid(q4[i], q4[(i + 1) % 4]))) return { kind: this.transformMode === 'distort' ? 'shear' : 'edge', i, j: -1 };
     return { kind: 'move', i: -1, j: -1 };
   }
 
@@ -560,6 +712,14 @@ export class PaintTools {
       f.quad = q0.map((x) => rotate(x, c, a));
     } else if (d.kind === 'corner' && this.transformMode === 'distort') {
       f.quad = q0.map((x, i) => (i === d.i ? { x: x.x + dx, y: x.y + dy } : x));
+    } else if (d.kind === 'shear') {
+      // the edge's two corners slide together along the edge: a shear of the box
+      const a = q0[d.i], b = q0[(d.i + 1) % 4];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const k = (dx * (b.x - a.x) + dy * (b.y - a.y)) / len / len;
+      f.quad = q0.map((x, i) => (i === d.i || i === (d.i + 1) % 4 ? { x: x.x + (b.x - a.x) * k, y: x.y + (b.y - a.y) * k } : x));
+    } else if (d.kind === 'fit') {
+      return;
     } else if (d.kind === 'corner' || d.kind === 'edge') {
       f.quad = scaleQuad(q0, d.kind, d.i, p, this.transformMode === 'uniform' !== shift);
     }
@@ -617,6 +777,8 @@ export class PaintTools {
     this.finish();
     this.filter = id;
     this.values = {};
+    this.valueUndo.length = 0;
+    this.previewing = false;
     const layer = doc.activeLayer();
     this.filterLayer = layer.id;
     this.filterOrig = new Uint8ClampedArray(layer.raster.data);
@@ -635,7 +797,7 @@ export class PaintTools {
     const doc = this.host.doc();
     const orig = this.filterOrig;
     const layer = doc?.layer(this.filterLayer);
-    if (!doc || !orig || !this.filter || !layer) return;
+    if (!doc || !orig || !this.filter || !layer || this.previewing) return;
     const src: Raster = { width: doc.width, height: doc.height, data: orig };
     const dst = layer.raster;
     const v = (id: string): number => this.values[id] ?? FILTERS.find((x) => x.id === this.filter)!.params.find((p) => p.id === id)!.def;
@@ -644,7 +806,7 @@ export class PaintTools {
       case 'hsb': hsb(src, dst, v('hue'), v('saturation'), v('brightness')); break;
       case 'blur': gaussianBlur(src, dst, v('radius') * side); break;
       case 'sharpen': sharpen(src, dst, v('amount')); break;
-      case 'noise': noise(src, dst, { ...FILTER_DEFAULTS.noise, style: 'clouds', amount: v('amount'), scale: v('scale'), octaves: v('octaves'), turbulence: v('turbulence'), offsetX: 0, offsetY: 0, travel: 0, additive: false, multichannel: false }, 11); break;
+      case 'noise': noise(src, dst, { ...FILTER_DEFAULTS.noise, style: this.fopts.style, amount: v('amount'), scale: v('scale'), octaves: v('octaves'), turbulence: v('turbulence'), offsetX: 0, offsetY: 0, travel: 0, additive: this.fopts.additive, multichannel: this.fopts.multichannel }, 11); break;
       case 'lens': lensBlur(src, dst, v('radius') * side, v('brightness'), v('contrast')); break;
     }
     const sel = this.host.selection();
@@ -662,7 +824,9 @@ export class PaintTools {
 
   private applyFilter(): void {
     const doc = this.host.doc();
-    if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; this.runFilter(); }
+    this.previewing = false;
+    if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; }
+    this.runFilter();
     const orig = this.filterOrig;
     this.filterOrig = null;
     const layer = doc?.layer(this.filterLayer);
@@ -763,6 +927,34 @@ function scaleQuad(q0: Point[], kind: string, i: number, p: Point, uniform: bool
   }
   const P = (lx: number, ly: number): Point => ({ x: q0[0].x + ex.x * lx + ey.x * ly, y: q0[0].y + ex.y * lx + ey.y * ly });
   return [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)];
+}
+
+/** Where the amber fit node sits: just outside the box's first corner. */
+function fitNode(q4: Point[]): Point {
+  const c = centre(q4);
+  const dx = q4[0].x - c.x, dy = q4[0].y - c.y, len = Math.hypot(dx, dy) || 1;
+  return { x: q4[0].x + (dx / len) * 22, y: q4[0].y + (dy / len) * 22 };
+}
+
+/** The point on a 45 degree diagonal from `a` that is nearest `p`: a square or a circle for the box. */
+function squareTo(a: Point, p: Point): Point {
+  const dx = p.x - a.x, dy = p.y - a.y, s = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: a.x + (dx < 0 ? -s : s), y: a.y + (dy < 0 ? -s : s) };
+}
+
+/** Like extract, but over a given rectangle (outside the mask stays transparent). */
+function extractIn(r: Raster, m: Mask, rect: Rect): { raster: Raster; rect: Rect } {
+  const out = new Uint8ClampedArray(rect.w * rect.h * 4);
+  for (let y = 0; y < rect.h; y++) {
+    for (let x = 0; x < rect.w; x++) {
+      const i = (rect.y + y) * r.width + rect.x + x, mv = m.data[i];
+      if (!mv) continue;
+      const s = i << 2, o = (y * rect.w + x) << 2;
+      out[o] = r.data[s]; out[o + 1] = r.data[s + 1]; out[o + 2] = r.data[s + 2];
+      out[o + 3] = mv === 255 ? r.data[s + 3] : (r.data[s + 3] * mv) / 255;
+    }
+  }
+  return { raster: { width: rect.w, height: rect.h, data: out }, rect };
 }
 
 function writeOver(dst: Raster, src: Raster, ox: number, oy: number): void {

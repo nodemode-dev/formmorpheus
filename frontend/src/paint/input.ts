@@ -4,6 +4,7 @@
 
 import type { PenSample, PointerKind } from './types';
 import { applyPressure } from './dynamics';
+import { MotionFilter } from './feel';
 
 export interface PenInputOptions {
   /** Client coordinates to canvas pixels. */
@@ -20,6 +21,10 @@ const MAX_ROPE = 56;
 export class PenInput {
   smoothing: number;
   fingerPaints: boolean;
+  /** Motion filtering for the next stroke (tremor compensation); expression 0 to 1. */
+  motion = false;
+  expression = 0.5;
+  private readonly filter = new MotionFilter();
   private readonly toCanvas: PenInputOptions['toCanvas'];
   private active = false;
   private rope = 0;
@@ -47,7 +52,9 @@ export class PenInput {
     const a = this.toCanvas(0, 0), b = this.toCanvas(1, 0);
     const scale = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     this.rope = Math.max(0, Math.min(1, this.smoothing)) * MAX_ROPE * scale;
+    this.filter.reset();
     const s = this.sample(e);
+    if (this.motion) this.filter.apply(s, this.expression);
     this.active = true;
     this.bx = s.x;
     this.by = s.y;
@@ -62,7 +69,8 @@ export class PenInput {
     const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const evs = list.length ? list : [e];
     for (const ev of evs) {
-      const s = this.sample(ev);
+      const raw = this.sample(ev);
+      const s = this.motion ? this.filter.apply(raw, this.expression) : raw;
       this.lastPen = s;
       const o = this.follow(s);
       if (o) { out.push(o); this.lastOut = o; }
@@ -127,7 +135,8 @@ export class PenInput {
   private sample(e: PointerEvent): PenSample {
     const c = this.toCanvas(e.clientX, e.clientY);
     const kind: PointerKind = e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse';
-    let pressure = 0.5;
+    // a mouse has no pressure: it paints at full strength
+    let pressure = 1;
     if (kind === 'pen') pressure = applyPressure(e.pressure > 0 ? e.pressure : this.lastPen?.pressure ?? 0.5);
     else if (kind === 'touch') pressure = applyPressure(e.pressure > 0 ? e.pressure : 0.5);
     return {

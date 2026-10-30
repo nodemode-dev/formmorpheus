@@ -12,7 +12,7 @@ export function renderBrushPreview(brush: Brush, width: number, height: number, 
     ? Math.min(1, Math.max(0, (target - brush.minSize) / (brush.maxSize - brush.minSize)))
     : 1;
   const stroke = new Stroke(raster, 'preview', {
-    tool: 'paint', brush, color, size, opacity: 1, alphaLock: false, selection: null,
+    tool: 'paint', brush, color, size, opacity: brush.presets[2]?.opacity ?? 1, alphaLock: false, selection: null,
     zoom: 1, dynamicScaling: false, seed: 1234,
   });
   const padX = Math.min(w * 0.12, h * 0.6);

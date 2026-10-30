@@ -1,0 +1,83 @@
+/* Draw & Paint feel, clipboard and colour extras (Phase 19). */
+
+/* per-brush Pressure and Smoothing popover */
+.fm-pfeel { padding: var(--space-3); }
+.fm-pfeel-title { font-size: var(--fs-14); font-weight: 600; }
+.fm-pfeel-sub { margin: 1px 0 var(--space-3); color: var(--text-muted); font-size: var(--fs-11); }
+.fm-pfeel-lab { margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-pfeel-seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 3px; margin-bottom: var(--space-3); border-radius: var(--radius-pill); background: var(--surface-field); }
+.fm-pfeel-seg button { height: 24px; padding: 0 var(--space-1); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-11); }
+.fm-pfeel-seg button:hover { color: var(--text-primary); }
+.fm-pfeel-seg button.is-on { background: var(--accent-color); color: var(--text-on-accent); }
+.fm-pfeel-row { display: grid; grid-template-columns: 1fr auto; row-gap: 2px; margin-bottom: var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); }
+.fm-pfeel-row output { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fm-pfeel-row input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent-color); }
+.fm-pfeel-row.is-disabled { opacity: 0.4; pointer-events: none; }
+.fm-pfeel-check { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); }
+.fm-pfeel-check input { accent-color: var(--accent-color); }
+.fm-pfeel-reset { width: 100%; height: 28px; margin-top: var(--space-1); border: 0; border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--text-secondary); font: inherit; font-size: var(--fs-12); }
+.fm-pfeel-reset:hover { color: var(--text-primary); }
+
+/* the Prefs tab got longer: scroll instead of growing past the window */
+.fm-ps-pane[data-pane="prefs"] { max-height: min(62vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+
+/* top bar: eyedropper and fill buttons */
+.fm-paint-tool.is-filling { color: var(--accent-color); position: relative; }
+.fm-paint-tool.is-filling::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3.5 7.4l2.3 2.3 4.7-4.9' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+.fm-paint-tool[data-tool="eyedropper"].is-active, .fm-paint-tool[data-tool="fill"].is-active { background: var(--accent-tint-strong); }
+
+/* clipboard menu */
+.fm-pclip { padding: var(--space-1); }
+
+/* Color Companion: the panel pulled off its anchor */
+.fm-col-grip { height: 14px; margin: 0 auto 0; width: 60px; position: relative; background: none; opacity: 1; cursor: grab; touch-action: none; }
+.fm-col-grip::before { content: ''; position: absolute; left: 15px; right: 15px; top: 5px; height: 3px; border-radius: 2px; background: var(--text-muted); opacity: 0.6; }
+.fm-col-grip:hover::before { opacity: 1; }
+.fm-col.is-detached { z-index: var(--z-companion); box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow), 0 0 0 1px var(--accent-color-dim); }
+.fm-col.is-detached .fm-col-grip { cursor: move; }
+.fm-col-x { position: absolute; right: 8px; top: 6px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; }
+.fm-col-x:hover { color: var(--text-primary); background: var(--surface-raised); }
+.fm-col-x[hidden] { display: none; }
+
+/* palettes: drag handle, duplicate, rename, drop line, tick */
+.fm-col-drag { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 18px; color: var(--text-muted); cursor: grab; touch-action: none; }
+.fm-col-drag:hover { color: var(--text-primary); }
+.fm-col-cname { cursor: text; }
+.fm-col-crename { flex: 1 1 auto; min-width: 0; height: 20px; padding: 0 6px; border: 1px solid var(--accent-color-dim); border-radius: 6px; background: var(--surface-field); color: var(--text-primary); font: inherit; font-size: var(--fs-12); font-weight: 600; }
+.fm-col-crename[hidden] { display: none; }
+.fm-col-dup { width: 22px; height: 18px; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; }
+.fm-col-dup:hover { color: var(--text-primary); background: var(--surface-raised); }
+.fm-col-card.is-lifted { opacity: 0.6; }
+.fm-col-card.is-drop-before { box-shadow: 0 -3px 0 -1px var(--accent-color); }
+.fm-col-card.is-drop-after { box-shadow: 0 3px 0 -1px var(--accent-color); }
+.fm-col-card.is-default .fm-col-def::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 7.4l3 3 6-6.2' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 7.4l3 3 6-6.2' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* SwatchDrop: the panel steps aside while a swatch is carried */
+.fm-col.is-swatchdrag { opacity: 0.3; pointer-events: none; }
+.fm-col.is-swatchdrag .fm-col-grip, .fm-col.is-swatchdrag * { pointer-events: none; }
+.fm-col-ghost { position: fixed; left: 0; top: 0; z-index: var(--z-overlay); width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(0, 0, 0, 0.45); pointer-events: none; }
+.fm-col-ghost[hidden] { display: none; }
+
+/* Noise choices in the Filters capsule and the filter tap menu */
+.fm-ptools-choices { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.fm-ptools-gap { flex: 1 1 8px; }
+.fm-pfmenu { padding: var(--space-1); }

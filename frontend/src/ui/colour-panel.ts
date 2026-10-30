@@ -180,7 +180,8 @@ function place(node: HTMLElement, x: number, y: number): void {
 
 const TEMPLATE = `
 <div class="fm-col" hidden role="dialog" aria-label="Color" data-mode="disc">
-  <div class="fm-col-grip"></div>
+  <div class="fm-col-grip" title="Drag to detach and move the panel; double-click to dock it again"></div>
+  <button type="button" class="fm-col-x" aria-label="Close" title="Close" hidden><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg></button>
   <div class="fm-col-head">
     <div class="fm-col-titles">
       <div class="fm-col-title">Color</div>
@@ -233,11 +234,26 @@ const TEMPLATE = `
   <div class="fm-col-menu" hidden><button type="button" data-act="set">Set to current</button><button type="button" data-act="del" class="is-danger">Delete</button></div>
 </div>`;
 
+export interface SwatchDragEvent { color: RGB; x: number; y: number; phase: 'start' | 'move' | 'end' | 'cancel' }
+
+export interface ColourPanelOptions {
+  onPick: (rgb: RGB, final: boolean) => void;
+  onSecondary?: (rgb: RGB) => void;
+  keepColours?: boolean;
+  /** A swatch dragged out of the panel (SwatchDrop onto the canvas). */
+  onSwatchDrag?: (e: SwatchDragEvent) => void;
+}
+
 export class ColourPanel {
   readonly root: HTMLElement;
-  private opts: { onPick: (rgb: RGB, final: boolean) => void; onSecondary?: (rgb: RGB) => void };
+  private opts: ColourPanelOptions;
   private h = 24; private s = 0.9; private v = 0.97;
   private cur: RGB = { r: 247, g: 120, b: 22 };
+  /** The colour the last settled pick started from, and the one before it (Previous color). */
+  private base: RGB = { r: 247, g: 120, b: 22 };
+  private prev: RGB | null = null;
+  /** The panel was pulled off its anchor by the grip (Color Companion): it stays open while painting. */
+  private detached = false;
   private sec: RGB = { r: 255, g: 255, b: 255 };
   private mode: Mode = 'disc';
   private harm: Harmony = 'complementary';
@@ -258,15 +274,17 @@ export class ColourPanel {
     sq: HTMLElement; sqRet: HTMLElement; hw: HTMLElement; hdim: HTMLElement; hp: HTMLElement; hx: HTMLElement[];
     hex: HTMLInputElement; tabs: HTMLButtonElement[]; menu: HTMLElement;
     hstrip: HTMLElement; grid: HTMLElement; palname: HTMLElement; pl: HTMLElement; segs: HTMLButtonElement[];
-    hsw: HTMLElement[]; gsw: HTMLElement[];
+    hsw: HTMLElement[]; gsw: HTMLElement[]; x: HTMLButtonElement;
   };
   private cl: { h: Slider; s: Slider; b: Slider } | null = null;
   private hb: Slider | null = null;
   private vs: { k: string; sl: Slider; num: HTMLInputElement; max: number }[] = [];
 
-  constructor(opts: { onPick: (rgb: RGB, final: boolean) => void; onSecondary?: (rgb: RGB) => void }) {
+  /** `keepColours`: a second panel (the Stage background) shares history and palettes but leaves the stored brush colours alone. */
+  constructor(opts: ColourPanelOptions) {
     this.opts = opts;
     this.load();
+    this.base = copy(this.cur);
     this.root = el(TEMPLATE);
     this.build();
     this.render();
@@ -283,9 +301,33 @@ export class ColourPanel {
     this.cur = copy(rgb);
     const t = rgb2hsv(rgb, this.h);
     this.h = t.h; this.s = t.s; this.v = t.v;
+    this.settle();
     this.render();
     this.save();
   }
+
+  /** A pick is final: the colour it started from becomes the previous one. */
+  private settle(): void {
+    if (same(this.cur, this.base)) return;
+    this.prev = copy(this.base);
+    this.base = copy(this.cur);
+  }
+
+  hasPrevious(): boolean { return this.prev !== null; }
+
+  /** Swap to the colour used before the current one; calling it again swaps back. */
+  togglePrevious(): boolean {
+    const p = this.prev;
+    if (!p) return false;
+    const c = copy(this.cur);
+    this.set(p);
+    this.prev = c;
+    this.base = copy(p);
+    this.opts.onPick(copy(p), true);
+    return true;
+  }
+
+  isDetached(): boolean { return this.detached; }
 
   swap(): void {
     const t = this.sec;
@@ -303,6 +345,7 @@ export class ColourPanel {
   }
 
   open(anchor: HTMLElement): void {
+    if (this.opened && this.detached) return;
     this.anchor = anchor;
     this.root.hidden = false;
     this.opened = true;
@@ -313,9 +356,14 @@ export class ColourPanel {
     window.addEventListener('resize', this.reposition);
   }
 
-  close(): void {
+  /** A detached panel (Color Companion) stays up unless `force`. */
+  close(force = false): void {
     if (!this.opened) return;
+    if (this.detached && !force) return;
     this.opened = false;
+    this.detached = false;
+    setClass(this.root, 'is-detached', false);
+    setHidden(this.n.x, true);
     this.root.hidden = true;
     setHidden(this.n.menu, true);
     document.removeEventListener('pointerdown', this.onOutside, true);
@@ -325,7 +373,7 @@ export class ColourPanel {
 
   private reposition = (): void => {
     const a = this.anchor;
-    if (!a) return;
+    if (!a || this.detached) return;
     const host = (this.root.offsetParent as HTMLElement | null) ?? document.body;
     const hr = host.getBoundingClientRect(), ar = a.getBoundingClientRect(), w = this.root.offsetWidth || 280;
     const left = clamp(ar.right - hr.left - w - host.clientLeft + host.scrollLeft, 8, Math.max(8, host.clientWidth - w - 8));
@@ -344,9 +392,46 @@ export class ColourPanel {
 
   private onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return;
+    if (this.detached && this.n.menu.hidden) return;
     if (!this.n.menu.hidden) setHidden(this.n.menu, true); else this.close();
     e.stopPropagation();
   };
+
+  /** Pull the panel off its anchor (grip drag) or put it back (double-click). */
+  private detach(on: boolean): void {
+    this.detached = on;
+    setClass(this.root, 'is-detached', on);
+    setHidden(this.n.x, !on);
+    if (!on) this.reposition();
+  }
+
+  private gripDrag(): void {
+    const grip = q(this.root, '.fm-col-grip');
+    let st: { id: number; x: number; y: number; left: number; top: number; moved: boolean } | null = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      st = { id: e.pointerId, x: e.clientX, y: e.clientY, left: this.root.offsetLeft, top: this.root.offsetTop, moved: false };
+      grip.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      const s = st;
+      if (!s || s.id !== e.pointerId) return;
+      const dx = e.clientX - s.x, dy = e.clientY - s.y;
+      if (!s.moved && Math.hypot(dx, dy) < 4) return;
+      if (!s.moved) { s.moved = true; this.detach(true); }
+      const host = (this.root.offsetParent as HTMLElement | null) ?? document.body;
+      const left = clamp(s.left + dx, 4, Math.max(4, host.clientWidth - this.root.offsetWidth - 4));
+      const top = clamp(s.top + dy, 4, Math.max(4, host.clientHeight - 60));
+      this.root.style.left = left + 'px';
+      this.root.style.top = top + 'px';
+    });
+    const end = (e: PointerEvent): void => { if (st && st.id === e.pointerId) st = null; };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', () => this.detach(false));
+    this.n.x.addEventListener('click', () => this.close(true));
+  }
 
   // ---- build ----
   private build(): void {
@@ -358,10 +443,11 @@ export class ColourPanel {
       hx: Array.from(r.querySelectorAll<HTMLElement>('.is-hx')),
       hex: q<HTMLInputElement>(r, '.fm-col-hex'), tabs: [] as HTMLButtonElement[], menu: q(r, '.fm-col-menu:not(.fm-col-hmenu)'),
       hstrip: q(r, '.fm-col-hstrip'), grid: q(r, '.fm-col-grid'), palname: q(r, '.fm-col-palname'), pl: q(r, '.fm-col-pl'),
-      segs: Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-seg button')), hsw: [] as HTMLElement[], gsw: [] as HTMLElement[],
+      segs: Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-seg button')), hsw: [] as HTMLElement[], gsw: [] as HTMLElement[], x: q<HTMLButtonElement>(r, '.fm-col-x'),
     };
 
     n.secondary.addEventListener('click', () => this.swap());
+    this.gripDrag();
     for (const k of Object.keys(HARMONY) as Harmony[]) n.hmenu.append(el(`<button type="button" data-h="${k}">${HARMONY[k].label}</button>`));
     n.harmSel.addEventListener('click', () => {
       setHidden(n.menu, true);
@@ -505,6 +591,45 @@ export class ColourPanel {
     r.addEventListener('pointerup', cancelLp);
     r.addEventListener('pointercancel', cancelLp);
     r.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - this.lp.x, e.clientY - this.lp.y) > 6) cancelLp(); });
+    // SwatchDrop: a swatch dragged out of the panel is handed to the host, which fills the canvas with it
+    let sd: { id: number; color: RGB; x: number; y: number; on: boolean } | null = null;
+    let ghost: HTMLElement | null = null;
+    const swatchEnd = (e: PointerEvent, phase: 'end' | 'cancel'): void => {
+      const s = sd;
+      if (!s || s.id !== e.pointerId) return;
+      sd = null;
+      setClass(r, 'is-swatchdrag', false);
+      if (ghost) ghost.hidden = true;
+      if (!s.on) return;
+      this.lp.fired = true;
+      window.setTimeout(() => { this.lp.fired = false; }, 0);
+      this.opts.onSwatchDrag?.({ color: s.color, x: e.clientX, y: e.clientY, phase });
+    };
+    r.addEventListener('pointerdown', (e) => {
+      const sw = (e.target as HTMLElement).closest<HTMLElement>('.fm-col-sw');
+      const c = sw ? this.swatchColor(sw) : null;
+      if (!c || e.button !== 0 || !this.opts.onSwatchDrag) return;
+      sd = { id: e.pointerId, color: c, x: e.clientX, y: e.clientY, on: false };
+    });
+    r.addEventListener('pointermove', (e) => {
+      const s = sd;
+      if (!s || s.id !== e.pointerId) return;
+      if (!s.on) {
+        if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10) return;
+        s.on = true;
+        cancelLp();
+        r.setPointerCapture(e.pointerId);
+        setClass(r, 'is-swatchdrag', true);
+        if (!ghost) { ghost = el('<div class="fm-col-ghost" hidden></div>'); document.body.appendChild(ghost); }
+        ghost.style.setProperty('--c', css(s.color));
+        ghost.hidden = false;
+        this.opts.onSwatchDrag?.({ color: s.color, x: e.clientX, y: e.clientY, phase: 'start' });
+      }
+      if (ghost) ghost.style.transform = `translate(${Math.round(e.clientX + 10)}px, ${Math.round(e.clientY + 10)}px)`;
+      this.opts.onSwatchDrag?.({ color: s.color, x: e.clientX, y: e.clientY, phase: 'move' });
+    });
+    r.addEventListener('pointerup', (e) => swatchEnd(e, 'end'));
+    r.addEventListener('pointercancel', (e) => swatchEnd(e, 'cancel'));
     n.menu.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('button');
       const t = this.menuTarget;
@@ -555,6 +680,7 @@ export class ColourPanel {
   private pick(h: number, s: number, v: number, final: boolean): void {
     this.h = ((h % 360) + 360) % 360; this.s = s; this.v = v;
     this.cur = hsv2rgb(this.h, s, v);
+    if (final) this.settle();
     this.render();
     this.opts.onPick(copy(this.cur), final);
     if (final) this.save();
@@ -569,6 +695,7 @@ export class ColourPanel {
     this.cur = c;
     const t = rgb2hsv(c, this.h);
     this.h = t.h; this.s = t.s; this.v = t.v;
+    if (final) this.settle();
     this.render();
     this.opts.onPick(copy(c), final);
     if (final) this.save();
@@ -658,7 +785,7 @@ export class ColourPanel {
     setText(n.palname, act.name);
     n.gsw.forEach((node, i) => this.paint(node, act.colors[i] ?? null));
     const fill = (card: HTMLElement, p: Palette): void => {
-      setText(q(card, '.fm-col-cname'), p.name);
+      if (card.dataset.renaming !== '1') setText(q(card, '.fm-col-cname'), p.name);
       setClass(card, 'is-default', this.pals.indexOf(p) === this.active);
       setHidden(q(card, '.fm-col-del'), !p.id.startsWith('u'));
       card.querySelectorAll<HTMLElement>('.fm-col-sw').forEach((node, i) => this.paint(node, p.colors[i] ?? null));
@@ -666,7 +793,8 @@ export class ColourPanel {
     patchList(n.pl, this.pals, {
       key: (p) => p.id,
       create: (p) => {
-        const card = el(`<div class="fm-col-card"><div class="fm-col-chead"><span class="fm-col-cname"></span><button type="button" class="fm-col-def">Default</button><button type="button" class="fm-col-del" title="Delete palette" aria-label="Delete palette">×</button></div><div class="fm-col-cgrid"></div></div>`);
+        const card = el(`<div class="fm-col-card"><div class="fm-col-chead"><span class="fm-col-drag" title="Drag to reorder" aria-label="Reorder palette"><svg viewBox="0 0 10 14" width="8" height="12" fill="currentColor"><circle cx="2.5" cy="3" r="1.2"/><circle cx="7.5" cy="3" r="1.2"/><circle cx="2.5" cy="7" r="1.2"/><circle cx="7.5" cy="7" r="1.2"/><circle cx="2.5" cy="11" r="1.2"/><circle cx="7.5" cy="11" r="1.2"/></svg></span><span class="fm-col-cname" title="Click to rename"></span><input class="fm-col-crename" type="text" maxlength="32" spellcheck="false" aria-label="Palette name" hidden><button type="button" class="fm-col-dup" title="Duplicate palette" aria-label="Duplicate palette"><svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4.5" y="4.5" width="7.5" height="7.5" rx="1.5"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5"/></svg></button><button type="button" class="fm-col-def">Default</button><button type="button" class="fm-col-del" title="Delete palette" aria-label="Delete palette">×</button></div><div class="fm-col-cgrid"></div></div>`);
+        this.wireCard(card, p.id);
         const g = q(card, '.fm-col-cgrid');
         for (let i = 0; i < SLOTS; i++) g.append(el(`<button type="button" class="fm-col-sw" data-pal="${p.id}" data-i="${i}"></button>`));
         q(card, '.fm-col-def').addEventListener('click', () => { const ix = this.pals.findIndex((x) => x.id === p.id); if (ix >= 0) { this.active = ix; this.renderPalettes(); this.save(); } });
@@ -685,14 +813,103 @@ export class ColourPanel {
     this.markSelected();
   }
 
+  /** Rename on click, Duplicate, and drag-to-reorder for one palette card. Wired once at creation. */
+  private wireCard(card: HTMLElement, id: string): void {
+    const name = q(card, '.fm-col-cname'), input = q<HTMLInputElement>(card, '.fm-col-crename');
+    const stop = (save: boolean): void => {
+      if (card.dataset.renaming !== '1') return;
+      card.dataset.renaming = '0';
+      const p = this.pals.find((x) => x.id === id);
+      const v = input.value.trim();
+      if (save && p && v && v !== p.name) { p.name = v; this.save(); }
+      setHidden(input, true);
+      setHidden(name, false);
+      this.renderPalettes();
+    };
+    name.addEventListener('click', () => {
+      const p = this.pals.find((x) => x.id === id);
+      if (!p) return;
+      card.dataset.renaming = '1';
+      input.value = p.name;
+      setHidden(name, true);
+      setHidden(input, false);
+      input.focus();
+      input.select();
+    });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') stop(true);
+      else if (e.key === 'Escape') stop(false);
+    });
+    input.addEventListener('blur', () => stop(true));
+    q(card, '.fm-col-dup').addEventListener('click', () => {
+      const ix = this.pals.findIndex((x) => x.id === id);
+      if (ix < 0) return;
+      const src = this.pals[ix];
+      let nm = src.name + ' copy', k = 2;
+      while (this.pals.some((x) => x.name === nm)) nm = `${src.name} copy ${k++}`;
+      this.pals.splice(ix + 1, 0, { id: 'u' + Date.now().toString(36), name: nm, colors: src.colors.map((c) => (c ? copy(c) : null)) });
+      if (this.active > ix) this.active++;
+      this.renderPalettes(); this.save();
+    });
+    // reorder: the card shows a drop line while the handle is dragged, the order changes on release
+    const grip = q(card, '.fm-col-drag');
+    let st: { pid: number; to: number } | null = null;
+    const slot = (y: number): number => {
+      const kids = Array.from(this.n.pl.children) as HTMLElement[];
+      let to = kids.length;
+      for (let i = 0; i < kids.length; i++) { const r = kids[i].getBoundingClientRect(); if (y < r.top + r.height / 2) { to = i; break; } }
+      return to;
+    };
+    const mark = (to: number): void => {
+      const kids = Array.from(this.n.pl.children) as HTMLElement[];
+      kids.forEach((k, i) => { setClass(k, 'is-drop-before', i === to); setClass(k, 'is-drop-after', to === kids.length && i === kids.length - 1); });
+    };
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      st = { pid: e.pointerId, to: -1 };
+      grip.setPointerCapture(e.pointerId);
+      setClass(card, 'is-lifted', true);
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!st || st.pid !== e.pointerId) return;
+      st.to = slot(e.clientY);
+      mark(st.to);
+    });
+    const end = (e: PointerEvent, cancel: boolean): void => {
+      const s = st;
+      if (!s || s.pid !== e.pointerId) return;
+      st = null;
+      setClass(card, 'is-lifted', false);
+      mark(-1);
+      if (cancel || s.to < 0) return;
+      const from = this.pals.findIndex((x) => x.id === id);
+      if (from < 0) return;
+      const activeId = this.pals[this.active]?.id;
+      const [moved] = this.pals.splice(from, 1);
+      this.pals.splice(s.to > from ? s.to - 1 : s.to, 0, moved);
+      this.active = Math.max(0, this.pals.findIndex((x) => x.id === activeId));
+      this.renderPalettes(); this.save();
+    };
+    grip.addEventListener('pointerup', (e) => end(e, false));
+    grip.addEventListener('pointercancel', (e) => end(e, true));
+  }
+
   // ---- persistence ----
   private save(): void {
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       try {
+        let cur: RGB = this.cur, sec: RGB = this.sec;
+        if (this.opts.keepColours) {
+          const old = JSON.parse(localStorage.getItem(KEY) ?? '{}') as { cur?: RGB; sec?: RGB };
+          if (old.cur) cur = old.cur;
+          if (old.sec) sec = old.sec;
+        }
         localStorage.setItem(KEY, JSON.stringify({
           mode: this.mode, harm: this.harm, view: this.view, active: this.active, h: this.h,
-          cur: this.cur, sec: this.sec, hist: this.hist,
+          cur, sec, hist: this.hist,
           pals: this.pals.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => (c ? toHex(c) : null)) })),
         }));
       } catch { /* storage blocked */ }

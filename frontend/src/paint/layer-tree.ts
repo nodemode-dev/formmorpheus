@@ -6,6 +6,9 @@
 
 import type { BlendMode } from '../engine/types';
 import type { Rect } from './types';
+import { blendCanvasOnto, blendRect, isPixelBlend } from '../engine/blend';
+
+let scaledScratch: OffscreenCanvas | null = null;
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -14,6 +17,8 @@ export const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   'color-dodge': 'color-dodge', 'color-burn': 'color-burn', 'hard-light': 'hard-light', 'soft-light': 'soft-light',
   difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
   add: 'lighter', passthrough: 'source-over',
+  'linear-burn': 'source-over', 'darker-color': 'source-over', 'lighter-color': 'source-over', 'vivid-light': 'source-over', 'linear-light': 'source-over',
+  'pin-light': 'source-over', 'hard-mix': 'source-over', subtract: 'source-over', divide: 'source-over',
 };
 
 export interface TreeItem {
@@ -133,6 +138,29 @@ export function drawTree<T extends TreeItem>(
     const kx = sw / w, ky = sh / h;
     dst.drawImage(src, R.x * kx, R.y * ky, R.w * kx, R.h * ky, R.x, R.y, R.w, R.h);
   };
+  // Modes the canvas lacks are blended per pixel over the region; any other mode keeps dst's alpha and operation.
+  const putBlend = (dst: Ctx, src: CanvasImageSource, mode: BlendMode, a: number): void => {
+    if (!isPixelBlend(mode)) { put(dst, src); return; }
+    const m = dst.getTransform();
+    if (m.a === 1 && m.d === 1 && m.b === 0 && m.c === 0) {
+      const t = pool.get(R);
+      put(t.x, src);
+      const tm = t.x.getTransform();
+      blendRect(dst, R.x + m.e, R.y + m.f, t.x, R.x + tm.e, R.y + tm.f, R.w, R.h, mode, a);
+      pool.put(t);
+      return;
+    }
+    // a scaled target (the Stage draws at view size): draw through its transform, then blend the whole canvas
+    const cw = dst.canvas.width, ch = dst.canvas.height;
+    const tmp = (scaledScratch ??= new OffscreenCanvas(cw, ch));
+    if (tmp.width !== cw || tmp.height !== ch) { tmp.width = cw; tmp.height = ch; }
+    const tx = tmp.getContext('2d')!;
+    tx.setTransform(1, 0, 0, 1, 0, 0);
+    tx.clearRect(0, 0, cw, ch);
+    tx.setTransform(m);
+    put(tx, src);
+    blendCanvasOnto(dst, tmp, mode, a);
+  };
   const ids = new Set<string>();
   for (const l of items) ids.add(l.id);
   const kids = new Map<string | null, T[]>();
@@ -180,7 +208,7 @@ export function drawTree<T extends TreeItem>(
       put(s2.x, s.c);
       s2.x.globalAlpha = c.opacity;
       s2.x.globalCompositeOperation = BLEND_OP[c.blend];
-      put(s2.x, src);
+      putBlend(s2.x, src, c.blend, c.opacity);
       s2.x.globalAlpha = 1;
       s2.x.globalCompositeOperation = 'source-over';
       x.globalAlpha = 1;
@@ -223,7 +251,7 @@ export function drawTree<T extends TreeItem>(
             if (!clipped.length && !mask && !hasLive) {
               cx.globalAlpha = a;
               cx.globalCompositeOperation = bop;
-              put(cx, img);
+              putBlend(cx, img, b.blend, a);
             } else {
               const s = pool.get(R);
               put(s.x, img);
@@ -253,7 +281,7 @@ export function drawTree<T extends TreeItem>(
     }
     cx.globalAlpha = a;
     cx.globalCompositeOperation = bop;
-    put(cx, s.c);
+    putBlend(cx, s.c, b.blend, a);
     pool.put(s);
   };
 

@@ -104,11 +104,11 @@ export function baseDiameter(brush: Brush, size: number): number {
 }
 
 export function pressureDiameter(base: number, brush: Brush, pressure: number): number {
-  return base * lerp(brush.pressureSize[0], brush.pressureSize[1], pressure);
+  return base * lerp(brush.pressureSize[0], brush.pressureSize[1], brush.pressureGamma ? Math.pow(pressure, brush.pressureGamma) : pressure);
 }
 
 export function pressureFlow(brush: Brush, pressure: number): number {
-  return lerp(brush.pressureFlow[0], brush.pressureFlow[1], pressure);
+  return lerp(brush.pressureFlow[0], brush.pressureFlow[1], brush.pressureGamma ? Math.pow(pressure, brush.pressureGamma) : pressure);
 }
 
 export interface TiltInfo {
