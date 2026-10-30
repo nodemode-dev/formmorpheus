@@ -1,0 +1,91 @@
+export interface Capabilities {
+  app: string;
+  version: string;
+  platform: string;
+  desktop: boolean;
+  dataDir: string;
+  dataDirSource: 'override' | 'portable' | 'default';
+  libraryDir: string;
+  projectExt: string;
+}
+
+export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number }
+export interface OutputItem { name: string; path: string; modified: number; size: number; kind: string }
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
+let serviceState: 'unknown' | 'up' | 'down' = 'unknown';
+let caps: Promise<Capabilities | null> | null = null;
+const serviceWatchers = new Set<(up: boolean) => void>();
+
+export function serviceDown(): boolean { return serviceState === 'down'; }
+export function onServiceChange(fn: (up: boolean) => void): () => void { serviceWatchers.add(fn); return () => { serviceWatchers.delete(fn); }; }
+export async function serviceReady(): Promise<boolean> { await (caps ??= probe()); return serviceState === 'up'; }
+export async function capabilities(): Promise<Capabilities | null> { return (caps ??= probe()); }
+
+async function probe(): Promise<Capabilities | null> {
+  const desktop = '__TAURI_INTERNALS__' in window;
+  for (let i = 0; i < (desktop ? 10 : 1); i++) {
+    try {
+      const res = await fetch('/api/capabilities');
+      if (res.ok) { const c = (await res.json()) as Capabilities; set('up'); return c; }
+    } catch { /* not answering */ }
+    if (i < 9 && desktop) await new Promise((r) => window.setTimeout(r, 500));
+  }
+  set('down');
+  return null;
+  function set(next: 'up' | 'down'): void { const was = serviceState; serviceState = next; if (was !== next) for (const fn of [...serviceWatchers]) fn(next === 'up'); }
+}
+if (typeof window !== 'undefined') window.addEventListener('focus', () => { if (serviceState === 'down') caps = probe(); });
+
+const NOT_RUNNING = 'The formmorpheus engine service is not running. Start it with ./formmorpheus.';
+
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  if (!(await serviceReady())) throw new ApiError(NOT_RUNNING, 0);
+  let res: Response;
+  try { res = await fetch(`/api${path}`, init); } catch { throw new ApiError(NOT_RUNNING, 0); }
+  if (!res.ok) {
+    let detail = '';
+    try { const body = (await res.json()) as { detail?: unknown }; if (typeof body?.detail === 'string') detail = body.detail; } catch { /* not JSON */ }
+    throw new ApiError(detail || res.statusText || `Request failed (${res.status})`, res.status);
+  }
+  return res;
+}
+
+const lib = (name: string): string => `/library/${encodeURIComponent(name)}`;
+
+export const api = {
+  async library(): Promise<LibraryItem[]> {
+    return ((await (await request('/library')).json()) as { items: LibraryItem[] }).items;
+  },
+  async readMovie(name: string): Promise<Blob> {
+    return (await request(lib(name))).blob();
+  },
+  async writeMovie(name: string, data: Blob): Promise<LibraryItem> {
+    return (await (await request(lib(name), { method: 'PUT', body: data, headers: { 'Content-Type': 'application/octet-stream' } })).json()) as LibraryItem;
+  },
+  async renameMovie(name: string, to: string): Promise<LibraryItem> {
+    return (await (await request(`${lib(name)}/rename`, { method: 'POST', body: JSON.stringify({ to }), headers: { 'Content-Type': 'application/json' } })).json()) as LibraryItem;
+  },
+  async duplicateMovie(name: string): Promise<LibraryItem> {
+    return (await (await request(`${lib(name)}/duplicate`, { method: 'POST' })).json()) as LibraryItem;
+  },
+  async deleteMovie(name: string): Promise<void> {
+    await request(lib(name), { method: 'DELETE' });
+  },
+  async outputs(): Promise<OutputItem[]> {
+    return [];
+  },
+  async stat(paths: string[]): Promise<Array<{ path: string; exists: boolean; size: number; modified: number }>> {
+    return paths.map((path) => ({ path, exists: false, size: 0, modified: 0 }));
+  },
+  async thumbnail(by: { name?: string; path?: string }): Promise<Blob | null> {
+    if (!by.name) return null;
+    try { return await (await request(`${lib(by.name)}/poster`)).blob(); } catch { return null; }
+  },
+  async readPath(_path: string): Promise<Blob | null> {
+    return null;
+  },
+};
