@@ -1,0 +1,12 @@
+/* Warp and Distort handles on the Stage, and the Warp / Distort cards */
+.fm-warp-ov { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: var(--z-raised); }
+.fm-warp-ov[hidden], .fm-warp-ov [hidden] { display: none; }
+.fm-warp-line { fill: none; stroke: var(--accent-color); stroke-width: 1.25; stroke-opacity: .8; }
+.fm-warp-h { fill: var(--bg-secondary); stroke: var(--accent-color); stroke-width: 1.5; pointer-events: all; cursor: grab; }
+.fm-warp-h:hover { fill: var(--accent-color); }
+
+.fm-wc-note { margin: 0; padding: 0 var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); line-height: 1.4; }
+.fm-wc-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-2); }
+.fm-wc-btn { height: 30px; border: 0; border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--fs-13); cursor: pointer; }
+.fm-wc-btn:hover { background: var(--accent-soft); }
+.fm-wc-label { padding: 0 var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); }

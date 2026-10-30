@@ -9,6 +9,7 @@ import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setText } from './dom';
 import { PerformBanner, perform } from './perform-ui';
 import { applyTake, Recorder } from '../engine/perform';
+import { WarpOverlay, warpMode } from './warp-view';
 
 /** Where a content sits on the Stage: its transform, or its animated values in Keyframe and Perform modes. */
 interface Pose { x: number; y: number; sx: number; sy: number; rot: number }
@@ -46,6 +47,7 @@ export class StageView {
   private readonly box = q(this.root, '.fm-stage-box') as unknown as SVGSVGElement;
   private readonly tc = q(this.root, '.fm-timecode');
   private readonly banner: PerformBanner;
+  private readonly warp: WarpOverlay;
   private view: View | null = null;
   private width = 0;
   private height = 0;
@@ -62,6 +64,8 @@ export class StageView {
     for (const ev of ['movie', 'time', 'selection', 'projects'] as const) engine.on(ev, () => this.schedule());
     this.banner = new PerformBanner(engine);
     this.root.appendChild(this.banner.root);
+    this.warp = new WarpOverlay(this.root, engine);
+    warpMode.onChange(() => this.schedule());
     engine.on('mode', () => { this.cancelRecording(); this.schedule(); });
     engine.on('time', () => this.sampleHold());
     document.addEventListener('nm:ui-settings-changed', () => { this.readColours(); this.schedule(); });
@@ -175,7 +179,8 @@ export class StageView {
 
   private drawBox(m: Movie): void {
     const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
-    const show = sel.length === 1 && !!this.view;
+    const handles = this.warp.sync(this.view, sel);
+    const show = sel.length === 1 && !!this.view && !handles;
     hideSvg(this.box, !show);
     setClass(this.box as unknown as HTMLElement, 'is-keyed', this.keyed());
     if (!show) return;

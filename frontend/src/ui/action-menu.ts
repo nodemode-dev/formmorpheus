@@ -10,6 +10,8 @@ import { EASES, type Content, type Ease, type KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { icon } from './icons';
 import { Popover, popRow, popSep, type PopRow } from './popover';
+import { WarpCard } from './warp-card';
+import { warpMode } from './warp-view';
 
 export const CLAPPER = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 6.4l16.8-3.3.8 3.9-16.8 3.3z"/><path d="M4 11h16v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8.4 4.6l1.6 3.2M13.6 3.6l1.6 3.2"/></svg>';
 const SPARKLE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4l1.8 4.6L16.4 10.4 11.8 12.2 10 16.8 8.2 12.2 3.6 10.4 8.2 8.6z"/><path d="M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg>';
@@ -59,6 +61,7 @@ interface Card {
   rows: CardRow[];
   seg: Map<string, HTMLButtonElement>;
   toggles: Map<string, HTMLButtonElement>;
+  extra?: WarpCard;
 }
 
 /** A card slider being recorded in Perform mode. */
@@ -110,12 +113,8 @@ export class ActionMenu {
     q(motion, '.fm-ka-tico').innerHTML = kindSpec('move').icon;
     const mlist = q(motion, '.fm-ka-list');
     mlist.appendChild(this.kindRow('move'));
-    for (const name of ['Warp', 'Distort']) {
-      const r = popRow(null, name);
-      r.setValue('later');
-      r.setDisabled(true);
-      mlist.appendChild(r.el);
-    }
+    mlist.appendChild(this.kindRow('warp'));
+    mlist.appendChild(this.kindRow('distort'));
 
     const filter = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Live Filters</span></div><div class="fm-ka-list"></div></div>');
     q(filter, '.fm-ka-tico').innerHTML = SPARKLE;
@@ -187,6 +186,9 @@ export class ActionMenu {
     for (const [k, cd] of this.cards) setHidden(cd.root, k !== kind);
     setHidden(card.root, false);
     this.cardKind = kind;
+    const target = targetOf(this.engine);
+    warpMode.set(kind === 'warp' || kind === 'distort' ? kind : null, target?.c.id ?? null);
+    warpMode.tag = this.cardTag;
     this.view = 'card';
     for (const k of ['action', 'motion', 'filter'] as const) setHidden(this.views[k], true);
     setHidden(this.cardHost, false);
@@ -201,6 +203,13 @@ export class ActionMenu {
     const root = el(`<div class="fm-kc" data-kind="${kind}" hidden><div class="fm-ka-title"><span class="fm-ka-tico">${spec.icon}</span><span></span></div></div>`);
     setText(q(root, '.fm-ka-title span:last-child'), spec.label);
     const card: Card = { kind, root, rows: [], seg: new Map(), toggles: new Map() };
+    if (kind === 'warp' || kind === 'distort') {
+      card.extra = new WarpCard(this.engine, kind, () => this.pop.hide());
+      root.appendChild(card.extra.root);
+      this.cardHost.appendChild(root);
+      this.cards.set(kind, card);
+      return card;
+    }
 
     for (const opt of spec.options ?? []) {
       if (!opt.choices) continue;
@@ -364,6 +373,7 @@ export class ActionMenu {
     const card = this.cards.get(kind);
     if (!card) return;
     const lane = laneOf(t.c, kind);
+    card.extra?.sync(t.c, lane);
     const vals = lane ? evalLane(t.c, lane, t.local) : baseValues(t.c, kind);
     for (const row of card.rows) {
       const v = vals[row.ch.id] ?? row.ch.def;

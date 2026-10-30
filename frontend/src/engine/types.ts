@@ -55,6 +55,18 @@ export interface DrawingLayer {
   alphaLock: boolean;
   clipping: boolean;
   pixels: string | null;
+  /** True for a layer group: no pixels of its own, the layers that name it as `parent` form its content. */
+  group?: boolean;
+  /** Id of the group this entry sits in; absent at the top. A group's descendants follow it in the list. */
+  parent?: string | null;
+  /** Group shown folded in the Layers panel. */
+  collapsed?: boolean;
+  /** Asset id of the greyscale mask PNG (white reveals, black hides); absent when there is no mask. */
+  mask?: string | null;
+  /** Mask is applied; false keeps it but shows the layer whole. */
+  maskOn?: boolean;
+  /** Mask moves with the layer when it is transformed (kept for the file; the paint view always edits it in place). */
+  maskLinked?: boolean;
 }
 
 export interface FlipbookFrame {
@@ -72,7 +84,12 @@ export interface FlipTrack {
   blend: BlendMode;
   highlight: Highlight;
   frames: FlipbookFrame[];
+  /** A masking row is not drawn: it cuts the row below it (alpha or luminance). Absent in older files. */
+  mask?: FlipMask;
+  maskInvert?: boolean;
 }
+
+export type FlipMask = 'none' | 'alpha' | 'luminance';
 
 /** Easing of the span that leaves a key; 'hold' keeps the value until the next key. */
 export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold';
@@ -92,7 +109,7 @@ export interface Key {
   ease: Ease;
 }
 
-export type KeyKind = 'move' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'volume';
+export type KeyKind = 'move' | 'warp' | 'distort' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'volume';
 
 /** One lane under a content: a set of channels keyed together (Move & Scale has x, y, scaleX, scaleY, rotation). */
 export interface KeyLane {
@@ -183,6 +200,8 @@ export interface Movie {
   transparent: boolean;
   playback: PlaybackMode;
   addKeyAtStart: boolean;
+  /** Playback loops only the part of the movie the Timeline shows. Absent in older files. */
+  loopVisible?: boolean;
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;

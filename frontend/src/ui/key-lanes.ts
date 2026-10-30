@@ -1,5 +1,5 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
-import { easeAt, evalLane, kindSpec, laneFrames } from '../engine/keys';
+import { easeAt, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
 
 export const LANE_H = 28;
@@ -24,7 +24,7 @@ export function laneSlots(c: Content): LaneSlot[] {
   for (const lane of c.keys) {
     const spec = kindSpec(lane.kind);
     const rows: LaneRow[] = lane.expanded
-      ? spec.channels.map((ch, i) => ({ channel: ch.id, label: ch.short, y: i * ROW_H, h: ROW_H }))
+      ? laneChannels(lane).map((ch, i) => ({ channel: ch.id, label: ch.short, y: i * ROW_H, h: ROW_H }))
       : [{ channel: null, label: spec.label, y: 0, h: LANE_H }];
     const h = lane.expanded ? rows.length * ROW_H : LANE_H;
     out.push({ lane, y, h, rows });

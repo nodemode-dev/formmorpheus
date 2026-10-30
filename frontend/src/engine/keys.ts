@@ -2,6 +2,7 @@
 // Ported from the temporal ease maths of the owner's formvfx key model (speed and influence per side,
 // Newton then bisection for x(t)). Pure, no DOM.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
+import { DISTORT_IDS, WARP_DEFAULT, WARP_MAX, WARP_MIN, warpId } from './warp-draw';
 
 export interface ChannelSpec {
   id: string;
@@ -32,6 +33,8 @@ const ICONS: Record<KeyKind, string> = {
   move: svg(
     '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M12 7.5v9M7.5 12h9M12 7.5l-1.6 1.7M12 7.5l1.6 1.7M12 16.5l-1.6-1.7M12 16.5l1.6-1.7M7.5 12l1.7-1.6M7.5 12l1.7 1.6M16.5 12l-1.7-1.6M16.5 12l-1.7 1.6"/>',
   ),
+  warp: svg('<path d="M3.5 7c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0M3.5 12c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0M3.5 17c3-2.6 5.5 2.6 8.5 0s5.5 2.6 8.5 0"/><path d="M7 4.5v15M12 4.5v15M17 4.5v15" opacity=".45"/>'),
+  distort: svg('<path d="M5 6.5l14-2v15l-14-2z"/><circle cx="5" cy="6.5" r="1.4" fill="currentColor"/><circle cx="19" cy="4.5" r="1.4" fill="currentColor"/><circle cx="19" cy="19.5" r="1.4" fill="currentColor"/><circle cx="5" cy="17.5" r="1.4" fill="currentColor"/>'),
   opacity: svg('<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>'),
   blur: svg('<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.2" opacity=".7"/><circle cx="12" cy="12" r="9.2" opacity=".4"/>'),
   sharpen: svg('<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/><path d="M12 8.5l3.5 3.5-3.5 3.5L8.5 12z"/>'),
@@ -57,6 +60,24 @@ const ch = (
   def: number,
 ): ChannelSpec => ({ id, label, short, min, max, step, unit, display, def });
 
+const warpChannels = (): ChannelSpec[] => {
+  const out: ChannelSpec[] = [];
+  for (let r = 0; r < WARP_MAX; r++) {
+    for (let c = 0; c < WARP_MAX; c++) {
+      for (const axis of ['x', 'y'] as const) {
+        out.push(ch(warpId(r, c, axis), `Node R${r + 1} C${c + 1} ${axis.toUpperCase()}`, `R${r + 1}C${c + 1} ${axis.toUpperCase()}`, -20000, 20000, 1, 'px', 1, 0));
+      }
+    }
+  }
+  return out;
+};
+
+const CORNER_NAMES = ['Top left', 'Top right', 'Bottom right', 'Bottom left'];
+const distortChannels = (): ChannelSpec[] => DISTORT_IDS.map((id, i) => {
+  const axis = i % 2 ? 'Y' : 'X';
+  return ch(id, `${CORNER_NAMES[i >> 1]} ${axis}`, `${['TL', 'TR', 'BR', 'BL'][i >> 1]} ${axis}`, -20000, 20000, 1, 'px', 1, 0);
+});
+
 export const KEY_KINDS: KindSpec[] = [
   {
     kind: 'move',
@@ -70,6 +91,21 @@ export const KEY_KINDS: KindSpec[] = [
       ch('scaleY', 'Scale Y', 'SY', 0, 20, 0.01, '%', 100, 1),
       ch('rotation', 'Rotation', 'R', -3600, 3600, 0.1, 'deg', 1, 0),
     ],
+  },
+  {
+    kind: 'warp',
+    label: 'Warp',
+    group: 'motion',
+    icon: ICONS.warp,
+    channels: warpChannels(),
+    options: [{ id: 'size', label: 'Mesh size', def: WARP_DEFAULT }],
+  },
+  {
+    kind: 'distort',
+    label: 'Distort',
+    group: 'motion',
+    icon: ICONS.distort,
+    channels: distortChannels(),
   },
   {
     kind: 'opacity',
@@ -170,8 +206,29 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
     return out;
   }
   const spec = kindSpec(kind);
-  for (const ch of spec.channels) out[ch.id] = ch.def;
+  const ids = kind === 'warp' ? new Set(warpChannelIds(warpSize(laneOf(c, 'warp')))) : null;
+  for (const ch of spec.channels) if (!ids || ids.has(ch.id)) out[ch.id] = ch.def;
   return out;
+}
+
+/** Mesh size (nodes per side) of a Warp lane. */
+export function warpSize(lane: KeyLane | null): number {
+  const n = lane ? Number(lane.options.size) : WARP_DEFAULT;
+  return Number.isFinite(n) ? Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(n))) : WARP_DEFAULT;
+}
+
+export function warpChannelIds(n: number): string[] {
+  const out: string[] = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) out.push(warpId(r, c, 'x'), warpId(r, c, 'y'));
+  return out;
+}
+
+/** The channels a lane shows and keys: all of them, except a Warp lane only has its own mesh's nodes. */
+export function laneChannels(lane: KeyLane): ChannelSpec[] {
+  const spec = kindSpec(lane.kind).channels;
+  if (lane.kind !== 'warp') return spec;
+  const ids = new Set(warpChannelIds(warpSize(lane)));
+  return spec.filter((s) => ids.has(s.id));
 }
 
 // ---- Temporal Bezier -------------------------------------------------------
@@ -304,6 +361,10 @@ export interface Animated {
   hsb: { hue: number; saturation: number; brightness: number } | null;
   lens: { radius: number; brightness: number; contrast: number } | null;
   volume: number;
+  /** Warp mesh offsets (n x n nodes, row by row, content-space px) or null. */
+  warp: { n: number; dx: number[]; dy: number[] } | null;
+  /** Distort corner offsets tl, tr, br, bl as x, y pairs (content-space px) or null. */
+  distort: number[] | null;
 }
 
 /** Evaluate one channel of a lane, falling back to `base` when it has no keys. */
@@ -335,6 +396,8 @@ export function animate(c: Content, local: number): Animated {
     hsb: null,
     lens: null,
     volume: c.volume,
+    warp: null,
+    distort: null,
   };
   const lanes = c.keys;
   const n = lanes.length;
@@ -349,6 +412,25 @@ export function animate(c: Content, local: number): Animated {
         a.scaleY = chv(lane, 'scaleY', local, t.scale);
         a.rotation = chv(lane, 'rotation', local, t.rotation);
         break;
+      case 'warp': {
+        const n = warpSize(lane);
+        const dx: number[] = new Array(n * n), dy: number[] = new Array(n * n);
+        let moved = false;
+        for (let r = 0; r < n; r++) {
+          for (let k = 0; k < n; k++) {
+            dx[r * n + k] = chv(lane, warpId(r, k, 'x'), local, 0);
+            dy[r * n + k] = chv(lane, warpId(r, k, 'y'), local, 0);
+            if (dx[r * n + k] || dy[r * n + k]) moved = true;
+          }
+        }
+        if (moved) a.warp = { n, dx, dy };
+        break;
+      }
+      case 'distort': {
+        const o = DISTORT_IDS.map((id) => chv(lane, id, local, 0));
+        if (o.some((v) => v !== 0)) a.distort = o;
+        break;
+      }
       case 'opacity':
         a.opacity = c.opacity * chv(lane, 'amount', local, 1);
         break;

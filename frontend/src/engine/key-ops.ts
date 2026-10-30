@@ -1,6 +1,7 @@
 // Pure keyframe edits: every function returns a new Content (structural sharing) and never mutates.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
-import { KEY_KINDS, baseValues, evalLane, kindSpec, laneOf } from './keys';
+import { KEY_KINDS, baseValues, easeAt, evalLane, kindSpec, laneFrames, laneOf, warpSize } from './keys';
+import { WARP_MAX, WARP_MIN, meshOffset, warpId } from './warp-draw';
 
 const KIND_ORDER = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
@@ -205,6 +206,32 @@ export function setLaneOption(c: Content, kind: KeyKind, id: string, value: stri
   const lane = laneOf(c, kind);
   if (!lane || lane.options[id] === value) return c;
   return withLane(c, kind, { ...lane, options: { ...lane.options, [id]: value } });
+}
+
+/** Change a Warp lane's mesh to n x n nodes; every key frame is resampled from the old mesh so the pose at each key stays. */
+export function setWarpSize(c: Content, n: number): Content {
+  const lane = laneOf(c, 'warp');
+  const size = Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(n)));
+  if (!lane || warpSize(lane) === size) return c;
+  const old = warpSize(lane);
+  const channels: Record<string, Key[]> = {};
+  const out = [0, 0];
+  for (const frame of laneFrames(lane)) {
+    const vals = evalLane(c, lane, frame);
+    const dx: number[] = [], dy: number[] = [];
+    for (let r = 0; r < old; r++) for (let k = 0; k < old; k++) { dx.push(vals[warpId(r, k, 'x')] ?? 0); dy.push(vals[warpId(r, k, 'y')] ?? 0); }
+    const ease = easeAt(lane, frame) ?? 'linear';
+    for (let r = 0; r < size; r++) {
+      for (let k = 0; k < size; k++) {
+        meshOffset(old, dx, dy, k / (size - 1), r / (size - 1), out);
+        for (const [axis, v] of [['x', out[0]], ['y', out[1]]] as const) {
+          const id = warpId(r, k, axis);
+          (channels[id] ??= []).push({ frame, value: Math.round(v * 100) / 100, ease });
+        }
+      }
+    }
+  }
+  return withLane(c, 'warp', { ...lane, channels, options: { ...lane.options, size } });
 }
 
 export interface KeyClip {
