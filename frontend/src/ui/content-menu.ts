@@ -1,10 +1,10 @@
 import type { Engine } from '../engine/engine';
-import { kindName, locate } from '../engine/model';
+import { content, kindName, locate } from '../engine/model';
 import * as flipOps from '../engine/flip-ops';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { BLEND_MODES, HIGHLIGHTS, type BlendMode, type Highlight, type MaskMode, type Movie } from '../engine/types';
-import { el, q, setClass, setText } from './dom';
+import { el, q, setClass, setHidden, setText } from './dom';
 import { icon } from './icons';
 import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
@@ -18,6 +18,10 @@ export class ContentMenu {
   private readonly tiles: Record<'cut' | 'copy' | 'duplicate' | 'paste', HTMLButtonElement>;
   private readonly range: HTMLInputElement;
   private readonly pct: HTMLElement;
+  private readonly volume: HTMLElement;
+  private readonly vrange: HTMLInputElement;
+  private readonly vpct: HTMLElement;
+  private readonly separate: PopRow;
   private readonly name;
   private readonly blend: PopRow;
   private readonly blendRows = new Map<BlendMode, PopRow>();
@@ -66,6 +70,20 @@ export class ContentMenu {
       this.engine.run('Opacity', (m) => ops.patchContent(m, ids, { opacity: v / 100 }), `opacity-${ids.join()}`);
     });
     this.range.addEventListener('change', () => this.engine.endGesture());
+
+    this.volume = el<HTMLElement>('<div class="fm-cm-opacity fm-cm-volume"><div class="fm-cm-opacity-head"><span>Volume</span><span class="fm-cm-pct"></span></div><input class="fm-cm-range" type="range" min="0" max="200" step="1" aria-label="Volume"></div>');
+    this.vrange = q<HTMLInputElement>(this.volume, 'input');
+    this.vpct = q<HTMLElement>(this.volume, '.fm-cm-pct');
+    this.vrange.addEventListener('input', () => {
+      const v = this.vrange.valueAsNumber;
+      this.paintVolume(v);
+      const ids = this.ids;
+      this.engine.run('Volume', (m) => ops.patchContent(m, ids, { volume: v / 100 }), `volume-${ids.join()}`);
+    });
+    this.vrange.addEventListener('change', () => this.engine.endGesture());
+
+    this.separate = popRow('audio', 'Separate audio and video');
+    this.separate.el.addEventListener('click', () => { this.separateAudio(); this.pop.hide(); });
 
     this.name = popField('rename', 'Rename', (v) => {
       const ids = this.ids;
@@ -164,8 +182,8 @@ export class ContentMenu {
     this.track = new TrackMenu(engine);
     this.track.embed(this.pop, trackRow.el, () => this.trackOf());
 
-    body.append(tileRow, popSep(), opacity, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
-      this.toFlip.el, this.toTracks.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
+      this.toFlip.el, this.toTracks.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -181,6 +199,26 @@ export class ContentMenu {
   private paintRange(v: number): void {
     setText(this.pct, `${v}%`);
     this.range.style.setProperty('--fm-pct', `${v}%`);
+  }
+
+  private paintVolume(v: number): void {
+    setText(this.vpct, `${v}%`);
+    this.vrange.style.setProperty('--fm-pct', `${v / 2}%`);
+  }
+
+  /** The video goes silent and a new audio block on the same asset takes over, on a track just below. */
+  private separateAudio(): void {
+    const c = this.engine.selected[0];
+    if (!c || c.kind !== 'video' || !c.asset) return;
+    const id = c.id, assetId = c.asset;
+    this.engine.run('Separate Audio and Video', (m) => {
+      const cur = locate(m, id);
+      if (!cur) throw new ops.OpError('That content no longer exists.');
+      const item = content('audio', cur.content.start, cur.content.duration, { name: `${cur.content.name} audio`, asset: assetId, offset: cur.content.offset, volume: cur.content.volume });
+      const muted = ops.patchContent(m, [id], { volume: 0 });
+      const placed = ops.placeContent(muted, null, item, cur.trackIndex + 1);
+      return { movie: placed.movie, select: [item.id] };
+    });
   }
 
   private patch(p: ops.ContentPatch, label: string): void {
@@ -215,6 +253,14 @@ export class ContentMenu {
     this.range.value = String(pct);
     this.range.disabled = none;
     this.paintRange(pct);
+    const sound = !none && sel.every((c) => c.kind === 'audio' || c.kind === 'video');
+    setHidden(this.volume, !sound);
+    const vol = first ? Math.round(first.volume * 100) : 100;
+    this.vrange.value = String(vol);
+    this.paintVolume(vol);
+    const m = this.engine.movie;
+    const sep = sel.length === 1 && first.kind === 'video' && first.volume > 0 && !!first.asset && !!m?.assets[first.asset]?.hasAudio;
+    setClass(this.separate.el, 'is-gone', !sep);
     this.name.set(sel.length === 1 && first ? first.name : '');
     this.name.input.placeholder = sel.length > 1 ? `${sel.length} items` : sel.length === 1 ? kindName(first.kind) : 'Rename';
     this.name.setDisabled(none);

@@ -6,15 +6,31 @@ import * as keyOps from '../engine/key-ops';
 import { animate, laneOf } from '../engine/keys';
 import type { Content, Movie } from '../engine/types';
 import { ensureLane, newKeyState } from './action-menu';
-import { el, q, setClass, setHidden, setText } from './dom';
+import { el, q, setClass, setText } from './dom';
+import { PerformBanner, perform } from './perform-ui';
+import { applyTake, Recorder } from '../engine/perform';
 
 /** Where a content sits on the Stage: its transform, or its animated values in Keyframe and Perform modes. */
 interface Pose { x: number; y: number; sx: number; sy: number; rot: number }
 
+/** A Perform gesture in flight: what is recorded, and the pen twist so far. */
+interface Rec {
+  id: string;
+  rec: Recorder;
+  start: number;
+  last: Record<string, number> | null;
+  twist: number | null;
+  twistSum: number;
+  /** Rotation channel joins the take once the pen has twisted. */
+  twisted: boolean;
+}
+
 type Grab =
-  | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Pose>; tag: string }
-  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string }
-  | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string };
+  | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Pose>; tag: string; rec?: Rec }
+  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string; rec?: Rec }
+  | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string; rec?: Rec };
+
+const MOVE_CHANNELS = ['x', 'y', 'scaleX', 'scaleY', 'rotation'];
 
 const SNAP_PX = 8;
 
@@ -22,7 +38,6 @@ export class StageView {
   readonly root = el(`<div class="fm-stage" aria-label="Stage">
     <canvas class="fm-stage-canvas"></canvas>
     <svg class="fm-stage-box" hidden><polygon class="fm-box-line"/><line class="fm-box-stem"/><circle class="fm-box-rot" r="6"/><circle class="fm-box-h" data-h="0" r="5"/><circle class="fm-box-h" data-h="1" r="5"/><circle class="fm-box-h" data-h="2" r="5"/><circle class="fm-box-h" data-h="3" r="5"/><line class="fm-snap-v"/><line class="fm-snap-h"/></svg>
-    <div class="fm-stage-rec" hidden><span class="fm-rec-dot"></span><span class="fm-rec-text">Ready</span></div>
     <div class="fm-timecode"></div>
     <div class="fm-stage-empty" hidden></div>
   </div>`);
@@ -30,7 +45,7 @@ export class StageView {
   private readonly canvas = q<HTMLCanvasElement>(this.root, '.fm-stage-canvas');
   private readonly box = q(this.root, '.fm-stage-box') as unknown as SVGSVGElement;
   private readonly tc = q(this.root, '.fm-timecode');
-  private readonly rec = q(this.root, '.fm-stage-rec');
+  private readonly banner: PerformBanner;
   private view: View | null = null;
   private width = 0;
   private height = 0;
@@ -43,7 +58,10 @@ export class StageView {
     host.appendChild(this.root);
     new ResizeObserver(() => this.resize()).observe(this.root);
     for (const ev of ['movie', 'time', 'selection', 'projects'] as const) engine.on(ev, () => this.schedule());
-    engine.on('mode', (m) => { setHidden(this.rec, m !== 'perform'); this.schedule(); });
+    this.banner = new PerformBanner(engine);
+    this.root.appendChild(this.banner.root);
+    engine.on('mode', () => { this.cancelRecording(); this.schedule(); });
+    engine.on('time', () => this.sampleHold());
     document.addEventListener('nm:ui-settings-changed', () => { this.readColours(); this.schedule(); });
     this.canvas.addEventListener('pointerdown', (e) => this.down(e));
     this.box.addEventListener('pointerdown', (e) => this.down(e));
@@ -196,7 +214,8 @@ export class StageView {
     } else {
       const hitId = this.pick(m, x, y);
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
-      if (!hitId && !e.shiftKey) { this.engine.select([]); return; }
+      // Perform keeps its one content when the pen lands off it: the take is a drag, not a click
+      if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) { this.engine.select([]); return; }
       const ids = this.engine.selected.filter((c) => this.engine.isOver(c)).map((c) => c.id);
       if (!ids.length) return;
       const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
@@ -204,6 +223,90 @@ export class StageView {
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     e.preventDefault();
+    this.beginRec(e);
+  }
+
+  /** Perform mode: a drag on one content records. The movie plays from the Playhead while the pen is down. */
+  private beginRec(e: PointerEvent): void {
+    const g = this.grab, m = this.engine.movie;
+    if (!g || !m || this.engine.mode !== 'perform') return;
+    const id = g.kind === 'move' ? (g.ids.length === 1 ? g.ids[0] : null) : g.id;
+    const at = id ? locate(m, id) : null;
+    if (!id || !at) return;
+    g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' ? e.twist : null, twistSum: 0, twisted: false };
+    perform.setRecording(true);
+    this.engine.play();
+  }
+
+  private recordMove(g: Grab, r: Rec, m: Movie, v: View, x: number, y: number, e: PointerEvent): void {
+    if (e.pointerType === 'pen' && r.twist !== null && e.twist !== r.twist) {
+      let d = e.twist - r.twist;
+      if (d > 180) d -= 360;
+      else if (d < -180) d += 360;
+      r.twistSum += d;
+      r.twisted = true;
+    }
+    if (e.pointerType === 'pen') r.twist = e.twist;
+    const roll = r.twisted && perform.roll > 0 ? r.twistSum * perform.roll : 0;
+    const vals: Record<string, number> = {};
+    if (g.kind === 'move') {
+      const b = g.base.get(g.ids[0]) as Pose;
+      vals.x = Math.round(b.x + (x - g.x0) / v.scale);
+      vals.y = Math.round(b.y + (y - g.y0) / v.scale);
+      if (roll) vals.rotation = Math.round((b.rot + roll) * 10) / 10;
+    } else if (g.kind === 'scale') {
+      const b = g.base;
+      const cx = v.ox + (m.width / 2 + b.x) * v.scale, cy = v.oy + (m.height / 2 + b.y) * v.scale;
+      const ratio = Math.hypot(x - cx, y - cy) / g.d0;
+      vals.scaleX = Math.round(Math.max(0.01, b.sx * ratio) * 1000) / 1000;
+      vals.scaleY = Math.round(Math.max(0.01, b.sy * ratio) * 1000) / 1000;
+      if (roll) vals.rotation = Math.round((b.rot + roll) * 10) / 10;
+    } else {
+      const b = g.base;
+      const cx = v.ox + (m.width / 2 + b.x) * v.scale, cy = v.oy + (m.height / 2 + b.y) * v.scale;
+      vals.rotation = Math.round((b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI + roll) * 10) / 10;
+    }
+    r.last = vals;
+    this.sampleRec(g, r);
+  }
+
+  /** Add the latest values at the Playhead and show the take so far (unfiltered) under the pen. */
+  private sampleRec(g: Grab, r: Rec): void {
+    if (!r.last) return;
+    r.rec.add(this.engine.frame - r.start, r.last);
+    this.commitRec(g, r, 0);
+  }
+
+  private commitRec(g: Grab, r: Rec, filtering: number): void {
+    const take = r.rec.finish(filtering);
+    if (!take) return;
+    const ease = newKeyState().lastEase;
+    const at = Math.max(0, Math.round(take.from));
+    this.engine.run('Perform Move and Scale', (mv) => ops.updateContent(mv, r.id, (c) => applyTake(laneOf(c, 'move') ? c : ensureLane(c, 'move', at, mv.addKeyAtStart, ease), take, 'linear')), g.tag);
+  }
+
+  /** A held pen still records: every Playhead step repeats the last position. */
+  private sampleHold(): void {
+    const g = this.grab;
+    if (g?.rec?.last && this.engine.playing) this.sampleRec(g, g.rec);
+  }
+
+  private endRec(g: Grab): void {
+    const r = g.rec;
+    if (!r) return;
+    g.rec = undefined;
+    if (r.last) r.rec.add(this.engine.frame - r.start, r.last);
+    this.engine.stop();
+    this.commitRec(g, r, perform.filtering);
+    perform.setRecording(false);
+  }
+
+  private cancelRecording(): void {
+    const g = this.grab;
+    if (!g?.rec) return;
+    this.endRec(g);
+    this.grab = null;
+    this.engine.endGesture();
   }
 
   private pick(m: Movie, x: number, y: number): string | null {
@@ -220,6 +323,7 @@ export class StageView {
     const g = this.grab, m = this.engine.movie, v = this.view;
     if (!g || !m || !v) return;
     const [x, y] = this.local(e);
+    if (g.rec) { this.recordMove(g, g.rec, m, v, x, y, e); return; }
     if (g.kind === 'move') {
       let dx = (x - g.x0) / v.scale, dy = (y - g.y0) / v.scale;
       const first = g.base.get(g.ids[0]) as Pose;
@@ -276,6 +380,7 @@ export class StageView {
 
   private up(e: PointerEvent): void {
     if (!this.grab) return;
+    this.endRec(this.grab);
     this.grab = null;
     this.engine.endGesture();
     try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* released */ }

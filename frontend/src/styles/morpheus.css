@@ -54,11 +54,6 @@
 .fm-snap-v, .fm-snap-h { stroke: var(--accent-color); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; }
 .fm-snap-v.is-on, .fm-snap-h.is-on { opacity: 0.9; }
 .fm-timecode { position: absolute; left: var(--space-4); bottom: var(--space-3); color: var(--text-primary); font: 500 var(--fs-14) var(--font-mono); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; min-width: 120px; min-height: 18px; pointer-events: none; text-shadow: 0 1px 2px color-mix(in srgb, #000 70%, transparent); }
-.fm-stage-rec { position: absolute; left: var(--space-4); top: var(--space-3); display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; pointer-events: none; }
-.fm-stage-rec[hidden] { display: none; }
-.fm-rec-dot { width: 10px; height: 10px; border-radius: var(--radius-pill); background: var(--accent-color); animation: fm-pulse 1.2s ease-in-out infinite; }
-@keyframes fm-pulse { 50% { opacity: 0.35; } }
-.animations-disabled .fm-rec-dot { animation: none; }
 
 .fm-split { position: relative; cursor: row-resize; background: transparent; }
 .fm-split::after { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 4px; border-radius: var(--radius-pill); background: var(--border-light); transform: translate(-50%, -50%); }

@@ -5,6 +5,12 @@ import { Renderer } from '../engine/render';
 import type { Asset, Content } from '../engine/types';
 import { api, capabilities, onServiceChange } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
+import { AudioEngine } from '../media/audio';
+import { registerFonts } from '../media/fonts';
+import { importMedia } from '../media/import';
+import { VideoPool } from '../media/video';
+import { ExportDialog } from '../ui/export-dialog';
+import { TextCard } from '../ui/text-card';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
@@ -66,7 +72,23 @@ export function startApp(): void {
   let stage: StageView | null = null;
   let timeline: TimelineView | null = null;
   const renderer = new Renderer((id) => engine.assets.get(id), () => { stage?.schedule(); timeline?.refreshThumbs(); });
-  engine.on('projects', () => { if (!engine.movie) renderer.forget(); });
+  const video = new VideoPool((id) => engine.assets.get(id), () => { stage?.schedule(); timeline?.refreshThumbs(); });
+  renderer.setVideo(video);
+  const audio = new AudioEngine((id) => engine.assets.get(id), () => timeline?.refreshThumbs());
+  // the sound card's clock drives playback whenever sound plays, so pictures and sound cannot drift apart
+  engine.setTicker({ now: () => audio.now(), request: (fn) => requestAnimationFrame(fn), cancel: (id) => cancelAnimationFrame(id) });
+  engine.on('playing', (on) => { const m = engine.movie; if (on && m) audio.play(m, engine.frame, 1); else audio.stop(); });
+  engine.on('wrap', ({ frame, direction }) => { const m = engine.movie; if (!m) return; audio.stop(); audio.play(m, frame, direction); });
+  engine.on('time', (f) => {
+    const m = engine.movie;
+    if (!m) return;
+    if (!engine.playing) { audio.scrub(m, f); return; }
+    for (const t of m.tracks) {
+      if (t.hidden) continue;
+      for (const c of t.content) if (c.kind === 'video' && c.asset && f >= c.start - m.fps && f < c.start + c.duration) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, f - c.start), m), 2);
+    }
+  });
+  engine.on('projects', () => { if (!engine.movie) { renderer.forget(); video.forget(); } });
   stage = new StageView(q(root, '.fm-stage-wrap'), engine, renderer);
   const commands = new Commands();
   const contentMenu = new ContentMenu(engine);
@@ -82,6 +104,15 @@ export function startApp(): void {
     create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(r.right, r.top - 6); },
     edit: (c) => editContent(c),
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
+  });
+  timeline.setMedia({ video, audio });
+  const textCard = new TextCard(engine);
+  const exportDialog = new ExportDialog({
+    engine,
+    renderer,
+    audio: () => audio,
+    saveOutput: async (blob, name) => { try { await api.writeOutput(name, blob); home.sync(); } catch { /* the download already happened; the Exports list is the engine's */ } },
+    exportFmo: (withHistory) => { void exportFile(withHistory); },
   });
   const paint = new PaintView(q(root, '.fm-main'), {
     engine,
@@ -130,6 +161,8 @@ export function startApp(): void {
     try {
       const file = await unpackMovie(await api.readMovie(name));
       renderer.forget();
+      video.forget();
+      await registerFonts(file.movie, (id) => file.assets.get(id));
       await renderer.preload(file.assets);
       engine.open(file.movie, name, file.assets, file.past, file.recovery);
       remember(name);
@@ -145,6 +178,8 @@ export function startApp(): void {
     try {
       const data = await unpackMovie(file);
       renderer.forget();
+      video.forget();
+      await registerFonts(data.movie, (id) => data.assets.get(id));
       await renderer.preload(data.assets);
       engine.open(data.movie, null, data.assets, data.past, data.recovery);
     } catch (e) {
@@ -204,32 +239,44 @@ export function startApp(): void {
     if (!m) { toast('Open or create a movie first.'); return; }
     for (const f of files) {
       if (/\.fmo$/i.test(f.name)) { await openFile(f); return; }
-      if (f.type.startsWith('image/')) { await importImage(f); continue; }
-      if (f.type.startsWith('video/') || f.type.startsWith('audio/')) { toast('Video and sound arrive with the media phase of the plan.'); continue; }
-      toast(`${f.name} is not a picture formmorpheus can place yet.`, 'error');
+      await importOne(f);
     }
   }
 
-  async function importImage(f: File): Promise<void> {
+  /** Pictures, animated pictures, video, sound and fonts: decoded and probed in media/import, placed here as one undo step. */
+  async function importOne(f: File): Promise<void> {
     const m = engine.movie;
     if (!m) return;
-    let bmp: ImageBitmap;
-    try { bmp = await createImageBitmap(f); } catch { toast(`${f.name} could not be read.`, 'error'); return; }
-    const asset: Asset = { id: uid('a'), kind: 'image', name: f.name.replace(/\.[^.]+$/, ''), mime: f.type || 'image/png', width: bmp.width, height: bmp.height, frames: 0, size: f.size };
-    bmp.close();
-    const scale = Math.min(1, m.width / asset.width, m.height / asset.height);
-    engine.assets.set(asset.id, f);
-    await renderer.preload(new Map([[asset.id, f]]));
-    const item = makeContent('image', engine.frame, Math.max(1, m.duration - engine.frame), { name: asset.name, asset: asset.id, transform: { x: 0, y: 0, scale: Math.round(scale * 1000) / 1000, rotation: 0, flipH: false, flipV: false } });
-    const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
-    engine.run(`Add ${asset.name}`, (mv) => {
-      const withAsset = { ...mv, assets: { ...mv.assets, [asset.id]: asset } };
-      const placed = ops.placeContent(withAsset, null, item, ti);
-      return { movie: placed.movie, select: [item.id] };
-    });
+    const job = engine.startJob(`Import ${f.name}`, 1);
+    try {
+      const r = await importMedia(f, m, engine.frame);
+      const blobs = new Map<string, Blob>();
+      for (const { asset, blob } of r.assets) { engine.assets.set(asset.id, blob); if (asset.kind === 'image' || asset.kind === 'pixels') blobs.set(asset.id, blob); }
+      await renderer.preload(blobs);
+      if (r.assets.some((a) => a.asset.kind === 'font')) await registerFonts({ ...m, assets: { ...m.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, (id) => engine.assets.get(id));
+      const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
+      engine.run(`Add ${f.name.replace(/\.[^.]+$/, '')}`, (mv) => {
+        let next: typeof mv = { ...mv, assets: { ...mv.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } };
+        const ids: string[] = [];
+        r.contents.forEach((c, i) => {
+          if (r.ownTrack[i]) {
+            const added = ops.addTrack(next, Math.min(next.tracks.length, ti + 1), c.name);
+            next = ops.placeContent(added.movie, added.track.id, c).movie;
+          } else next = ops.placeContent(next, null, c, ti).movie;
+          ids.push(c.id);
+        });
+        return { movie: next, select: ids };
+      });
+      if (r.notice) toast(r.notice);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : `${f.name} could not be imported.`, 'error');
+    } finally {
+      engine.endJob(job);
+    }
   }
 
-  const picker = el<HTMLInputElement>('<input type="file" hidden multiple accept="image/*,video/*,audio/*,.fmo">');
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.woff,.woff2,.flac,.ogg,.opus,.m4a';
+  const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
   picker.addEventListener('change', () => {
@@ -242,9 +289,8 @@ export function startApp(): void {
 
   async function editContent(c: Content): Promise<void> {
     if (c.kind === 'text' && c.text) {
-      const value = await promptName('Edit Text', c.text.text, 'Done');
-      if (value === null) return;
-      engine.run('Edit Text', (m) => ops.updateContent(m, c.id, (x) => ({ ...x, text: x.text ? { ...x.text, text: value } : x.text, name: value.split('\n')[0].slice(0, 40) || x.name })));
+      const pill = root.querySelector<HTMLElement>('.fm-edit-pill');
+      textCard.open(pill && !pill.hidden ? pill : { x: window.innerWidth / 2, y: window.innerHeight / 3 }, c.id);
       return;
     }
     if (c.kind === 'drawing' || c.kind === 'flipbook') await paint.open(c.id);
@@ -261,7 +307,8 @@ export function startApp(): void {
     { id: 'save-as', label: 'Save As...', keys: ['Shift+Mod+S'], enabled: has, run: () => { void save(true); } },
     { id: 'export-fmo', label: 'Share Movie File', enabled: has, run: () => { void exportFile(false); } },
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
-    { id: 'import-media', label: 'Import Pictures...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = 'image/*,video/*,audio/*,.fmo'; picker.click(); } },
+    { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },
+    { id: 'export', label: 'Export...', keys: ['Mod+E'], enabled: has, run: () => exportDialog.open('share') },
     { id: 'close', label: 'Close Movie', keys: ['Mod+W'], enabled: has, run: () => { void askToKeep().then((ok) => { if (ok) engine.close(); }); } },
     { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
     { id: 'settings', label: 'Preferences...', keys: ['Mod+,'], run: () => settings.show() },
@@ -308,7 +355,7 @@ export function startApp(): void {
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
 
   menus.push(
-    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', 'export-fmo', 'export-fmo-history', '-', 'import-media', '-', 'close'] },
+    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', '-', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },

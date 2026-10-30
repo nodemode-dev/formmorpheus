@@ -1,0 +1,41 @@
+/* Text card: the glass card for Text content (popover shell comes from .fm-pop). */
+.fm-tc-body { display: grid; gap: var(--space-3); padding: var(--space-3); }
+.fm-tc-text {
+  width: 100%;
+  min-height: 72px;
+  max-height: 200px;
+  resize: vertical;
+  padding: var(--space-2);
+  box-sizing: border-box;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.4;
+}
+.fm-tc-text:focus, .fm-tc-select:focus, .fm-tc-num:focus { outline: none; border-color: var(--accent-color); }
+.fm-tc-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-2); color: var(--text-muted); font-size: var(--fs-12); }
+.fm-tc-row > :nth-child(2):last-child { grid-column: 2 / 4; }
+.fm-tc-select, .fm-tc-num {
+  height: var(--ctl-md);
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+}
+.fm-tc-select option { background: var(--bg-secondary); color: var(--text-primary); font-size: 15px; }
+.fm-tc-num { width: 64px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-tc-range { --fm-pct: 20%; min-width: 0; }
+.fm-tc-swatch { position: relative; display: block; width: 40px; height: 24px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-light); }
+.fm-tc-swatch input { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); padding: 0; border: 0; background: none; cursor: pointer; }
+.fm-tc-hex { grid-column: 3; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fm-tc-row:has(.fm-tc-swatch) { grid-template-columns: 56px 40px minmax(0, 1fr); }
+.fm-tc-row:has(.fm-tc-swatch) .fm-tc-hex { grid-column: 3; }
+.fm-tc-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius-md); background: var(--bg-input); justify-self: start; grid-column: 2 / 4; }
+.fm-tc-seg-btn { display: grid; place-items: center; width: 36px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.fm-tc-seg-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.fm-tc-seg-btn.is-on { background: var(--accent-color); color: var(--text-on-accent, #fff); }

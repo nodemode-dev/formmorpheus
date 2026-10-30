@@ -2,11 +2,14 @@ import type { Engine } from '../engine/engine';
 import { end, fits, kindName, locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
+import type { AudioEngine } from '../media/audio';
+import type { VideoPool } from '../media/video';
 import { timecode } from '../engine/time';
 import type { Content, Highlight, KeyKind, Mode, Movie, Track } from '../engine/types';
 import * as keyOps from '../engine/key-ops';
 import { kindSpec, laneFrames } from '../engine/keys';
 import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
+import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
@@ -127,6 +130,10 @@ export class TimelineView {
   private thumbs = new WeakMap<Content, HTMLCanvasElement>();
   private thumbGen = 0;
   private lastMovieId = '';
+  private video: VideoPool | null = null;
+  private audio: AudioEngine | null = null;
+  private readonly decoding = new Set<string>();
+  private readonly peakNorm = new WeakMap<object, number>();
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
@@ -134,6 +141,7 @@ export class TimelineView {
     this.laneMenu = new LaneMenu(engine, this.keyState);
     setGlyphLoadHandler(() => this.schedule());
     this.keyPill.addEventListener('click', () => this.actionMenu.open(this.keyPill));
+    perform.onChange(() => this.schedule());
     // the pill sits on the key at the Playhead: a right-click on it opens that key's menu
     this.keyPill.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -171,6 +179,14 @@ export class TimelineView {
 
   refreshThumbs(): void {
     this.thumbs = new WeakMap();
+    this.schedule();
+  }
+
+  /** The decoders that feed filmstrips and waveforms; either may be absent. */
+  setMedia(media: { video: VideoPool | null; audio: AudioEngine | null }): void {
+    this.video = media.video;
+    this.audio = media.audio;
+    this.decoding.clear();
     this.schedule();
   }
 
@@ -241,7 +257,7 @@ export class TimelineView {
   }
 
   private syncMode(m: Mode): void {
-    if (m !== 'keyframe') this.actionMenu.hide();
+    if (m === 'compose') this.actionMenu.hide();
     for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-mode'))) {
       const on = b.dataset.mode === m;
       setClass(b, 'is-active', on);
@@ -263,6 +279,7 @@ export class TimelineView {
   private onClick(e: MouseEvent): void {
     const t = e.target as HTMLElement;
     const mode = (t.closest('[data-mode]') as HTMLElement | null)?.dataset.mode as Mode | undefined;
+    if (mode === 'perform' && this.engine.mode === 'perform') { mods.toggle(t.closest('[data-mode]') as HTMLElement, 'above'); return; }
     if (mode) { this.engine.setMode(mode); return; }
     const act = (t.closest('[data-act]') as HTMLElement | null)?.dataset.act;
     const btn = t.closest('[data-act]') as HTMLElement | null;
@@ -448,7 +465,7 @@ export class TimelineView {
 
   /** Centre of the Playhead pill: on the first lane row of the selected content, Keyframe mode only. */
   private keySpot(m: Movie): { c: Content; x: number; y: number } | null {
-    if (this.engine.mode !== 'keyframe') return null;
+    if (this.engine.mode === 'compose') return null;
     const sel = this.engine.selected;
     const item = sel.length === 1 ? sel[0] : null;
     const at = item ? locate(m, item.id) : null;
@@ -466,8 +483,10 @@ export class TimelineView {
     const local = this.engine.frame - spot.c.start;
     const keyed = spot.c.keys.find((l) => laneFrames(l).includes(local));
     const key = keyed ? keyed.kind : 'clapper';
-    setHtml(this.keyGlyph, keyed ? kindSpec(keyed.kind).icon : CLAPPER, key);
-    setClass(this.keyPill, 'is-keyed', !!keyed);
+    const perf = this.engine.mode === 'perform';
+    setHtml(this.keyGlyph, perf ? REC_GLYPH : keyed ? kindSpec(keyed.kind).icon : CLAPPER, perf ? 'rec' : key);
+    setClass(this.keyPill, 'is-keyed', !perf && !!keyed);
+    setClass(this.keyPill, 'is-rec', perf && perform.recording);
     const at = `translate(${Math.round(spot.x - 32)}px, ${Math.round(spot.y - 20)}px)`;
     if (at !== this.keyPillAt) { this.keyPillAt = at; this.keyPill.style.transform = at; }
     setHidden(this.keyPill, false);
@@ -520,15 +539,15 @@ export class TimelineView {
   }
 
   private drawThumbs(c: CanvasRenderingContext2D, m: Movie, item: Content, x0: number, y: number, w: number): void {
-    if (item.kind === 'audio' || item.kind === 'video') {
-      c.fillStyle = this.palette().muted;
-      c.globalAlpha = 0.5;
-      const step = 3;
-      for (let x = Math.max(x0, 0); x < Math.min(x0 + w, this.width); x += step) {
-        const h = (Math.sin((x - x0) * 0.13) * 0.5 + 0.5) * (BLOCK_H - 22) + 4;
-        c.fillRect(x, y + BLOCK_H / 2 - h / 2 + 6, 1.5, h);
-      }
-      c.globalAlpha = 1;
+    if (item.kind === 'audio') {
+      const p = this.palette();
+      c.fillStyle = p.keyBar;
+      c.fillRect(x0, y, w, BLOCK_H);
+      this.drawWave(c, m, item, x0, w, y + 6, BLOCK_H - 12, p.muted, 0.9);
+      return;
+    }
+    if (item.kind === 'video') {
+      this.drawFilmstrip(c, m, item, x0, y, w);
       return;
     }
     const tileW = Math.round(BLOCK_H * (m.width / m.height));
@@ -536,6 +555,76 @@ export class TimelineView {
     if (!thumb) return;
     const from = Math.max(x0, x0 + Math.floor((0 - x0) / tileW) * tileW);
     for (let x = from; x < Math.min(x0 + w, this.width); x += tileW) c.drawImage(thumb, x, y, tileW, BLOCK_H);
+  }
+
+  /** Waveform of the block's asset across its visible span; `top`/`h` is the band it fills, centred. */
+  private drawWave(c: CanvasRenderingContext2D, m: Movie, item: Content, x0: number, w: number, top: number, h: number, color: string, alpha: number): void {
+    const id = item.asset;
+    if (!id || !this.audio) return;
+    const pk = this.audio.peaks(id);
+    if (!pk) {
+      if (!this.decoding.has(id)) {
+        this.decoding.add(id);
+        void this.audio.decode(id).then(() => this.schedule(), () => undefined);
+      }
+      return;
+    }
+    const step = 2;
+    const n = pk.max.length;
+    let norm = this.peakNorm.get(pk);
+    if (norm === undefined) {
+      let top0 = 0;
+      for (let i = 0; i < n; i++) { const a = Math.max(pk.max[i], -pk.min[i]); if (a > top0) top0 = a; }
+      norm = 1 / Math.max(0.3, top0);
+      this.peakNorm.set(pk, norm);
+    }
+    const mid = top + h / 2, half = h / 2;
+    c.fillStyle = color;
+    c.globalAlpha = alpha;
+    for (let x = Math.max(x0, 0); x < Math.min(x0 + w, this.width); x += step) {
+      const f0 = this.xf(x) - item.start + item.offset, f1 = this.xf(x + step) - item.start + item.offset;
+      const a = Math.max(0, Math.floor((f0 / m.fps) * pk.perSecond));
+      const b = Math.min(n, Math.max(a + 1, Math.ceil((f1 / m.fps) * pk.perSecond)));
+      if (a >= n) break;
+      const skip = Math.max(1, Math.floor((b - a) / 12));
+      let lo = 0, hi = 0;
+      for (let i = a; i < b; i += skip) { if (pk.min[i] < lo) lo = pk.min[i]; if (pk.max[i] > hi) hi = pk.max[i]; }
+      const top1 = mid - Math.min(1, hi * norm) * half, bot = mid - Math.max(-1, lo * norm) * half;
+      c.fillRect(x, top1, step - 0.6, Math.max(1, bot - top1));
+    }
+    c.globalAlpha = 1;
+  }
+
+  private drawFilmstrip(c: CanvasRenderingContext2D, m: Movie, item: Content, x0: number, y: number, w: number): void {
+    const p = this.palette();
+    c.fillStyle = p.end;
+    c.fillRect(x0, y, w, BLOCK_H);
+    const asset = item.asset ? m.assets[item.asset] : undefined;
+    const pool = this.video;
+    if (asset && pool) {
+      const ratio = asset.width > 0 && asset.height > 0 ? asset.width / asset.height : m.width / m.height;
+      const tileW = Math.max(16, Math.round(BLOCK_H * ratio));
+      const pw = Math.round(tileW * this.dpr), ph = Math.round(BLOCK_H * this.dpr);
+      const last = asset.seconds ? Math.max(0, asset.seconds - 0.001) : Infinity;
+      const first = Math.max(0, Math.floor((0 - x0) / tileW));
+      for (let k = first; x0 + k * tileW < Math.min(x0 + w, this.width); k++) {
+        const x = x0 + k * tileW;
+        const sec = Math.min(last, Math.max(0, (((k + 0.5) * tileW) / this.ppf + item.offset) / m.fps));
+        const img = pool.thumb(asset.id, sec, pw, ph);
+        if (!img) continue;
+        c.save();
+        c.beginPath();
+        c.rect(x, y, Math.min(tileW, x0 + w - x), BLOCK_H);
+        c.clip();
+        c.drawImage(img, x, y, tileW, BLOCK_H);
+        c.restore();
+      }
+    }
+    if (asset?.hasAudio && item.volume > 0) {
+      c.fillStyle = 'rgba(0,0,0,.35)';
+      c.fillRect(x0, y + BLOCK_H - 14, w, 14);
+      this.drawWave(c, m, item, x0, w, y + BLOCK_H - 13, 12, '#ffffff', 0.85);
+    }
   }
 
   private thumbFor(m: Movie, item: Content, tileW: number): HTMLCanvasElement | null {

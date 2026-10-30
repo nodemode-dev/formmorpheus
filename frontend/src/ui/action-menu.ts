@@ -4,6 +4,8 @@ import { baseValues, easeCurve, evalLane, kindSpec, KEY_KINDS, laneOf, type Chan
 import * as keyOps from '../engine/key-ops';
 import type { KeyClip } from '../engine/key-ops';
 import * as ops from '../engine/ops';
+import { applyTake, Recorder } from '../engine/perform';
+import { perform } from './perform-ui';
 import { EASES, type Content, type Ease, type KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { icon } from './icons';
@@ -59,6 +61,9 @@ interface Card {
   toggles: Map<string, HTMLButtonElement>;
 }
 
+/** A card slider being recorded in Perform mode. */
+interface CardTake { id: string; kind: KeyKind; channel: string; rec: Recorder; start: number; last: number | null; tag: string }
+
 const ADVANCED = new Set(['offsetX', 'offsetY', 'travel']);
 type View = 'action' | 'motion' | 'filter' | 'card';
 
@@ -81,6 +86,7 @@ export class ActionMenu {
   private cardKind: KeyKind | null = null;
   private anchor: HTMLElement | null = null;
   private tag: string | null = null;
+  private take: CardTake | null = null;
 
   constructor(private readonly engine: Engine, private readonly state: KeyState) {
     this.pop = new Popover('fm-ka');
@@ -118,8 +124,10 @@ export class ActionMenu {
     this.views = { action, motion, filter };
     this.pop.body.append(action, motion, filter, this.cardHost);
     setHidden(this.cardHost, true);
-    this.pop.onHide(() => { this.anchor = null; this.cardKind = null; });
+    this.pop.onHide(() => { this.anchor = null; this.cardKind = null; this.endRec(); });
     for (const ev of ['time', 'movie', 'selection'] as const) engine.on(ev, () => { if (this.pop.isOpen && this.view === 'card') this.syncCard(); });
+    // a held slider still records: every Playhead step repeats its last value
+    engine.on('time', () => { const r = this.take; if (r && r.last !== null && engine.playing) this.recordValue(r, r.last); });
   }
 
   get isOpen(): boolean { return this.pop.isOpen; }
@@ -241,12 +249,13 @@ export class ActionMenu {
     const row: CardRow = { ch, wrap, range, pill, edit };
     card.rows.push(row);
 
-    range.addEventListener('pointerdown', () => { this.tag = `kc-${Date.now()}`; });
+    range.addEventListener('pointerdown', () => { this.tag = `kc-${Date.now()}`; this.beginRec(card.kind, ch.id); });
     range.addEventListener('input', () => {
       const v = range.valueAsNumber;
       setStyleVar(range, '--p', this.pct(row, v));
       setText(pill, fmt(ch, v));
-      this.write(card.kind, { [ch.id]: v });
+      if (this.take) this.recordValue(this.take, v);
+      else this.write(card.kind, { [ch.id]: v });
     });
     range.addEventListener('change', () => { this.engine.endGesture(); this.tag = null; });
 
@@ -276,6 +285,43 @@ export class ActionMenu {
     });
     edit.addEventListener('blur', () => finish(true));
     return wrap;
+  }
+
+  /** Perform mode: dragging a card slider plays the movie and records the slider as a take. */
+  private beginRec(kind: KeyKind, channel: string): void {
+    const t = targetOf(this.engine);
+    if (this.engine.mode !== 'perform' || !t || this.take) return;
+    this.take = { id: t.c.id, kind, channel, rec: new Recorder(kind, [channel]), start: t.c.start, last: null, tag: `kc-rec-${Date.now()}` };
+    perform.setRecording(true);
+    this.engine.play();
+    const stop = (): void => { window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); this.endRec(); };
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  }
+
+  private recordValue(r: CardTake, v: number): void {
+    r.last = v;
+    r.rec.add(this.engine.frame - r.start, { [r.channel]: v });
+    this.commitTake(r, 0);
+  }
+
+  private commitTake(r: CardTake, filtering: number): void {
+    const take = r.rec.finish(filtering);
+    if (!take) return;
+    const ease = this.state.lastEase;
+    const at = Math.max(0, Math.round(take.from));
+    this.engine.run(`${kindSpec(r.kind).label} performance`, (m) => ops.updateContent(m, r.id, (c) => applyTake(laneOf(c, r.kind) ? c : ensureLane(c, r.kind, at, m.addKeyAtStart, ease), take, 'linear')), r.tag);
+  }
+
+  private endRec(): void {
+    const r = this.take;
+    if (!r) return;
+    this.take = null;
+    if (r.last !== null) r.rec.add(this.engine.frame - r.start, { [r.channel]: r.last });
+    this.engine.stop();
+    this.commitTake(r, perform.filtering);
+    perform.setRecording(false);
+    this.engine.endGesture();
   }
 
   private pct(row: CardRow, v: number): string {
