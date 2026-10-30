@@ -76,7 +76,17 @@ export const api = {
     await request(lib(name), { method: 'DELETE' });
   },
   async outputs(): Promise<OutputItem[]> {
-    return [];
+    try {
+      const body = (await (await request('/exports')).json()) as { folder?: string; items: OutputItem[] };
+      if (body.folder) exportsFolder = body.folder;
+      return body.items;
+    } catch { return []; }
+  },
+  async writeOutput(name: string, data: Blob): Promise<OutputItem> {
+    return (await (await request(`/exports/${encodeURIComponent(name)}`, { method: 'PUT', body: data, headers: { 'Content-Type': 'application/octet-stream' } })).json()) as OutputItem;
+  },
+  async deleteOutput(name: string): Promise<void> {
+    await request(`/exports/${encodeURIComponent(name)}`, { method: 'DELETE' });
   },
   async stat(paths: string[]): Promise<Array<{ path: string; exists: boolean; size: number; modified: number }>> {
     return paths.map((path) => ({ path, exists: false, size: 0, modified: 0 }));
@@ -85,7 +95,40 @@ export const api = {
     if (!by.name) return null;
     try { return await (await request(`${lib(by.name)}/poster`)).blob(); } catch { return null; }
   },
-  async readPath(_path: string): Promise<Blob | null> {
-    return null;
+  async readPath(path: string): Promise<Blob | null> {
+    const name = exportName(path);
+    if (!name) return null;
+    try { return await (await request(`/exports/${encodeURIComponent(name)}`)).blob(); } catch { return null; }
   },
 };
+
+let exportsFolder = '';
+
+/** The export file name when `path` is a file in the Exports folder (as api.outputs lists it), else null. */
+function exportName(path: string): string | null {
+  if (!exportsFolder || !path.startsWith(exportsFolder)) return null;
+  const rest = path.slice(exportsFolder.length).replace(/^[\\/]+/, '');
+  return rest && !/[\\/]/.test(rest) ? rest : null;
+}
+
+/** Saves a blob through the browser's download (an anchor with the download attribute). */
+export function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+/** Opens an export from the Exports page: downloads it. False when the path is not one of the kept exports. */
+export async function openOutput(path: string): Promise<boolean> {
+  const name = exportName(path);
+  if (!name) return false;
+  const blob = await api.readPath(path);
+  if (blob) downloadBlob(blob, name);
+  return !!blob;
+}

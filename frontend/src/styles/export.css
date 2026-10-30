@@ -1,0 +1,45 @@
+/* Export dialog: Quick share tiles, Advanced form, progress. */
+.fm-ex-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-field); }
+.fm-ex-segbtn { height: 28px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); cursor: default; }
+.fm-ex-segbtn:hover { color: var(--text-primary); }
+.fm-ex-segbtn.is-active { background: var(--accent-color); color: var(--text-on-accent); }
+
+.fm-ex-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--space-3); }
+.fm-ex-tiles[hidden], .fm-ex-adv[hidden], .fm-ex-run[hidden], .fm-ex-notes[hidden] { display: none; }
+.fm-ex-tile { display: grid; justify-items: start; align-content: start; gap: var(--space-1); min-height: 112px; padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-xl); background: var(--surface-1); color: var(--text-primary); font: inherit; text-align: left; cursor: default; }
+.fm-ex-tile:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--accent-line); }
+.fm-ex-tile:focus-visible { outline: none; border-color: var(--accent-color); }
+.fm-ex-tile:disabled { opacity: 0.5; }
+.fm-ex-tile-ico { display: flex; color: var(--accent-color); margin-bottom: var(--space-1); }
+.fm-ex-tile-label { font-size: var(--fs-13); font-weight: 600; }
+.fm-ex-tile-sub { color: var(--text-muted); font-size: var(--fs-11); }
+
+.fm-ex-adv { display: grid; gap: var(--space-3); }
+.fm-ex-adv.is-busy { opacity: 0.5; pointer-events: none; }
+.fm-ex-row[hidden], .fm-ex-sect[hidden] { display: none; }
+.fm-ex-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.fm-ex-ctl > .cv-input:only-child, .fm-ex-ctl > .fm-ex-slide { flex: 1 1 0; }
+.fm-ex-ctl > input.cv-input[type="number"] { flex: 0 0 96px; }
+.fm-ex-dims, .fm-ex-range { display: flex; align-items: center; gap: var(--space-1); flex: 1 1 auto; min-width: 0; }
+.fm-ex-dims[hidden] { display: none; }
+.fm-ex-dims .cv-input, .fm-ex-range .cv-input { flex: 1 1 0; width: 0; font-variant-numeric: tabular-nums; }
+.fm-ex-x { color: var(--text-muted); font-size: var(--fs-12); }
+.fm-ex-size { font-variant-numeric: tabular-nums; }
+.fm-ex-check { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); }
+.fm-ex-check input { margin: 0; accent-color: var(--accent-color); }
+.fm-ex-slide { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.fm-ex-slide input { flex: 1 1 auto; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-ex-val { min-width: 3ch; text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fm-ex-sect { padding-top: var(--space-2); border-top: 1px solid var(--border-color); color: var(--text-secondary); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; }
+.fm-ex-ctl .cv-note.is-bad { color: var(--danger-text); }
+
+.fm-ex-run { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--surface-1); }
+.fm-ex-run-head { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
+.fm-ex-run-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.fm-ex-run .cv-run-bar > i { transition: transform 120ms linear; }
+
+.fm-ex-notes { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-ex-notes p { margin: 0; }
+.fm-ex-notes.is-warn { border-color: var(--accent-line); background: var(--accent-wash); }
+.fm-ex-notes.is-error { border-color: var(--danger); color: var(--danger-text); }
+.fm-ex-notes.is-ok p:first-child { color: var(--text-primary); }

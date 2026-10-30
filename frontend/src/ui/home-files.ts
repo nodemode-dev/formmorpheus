@@ -1,4 +1,4 @@
-import { api } from '../io/api';
+import { api, openOutput } from '../io/api';
 import { baseName, isDiskPath } from '../io/disk';
 import { el, patchList, q, setClass, setHidden, setText, setTitle, swapMedia } from './dom';
 import { icon } from './icons';
@@ -129,7 +129,7 @@ export class HomeFiles {
       const engine = await api.outputs(), seen = new Set(engine.map((o) => o.path)), extra = storedOutputs().filter((p) => !seen.has(p));
       const stats = await api.stat(extra);
       items = [...engine.map((o) => ({ path: o.path, size: o.size, when: o.modified, missing: false })), ...stats.filter((s) => s.exists).map((s) => ({ path: s.path, size: s.size, when: s.modified, missing: false }))]
-        .map((o) => ({ key: `out:${o.path}`, name: baseName(o.path), kind: kindOf(o.path), size: o.size, when: o.when, missing: o.missing, where: o.path, thumb: PICTURE.test(o.path) || PROJECT.test(o.path) ? { path: o.path, project: PROJECT.test(o.path) } : null, open: () => this.d.openPath(o.path), remove: null }));
+        .map((o) => ({ key: `out:${o.path}`, name: baseName(o.path), kind: kindOf(o.path), size: o.size, when: o.when, missing: o.missing, where: o.path, thumb: PICTURE.test(o.path) || PROJECT.test(o.path) ? { path: o.path, project: PROJECT.test(o.path) } : null, open: () => { void openOutput(o.path).then((done) => { if (!done) this.d.openPath(o.path); }); }, remove: null }));
     } else {
       const names = this.d.recent(), lib = new Map((await api.library().catch(() => [])).map((i) => [i.name, i])), stats = new Map((await api.stat(names.filter(isDiskPath))).map((s) => [s.path, s]));
       items = names.map((n) => {

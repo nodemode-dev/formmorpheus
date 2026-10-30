@@ -10,6 +10,7 @@ FRONTEND_PORT = 5194
 BACKEND_PORT = 9494
 PROJECT_EXT = ".fmo"
 MAX_PROJECT_BYTES = 4 * 1024 * 1024 * 1024
+MAX_EXPORT_BYTES = 2 * 1024 * 1024 * 1024
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_DIR = BACKEND_DIR.parent
 
@@ -56,6 +57,10 @@ def data_dir_source() -> str:
 def library_dir() -> Path:
     raw = os.environ.get("FORMMORPHEUS_LIBRARY_DIR", "").strip()
     return _ensure(Path(raw).expanduser() if raw else data_dir() / "Library")
+
+
+def exports_dir() -> Path:
+    return _ensure(data_dir() / "Exports")
 
 
 def trash_dir() -> Path:
