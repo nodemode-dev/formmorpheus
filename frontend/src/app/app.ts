@@ -23,6 +23,7 @@ import { NewMovieDialog } from '../ui/new-movie-dialog';
 import { installNumberFields } from '../ui/number-fields';
 import { applyShellPrefs, loadPrefs, updatePrefs, type Prefs } from '../ui/prefs';
 import { SettingsDialog } from '../ui/settings-dialog';
+import { PaintView } from '../ui/paint-view';
 import { StageView } from '../ui/stage-view';
 import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
@@ -81,6 +82,11 @@ export function startApp(): void {
     create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(r.right, r.top - 6); },
     edit: (c) => editContent(c),
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
+  });
+  const paint = new PaintView(q(root, '.fm-main'), {
+    engine,
+    renderer,
+    onOpenChange: (open) => { root.classList.toggle('is-painting', open); if (!open) { stage?.schedule(); timeline?.refreshThumbs(); } },
   });
   const status = new StatusBar(q(root, '.cv-status'), engine);
   engine.on('notice', (n) => { if (n.kind === 'error') toast(n.text, 'error'); });
@@ -241,7 +247,7 @@ export function startApp(): void {
       engine.run('Edit Text', (m) => ops.updateContent(m, c.id, (x) => ({ ...x, text: x.text ? { ...x.text, text: value } : x.text, name: value.split('\n')[0].slice(0, 40) || x.name })));
       return;
     }
-    if (c.kind === 'drawing' || c.kind === 'flipbook') toast('Draw and Paint lands with the painting phase of the plan.');
+    if (c.kind === 'drawing' || c.kind === 'flipbook') await paint.open(c.id);
   }
 
   const has = (): boolean => !!engine.movie;
@@ -373,7 +379,7 @@ export function startApp(): void {
   installNumberFields();
   let twoFinger = 0;
   window.addEventListener('keydown', (e) => {
-    if (anyDialogOpen() || e.defaultPrevented) return;
+    if (anyDialogOpen() || e.defaultPrevented || paint.isOpen()) return;
     if (menubar.isOpen || createMenu.isOpen) {
       if (e.key === 'Escape') { e.preventDefault(); menubar.close(); createMenu.close(); }
       return;
@@ -388,7 +394,7 @@ export function startApp(): void {
   });
   root.addEventListener('touchstart', (e) => { twoFinger = e.touches.length; }, { passive: true });
   root.addEventListener('touchend', (e) => {
-    if (!prefs.undoGestures || e.touches.length) return;
+    if (!prefs.undoGestures || e.touches.length || paint.isOpen()) return;
     if (twoFinger === 2) engine.undo();
     else if (twoFinger === 3) engine.redo();
     twoFinger = 0;

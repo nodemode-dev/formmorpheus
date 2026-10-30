@@ -1,0 +1,730 @@
+// Color panel of Draw & Paint: a popover with five modes (Disc, Classic, Harmony, Value, Palettes), History and a
+// default palette. Built once; every update patches values in place. Gradients that depend on the hue are CSS layers
+// over canvases that are drawn once, so a drag never repaints a canvas, it only moves reticles and sets variables.
+
+import type { RGB } from '../paint/types';
+import { el, q, patchList, setClass, setHidden, setStyleVar, setText, setValue } from './dom';
+
+type Mode = 'disc' | 'classic' | 'harmony' | 'value' | 'palettes';
+type Harmony = 'complementary' | 'split' | 'analogous' | 'triadic' | 'tetradic';
+interface Palette { id: string; name: string; colors: (RGB | null)[] }
+
+const KEY = 'formmorpheus.colour';
+const SLOTS = 27;
+const HIST_MAX = 10;
+const DISC = 224, RING = 22, ROUT = DISC / 2, DISC_IN = ROUT - RING - 6;
+const HW = 188, HWR = HW / 2;
+const MODES: Mode[] = ['disc', 'classic', 'harmony', 'value', 'palettes'];
+const MODE_LABEL: Record<Mode, string> = { disc: 'Disc', classic: 'Classic', harmony: 'Harmony', value: 'Value', palettes: 'Palettes' };
+const HARMONY: Record<Harmony, { label: string; off: number[] }> = {
+  complementary: { label: 'Complementary', off: [180] },
+  split: { label: 'Split complementary', off: [150, 210] },
+  analogous: { label: 'Analogous', off: [-30, 30] },
+  triadic: { label: 'Triadic', off: [120, 240] },
+  tetradic: { label: 'Tetradic', off: [90, 180, 270] },
+};
+
+const ICONS: Record<Mode, string> = {
+  disc: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="5.5"/></svg>',
+  classic: '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><rect x="2" y="2" width="12" height="12" rx="3"/></svg>',
+  harmony: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 14V9M8 9L3.5 4M8 9l4.5-5"/><circle cx="8" cy="13.5" r="1.2" fill="currentColor"/><circle cx="3.5" cy="3.5" r="1.2" fill="currentColor"/><circle cx="12.5" cy="3.5" r="1.2" fill="currentColor"/></svg>',
+  value: '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/><circle cx="10" cy="4" r="2" fill="currentColor"/><circle cx="5" cy="8" r="2" fill="currentColor"/><circle cx="11" cy="12" r="2" fill="currentColor"/></svg>',
+  palettes: '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><circle cx="3.5" cy="3.5" r="1.5"/><circle cx="8" cy="3.5" r="1.5"/><circle cx="12.5" cy="3.5" r="1.5"/><circle cx="3.5" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="12.5" cy="8" r="1.5"/><circle cx="3.5" cy="12.5" r="1.5"/><circle cx="8" cy="12.5" r="1.5"/><circle cx="12.5" cy="12.5" r="1.5"/></svg>',
+};
+
+const rows = (list: string[]): (RGB | null)[] => list.map((h) => fromHex(h));
+const DEFAULTS: Palette[] = [
+  { id: 'studio', name: 'Studio', colors: rows(['#ffffff', '#e6e6ea', '#c8c9d0', '#a3a5ae', '#7d808b', '#5a5d68', '#3b3d47', '#22242c', '#0c0d11',
+    '#ff4d4d', '#ff8a3d', '#ffc233', '#e8e94a', '#8ee05a', '#35d49a', '#36c5e8', '#4a8bff', '#8d6bff',
+    '#ffb3b3', '#ffcfa6', '#ffe9a3', '#f3f5a8', '#cdeeb0', '#a8ead2', '#a9e2f2', '#b5ccff', '#cfc0ff']) },
+  { id: 'earth', name: 'Earth', colors: rows(['#f5ecdc', '#e3d2b4', '#cdb48a', '#b0916a', '#8c6e4c', '#6b5238', '#4b3a29', '#31251a', '#1c150e',
+    '#c8553d', '#d9803a', '#e0a93b', '#b5a642', '#7a9a45', '#4f8a5b', '#3e7f84', '#4c6e96', '#6a5a8c',
+    '#e8a898', '#edc29a', '#efd9a0', '#d4d3a0', '#b5cc9b', '#9fcab0', '#9bc4c7', '#a0b6d0', '#b9aed0']) },
+  { id: 'pop', name: 'Pop', colors: rows(['#ff0054', '#ff5400', '#ffbd00', '#aaff00', '#00f5a0', '#00e5ff', '#2979ff', '#7c4dff', '#ff2bd6',
+    '#ffe1ec', '#ffe8d6', '#fff6d1', '#f0ffd1', '#d4fff0', '#d2f8ff', '#dbe8ff', '#e6dcff', '#ffd9f7',
+    '#8a0030', '#8a2c00', '#8a6600', '#5a8a00', '#008a58', '#007f8a', '#1546a8', '#3f2799', '#8a1773']) },
+];
+
+// ---- colour maths ----
+const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
+function fromHex(s: string): RGB | null {
+  let t = s.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(t)) t = t.split('').map((c) => c + c).join('');
+  if (!/^[0-9a-f]{6}$/i.test(t)) return null;
+  const n = parseInt(t, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+const toHex = (c: RGB): string => '#' + [c.r, c.g, c.b].map((x) => x.toString(16).padStart(2, '0')).join('');
+const css = (c: RGB): string => `rgb(${c.r},${c.g},${c.b})`;
+const same = (a: RGB | null, b: RGB | null): boolean => !!a && !!b && a.r === b.r && a.g === b.g && a.b === b.b;
+const copy = (c: RGB): RGB => ({ r: c.r, g: c.g, b: c.b });
+function hsv2rgb(h: number, s: number, v: number): RGB {
+  h = ((h % 360) + 360) % 360;
+  const f = (n: number): number => { const k = (n + h / 60) % 6; return Math.round((v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255); };
+  return { r: f(5), g: f(3), b: f(1) };
+}
+function rgb2hsv(c: RGB, keepH: number): { h: number; s: number; v: number } {
+  const r = c.r / 255, g = c.g / 255, b = c.b / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = keepH;
+  if (d > 0) {
+    h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return { h, s: mx === 0 ? 0 : d / mx, v: mx };
+}
+
+// Concentric map between the unit square and the unit disc, so the whole S/B plane fits in a circle.
+function squareToDisc(a: number, b: number): [number, number] {
+  if (a === 0 && b === 0) return [0, 0];
+  let r: number, phi: number;
+  if (a * a > b * b) { r = a; phi = (Math.PI / 4) * (b / a); } else { r = b; phi = Math.PI / 2 - (Math.PI / 4) * (a / b); }
+  return [r * Math.cos(phi), r * Math.sin(phi)];
+}
+function discToSquare(x: number, y: number): [number, number] {
+  const r = Math.hypot(x, y);
+  if (r === 0) return [0, 0];
+  let p = Math.atan2(y, x);
+  if (p < -Math.PI / 4) p += 2 * Math.PI;
+  const q4 = 4 / Math.PI;
+  if (p <= Math.PI / 4) return [r, r * p * q4];
+  if (p <= (3 * Math.PI) / 4) return [r * (Math.PI / 2 - p) * q4, r];
+  if (p <= (5 * Math.PI) / 4) return [-r, -r * (p - Math.PI) * q4];
+  return [-r * (1.5 * Math.PI - p) * q4, -r];
+}
+
+const dpr = (): number => Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+function makeCanvas(css_w: number, css_h: number): { cv: HTMLCanvasElement; ctx: CanvasRenderingContext2D; img: ImageData; w: number; h: number } {
+  const k = dpr(), w = Math.round(css_w * k), h = Math.round(css_h * k);
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.style.width = css_w + 'px'; cv.style.height = css_h + 'px';
+  const ctx = cv.getContext('2d') as CanvasRenderingContext2D;
+  return { cv, ctx, img: ctx.createImageData(w, h), w, h };
+}
+
+/** Angle 0 at the top, clockwise, in degrees. */
+const angleOf = (dx: number, dy: number): number => (((Math.atan2(dx, -dy) * 180) / Math.PI) + 360) % 360;
+
+function drawRing(cv: HTMLCanvasElement): void {
+  const k = dpr(), n = Math.round(DISC * k), ctx = cv.getContext('2d') as CanvasRenderingContext2D, img = ctx.createImageData(n, n), d = img.data;
+  const c = n / 2, ro = ROUT * k, ri = (ROUT - RING) * k;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = x + 0.5 - c, dy = y + 0.5 - c, r = Math.hypot(dx, dy);
+    const a = clamp(Math.min(ro - r, r - ri) + 0.5, 0, 1);
+    if (a <= 0) continue;
+    const col = hsv2rgb(angleOf(dx, dy), 1, 1), i = (y * n + x) * 4;
+    d[i] = col.r; d[i + 1] = col.g; d[i + 2] = col.b; d[i + 3] = Math.round(a * 255);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** Two alpha layers: white fading with saturation and black fading with brightness, over a flat hue colour. */
+function drawDiscLayers(sat: HTMLCanvasElement, val: HTMLCanvasElement, size: number): void {
+  const k = dpr(), n = Math.round(size * k);
+  const cs = sat.getContext('2d') as CanvasRenderingContext2D, cvv = val.getContext('2d') as CanvasRenderingContext2D;
+  const is = cs.createImageData(n, n), iv = cvv.createImageData(n, n), c = n / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const ux = (x + 0.5 - c) / c, uy = -(y + 0.5 - c) / c;
+    if (ux * ux + uy * uy > 1) continue;
+    const [a, b] = discToSquare(ux, uy), s = (a + 1) / 2, v = (b + 1) / 2, i = (y * n + x) * 4;
+    is.data[i] = is.data[i + 1] = is.data[i + 2] = 255; is.data[i + 3] = Math.round(clamp(1 - s, 0, 1) * 255);
+    iv.data[i + 3] = Math.round(clamp(1 - v, 0, 1) * 255);
+  }
+  cs.putImageData(is, 0, 0); cvv.putImageData(iv, 0, 0);
+}
+
+function drawHueWheel(cv: HTMLCanvasElement): void {
+  const k = dpr(), n = Math.round(HW * k), ctx = cv.getContext('2d') as CanvasRenderingContext2D, img = ctx.createImageData(n, n), d = img.data, c = n / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = x + 0.5 - c, dy = y + 0.5 - c, r = Math.hypot(dx, dy) / c;
+    if (r > 1.004) continue;
+    const col = hsv2rgb(angleOf(dx, dy), Math.min(1, r), 1), i = (y * n + x) * 4;
+    d[i] = col.r; d[i + 1] = col.g; d[i + 2] = col.b; d[i + 3] = Math.round(clamp((1 - r) * c + 0.5, 0, 1) * 255);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function drag(node: HTMLElement, fn: (e: PointerEvent, final: boolean, start: boolean) => void): void {
+  let on = false;
+  node.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    on = true; node.setPointerCapture(e.pointerId); e.preventDefault();
+    fn(e, false, true);
+  });
+  node.addEventListener('pointermove', (e) => { if (on) fn(e, false, false); });
+  const end = (e: PointerEvent): void => { if (!on) return; on = false; fn(e, true, false); };
+  node.addEventListener('pointerup', end);
+  node.addEventListener('pointercancel', end);
+}
+
+interface Slider { root: HTMLElement; set(p: number, a?: string, b?: string): void }
+function makeSlider(kind: string, onInput: (p: number, final: boolean) => void): Slider {
+  const root = el(`<div class="fm-col-sl is-${kind}"><div class="fm-col-sl-track"></div><i class="fm-col-sl-thumb"></i></div>`);
+  let rect: DOMRect | null = null;
+  const at = (e: PointerEvent): number => { const r = rect as DOMRect; return clamp((e.clientX - r.left - 8) / Math.max(1, r.width - 16), 0, 1); };
+  drag(root, (e, final, start) => { if (start) rect = root.getBoundingClientRect(); onInput(at(e), final); });
+  return {
+    root,
+    set(p, a, b) {
+      setStyleVar(root, '--p', String(Math.round(p * 1000) / 1000));
+      if (a !== undefined) setStyleVar(root, '--ga', a);
+      if (b !== undefined) setStyleVar(root, '--gb', b);
+    },
+  };
+}
+
+function place(node: HTMLElement, x: number, y: number): void {
+  setStyleVar(node, '--x', x.toFixed(1) + 'px');
+  setStyleVar(node, '--y', y.toFixed(1) + 'px');
+}
+
+const TEMPLATE = `
+<div class="fm-col" hidden role="dialog" aria-label="Color" data-mode="disc">
+  <div class="fm-col-grip"></div>
+  <div class="fm-col-head">
+    <div class="fm-col-titles">
+      <div class="fm-col-title">Color</div>
+      <div class="fm-col-sub"><span class="fm-col-hexlabel"></span><button type="button" class="fm-col-harm" aria-label="Harmony style" hidden><span></span><svg viewBox="0 0 10 10" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5L5 6.5L8 3.5"/></svg></button></div>
+    </div>
+    <div class="fm-col-chips">
+      <span class="fm-col-chip is-primary" title="Primary"></span>
+      <button type="button" class="fm-col-chip is-secondary" title="Swap primary and secondary" aria-label="Swap colors"></button>
+    </div>
+  </div>
+  <div class="fm-col-bodies">
+    <section class="fm-col-body" data-pane="disc">
+      <div class="fm-col-disc">
+        <div class="fm-col-dwrap"><i class="fm-col-dbase"></i></div>
+        <i class="fm-col-ret is-ring"></i><i class="fm-col-ret is-sb"></i>
+      </div>
+    </section>
+    <section class="fm-col-body" data-pane="classic" hidden>
+      <div class="fm-col-sq"><i class="fm-col-ret is-sb"></i></div>
+      <div class="fm-col-sls" data-sls="classic"></div>
+    </section>
+    <section class="fm-col-body" data-pane="harmony" hidden>
+      <div class="fm-col-hw"><i class="fm-col-hdim"></i><i class="fm-col-ret is-hp"></i><i class="fm-col-ret is-hx"></i><i class="fm-col-ret is-hx"></i><i class="fm-col-ret is-hx"></i></div>
+      <div class="fm-col-sls" data-sls="harmony"></div>
+    </section>
+    <section class="fm-col-body" data-pane="value" hidden>
+      <div class="fm-col-vals"></div>
+      <label class="fm-col-hexrow"><span class="fm-col-vl">Hex</span><input class="fm-col-hex" type="text" spellcheck="false" maxlength="7" aria-label="Hexadecimal"></label>
+    </section>
+    <section class="fm-col-body fm-col-pals" data-pane="palettes" hidden>
+      <div class="fm-col-palbar">
+        <div class="fm-col-seg" role="tablist"><button type="button" class="is-on" data-view="compact">Compact</button><button type="button" data-view="cards">Cards</button></div>
+        <button type="button" class="fm-col-plus" title="New palette from History" aria-label="New palette from History">+</button>
+      </div>
+      <div class="fm-col-pl"></div>
+    </section>
+  </div>
+  <div class="fm-col-foot">
+    <div class="fm-col-hist">
+      <div class="fm-col-lab"><span>History</span><button type="button" class="fm-col-clear">Clear</button></div>
+      <div class="fm-col-hstrip"></div>
+    </div>
+    <div class="fm-col-defpal">
+      <div class="fm-col-lab"><button type="button" class="fm-col-palname" title="Next palette"></button></div>
+      <div class="fm-col-grid"></div>
+    </div>
+  </div>
+  <nav class="fm-col-tabs"></nav>
+  <div class="fm-col-menu fm-col-hmenu" hidden></div>
+  <div class="fm-col-menu" hidden><button type="button" data-act="set">Set to current</button><button type="button" data-act="del" class="is-danger">Delete</button></div>
+</div>`;
+
+export class ColourPanel {
+  readonly root: HTMLElement;
+  private opts: { onPick: (rgb: RGB, final: boolean) => void; onSecondary?: (rgb: RGB) => void };
+  private h = 24; private s = 0.9; private v = 0.97;
+  private cur: RGB = { r: 247, g: 120, b: 22 };
+  private sec: RGB = { r: 255, g: 255, b: 255 };
+  private mode: Mode = 'disc';
+  private harm: Harmony = 'complementary';
+  private view: 'compact' | 'cards' = 'compact';
+  private pals: Palette[] = DEFAULTS.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => (c ? copy(c) : null)) }));
+  private active = 0;
+  private hist: RGB[] = [];
+  private opened = false;
+  private anchor: HTMLElement | null = null;
+  private saveTimer = 0;
+  private lp: { timer: number; fired: boolean; x: number; y: number } = { timer: 0, fired: false, x: 0, y: 0 };
+  private menuTarget: { pal: string; i: number } | null = null;
+
+  // cached nodes
+  private n!: {
+    primary: HTMLElement; secondary: HTMLElement; hexLabel: HTMLElement; harmSel: HTMLButtonElement; hmenu: HTMLElement;
+    dbase: HTMLElement; ringRet: HTMLElement; dsb: HTMLElement;
+    sq: HTMLElement; sqRet: HTMLElement; hw: HTMLElement; hdim: HTMLElement; hp: HTMLElement; hx: HTMLElement[];
+    hex: HTMLInputElement; tabs: HTMLButtonElement[]; menu: HTMLElement;
+    hstrip: HTMLElement; grid: HTMLElement; palname: HTMLElement; pl: HTMLElement; segs: HTMLButtonElement[];
+    hsw: HTMLElement[]; gsw: HTMLElement[];
+  };
+  private cl: { h: Slider; s: Slider; b: Slider } | null = null;
+  private hb: Slider | null = null;
+  private vs: { k: string; sl: Slider; num: HTMLInputElement; max: number }[] = [];
+
+  constructor(opts: { onPick: (rgb: RGB, final: boolean) => void; onSecondary?: (rgb: RGB) => void }) {
+    this.opts = opts;
+    this.load();
+    this.root = el(TEMPLATE);
+    this.build();
+    this.render();
+    this.renderHistory();
+    this.renderPalettes();
+    this.applyMode();
+  }
+
+  isOpen(): boolean { return this.opened; }
+  get(): RGB { return copy(this.cur); }
+  secondary(): RGB { return copy(this.sec); }
+
+  set(rgb: RGB): void {
+    this.cur = copy(rgb);
+    const t = rgb2hsv(rgb, this.h);
+    this.h = t.h; this.s = t.s; this.v = t.v;
+    this.render();
+    this.save();
+  }
+
+  swap(): void {
+    const t = this.sec;
+    this.sec = this.cur;
+    this.set(t);
+    this.opts.onSecondary?.(copy(this.sec));
+    this.opts.onPick(copy(this.cur), true);
+  }
+
+  commit(rgb: RGB): void {
+    if (this.hist.length && same(this.hist[0], rgb)) return;
+    this.hist = [copy(rgb), ...this.hist.filter((c) => !same(c, rgb))].slice(0, HIST_MAX);
+    this.renderHistory();
+    this.save();
+  }
+
+  open(anchor: HTMLElement): void {
+    this.anchor = anchor;
+    this.root.hidden = false;
+    this.opened = true;
+    this.reposition();
+    this.render();
+    document.addEventListener('pointerdown', this.onOutside, true);
+    document.addEventListener('keydown', this.onKey, true);
+    window.addEventListener('resize', this.reposition);
+  }
+
+  close(): void {
+    if (!this.opened) return;
+    this.opened = false;
+    this.root.hidden = true;
+    setHidden(this.n.menu, true);
+    document.removeEventListener('pointerdown', this.onOutside, true);
+    document.removeEventListener('keydown', this.onKey, true);
+    window.removeEventListener('resize', this.reposition);
+  }
+
+  private reposition = (): void => {
+    const a = this.anchor;
+    if (!a) return;
+    const host = (this.root.offsetParent as HTMLElement | null) ?? document.body;
+    const hr = host.getBoundingClientRect(), ar = a.getBoundingClientRect(), w = this.root.offsetWidth || 280;
+    const left = clamp(ar.right - hr.left - w - host.clientLeft + host.scrollLeft, 8, Math.max(8, host.clientWidth - w - 8));
+    const top = ar.bottom - hr.top - host.clientTop + host.scrollTop + 8;
+    this.root.style.left = left + 'px';
+    this.root.style.top = top + 'px';
+  };
+
+  private onOutside = (e: PointerEvent): void => {
+    const t = e.target as Node;
+    if (!this.n.menu.hidden && !this.n.menu.contains(t)) setHidden(this.n.menu, true);
+    if (!this.n.hmenu.hidden && !this.n.hmenu.contains(t) && !this.n.harmSel.contains(t)) setHidden(this.n.hmenu, true);
+    if (this.root.contains(t) || this.anchor?.contains(t)) return;
+    this.close();
+  };
+
+  private onKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape') return;
+    if (!this.n.menu.hidden) setHidden(this.n.menu, true); else this.close();
+    e.stopPropagation();
+  };
+
+  // ---- build ----
+  private build(): void {
+    const r = this.root;
+    const n = this.n = {
+      primary: q(r, '.is-primary'), secondary: q(r, '.is-secondary'), hexLabel: q(r, '.fm-col-hexlabel'), harmSel: q<HTMLButtonElement>(r, '.fm-col-harm'), hmenu: q(r, '.fm-col-hmenu'),
+      dbase: q(r, '.fm-col-dbase'), ringRet: q(r, '.fm-col-disc .is-ring'), dsb: q(r, '.fm-col-disc .is-sb'),
+      sq: q(r, '.fm-col-sq'), sqRet: q(r, '.fm-col-sq .is-sb'), hw: q(r, '.fm-col-hw'), hdim: q(r, '.fm-col-hdim'), hp: q(r, '.is-hp'),
+      hx: Array.from(r.querySelectorAll<HTMLElement>('.is-hx')),
+      hex: q<HTMLInputElement>(r, '.fm-col-hex'), tabs: [] as HTMLButtonElement[], menu: q(r, '.fm-col-menu:not(.fm-col-hmenu)'),
+      hstrip: q(r, '.fm-col-hstrip'), grid: q(r, '.fm-col-grid'), palname: q(r, '.fm-col-palname'), pl: q(r, '.fm-col-pl'),
+      segs: Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-seg button')), hsw: [] as HTMLElement[], gsw: [] as HTMLElement[],
+    };
+
+    n.secondary.addEventListener('click', () => this.swap());
+    for (const k of Object.keys(HARMONY) as Harmony[]) n.hmenu.append(el(`<button type="button" data-h="${k}">${HARMONY[k].label}</button>`));
+    n.harmSel.addEventListener('click', () => {
+      setHidden(n.menu, true);
+      n.hmenu.hidden = !n.hmenu.hidden;
+      n.hmenu.style.left = '12px'; n.hmenu.style.top = '62px';
+    });
+    n.hmenu.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('button');
+      setHidden(n.hmenu, true);
+      if (!b) return;
+      this.harm = b.dataset.h as Harmony; this.render(); this.save();
+    });
+
+    // tabs
+    const tabs = q(r, '.fm-col-tabs');
+    for (const m of MODES) {
+      const b = el<HTMLButtonElement>(`<button type="button" class="fm-col-tab" data-mode="${m}" aria-label="${MODE_LABEL[m]}">${ICONS[m]}<span>${MODE_LABEL[m]}</span></button>`);
+      b.addEventListener('click', () => { this.mode = m; this.applyMode(); this.render(); this.save(); });
+      tabs.append(b); n.tabs.push(b);
+    }
+
+    // disc: static canvases, then reticles and a hue-coloured base
+    const disc = q(r, '.fm-col-disc'), wrap = q(r, '.fm-col-dwrap');
+    const ring = makeCanvas(DISC, DISC);
+    ring.cv.className = 'fm-col-ring'; drawRing(ring.cv); disc.prepend(ring.cv);
+    const inner = DISC_IN * 2, sat = makeCanvas(inner, inner), val = makeCanvas(inner, inner);
+    drawDiscLayers(sat.cv, val.cv, inner);
+    wrap.append(sat.cv, val.cv);
+    let lock: 'hue' | 'sb' = 'hue', drect: DOMRect;
+    drag(disc, (e, final, start) => {
+      if (start) {
+        drect = disc.getBoundingClientRect();
+      }
+      const k = DISC / drect.width, dx = (e.clientX - drect.left) * k - DISC / 2, dy = (e.clientY - drect.top) * k - DISC / 2;
+      if (start) lock = Math.hypot(dx, dy) >= DISC_IN + 3 ? 'hue' : 'sb';
+      if (lock === 'hue') this.pick(angleOf(dx, dy), this.s, this.v, final);
+      else {
+        const l = Math.hypot(dx, dy), f = l > DISC_IN ? DISC_IN / l : 1;
+        const [a, b] = discToSquare((dx * f) / DISC_IN, -(dy * f) / DISC_IN);
+        this.pick(this.h, clamp((a + 1) / 2, 0, 1), clamp((b + 1) / 2, 0, 1), final);
+      }
+    });
+
+    // classic square
+    let srect: DOMRect;
+    drag(n.sq, (e, final, start) => {
+      if (start) srect = n.sq.getBoundingClientRect();
+      this.pick(this.h, clamp((e.clientX - srect.left) / srect.width, 0, 1), clamp(1 - (e.clientY - srect.top) / srect.height, 0, 1), final);
+    });
+    const csl = q(r, '[data-sls="classic"]');
+    this.cl = {
+      h: makeSlider('hue', (p, f) => this.pick(p * 360, this.s, this.v, f)),
+      s: makeSlider('grad', (p, f) => this.pick(this.h, p, this.v, f)),
+      b: makeSlider('grad', (p, f) => this.pick(this.h, this.s, p, f)),
+    };
+    csl.append(this.cl.h.root, this.cl.s.root, this.cl.b.root);
+
+    // harmony wheel
+    const hwc = makeCanvas(HW, HW); hwc.cv.className = 'fm-col-hwc'; drawHueWheel(hwc.cv); n.hw.prepend(hwc.cv);
+    let hrect: DOMRect, hmode: 'drag' | 'none' = 'drag';
+    drag(n.hw, (e, final, start) => {
+      if (start) {
+        hrect = n.hw.getBoundingClientRect(); hmode = 'drag';
+        const k = HW / hrect.width, px = (e.clientX - hrect.left) * k, py = (e.clientY - hrect.top) * k;
+        const offs = HARMONY[this.harm].off;
+        for (let i = 0; i < offs.length; i++) {
+          const [x, y] = this.wheelPos(this.h + offs[i]);
+          if (Math.hypot(px - x, py - y) < 11) { hmode = 'none'; this.pick(this.h + offs[i], this.s, this.v, true); return; }
+        }
+      }
+      if (hmode === 'none') return;
+      const k = HW / hrect.width, dx = (e.clientX - hrect.left) * k - HWR, dy = (e.clientY - hrect.top) * k - HWR;
+      this.pick(angleOf(dx, dy), clamp(Math.hypot(dx, dy) / HWR, 0, 1), this.v, final);
+    });
+    this.hb = makeSlider('grad', (p, f) => this.pick(this.h, this.s, p, f));
+    q(r, '[data-sls="harmony"]').append(this.hb.root);
+
+    // value rows
+    const vals = q(r, '.fm-col-vals');
+    const defs: { k: string; label: string; max: number; unit: string; kind: string }[] = [
+      { k: 'h', label: 'H', max: 360, unit: '°', kind: 'hue' }, { k: 's', label: 'S', max: 100, unit: '%', kind: 'grad' }, { k: 'v', label: 'B', max: 100, unit: '%', kind: 'grad' },
+      { k: 'r', label: 'R', max: 255, unit: '', kind: 'grad' }, { k: 'g', label: 'G', max: 255, unit: '', kind: 'grad' }, { k: 'b', label: 'B', max: 255, unit: '', kind: 'grad' },
+    ];
+    for (const d of defs) {
+      const row = el(`<div class="fm-col-vrow"><span class="fm-col-vl">${d.label}</span><span class="fm-col-num"><input type="text" inputmode="numeric" spellcheck="false" aria-label="${d.label}"><i>${d.unit}</i></span></div>`);
+      const num = q<HTMLInputElement>(row, 'input');
+      const sl = makeSlider(d.kind, (p, f) => this.setChannel(d.k, Math.round(p * d.max), f));
+      row.insertBefore(sl.root, row.lastElementChild);
+      const apply = (): void => { const x = Number(num.value.replace(/[^\d.-]/g, '')); if (Number.isFinite(x)) this.setChannel(d.k, clamp(Math.round(x), 0, d.max), true); this.render(); };
+      num.addEventListener('change', apply);
+      num.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { apply(); num.blur(); }
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); this.setChannel(d.k, clamp(Math.round(Number(num.value) || 0) + (e.key === 'ArrowUp' ? 1 : -1), 0, d.max), true); }
+      });
+      vals.append(row); this.vs.push({ k: d.k, sl, num, max: d.max });
+    }
+    const hexApply = (): void => { const c = fromHex(n.hex.value); if (c) { this.set(c); this.opts.onPick(copy(c), true); } else this.render(); };
+    n.hex.addEventListener('change', hexApply);
+    n.hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { hexApply(); n.hex.blur(); } });
+
+    // history and default palette: fixed slot counts, so built once
+    for (let i = 0; i < HIST_MAX; i++) { const b = el(`<button type="button" class="fm-col-sw" data-h="${i}" aria-label="History ${i + 1}"></button>`); n.hstrip.append(b); n.hsw.push(b); }
+    for (let i = 0; i < SLOTS; i++) { const b = el(`<button type="button" class="fm-col-sw" data-i="${i}"></button>`); n.grid.append(b); n.gsw.push(b); }
+    q(r, '.fm-col-clear').addEventListener('click', () => { this.hist = []; this.renderHistory(); this.save(); });
+    n.palname.addEventListener('click', () => { this.active = (this.active + 1) % this.pals.length; this.renderPalettes(); this.save(); });
+
+    // palettes pane
+    for (const b of n.segs) b.addEventListener('click', () => { this.view = b.dataset.view as 'compact' | 'cards'; this.applyView(); this.save(); });
+    q(r, '.fm-col-plus').addEventListener('click', () => {
+      const id = 'u' + Date.now().toString(36);
+      const colors: (RGB | null)[] = Array.from({ length: SLOTS }, (_, i) => (this.hist[i] ? copy(this.hist[i]) : null));
+      let k = this.pals.length + 1;
+      while (this.pals.some((p) => p.name === 'Palette ' + k)) k++;
+      this.pals.push({ id, name: 'Palette ' + k, colors });
+      this.renderPalettes(); this.save();
+      n.pl.scrollTop = n.pl.scrollHeight;
+    });
+
+    // swatch clicks, long press and context menu (delegated)
+    r.addEventListener('click', (e) => {
+      const sw = (e.target as HTMLElement).closest<HTMLElement>('.fm-col-sw');
+      if (!sw) return;
+      if (this.lp.fired) { this.lp.fired = false; return; }
+      const c = this.swatchColor(sw);
+      if (c) { this.set(c); this.opts.onPick(copy(c), true); }
+    });
+    r.addEventListener('contextmenu', (e) => {
+      const sw = (e.target as HTMLElement).closest<HTMLElement>('.fm-col-sw[data-pal], .fm-col-grid .fm-col-sw');
+      if (!sw) return;
+      e.preventDefault(); this.openMenu(sw);
+    });
+    r.addEventListener('pointerdown', (e) => {
+      this.lp.fired = false;
+      const sw = (e.target as HTMLElement).closest<HTMLElement>('.fm-col-sw[data-pal], .fm-col-grid .fm-col-sw');
+      if (!sw || e.button !== 0) return;
+      this.lp.fired = false; this.lp.x = e.clientX; this.lp.y = e.clientY;
+      clearTimeout(this.lp.timer);
+      this.lp.timer = window.setTimeout(() => { this.lp.fired = true; this.openMenu(sw); }, 480);
+    });
+    const cancelLp = (): void => clearTimeout(this.lp.timer);
+    r.addEventListener('pointerup', cancelLp);
+    r.addEventListener('pointercancel', cancelLp);
+    r.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - this.lp.x, e.clientY - this.lp.y) > 6) cancelLp(); });
+    n.menu.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('button');
+      const t = this.menuTarget;
+      setHidden(n.menu, true);
+      if (!b || !t) return;
+      const p = this.pals.find((x) => x.id === t.pal);
+      if (!p) return;
+      p.colors[t.i] = b.dataset.act === 'set' ? copy(this.cur) : null;
+      this.renderPalettes(); this.save();
+    });
+    this.applyView();
+  }
+
+  private openMenu(sw: HTMLElement): void {
+    const pal = sw.dataset.pal ?? this.pals[this.active]?.id;
+    if (!pal) return;
+    this.menuTarget = { pal, i: Number(sw.dataset.i) };
+    const rr = this.root.getBoundingClientRect(), sr = sw.getBoundingClientRect(), m = this.n.menu;
+    m.hidden = false;
+    const w = m.offsetWidth;
+    m.style.left = clamp(sr.left - rr.left, 6, rr.width - w - 6) + 'px';
+    m.style.top = Math.min(sr.bottom - rr.top + 4, rr.height - m.offsetHeight - 6) + 'px';
+    this.lp.fired = true;
+  }
+
+  private swatchColor(sw: HTMLElement): RGB | null {
+    if (sw.dataset.h !== undefined) return this.hist[Number(sw.dataset.h)] ?? null;
+    const p = this.pals.find((x) => x.id === (sw.dataset.pal ?? this.pals[this.active]?.id));
+    return p?.colors[Number(sw.dataset.i)] ?? null;
+  }
+
+  private applyMode(): void {
+    const m = this.mode;
+    this.root.dataset.mode = m;
+    for (const sec of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-col-body'))) setHidden(sec, sec.dataset.pane !== m);
+    for (const t of this.n.tabs) setClass(t, 'is-on', t.dataset.mode === m);
+    setHidden(this.n.harmSel, m !== 'harmony');
+    setHidden(this.n.hmenu, true);
+    setHidden(this.n.hexLabel, m === 'harmony');
+  }
+
+  private applyView(): void {
+    setClass(this.n.pl, 'is-cards', this.view === 'cards');
+    for (const b of this.n.segs) setClass(b, 'is-on', b.dataset.view === this.view);
+  }
+
+  // ---- picking ----
+  private pick(h: number, s: number, v: number, final: boolean): void {
+    this.h = ((h % 360) + 360) % 360; this.s = s; this.v = v;
+    this.cur = hsv2rgb(this.h, s, v);
+    this.render();
+    this.opts.onPick(copy(this.cur), final);
+    if (final) this.save();
+  }
+
+  private setChannel(k: string, val: number, final: boolean): void {
+    if (k === 'h') return this.pick(val, this.s, this.v, final);
+    if (k === 's') return this.pick(this.h, val / 100, this.v, final);
+    if (k === 'v') return this.pick(this.h, this.s, val / 100, final);
+    const c = copy(this.cur);
+    (c as unknown as Record<string, number>)[k] = val;
+    this.cur = c;
+    const t = rgb2hsv(c, this.h);
+    this.h = t.h; this.s = t.s; this.v = t.v;
+    this.render();
+    this.opts.onPick(copy(c), final);
+    if (final) this.save();
+  }
+
+  private wheelPos(h: number): [number, number] {
+    const a = (h * Math.PI) / 180, r = this.s * HWR;
+    return [HWR + Math.sin(a) * r, HWR - Math.cos(a) * r];
+  }
+
+  // ---- patching ----
+  private render(): void {
+    const { h, s, v, cur, n } = this;
+    const hue = css(hsv2rgb(h, 1, 1)), me = css(cur);
+    setStyleVar(n.primary, '--c', me);
+    setStyleVar(n.secondary, '--c', css(this.sec));
+    setText(n.hexLabel, toHex(cur).toUpperCase());
+    const m = this.mode;
+    if (m === 'disc') {
+      setStyleVar(n.dbase, '--c', hue);
+      const a = (h * Math.PI) / 180, rr = ROUT - RING / 2;
+      place(n.ringRet, ROUT + Math.sin(a) * rr, ROUT - Math.cos(a) * rr);
+      setStyleVar(n.ringRet, '--c', hue);
+      const [x, y] = squareToDisc(s * 2 - 1, v * 2 - 1);
+      place(n.dsb, ROUT + x * DISC_IN, ROUT - y * DISC_IN);
+      setStyleVar(n.dsb, '--c', me);
+    } else if (m === 'classic' && this.cl) {
+      setStyleVar(n.sq, '--c', hue);
+      place(n.sqRet, s * n.sq.offsetWidth, (1 - v) * n.sq.offsetHeight);
+      setStyleVar(n.sqRet, '--c', me);
+      this.cl.h.set(h / 360);
+      this.cl.s.set(s, css(hsv2rgb(h, 0, v)), css(hsv2rgb(h, 1, v)));
+      this.cl.b.set(v, '#000', css(hsv2rgb(h, s, 1)));
+    } else if (m === 'harmony' && this.hb) {
+      setText(q(n.harmSel, 'span'), HARMONY[this.harm].label);
+      setStyleVar(n.hdim, '--o', String(Math.round((1 - v) * 1000) / 1000));
+      const [px, py] = this.wheelPos(h);
+      place(n.hp, px, py); setStyleVar(n.hp, '--c', me);
+      const offs = HARMONY[this.harm].off;
+      n.hx.forEach((node, i) => {
+        const on = i < offs.length;
+        setHidden(node, !on);
+        if (!on) return;
+        const [x, y] = this.wheelPos(h + offs[i]);
+        place(node, x, y); setStyleVar(node, '--c', css(hsv2rgb(h + offs[i], s, v)));
+      });
+      this.hb.set(v, '#000', css(hsv2rgb(h, s, 1)));
+    } else if (m === 'value') {
+      const vals: Record<string, number> = { h, s: s * 100, v: v * 100, r: cur.r, g: cur.g, b: cur.b };
+      for (const r of this.vs) {
+        const x = vals[r.k];
+        let a: string | undefined, b: string | undefined;
+        if (r.k === 's') { a = css(hsv2rgb(h, 0, v)); b = css(hsv2rgb(h, 1, v)); }
+        else if (r.k === 'v') { a = '#000'; b = css(hsv2rgb(h, s, 1)); }
+        else if (r.k === 'r') { a = css({ ...cur, r: 0 }); b = css({ ...cur, r: 255 }); }
+        else if (r.k === 'g') { a = css({ ...cur, g: 0 }); b = css({ ...cur, g: 255 }); }
+        else if (r.k === 'b') { a = css({ ...cur, b: 0 }); b = css({ ...cur, b: 255 }); }
+        r.sl.set(x / r.max, a, b);
+        setValue(r.num, String(Math.round(x)));
+      }
+      setValue(n.hex, toHex(cur).toUpperCase());
+    }
+    this.markSelected();
+  }
+
+  private paint(node: HTMLElement, c: RGB | null): void {
+    const k = c ? toHex(c) : '';
+    if (node.dataset.c === k) return;
+    node.dataset.c = k;
+    if (c) node.style.setProperty('--c', css(c)); else node.style.removeProperty('--c');
+    setClass(node, 'is-empty', !c);
+  }
+
+  private markSelected(): void {
+    const sel = (node: HTMLElement): void => setClass(node, 'is-sel', !!node.dataset.c && node.dataset.c === toHex(this.cur));
+    if (this.mode === 'palettes') for (const node of Array.from(this.n.pl.querySelectorAll<HTMLElement>('.fm-col-sw'))) sel(node);
+    else { this.n.hsw.forEach(sel); this.n.gsw.forEach(sel); }
+  }
+
+  private renderHistory(): void {
+    this.n.hsw.forEach((node, i) => this.paint(node, this.hist[i] ?? null));
+    this.markSelected();
+  }
+
+  private renderPalettes(): void {
+    const n = this.n, act = this.pals[this.active] ?? this.pals[0];
+    setText(n.palname, act.name);
+    n.gsw.forEach((node, i) => this.paint(node, act.colors[i] ?? null));
+    const fill = (card: HTMLElement, p: Palette): void => {
+      setText(q(card, '.fm-col-cname'), p.name);
+      setClass(card, 'is-default', this.pals.indexOf(p) === this.active);
+      setHidden(q(card, '.fm-col-del'), !p.id.startsWith('u'));
+      card.querySelectorAll<HTMLElement>('.fm-col-sw').forEach((node, i) => this.paint(node, p.colors[i] ?? null));
+    };
+    patchList(n.pl, this.pals, {
+      key: (p) => p.id,
+      create: (p) => {
+        const card = el(`<div class="fm-col-card"><div class="fm-col-chead"><span class="fm-col-cname"></span><button type="button" class="fm-col-def">Default</button><button type="button" class="fm-col-del" title="Delete palette" aria-label="Delete palette">×</button></div><div class="fm-col-cgrid"></div></div>`);
+        const g = q(card, '.fm-col-cgrid');
+        for (let i = 0; i < SLOTS; i++) g.append(el(`<button type="button" class="fm-col-sw" data-pal="${p.id}" data-i="${i}"></button>`));
+        q(card, '.fm-col-def').addEventListener('click', () => { const ix = this.pals.findIndex((x) => x.id === p.id); if (ix >= 0) { this.active = ix; this.renderPalettes(); this.save(); } });
+        q(card, '.fm-col-del').addEventListener('click', () => {
+          const ix = this.pals.findIndex((x) => x.id === p.id);
+          if (ix < 0 || this.pals.length < 2) return;
+          this.pals.splice(ix, 1);
+          this.active = clamp(this.active > ix ? this.active - 1 : this.active, 0, this.pals.length - 1);
+          this.renderPalettes(); this.save();
+        });
+        fill(card, p);
+        return card;
+      },
+      update: fill,
+    });
+    this.markSelected();
+  }
+
+  // ---- persistence ----
+  private save(): void {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(KEY, JSON.stringify({
+          mode: this.mode, harm: this.harm, view: this.view, active: this.active, h: this.h,
+          cur: this.cur, sec: this.sec, hist: this.hist,
+          pals: this.pals.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => (c ? toHex(c) : null)) })),
+        }));
+      } catch { /* storage blocked */ }
+    }, 250);
+  }
+
+  private load(): void {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) { const t = rgb2hsv(this.cur, this.h); this.h = t.h; this.s = t.s; this.v = t.v; return; }
+      const d = JSON.parse(raw) as Record<string, unknown>;
+      const rgb = (x: unknown): RGB | null => { const o = x as RGB | null; return o && typeof o.r === 'number' && typeof o.g === 'number' && typeof o.b === 'number' ? { r: clamp(o.r | 0, 0, 255), g: clamp(o.g | 0, 0, 255), b: clamp(o.b | 0, 0, 255) } : null; };
+      if (MODES.includes(d.mode as Mode)) this.mode = d.mode as Mode;
+      if (typeof d.harm === 'string' && d.harm in HARMONY) this.harm = d.harm as Harmony;
+      if (d.view === 'cards' || d.view === 'compact') this.view = d.view;
+      if (typeof d.h === 'number') this.h = d.h;
+      const c = rgb(d.cur); if (c) this.cur = c;
+      const s2 = rgb(d.sec); if (s2) this.sec = s2;
+      if (Array.isArray(d.hist)) this.hist = (d.hist as unknown[]).map(rgb).filter((x): x is RGB => !!x).slice(0, HIST_MAX);
+      if (Array.isArray(d.pals)) {
+        const out: Palette[] = [];
+        for (const p of d.pals as { id?: unknown; name?: unknown; colors?: unknown }[]) {
+          if (typeof p.id !== 'string' || typeof p.name !== 'string' || !Array.isArray(p.colors)) continue;
+          const colors = (p.colors as unknown[]).slice(0, SLOTS).map((x) => (typeof x === 'string' ? fromHex(x) : null));
+          while (colors.length < SLOTS) colors.push(null);
+          out.push({ id: p.id, name: p.name, colors });
+        }
+        if (out.length) this.pals = out;
+      }
+      if (typeof d.active === 'number') this.active = clamp(d.active | 0, 0, this.pals.length - 1);
+      const t = rgb2hsv(this.cur, this.h);
+      this.h = t.h; this.s = t.s; this.v = t.v;
+    } catch { /* corrupt or blocked storage: defaults stand */ }
+  }
+}

@@ -1,5 +1,7 @@
 import type { Engine } from '../engine/engine';
 import { kindName, locate } from '../engine/model';
+import * as flipOps from '../engine/flip-ops';
+import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { BLEND_MODES, HIGHLIGHTS, type BlendMode, type Highlight, type MaskMode, type Movie } from '../engine/types';
 import { el, q, setClass, setText } from './dom';
@@ -26,6 +28,9 @@ export class ContentMenu {
   private readonly mask: PopRow;
   private readonly split: PopRow;
   private readonly after: PopRow;
+  private readonly reverse: PopRow;
+  private readonly toFlip: PopRow;
+  private readonly toTracks: PopRow;
   private readonly fill: PopRow;
   private readonly group: PopRow;
   private readonly ungroup: PopRow;
@@ -109,6 +114,24 @@ export class ContentMenu {
 
     this.split = popRow('split', 'Split content');
     this.after = popRow('duplicateAfter', 'Duplicate after');
+    this.reverse = popRow(null, 'Reverse keyframes');
+    this.reverse.el.addEventListener('click', () => {
+      const ids = this.ids;
+      this.engine.run('Reverse Keyframes', (m) => ids.reduce((acc, id) => ops.updateContent(acc, id, (c) => keyOps.reverseKeys(c)), m));
+      this.pop.hide();
+    });
+    this.toFlip = popRow('flipbook', 'Convert to Flipbook');
+    this.toFlip.el.addEventListener('click', () => {
+      const ids = this.ids;
+      this.engine.run('Convert to Flipbook', (m) => { const r = flipOps.tracksToFlipbook(m, ids); return { movie: r.movie, select: [r.id] }; });
+      this.pop.hide();
+    });
+    this.toTracks = popRow('flipbook', 'Convert Flipbook to tracks');
+    this.toTracks.el.addEventListener('click', () => {
+      const id = this.ids[0];
+      this.engine.run('Convert Flipbook to Tracks', (m) => { const r = flipOps.flipbookToTracks(m, id); return { movie: r.movie, select: r.ids }; });
+      this.pop.hide();
+    });
     this.fill = popRow('fillDuration', 'Fill duration');
     this.group = popRow('group', 'Group');
     this.ungroup = popRow('ungroup', 'Ungroup');
@@ -142,7 +165,7 @@ export class ContentMenu {
     this.track.embed(this.pop, trackRow.el, () => this.trackOf());
 
     body.append(tileRow, popSep(), opacity, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
-      this.split.el, this.after.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+      this.toFlip.el, this.toTracks.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -211,7 +234,11 @@ export class ContentMenu {
     const over = sel.filter((c) => this.engine.isOver(c));
     this.split.setDisabled(over.length !== 1 || this.engine.frame <= over[0].start);
     this.after.setDisabled(none);
+    setClass(this.reverse.el, 'is-gone', this.engine.mode !== 'keyframe');
+    this.reverse.setDisabled(!sel.some((c) => c.keys.length > 0));
     this.fill.setDisabled(none);
+    setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => c.kind === 'drawing'));
+    setClass(this.toTracks.el, 'is-gone', !(sel.length === 1 && first.kind === 'flipbook'));
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
