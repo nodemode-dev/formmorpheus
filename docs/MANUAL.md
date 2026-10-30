@@ -126,7 +126,10 @@ A **Flipbook** is frame by frame animation inside one block on the Timeline. It 
 
 - Open a Flipbook to draw. The **frame strip** floats over the canvas.
 - **Add frame** and **Add track** are the two buttons at its left.
-- Select a frame to draw on it. Use the arrow keys or `,` and `.` to step.
+- On a frame that holds for several movie frames, **Add frame** ends the hold at the Playhead and adds there. **Press and hold** Add frame (or Alt-click it) to jump to the end of the hold and add the new frame after it.
+- **Paste** fills the next free (blank) frame of the track, or goes on the end of the track; later frames do not move. Use Duplicate to insert a copy right after a frame.
+- Drag frames into the gap between two tracks, or above the first or below the last, to make a new track; the gap is about 14 px tall and shows a drop line.
+- Select a frame to draw on it. Use the arrow keys or `,` and `.` to step. On a touch screen or with a pen, dragging the strip left moves forward in time, and a flick keeps going and settles on a frame.
 - Right-click a frame or track: copy, cut, paste, duplicate, insert, clear, delete, rename, hide, move up or down.
 - A frame can **hold** for several movie frames, so you animate on twos or threes.
 - **Onion skins** show the frames around the current one, tinted for before and after. Their settings are on the **Onions** tab of the Draw and Paint settings panel. **Blend primary frame** lets the skins blend over the frame you draw on.
@@ -246,6 +249,18 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 ## Crash recovery
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
+
+## New in 0.11.0
+
+**The main screen.** The movie's name sits in the middle of the title bar ("Untitled" until saved); click it to rename. A short tip appears the first time you enter Perform, Keyframe, a Flipbook or Draw and Paint (Preferences · Show tips turns them off). Holding the mouse button still on a block, a key lane or empty track area opens the same menu as a right-click. Hover the ruler to see that dragging it scales time; it numbers frames once there is room. Zooming and panning the Stage now stay smooth on big movies: the picture follows your gesture and sharpens when you stop.
+
+**Theater.** The Library folder button at the top shows where your movies live and changes it. Copy to Folder... (a movie's menu, or the Select bar) copies movies to another folder, or downloads them in a browser.
+
+**Drawings and Flipbooks.** A layered Drawing (from a layered file) has Convert Layers to Tracks in its menu. The Color panel has a real secondary color (click its chip to pick it, the swap button trades them), and the current color's left half is the previous color. Select several layers w/ Ctrl or Shift and Transform moves them together; Sample all layers makes a selection from the whole picture. Each filter drag continues from the current amount. Pixel perfect in the brush card draws hard one-pixel strokes. Escape no longer leaves Draw and Paint; use Finish or Enter. On touch, the strip moves with your finger and a flick carries on. Paste fills the next blank frame. A mask row's opacity scales its mask, and a mask row with nothing in it hides the row below. You can keep painting on the next frame while holding the scrub wheel with the other hand.
+
+**Keyframes.** Click a key to open its values. Warp and Distort cards take typed positions and have a Quality choice (Smooth, Nearest, High). Double-click Stage text for Cut, Copy, Paste, Select All and Edit Style.
+
+**Recovery.** If a window closes unexpectedly, its unsaved work is offered again within seconds in the next window.
 
 ## New in 0.10.0
 

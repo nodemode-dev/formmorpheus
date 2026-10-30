@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.10.0
-Last updated: 2026-10-30 · stack folders, the host and origin guard, safe moves, streamed uploads, transcode caps, HEIC
+Current build version: v0.11.0
+Last updated: 2026-10-30 · copy-to, recovery live stream, unfetched job outputs kept
 
 ---
 
@@ -157,3 +157,10 @@ A job w/ no upload or poll for 10 min is cancelled and removed, checked every mi
 - logged: v0.10.0 · 2026-10-30
 
 A stack is a folder `Library/<Stack>/<movie>.fmo`, one level deep; movie names stay unique across the whole library so open, save and trash keep addressing by name. `.stacks.json` migrates once to folders and is renamed `.stacks.json.migrated`. `.order.json` per folder holds the manual order. The guard is the outermost middleware: loopback hosts only, and state-changing requests need no Origin, one of `window_origins()` or the request's own scheme and host (the desktop engine's random port); a new window origin must be added to `window_origins()`. `safe_move` falls back to copy, fsync, replace and remove on EXDEV. Uploads are streamed w/ size checks while reading. The jobs sweep skips folders owned by either job registry and keeps orphans and unfetched results 30 minutes. Transcodes run at most 2 at a time, probes time out after 30 s, and a cancel before the process exists still kills it. HEIC goes through pillow-heif if installed, else ffmpeg 7.1+ (older builds return one tile, so they are refused). A library folder change copies stack folders and order files too; Recently Deleted restores to a name free across the library.
+
+### v0.11.0 · copy-to, recovery live stream, job outputs
+- refers-to: app/routers/library.py :: copy_to, duplicate (_copy_with_new_id); app/routers/recovery.py :: live; app/routers/jobs.py :: _prune, fetched
+- kind: explainer
+- logged: v0.11.0 · 2026-10-30
+
+`POST /api/library/{name}/copy-to` copies a movie to a folder the person picked (the `_safe_folder` checks, never overwrites: a taken name becomes "Name 2", a `.part` file renamed into place). A duplicate gets a fresh movie id and its own inner name (since the 0.10.0 tester found copies sharing an id). Each window holds `GET /api/recovery/{session}/live` open; a closed stream counts as gone after 4 s, and after an engine restart a session that has not reconnected in 15 s counts as gone, so a crashed window's work is offered at once. A finished job's output is kept until fetched or 24 h old even past the 40-job record cap. The 10-minute sweep in transcode.py (import conversions) is unchanged: imports fetch their result at once.

@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.10.0
-Last updated: 2026-10-30 · phases 23 to 25 (the remaining audit rows, v0.9.0's open items, review and hardening)
+Current build version: v0.11.0
+Last updated: 2026-10-30 · phases 26 to 28 (rows and gaps still open, performance, a third fresh audit and its fix wave)
 
 ---
 
@@ -667,3 +667,10 @@ One text layout (`layoutText`) serves the renderer, the GPU text texture (keyed 
 - logged: v0.10.0 · 2026-10-30
 
 Theater carry is pointer-based (6 px or a 380 ms hold), one ghost moved by transform; a 650 ms hover enters a stack, stacks never nest. The manual order is the engine's (`.order.json` per folder); old localStorage orders are handed over once. The on-canvas crop surface shares the bake maths w/ the old dialog, which stays as the fallback under 560 x 420; Ctrl+Z falls through to the movie history when the paint document has nothing left and the top step is the crop. Brush export writes keyed binary plists; the value scales and the newer dynamics keys are assumptions (header of brush-export.ts). Fonts: one dynamic CSS import per family, Noto faces loaded per script as text needs them (`fontCss` falls back per glyph; Japanese before Chinese in the fallback order). Alpha video needed only `alpha: true` on every CanvasSink. Every movie entry point goes through `unpackMovie`, which runs `normalizeMovie` on the movie and its history states. Pixel-only blend surfaces are sized to the destination, never stretched; the Warp / Distort / Bones flat surface is capped at 8192 a side and 48 MP (`flatScale`, `WarpView.srcScale`). `levelFrameOf` gives the group-local frame for parenting. Text layouts are cached per style, text and movie size, cleared w/ the font epoch. The GPU probe drops only its own textures (`dropLive`). `paint-tools.ts` builds each variant once and toggles it. A Home DOM growth seen in review is the Recent grid filling to its 20-item cap, not a leak. Process: no SEDO breach was reported by this turn's builders.
+
+### Phases 26 to 28 (v0.11.0)
+- refers-to: src/engine/layer-split-ops.ts, frame-cache.ts, warp-draw.ts, flip-draw.ts, flip-ops.ts :: pasteIntoFree; src/ui/theater-storage.ts, paint-sample-all.ts, warp-drag-preview.ts, brush-thumb.ts, canvas-words.ts, stage-gesture-cache.ts, title-name.ts, tips.ts, text-edit-menu.ts; src/media/key-thumbs.ts; src/paint/brushes.ts :: keepCorners, stroke.ts :: pixelPerfect
+- kind: explainer
+- logged: v0.11.0 · 2026-10-30
+
+Stage view changes go through `scheduleView()`, which keeps the cached picture and moves it w/ a CSS transform; a real render follows 160 ms after the gesture or past a 2x scale change; every other change marks the picture stale. The frame cache keeps finished Stage frames as ImageBitmaps (384 MB cap), never incomplete frames or frames w/ video, is dropped on any change of movie object, view, background, preview, camera mode or GPU state, and renders ahead only while cheap; look-ahead uses an HTML canvas because an OffscreenCanvas anti-aliases clip edges differently. The profile showed 72% of playback time in software `drawImage`, so a worker adds nothing on a loaded machine w/o spare cores; export still yields per frame. Filmstrip tiles decode from the nearest key frame (exact within 0.2 s), over 3 decoders, cache tag k2 (older entries dropped). Warp triangles are pushed out 0.75 px against seams; `options.resample` is written only when not the default. Shipped brushes keep corners: `keepCorners` lowers smoothing so the card's Stabilization (now read by the stroke as `stabilizationRope`) adds back to the old total. Escape no longer finishes a Drawing. Process: a third-audit auditor appended its item table to its own planning file w/ a shell `cat` (planning sidecar, not the repo); logged.
