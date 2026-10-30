@@ -64,6 +64,21 @@ export function pasteFrames(c: Content, row: number, after: number, items: Flipb
   return fit(frames(c, row, (f) => [...f.slice(0, after + 1), ...items.map(copyFrame), ...f.slice(after + 1)]));
 }
 
+/** Paste into the next free frames: each item takes the first blank frame at or after `from`, or goes on the row's end; nothing shifts. */
+export function pasteIntoFree(c: Content, row: number, from: number, items: FlipbookFrame[]): Content {
+  return fit(frames(c, row, (f) => {
+    const out = [...f];
+    let pos = Math.max(0, from);
+    for (const it of items) {
+      while (pos < out.length && !isBlank(out[pos])) pos++;
+      if (pos < out.length) out[pos] = copyFrame(it);
+      else out.push(copyFrame(it));
+      pos++;
+    }
+    return out;
+  }));
+}
+
 /** A new row goes in at `at` (above the row that sat there; the top by default). */
 export function addFlipTrack(c: Content, fps: number, at = 0): Content {
   const count = Math.max(1, Math.min(flipDuration(c) || Math.round(fps), 2000));

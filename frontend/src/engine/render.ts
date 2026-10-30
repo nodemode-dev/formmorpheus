@@ -157,6 +157,7 @@ export class Renderer {
       bitmap: (id) => this.bitmap(id),
       video: (c, local, movie) => {
         if (!this.video || !c.asset) return null;
+        this.incomplete = true;
         const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie), c.id);
         return img && 'width' in img ? (img as OffscreenCanvas) : null;
       },
@@ -261,12 +262,23 @@ export class Renderer {
     }
     if (!this.pending.has(id)) {
       const blob = this.blobOf(id);
-      if (!blob) return null;
+      if (!blob) { this.incomplete = true; return null; }
       this.pending.add(id);
       const gen = this.forgetGen;
       createImageBitmap(blob).then((bmp) => { this.settle(id, bmp, gen); }, () => { this.settle(id, null, gen); }).finally(() => { if (gen === this.forgetGen) this.pending.delete(id); this.onReady(); });
     }
+    this.incomplete = true;
     return null;
+  }
+
+  /** Set when a draw used a picture still decoding or a video frame; such a frame must not be cached. */
+  private incomplete = false;
+
+  /** True when the last drawFrame used nothing that may still change (no pending picture, no video block); resets the flag. */
+  takeComplete(): boolean {
+    const ok = !this.incomplete;
+    this.incomplete = false;
+    return ok;
   }
 
   /** Decoded pictures are capped (each 4K layer is about 33 MB); the least recently drawn are closed and decode again on demand. */
@@ -313,6 +325,7 @@ export class Renderer {
       mv = this.noCam as Movie;
     }
     this.frameNow = frame;
+    this.incomplete = false;
     this.nest.length = 0;
     this.flat = null;
     try { this.drawFrameInner(ctx, mv, frame, view, opts); } finally { this.frameNow = -1; }
@@ -561,6 +574,7 @@ export class Renderer {
   private drawVideoContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
     const asset = c.asset ? movie.assets[c.asset] : undefined;
     if (!asset || !this.video || !c.asset) return;
+    this.incomplete = true;
     const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie), c.id);
     if (!img) return;
     const w = asset.width, h = asset.height;

@@ -214,6 +214,14 @@ export function setLaneOption(c: Content, kind: KeyKind, id: string, value: stri
   return withLane(c, kind, { ...lane, options: { ...lane.options, [id]: value } });
 }
 
+/** Remove a lane option so the default applies again (the file then carries no trace of it). */
+export function clearLaneOption(c: Content, kind: KeyKind, id: string): Content {
+  const lane = laneOf(c, kind);
+  if (!lane || !(id in lane.options)) return c;
+  const { [id]: _gone, ...rest } = lane.options;
+  return withLane(c, kind, { ...lane, options: rest });
+}
+
 /** Change a Warp lane's mesh to n x n nodes; every key frame is resampled from the old mesh so the pose at each key stays. */
 export function setWarpSize(c: Content, n: number): Content {
   const lane = laneOf(c, 'warp');

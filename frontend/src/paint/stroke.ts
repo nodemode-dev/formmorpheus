@@ -423,6 +423,14 @@ export class Stroke implements StrokeLike {
       cx += (this.rng() - 0.5) * 2 * brush.scatter * dia;
       cy += (this.rng() - 0.5) * 2 * brush.scatter * dia;
     }
+    // pixel perfect: a whole-pixel size, centred on the pixel grid, thresholded below (no anti-alias)
+    const px1 = !!brush.pixelPerfect;
+    if (px1) {
+      dia = Math.max(1, Math.round(dia));
+      const odd = dia % 2 === 1;
+      cx = odd ? Math.floor(cx) + 0.5 : Math.round(cx);
+      cy = odd ? Math.floor(cy) + 0.5 : Math.round(cy);
+    }
     let angle = baseAngle(brush) + (brush.baseRot ?? 0);
     if (brush.followStroke && dir !== null) angle = dir + Math.PI / 2 + (brush.baseRot ?? 0);
     if (brush.azimuth && (tiltX || tiltY)) angle = tiltInfo(tiltX, tiltY).azimuth;
@@ -445,7 +453,7 @@ export class Stroke implements StrokeLike {
     const ab = this.abuf;
 
     // Stage 1: tip alpha * flow * grain into the scratch buffer.
-    const tip = getTip(brush.tip, dia, brush.softness, rn, angle, brush.tipImage);
+    const tip = getTip(brush.tip, dia, px1 ? 0 : brush.softness, rn, angle, brush.tipImage);
     const scale = dia / tip.diameter;
     const inv = 1 / scale;
     const N = tip.size, td = tip.data;
@@ -493,6 +501,11 @@ export class Stroke implements StrokeLike {
         }
         ab[rowO + px - x0] = v;
       }
+    }
+    if (px1) {
+      // hard edge: a pixel is all in or all out
+      const hard = flow, n = bw * bh;
+      for (let i = 0; i < n; i++) ab[i] = ab[i] >= hard * 0.5 ? hard : 0;
     }
 
     if (tool === 'paint') {

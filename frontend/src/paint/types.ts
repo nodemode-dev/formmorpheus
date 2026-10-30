@@ -111,6 +111,8 @@ export interface Brush {
   pressureGamma?: number;
   /** Per-brush smoothing card, each 0 to 100; the input pipeline reads these. */
   stabilization?: number;
+  /** A hard 1-pixel-grid stamp with no anti-alias, for pixel art; absent is off. */
+  pixelPerfect?: boolean;
   motionFilter?: number;
   expression?: number;
   /** Made or imported by the person, not part of the starter library. */

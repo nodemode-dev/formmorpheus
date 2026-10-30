@@ -2,6 +2,8 @@
 // Raw RGBA rows (no encode cost); a meta store lets us evict the least recently used entries past a byte cap.
 // Every call is wrapped: a browser without IndexedDB (private window, blocked storage) simply has no cache.
 
+import { THUMB_VERSION } from './key-thumbs';
+
 const DB = 'formmorpheus-thumbs';
 const CAP_BYTES = 64 * 1024 * 1024;
 
@@ -29,7 +31,14 @@ export class ThumbCache {
         };
         const db = await wrapReq(req);
         const metas = await wrapReq(db.transaction('meta', 'readonly').objectStore('meta').getAll() as IDBRequest<Meta[]>);
-        for (const m of metas) { this.index.set(m.key, m); this.total += m.bytes; }
+        // entries from before the version tag (some black for alpha clips, exact-time tiles) are retired
+        const stale = metas.filter((m) => !m.key.includes(`|${THUMB_VERSION}|`));
+        for (const m of metas) if (!stale.includes(m)) { this.index.set(m.key, m); this.total += m.bytes; }
+        if (stale.length) {
+          const tx = db.transaction(['data', 'meta'], 'readwrite');
+          for (const m of stale) { tx.objectStore('data').delete(m.key); tx.objectStore('meta').delete(m.key); }
+          void wrapTx(tx).catch(() => undefined);
+        }
         return db;
       } catch {
         this.dead = true;

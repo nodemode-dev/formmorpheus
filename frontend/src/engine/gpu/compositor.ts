@@ -460,7 +460,10 @@ export class GpuCompositor {
           if (t.hidden) continue;
           const mc = t.content.find((x) => g >= x.start && g < end(x));
           if (!mc || mc.opacity <= 0) continue;
-          this.content(host, target, mc, g - mc.start, unit, movie, animate(mc, g - mc.start), m, mc.opacity, MODE[mc.blend]);
+          const ma = animate(mc, g - mc.start);
+          // keyed opacity counts, as in the CPU group draw
+          if (ma.opacity <= 0) continue;
+          this.content(host, target, mc, g - mc.start, unit, movie, ma, m, ma.opacity, MODE[mc.blend]);
         }
         return;
       }

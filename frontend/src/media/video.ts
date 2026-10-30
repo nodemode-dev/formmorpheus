@@ -11,6 +11,7 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, EncodedPacketSink, Input, type InputVideoTrack } from 'mediabunny';
 import type { MediaInfo, VideoSource } from './types';
 import { blobHash, ThumbCache } from './thumb-cache';
+import { planThumbTimes, THUMB_LANES, THUMB_VERSION } from './key-thumbs';
 
 /** Upper bound for decoded frames over all assets, in bytes. */
 const CAP_BYTES = 768 * 1024 * 1024;
@@ -655,14 +656,14 @@ export class VideoPool implements VideoSource {
 
   // ---- thumbnails: visible tiles first, then the rest of the clip while idle; cached across reopen
 
-  private sinkFor(b: Base, w: number, h: number): CanvasSink | null {
+  private sinkFor(b: Base, w: number, h: number, slot = 0): CanvasSink | null {
     if (!b.track) return null;
-    const sk = `${w}x${h}`;
+    const sk = `${w}x${h}#${slot}`;
     let sink = b.thumbSinks.get(sk);
     if (!sink) {
       sink = new CanvasSink(b.track, { width: w, height: h, fit: 'cover', alpha: true });
       b.thumbSinks.set(sk, sink);
-      if (b.thumbSinks.size > 4) {
+      if (b.thumbSinks.size > THUMB_LANES + 2) {
         const first = b.thumbSinks.keys().next().value;
         if (first !== undefined && first !== sk) b.thumbSinks.delete(first);
       }
@@ -693,9 +694,9 @@ export class VideoPool implements VideoSource {
     } catch { /* a lost canvas is not cached */ }
   }
 
-  /** The key part after the asset id: `bucket|WxH`. */
+  /** The key part after the asset id: `version|bucket|WxH`; the version retires thumbnails cached by older code. */
   private static tail(key: string): string {
-    return key.slice(key.indexOf('|') + 1);
+    return `${THUMB_VERSION}|${key.slice(key.indexOf('|') + 1)}`;
   }
 
   private fromCache(b: Base, jobs: ThumbJob[], cached: Map<string, { w: number; h: number; rgba: Uint8ClampedArray<ArrayBuffer> }>, hash: string): ThumbJob[] {
@@ -741,27 +742,50 @@ export class VideoPool implements VideoSource {
 
   /** Decodes thumbnails for sorted jobs in one pass (each packet decoded once). */
   private async decodeThumbs(b: Base, jobs: ThumbJob[]): Promise<void> {
-    const sink = this.sinkFor(b, jobs[0].w, jobs[0].h);
-    if (!sink) return;
+    const newest = Math.max(...jobs.map((x) => x.seen));
+    // the view moved on: the rest of this batch is no longer what is visible
+    const { attempted } = await this.runThumbs(b, jobs, true, () => b.thumbJobs.size > 0 && performance.now() - newest > 600);
+    for (const j of jobs) if (!attempted.has(j) && !this.thumbs.has(j.key)) b.thumbJobs.set(j.key, j);
+  }
+
+  /**
+   * Decodes sorted thumbnail jobs: long-GOP tiles from the nearest key frame, in up to THUMB_LANES decoders at once,
+   * each packet decoded once. `attempted` holds the jobs a decoder returned (even with no picture); `aborted` is set
+   * when `stop` ended a lane early.
+   */
+  private async runThumbs(b: Base, jobs: ThumbJob[], notify: boolean, stop: () => boolean): Promise<{ attempted: Set<ThumbJob>; aborted: boolean }> {
+    const attempted = new Set<ThumbJob>();
+    let aborted = false;
+    const ps = b.packets;
+    if (!ps || !jobs.length) return { attempted, aborted };
     const last = Math.max(b.firstTs, b.duration - 0.5 / b.fps);
-    const gen = sink.canvasesAtTimestamps(jobs.map((j) => Math.min(Math.max(j.t, b.firstTs), last)));
-    let i = 0;
-    try {
-      for (;;) {
-        const r = await gen.next();
-        if (r.done || b.disposed) break;
-        const j = jobs[i++];
-        if (r.value) {
-          this.putThumb(j.key, r.value.canvas);
-          this.storeThumb(b, VideoPool.tail(j.key), r.value.canvas);
-          this.onReady();
+    const times = await planThumbTimes(ps, jobs.map((j) => j.t), b.firstTs, last);
+    const order = jobs.map((_, i) => i).sort((x, y) => times[x] - times[y]);
+    const lanes = order.length >= 6 ? THUMB_LANES : 1;
+    const per = Math.ceil(order.length / lanes);
+    await Promise.all(Array.from({ length: lanes }, async (_, li) => {
+      const part = order.slice(li * per, (li + 1) * per);
+      const sink = part.length ? this.sinkFor(b, jobs[0].w, jobs[0].h, li) : null;
+      if (!sink) return;
+      const gen = sink.canvasesAtTimestamps(part.map((i) => times[i]));
+      let n = 0;
+      try {
+        for (;;) {
+          const r = await gen.next();
+          if (r.done || b.disposed) break;
+          const j = jobs[part[n++]];
+          attempted.add(j);
+          if (r.value) {
+            this.putThumb(j.key, r.value.canvas);
+            this.storeThumb(b, VideoPool.tail(j.key), r.value.canvas);
+            if (notify) this.onReady();
+          }
+          if (n < part.length && stop()) { aborted = true; break; }
         }
-        // the view moved on: the rest of this batch is no longer what is visible
-        if (i < jobs.length && b.thumbJobs.size && performance.now() - Math.max(...jobs.slice(i).map((x) => x.seen)) > 600) break;
-      }
-    } catch { /* a bad frame costs a tile, not the strip */ }
-    finally { void gen.return(undefined).catch(() => undefined); }
-    for (let k = i; k < jobs.length; k++) if (!this.thumbs.has(jobs[k].key)) b.thumbJobs.set(jobs[k].key, jobs[k]);
+      } catch { /* a bad frame costs a tile, not the strip */ }
+      finally { void gen.return(undefined).catch(() => undefined); }
+    }));
+    return { attempted, aborted };
   }
 
   private idle(b: Base): boolean {
@@ -798,21 +822,10 @@ export class VideoPool implements VideoSource {
       const hash = await (b.hash ?? Promise.resolve(''));
       const cached = await this.cache.getMany(jobs.map((j) => `${hash}|${VideoPool.tail(j.key)}`));
       const miss = this.fromCache(b, jobs, cached, hash);
-      const sink = this.sinkFor(b, w, h);
-      if (sink && miss.length) {
-        const last = Math.max(b.firstTs, b.duration - 0.5 / b.fps);
-        const gen = sink.canvasesAtTimestamps(miss.map((j) => Math.min(Math.max(j.t, b.firstTs), last)));
-        let i = 0;
-        try {
-          for (;;) {
-            const r = await gen.next();
-            if (r.done || b.disposed) break;
-            const j = miss[i++];
-            if (r.value) { this.putThumb(j.key, r.value.canvas); this.storeThumb(b, VideoPool.tail(j.key), r.value.canvas); }
-            // visible work arrived or playback started: stop, the next idle moment resumes this pass
-            if (b.thumbJobs.size || !this.idle(b)) { b.prefillPass = Math.max(0, b.prefillPass - 1); break; }
-          }
-        } catch { /* skip */ } finally { void gen.return(undefined).catch(() => undefined); }
+      if (miss.length) {
+        // visible work arrived or playback started: stop, the next idle moment resumes this pass
+        const r = await this.runThumbs(b, miss, false, () => b.thumbJobs.size > 0 || !this.idle(b));
+        if (r.aborted) b.prefillPass = Math.max(0, b.prefillPass - 1);
       }
       this.onReady();
     } finally {

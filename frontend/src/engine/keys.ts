@@ -446,6 +446,8 @@ export interface Animated {
   distort: number[] | null;
   /** Warp / Distort lane option: straight (bilinear) interpolation between the nodes or corners instead of the smooth surface / perspective. */
   bilinear?: boolean;
+  /** Warp / Distort lane option: how the flat picture is resampled (absent: smooth, the default). */
+  resample?: 'nearest' | 'high';
   /** Bone rotations by bone id (degrees from rest) when the content has a rig and any bone is turned, else null. */
   bones: Record<string, number> | null;
 }
@@ -467,6 +469,12 @@ export function animate(c: Content, local: number): Animated {
   const a = animateRaw(c, local);
   if (!Number.isFinite(a.scaleX)) a.scaleX = 1;
   if (!Number.isFinite(a.scaleY)) a.scaleY = 1;
+  // a malformed move or turn counts as none, so a NaN matrix never blanks the GPU frame
+  if (!Number.isFinite(a.x)) a.x = 0;
+  if (!Number.isFinite(a.y)) a.y = 0;
+  if (!Number.isFinite(a.rotation)) a.rotation = 0;
+  if (a.px !== undefined && !Number.isFinite(a.px)) a.px = 0;
+  if (a.py !== undefined && !Number.isFinite(a.py)) a.py = 0;
   return a;
 }
 
@@ -525,12 +533,12 @@ function animateRaw(c: Content, local: number): Animated {
             if (dx[r * n + k] || dy[r * n + k]) moved = true;
           }
         }
-        if (moved) { a.warp = { n, dx, dy }; if (lane.options.bilinear === true) a.bilinear = true; }
+        if (moved) { a.warp = { n, dx, dy }; if (lane.options.bilinear === true) a.bilinear = true; const rs = lane.options.resample; if (rs === 'nearest' || rs === 'high') a.resample = rs; }
         break;
       }
       case 'distort': {
         const o = DISTORT_IDS.map((id) => chv(lane, id, local, 0));
-        if (o.some((v) => v !== 0)) { a.distort = o; if (lane.options.bilinear === true) a.bilinear = true; }
+        if (o.some((v) => v !== 0)) { a.distort = o; if (lane.options.bilinear === true) a.bilinear = true; const rs = lane.options.resample; if (rs === 'nearest' || rs === 'high') a.resample = rs; }
         break;
       }
       case 'bones': {

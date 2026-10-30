@@ -211,19 +211,30 @@ export function warpQuads(a: Animated, w: number, h: number, rect: Rect = { x: 0
 }
 
 /** `srcScale`: pixels per content pixel of the flat source when it was drawn below the view's scale (capped surfaces); default `scale`. */
-export interface WarpView { scale: number; ox: number; oy: number; srcScale?: number }
+export interface WarpView { scale: number; ox: number; oy: number; srcScale?: number; resample?: 'nearest' | 'high' }
 
 /**
  * Draws `src` (the content rendered flat at `view.scale`, content space (0,0) at the surface's origin) warped
  * onto `ctx`. Each triangle is clipped a half pixel wider than itself so neighbours do not leave hairlines.
  */
 export function drawWarped(ctx: Ctx, src: CanvasImageSource, a: Animated, view: WarpView, w: number, h: number, rect?: Rect): void {
-  drawTriangles(ctx, src, warpQuads(a, w, h, rect), view);
+  drawTriangles(ctx, src, warpQuads(a, w, h, rect), a.resample && !view.resample ? { ...view, resample: a.resample } : view);
 }
+
+/** How far (pixels) each triangle edge is pushed out when drawn. */
+const GROW = 0.75;
 
 /** Draws a triangle list in warpQuads's layout (source corners in content px, destination corners in Stage px); bones.ts uses it too. */
 export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView): void {
   const k = view.scale, ks = view.srcScale ?? view.scale;
+  if (!view.resample) { drawEach(ctx, src, t, view, k, ks); return; }
+  const smoothed = ctx.imageSmoothingEnabled, quality = ctx.imageSmoothingQuality;
+  if (view.resample === 'nearest') ctx.imageSmoothingEnabled = false;
+  else { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
+  try { drawEach(ctx, src, t, view, k, ks); } finally { ctx.imageSmoothingEnabled = smoothed; ctx.imageSmoothingQuality = quality; }
+}
+
+function drawEach(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView, k: number, ks: number): void {
   for (let p = 0; p + 11 < t.length; p += 12) {
     const s0x = t[p] * ks, s0y = t[p + 1] * ks, s1x = t[p + 2] * ks, s1y = t[p + 3] * ks, s2x = t[p + 4] * ks, s2y = t[p + 5] * ks;
     const d0x = view.ox + t[p + 6] * k, d0y = view.oy + t[p + 7] * k;
@@ -238,12 +249,21 @@ export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array,
     const D = ((d2y - d0y) * (s1x - s0x) - (d1y - d0y) * (s2x - s0x)) / det;
     const E = d0x - A * s0x - C * s0y;
     const F = d0y - B * s0x - D * s0y;
-    const cx = (d0x + d1x + d2x) / 3, cy = (d0y + d1y + d2y) / 3;
-    // each corner pushed half a pixel away from the centre
-    const l0 = Math.hypot(d0x - cx, d0y - cy) || 1, l1 = Math.hypot(d1x - cx, d1y - cy) || 1, l2 = Math.hypot(d2x - cx, d2y - cy) || 1;
-    const g0x = d0x + ((d0x - cx) / l0) * 0.5, g0y = d0y + ((d0y - cy) / l0) * 0.5;
-    const g1x = d1x + ((d1x - cx) / l1) * 0.5, g1y = d1y + ((d1y - cy) / l1) * 0.5;
-    const g2x = d2x + ((d2x - cx) / l2) * 0.5, g2y = d2y + ((d2y - cy) / l2) * 0.5;
+    // every edge moved outward by GROW pixels (a mitered corner), so two neighbours overlap by a pixel and the
+    // antialiased edges never leave a hairline on flat colour; a sliver falls back to a clamped miter
+    const dt = (d1x - d0x) * (d2y - d0y) - (d2x - d0x) * (d1y - d0y);
+    const sg = dt < 0 ? -1 : 1;
+    const e01 = Math.hypot(d1x - d0x, d1y - d0y) || 1, e12 = Math.hypot(d2x - d1x, d2y - d1y) || 1, e20 = Math.hypot(d0x - d2x, d0y - d2y) || 1;
+    // outward unit normals of the edges 0-1, 1-2, 2-0
+    const n01x = sg * (d1y - d0y) / e01, n01y = -sg * (d1x - d0x) / e01;
+    const n12x = sg * (d2y - d1y) / e12, n12y = -sg * (d2x - d1x) / e12;
+    const n20x = sg * (d0y - d2y) / e20, n20y = -sg * (d0x - d2x) / e20;
+    const miter = (ax: number, ay: number, bx: number, by: number): [number, number] => {
+      const q = Math.max(0.25, 1 + ax * bx + ay * by);
+      return [((ax + bx) * GROW) / q, ((ay + by) * GROW) / q];
+    };
+    const m0 = miter(n20x, n20y, n01x, n01y), m1 = miter(n01x, n01y, n12x, n12y), m2 = miter(n12x, n12y, n20x, n20y);
+    const g0x = d0x + m0[0], g0y = d0y + m0[1], g1x = d1x + m1[0], g1y = d1y + m1[1], g2x = d2x + m2[0], g2y = d2y + m2[1];
     const minX = Math.max(0, Math.floor(Math.min(s0x, s1x, s2x) - 1)), minY = Math.max(0, Math.floor(Math.min(s0y, s1y, s2y) - 1));
     const maxX = Math.ceil(Math.max(s0x, s1x, s2x) + 1), maxY = Math.ceil(Math.max(s0y, s1y, s2y) + 1);
     ctx.save();

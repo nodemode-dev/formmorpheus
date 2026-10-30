@@ -5,7 +5,7 @@ import { toast } from '../ui/toast';
 import { t, tn } from '../ui/i18n';
 import { api, serviceReady } from './api';
 
-export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number }
+export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number; gone?: boolean; wait?: number }
 
 const EVERY_MS = 60_000;
 const BEAT_MS = 20_000;
@@ -93,6 +93,9 @@ export class Recovery {
     const beat = (): void => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); };
     this.beat = window.setInterval(beat, BEAT_MS);
     document.addEventListener('visibilitychange', beat);
+    // an open stream tells the engine this window is alive; when the window dies the stream closes and its snapshot is offered at once
+    void this.keepLive();
+    window.addEventListener('pageshow', (e) => { if (e.persisted) void this.keepLive(); });
     this.recheck = window.setInterval(() => { if (!document.hidden) void this.offer('new'); }, RECHECK_MS);
     // a normal quit: nothing was lost, so nothing is kept
     window.addEventListener('pagehide', (e) => {
@@ -101,7 +104,29 @@ export class Recovery {
     });
   }
 
-  dispose(): void { window.clearInterval(this.timer); window.clearInterval(this.beat); window.clearInterval(this.recheck); }
+  private liveRun = 0;
+  private liveAbort: AbortController | null = null;
+
+  /** Holds the live stream open, reopening it if it drops, until the page goes away. */
+  private async keepLive(): Promise<void> {
+    const run = ++this.liveRun;
+    this.liveAbort?.abort();
+    while (run === this.liveRun) {
+      const ac = new AbortController();
+      this.liveAbort = ac;
+      try {
+        if (await serviceReady()) {
+          const res = await fetch(`${base(SESSION)}/live`, { signal: ac.signal, cache: 'no-store' });
+          const reader = res.body?.getReader();
+          if (reader) while (!(await reader.read()).done) { /* only the connection matters */ }
+        }
+      } catch { /* dropped or aborted */ }
+      if (run !== this.liveRun) return;
+      await new Promise((r) => window.setTimeout(r, 1500));
+    }
+  }
+
+  dispose(): void { this.liveRun++; this.liveAbort?.abort(); window.clearInterval(this.timer); window.clearInterval(this.beat); window.clearInterval(this.recheck); }
 
   /** Writes one snapshot now if the movie has unsaved changes and none is being written. */
   async snapshot(): Promise<void> {
@@ -136,7 +161,11 @@ export class Recovery {
    */
   async offer(mode: 'start' | 'menu' | 'new' = 'start'): Promise<void> {
     if (this.dialog?.isOpen) return;
-    const items = (await listSnapshots()).filter((i) => i.session !== SESSION && (i.idle ?? Infinity) > DEAD_AFTER_S && !(mode === 'new' && this.asked.has(i.session)));
+    const all = await listSnapshots();
+    // a window whose stream closed a moment ago may only be reconnecting: look again when its grace ends
+    const wait = Math.max(0, ...all.filter((i) => i.session !== SESSION && !i.gone).map((i) => i.wait ?? 0));
+    if (wait > 0) window.setTimeout(() => { void this.offer(mode); }, wait * 1000 + 400);
+    const items = all.filter((i) => i.session !== SESSION && (i.gone ?? (i.idle ?? Infinity) > DEAD_AFTER_S) && !(mode === 'new' && this.asked.has(i.session)));
     if (!items.length) {
       if (mode === 'menu') toast(t('No lost movies were found.'), 'info');
       return;

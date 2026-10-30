@@ -17,7 +17,11 @@
 //     shape count and taper start / end lengths;
 //   - brushset.plist's key names beyond name and brushes, the .brushlib layout (one .brushset per set, stored
 //     inside the zip, named by the set) and its brushlib.plist;
-//   - no QuickLook/Thumbnail.png is written (a preview needs a canvas; readers draw their own).
+//   - roundness (shapeRoundness), tilt (dynamicsTilt: one 0 to 1 amount that flattens the dab) and wet pickup
+//     (wetPickup) are our own key names, not seen in a file from elsewhere; Shape.png is written round and
+//     shapeRoundness carries the squash, so the importer does not apply it twice;
+//   - QuickLook/Thumbnail.png is a 256 by 96 PNG of a stroke drawn with the brush (ui/brush-thumb.ts); the path
+//     is confirmed, its size and the white ground are our choice. It is skipped when no canvas is available.
 
 import { zipSync, zlibSync } from 'fflate';
 import { writeBinaryPlist, Uid, type PlistValue } from './bplist-write';
@@ -81,9 +85,13 @@ export function brushSettings(b: Brush): Record<string, number | boolean | strin
   put('maxSize', maxV === 0 ? 1e-9 : maxV);
   put('minSize', b.maxSize > 0 ? (b.minSize / b.maxSize) * (maxV === 0 ? 1e-9 : maxV) : 0);
   put('maxOpacity', b.presets[0]?.opacity ?? 1);
+  put('shapeRoundness', b.roundness);   // the Shape.png is written round (see shapePng), so the nib's squash is only here
+  put('dynamicsTilt', finite(b.tilt) && b.tilt > 0 ? b.tilt : undefined);
+  put('wetPickup', b.pickup);
   put('dynamicsPressureSize', 1 - b.pressureSize[0]);
   put('dynamicsPressureOpacity', 1 - b.pressureFlow[0]);
-  if (b.grainImage) { put('textureDepth', b.grain); if (finite(b.grainScale)) put('textureScale', b.grainScale); }
+  if (b.grainImage || b.grain > 0) put('textureDepth', b.grain);
+  if ((b.grainImage || b.grain > 0) && finite(b.grainScale)) put('textureScale', b.grainScale);
   const pct = (v: number | undefined): number | undefined => (finite(v) ? v / 100 : undefined);
   put('stabilization', pct(b.stabilization));
   put('motionFilter', pct(b.motionFilter));
@@ -142,12 +150,16 @@ export function brushArchive(b: Brush): Uint8Array {
 function shapePng(b: Brush): Uint8Array | null {
   if (b.tipImage) return encodeGreyPng(b.tipImage.w, b.tipImage.h, b.tipImage.data);
   if (b.tip === 'sampled') return null;
-  const t = getTip(b.tip, SHAPE_SIDE, b.softness, b.roundness, 0);
+  const t = getTip(b.tip, SHAPE_SIDE, b.softness, 1, 0);
   return encodeGreyPng(t.size, t.size, t.data);
 }
 
-function brushFiles(b: Brush, dir: string, out: Record<string, Uint8Array>): void {
+/** A PNG preview per brush (null: none); made in the UI layer (ui/brush-thumb.ts) because it needs a canvas. */
+export type Thumbs = (Uint8Array | null | undefined)[];
+
+function brushFiles(b: Brush, dir: string, out: Record<string, Uint8Array>, thumb?: Uint8Array | null): void {
   out[`${dir}Brush.archive`] = brushArchive(b);
+  if (thumb) out[`${dir}QuickLook/Thumbnail.png`] = thumb;
   const shape = shapePng(b);
   if (shape) out[`${dir}Shape.png`] = shape;
   if (b.grainImage && b.grainImage.length === GRAIN_SIDE * GRAIN_SIDE) out[`${dir}Grain.png`] = encodeGreyPng(GRAIN_SIDE, GRAIN_SIDE, b.grainImage);
@@ -169,23 +181,23 @@ function folderName(): string {
 const safeName = (s: string): string => s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 60) || 'Set';
 
 /** One brush as a .brush zip. */
-export function exportBrush(b: Brush): Uint8Array {
+export function exportBrush(b: Brush, thumb?: Uint8Array | null): Uint8Array {
   const files: Record<string, Uint8Array> = {};
-  brushFiles(b, '', files);
+  brushFiles(b, '', files, thumb);
   return zipSync(files, { level: 0 });
 }
 
 /** A set as a .brushset zip: a folder per brush plus brushset.plist. */
-export function exportBrushSet(name: string, brushes: Brush[]): Uint8Array {
+export function exportBrushSet(name: string, brushes: Brush[], thumbs?: Thumbs): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   const dirs: string[] = [];
-  for (const b of brushes) { const d = folderName(); dirs.push(d); brushFiles(b, `${d}/`, files); }
+  brushes.forEach((b, i) => { const d = folderName(); dirs.push(d); brushFiles(b, `${d}/`, files, thumbs?.[i]); });
   files['brushset.plist'] = xmlPlist([['name', name], ['brushes', dirs]]);
   return zipSync(files, { level: 0 });
 }
 
 /** A library as a .brushlib zip: one .brushset per set, named by the set. */
-export function exportBrushLib(name: string, sets: { name: string; brushes: Brush[] }[]): Uint8Array {
+export function exportBrushLib(name: string, sets: { name: string; brushes: Brush[]; thumbs?: Thumbs }[]): Uint8Array {
   const files: Record<string, Uint8Array> = {};
   const used = new Set<string>();
   const names: string[] = [];
@@ -195,7 +207,7 @@ export function exportBrushLib(name: string, sets: { name: string; brushes: Brus
     while (used.has(base.toLowerCase())) base = `${safeName(s.name)} ${++n}`;
     used.add(base.toLowerCase());
     names.push(base);
-    files[`${base}.brushset`] = exportBrushSet(s.name, s.brushes);
+    files[`${base}.brushset`] = exportBrushSet(s.name, s.brushes, s.thumbs);
   }
   files['brushlib.plist'] = xmlPlist([['name', name], ['sets', names]]);
   return zipSync(files, { level: 0 });

@@ -42,7 +42,29 @@ function d(id: string, name: string, set: string, tip: TipShape, soft: number, m
   return mk(id, name, set, { tip, softness: soft, maxSize: max, minSize: min, spacing: sp, flow, pressureSize: [ps0, 1], pressureFlow: [pf0, 1], ...extra }, opacity);
 }
 
-export const BRUSHES: Brush[] = [
+/** Shipped brushes keep fast corners: the lazy rope and the card's Stabilization stay short unless a person raises them. */
+export function keepCorners(b: Brush): Brush {
+  const out: Brush = { ...b, smoothing: Math.min(0.14, Math.round(b.smoothing * 0.3 * 100) / 100) };
+  if (b.stabilization !== undefined) {
+    out.stabilization = Math.round(b.stabilization * 0.2);
+    // the card's value now adds to the rope, so the shipped brush gives that part back: its total stays what it was
+    out.smoothing = Math.max(0, out.smoothing - stabilizationRope(out));
+  }
+  return out;
+}
+
+/** The share of the lazy rope (0 to 1) that a brush's Stabilization card value (0 to 100) adds. */
+export function stabilizationRope(b: Brush): number {
+  return Math.max(0, Math.min(100, b.stabilization ?? 0)) / 100 * 0.5;
+}
+
+/** Renamed on the way in so each brush's `set` matches BRUSH_SETS; Touch-ups folds into Drawing. */
+const SET_NAMES: Record<string, string> = {
+  Sketch: 'Sketching', Airbrush: 'Airbrushing', Texture: 'Textures', Charcoal: 'Charcoals', Spray: 'Spraypaints',
+  Material: 'Materials', Glow: 'Luminance', 'Touch-ups': 'Drawing',
+};
+
+const RAW_BRUSHES: Brush[] = [
   // Sketch
   mk('pencil-hb', 'Pencil HB', 'Sketch', {
     tip: 'grain-round', softness: 0.15, maxSize: 14, minSize: 1.2, spacing: 0.07, flow: 0.7,
@@ -307,14 +329,18 @@ export const BRUSHES: Brush[] = [
   d('spot-heal', 'Spot dab', 'Touch-ups', 'blob', 0.55, 36, 6, 0.35, 0.8, 0.9, 0.7, { rotationJitter: 1 }, 0.9),
 ];
 
-export const BRUSH_SETS: string[] = ['Sketch', 'Drawing', 'Inking', 'Painting', 'Artistic', 'Calligraphy', 'Airbrush', 'Texture', 'Abstract', 'Charcoal', 'Elements', 'Spray', 'Material', 'Vintage', 'Glow', 'Industrial', 'Organic', 'Water', 'Touch-ups'];
+export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set }));
+
+export const BRUSH_SETS: string[] = ['Sketching', 'Drawing', 'Inking', 'Painting', 'Artistic', 'Calligraphy', 'Airbrushing', 'Textures', 'Abstract', 'Charcoals', 'Elements', 'Spraypaints', 'Materials', 'Vintage', 'Luminance', 'Industrial', 'Organic', 'Water'];
+/** Old Classic set names to current ones, for libraries saved before the rename. */
+export const OLD_SET_NAMES: Record<string, string> = SET_NAMES;
 
 export const DEFAULT_PAINT = 'studio-ink';
 export const DEFAULT_SMUDGE = 'wet-blend';
 export const DEFAULT_ERASE = 'round-paint';
 
 /** Every starter brush: the Classic library, then the Animation library. */
-export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES];
+export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES.map(keepCorners)];
 const starterMap = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
 
 const registry = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));

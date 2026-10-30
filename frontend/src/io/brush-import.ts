@@ -310,8 +310,8 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   const tScale = num(m, 'textureScale', 'grainScale');
   const tDepth = num(m, 'textureDepth', 'grainDepth');
   const maxV = num(m, 'maxSize'), minV = num(m, 'minSize');
-  const maxPx = maxV === null ? 48 : clamp(12 + maxV * 188, 8, 400);
-  const minPx = maxV && minV !== null ? clamp((minV / maxV) * maxPx, 1, maxPx) : Math.max(1, maxPx * 0.06);
+  const maxPx = maxV === null ? 48 : clamp(12 + maxV * 188, 1, 400);   // below 12 px is a negative share: brush-export writes it so a small brush round-trips
+  const minPx = maxV && minV !== null ? clamp((minV / maxV) * maxPx, 0.1, maxPx) : Math.max(1, maxPx * 0.06);
   const opac = num(m, 'maxOpacity', 'opacity');
   const pSize = num(m, 'pressureSize', 'dynamicsPressureSize');
   const pOp = num(m, 'pressureOpacity', 'dynamicsPressureOpacity');
@@ -326,13 +326,18 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
     spacing: spacing === null ? 0.1 : clamp(spacing, 0.02, 2), flow: 1,
     pressureSize: [pSize === null ? 0.5 : clamp(1 - pSize, 0.02, 1), 1], pressureFlow: [pOp === null ? 0.7 : clamp(1 - pOp, 0.05, 1), 1],
     tilt: 0, scatter: jitter === null ? 0 : clamp(jitter, 0, 2), rotationJitter: rand === null ? 0 : clamp(rand, 0, 1),
-    followStroke: orient === false, roundness: 1, grain: grain ? clamp(tDepth ?? 0.8, 0, 1) : 0, smoothing: 0.2, pickup: 0.5,
+    followStroke: orient === false, roundness: 1, grain: grain ? clamp(tDepth ?? 0.8, 0, 1) : clamp(tDepth ?? 0, 0, 1), smoothing: 0.2, pickup: 0.5,
     presets: makePresets(opac === null ? 1 : clamp(opac, 0.1, 1)), custom: true,
   };
   if (tip && m.get('shapeinverted') === true) tip = { w: tip.w, h: tip.h, data: tip.data.map((v) => 255 - v) };
   if (tip) { const s = shrink(tip.w, tip.h, tip.data); b.tipImage = { w: s.w, h: s.h, data: s.data, key: id }; }
-  if (grain) { b.grainImage = grain; if (tScale !== null) b.grainScale = clamp(tScale, 0.25, 4); }
+  if (grain) b.grainImage = grain;
+  if (tScale !== null && (grain || tDepth !== null)) b.grainScale = clamp(tScale, 0.25, 4);
   mapEngine(m, b);
+  const rnd = num(m, 'shapeRoundness', 'roundness'), tl = num(m, 'dynamicsTilt', 'tiltAmount'), pk = num(m, 'wetPickup', 'pickup');
+  if (rnd !== null) b.roundness = clamp(rnd, 0.05, 1);
+  if (tl !== null) b.tilt = clamp(tl, 0, 1);
+  if (pk !== null) b.pickup = clamp(pk, 0, 1);
   // Start and end lengths are separate keys in files from brush-export; other files only give one value
   const tStart = num(m, 'taperStartLength'), tEnd = num(m, 'taperEndLength');
   if (tStart !== null && tEnd !== null && tEnd !== tStart) {

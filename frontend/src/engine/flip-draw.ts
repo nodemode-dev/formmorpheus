@@ -42,7 +42,7 @@ export class RowPreview {
     return s;
   }
 
-  draw(ctx: CanvasRenderingContext2D, c: Content, local: number, live: RowLive, layers: (g: G, l: DrawingLayer[]) => void, blendOp: (b: BlendMode) => GlobalCompositeOperation, blendInto: FlipHost['blendInto']): void {
+  draw(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, c: Content, local: number, live: RowLive, layers: (g: G, l: DrawingLayer[]) => void, blendOp: (b: BlendMode) => GlobalCompositeOperation, blendInto: FlipHost['blendInto']): void {
     const w = ctx.canvas.width, h = ctx.canvas.height;
     const out = this.surface(w, h);
     const og = out.getContext('2d') as G;
@@ -122,7 +122,11 @@ export function drawMaskedRows(host: FlipHost, ctx: G, c: Content, local: number
     const t = c.flip[i];
     if (t.hidden) continue;
     const fi = flipIndexAt(t, local);
-    if (fi < 0) continue;
+    if (fi < 0) {
+      // a mask row with nothing to show is an empty mask: it hides the row below (inverted, it leaves it whole)
+      if (isMaskRow(t) && held && !t.maskInvert) { host.release(held.s); held = null; }
+      continue;
+    }
     const s = host.surface();
     const g = s.getContext('2d') as G;
     g.setTransform(base);
@@ -130,6 +134,13 @@ export function drawMaskedRows(host: FlipHost, ctx: G, c: Content, local: number
     // the surface is later drawn and masked in pixels, so it must not keep the content transform
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (isMaskRow(t) && held) {
+      if (t.opacity < 1) {
+        // the row's own opacity scales the mask
+        g.globalCompositeOperation = 'destination-in';
+        g.fillStyle = `rgba(0,0,0,${Math.max(0, t.opacity)})`;
+        g.fillRect(0, 0, s.width, s.height);
+        g.globalCompositeOperation = 'source-over';
+      }
       host.mask((held as { s: OffscreenCanvas }).s, s, t.mask as 'alpha' | 'luminance', !!t.maskInvert);
       host.release(s);
       continue;

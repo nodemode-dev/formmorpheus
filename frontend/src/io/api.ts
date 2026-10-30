@@ -74,6 +74,10 @@ export const api = {
   async duplicateMovie(name: string): Promise<LibraryItem> {
     return (await (await request(`${lib(name)}/duplicate`, { method: 'POST' })).json()) as LibraryItem;
   },
+  /** Copies the movie file into another folder (never overwrites); returns the new path. */
+  async copyMovieTo(name: string, dir: string): Promise<string> {
+    return ((await (await request(`${lib(name)}/copy-to`, { method: 'POST', body: JSON.stringify({ dir }), headers: { 'Content-Type': 'application/json' } })).json()) as { path: string }).path;
+  },
   /** Stacks are folders of the library; `order` is the manual order kept by the engine per folder ('' is the top). */
   async theater(): Promise<{ stacks: LibraryStack[]; order: Record<string, string[]> }> {
     try { return (await (await request('/library/_stacks')).json()) as { stacks: LibraryStack[]; order: Record<string, string[]> }; } catch { return { stacks: [], order: {} }; }
