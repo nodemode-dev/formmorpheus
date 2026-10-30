@@ -110,6 +110,7 @@ export class PaintDoc implements PaintHost {
   private disposed = false;
   /** Pixels marked dirty by a live stroke whose patch is not yet in history. */
   private uncommitted = false;
+  private dirtCount = 0;
 
   constructor(width: number, height: number, layers: PaintLayer[]) {
     this.width = width;
@@ -341,9 +342,15 @@ export class PaintDoc implements PaintHost {
     l.version = counter++;
     l.source = null;
     this.uncommitted = true;
+    this.dirtCount++;
     const m = mirrors.get(l.raster);
     if (m) m.dirty = unionRect(m.dirty, r);
     this.onChange?.('pixels', r);
+  }
+
+  /** After a cancelled stroke, transform or filter has put the exact pixels back: nothing is left to save. */
+  settle(): void {
+    this.uncommitted = false;
   }
 
   commitPatch(patch: PixelPatch, label = 'Paint'): void {
@@ -519,7 +526,13 @@ export class PaintDoc implements PaintHost {
     const layers: DrawingLayer[] = [];
     const assets: { asset: Asset; blob: Blob }[] = [];
     const sources = new Map<string, string | null>();
-    for (const l of this.layers) {
+    // edits can land while the blobs encode (a frame reopened during a background save): remember what was
+    // encoded and only mark as saved what did not change meanwhile
+    const list = [...this.layers];
+    const versions = new Map(list.map((l) => [l.id, l.version]));
+    const top = this.history.top();
+    const dirt = this.dirtCount;
+    for (const l of list) {
       let pixels: string | null = null;
       if (l.source) {
         pixels = l.source;
@@ -538,9 +551,9 @@ export class PaintDoc implements PaintHost {
         alphaLock: l.alphaLock, clipping: l.clipping, pixels,
       });
     }
-    for (const l of this.layers) l.source = sources.get(l.id) ?? null;
-    this.baseline = this.history.top();
-    this.uncommitted = false;
+    for (const l of this.layers) if (versions.get(l.id) === l.version && sources.has(l.id)) l.source = sources.get(l.id) ?? null;
+    this.baseline = top;
+    if (this.dirtCount === dirt) this.uncommitted = false;
     return { layers, assets };
   }
 

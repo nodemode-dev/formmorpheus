@@ -88,7 +88,8 @@ export class PaintHistory {
     this.redoStack.length = 0;
     const top = this.undoStack[this.undoStack.length - 1];
     if (e.kind === 'layers' && e.tag && top && top.kind === 'layers' && top.tag === e.tag) {
-      top.after = e.after;
+      // a new object, so a document saved at the old top still sees a change
+      this.undoStack[this.undoStack.length - 1] = { ...top, after: e.after };
       return;
     }
     this.undoStack.push(e);

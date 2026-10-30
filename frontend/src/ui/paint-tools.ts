@@ -99,6 +99,7 @@ export class PaintTools {
   private filter: FilterId | null = null;
   private values: Record<string, number> = {};
   private filterOrig: Uint8ClampedArray | null = null;
+  private filterLayer = '';
   private filterReq = 0;
   private readonly modes: HTMLElement;
   private readonly actions: HTMLElement;
@@ -523,6 +524,7 @@ export class PaintTools {
     if (!layer) return;
     layer.raster.data.set(f.orig);
     doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    doc.settle();
   }
 
   // ------------------------------------------------------------ filters
@@ -533,7 +535,9 @@ export class PaintTools {
     this.finish();
     this.filter = id;
     this.values = {};
-    this.filterOrig = new Uint8ClampedArray(doc.activeLayer().raster.data);
+    const layer = doc.activeLayer();
+    this.filterLayer = layer.id;
+    this.filterOrig = new Uint8ClampedArray(layer.raster.data);
     this.current = 'filters';
     this.build();
     this.host.setInteraction(this.interaction());
@@ -548,8 +552,8 @@ export class PaintTools {
   private runFilter(): void {
     const doc = this.host.doc();
     const orig = this.filterOrig;
-    if (!doc || !orig || !this.filter) return;
-    const layer = doc.activeLayer();
+    const layer = doc?.layer(this.filterLayer);
+    if (!doc || !orig || !this.filter || !layer) return;
     const src: Raster = { width: doc.width, height: doc.height, data: orig };
     const dst = layer.raster;
     const v = (id: string): number => this.values[id] ?? FILTERS.find((x) => x.id === this.filter)!.params.find((p) => p.id === id)!.def;
@@ -576,15 +580,15 @@ export class PaintTools {
 
   private applyFilter(): void {
     const doc = this.host.doc();
+    if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; this.runFilter(); }
     const orig = this.filterOrig;
     this.filterOrig = null;
-    if (!doc || !orig || !this.filter) return;
-    if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; this.runFilter(); }
-    const layer = doc.activeLayer();
+    const layer = doc?.layer(this.filterLayer);
+    if (!doc || !orig || !this.filter || !layer) return;
     const rect = { x: 0, y: 0, w: doc.width, h: doc.height };
     const label = FILTERS.find((x) => x.id === this.filter)?.label ?? 'Filter';
     this.filter = null;
-    if (sameBytes(orig, layer.raster.data)) return;
+    if (sameBytes(orig, layer.raster.data)) { doc.settle(); return; }
     doc.commitPatch({ layer: layer.id, rect, before: orig, after: new Uint8ClampedArray(layer.raster.data) }, label);
   }
 
@@ -594,10 +598,11 @@ export class PaintTools {
     this.filterOrig = null;
     this.filter = null;
     if (this.filterReq) { cancelAnimationFrame(this.filterReq); this.filterReq = 0; }
-    if (!doc || !orig) return;
-    const layer = doc.activeLayer();
+    const layer = doc?.layer(this.filterLayer);
+    if (!doc || !orig || !layer) return;
     layer.raster.data.set(orig);
     doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    doc.settle();
   }
 }
 

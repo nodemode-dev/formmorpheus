@@ -14,6 +14,8 @@ const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   add: 'lighter', passthrough: 'source-over',
 };
 
+const BITMAP_CAP = 160;
+
 export interface View {
   scale: number;
   ox: number;
@@ -47,21 +49,36 @@ export class Renderer {
   async preload(blobs: Map<string, Blob>): Promise<void> {
     await Promise.all(Array.from(blobs, async ([id, blob]) => {
       if (this.bitmaps.has(id) || !blob.type.startsWith('image/')) return;
-      try { this.bitmaps.set(id, await createImageBitmap(blob)); } catch { this.bitmaps.set(id, null); }
+      try { this.keep(id, await createImageBitmap(blob)); } catch { this.keep(id, null); }
     }));
   }
 
   bitmap(id: string | null): ImageBitmap | null {
     if (!id) return null;
     const have = this.bitmaps.get(id);
-    if (have !== undefined) return have;
+    if (have !== undefined) {
+      // most recently used last, so eviction takes the oldest
+      this.bitmaps.delete(id);
+      this.bitmaps.set(id, have);
+      return have;
+    }
     if (!this.pending.has(id)) {
       const blob = this.blobOf(id);
       if (!blob) return null;
       this.pending.add(id);
-      createImageBitmap(blob).then((bmp) => { this.bitmaps.set(id, bmp); }, () => { this.bitmaps.set(id, null); }).finally(() => { this.pending.delete(id); this.onReady(); });
+      createImageBitmap(blob).then((bmp) => { this.keep(id, bmp); }, () => { this.keep(id, null); }).finally(() => { this.pending.delete(id); this.onReady(); });
     }
     return null;
+  }
+
+  /** Decoded pictures are capped (each 4K layer is about 33 MB); the least recently drawn are closed and decode again on demand. */
+  private keep(id: string, bmp: ImageBitmap | null): void {
+    this.bitmaps.set(id, bmp);
+    while (this.bitmaps.size > BITMAP_CAP) {
+      const oldest = this.bitmaps.keys().next().value as string;
+      this.bitmaps.get(oldest)?.close();
+      this.bitmaps.delete(oldest);
+    }
   }
 
   private surface(): Surface {
@@ -204,18 +221,20 @@ export class Renderer {
     this.drawLayers(ctx, layers, movie);
   }
 
+  /** Layer opacity multiplies the caller's alpha (a Flipbook row, a group member); a normal layer keeps the caller's blend. */
   private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
+    const baseAlpha = ctx.globalAlpha, baseOp = ctx.globalCompositeOperation;
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
       if (!l.visible || l.opacity <= 0) continue;
       const bmp = this.bitmap(l.pixels);
       if (!bmp) continue;
-      ctx.globalAlpha = l.opacity;
-      ctx.globalCompositeOperation = BLEND_OP[l.blend];
+      ctx.globalAlpha = baseAlpha * l.opacity;
+      ctx.globalCompositeOperation = l.blend === 'normal' ? baseOp : BLEND_OP[l.blend];
       ctx.drawImage(bmp, 0, 0, movie.width, movie.height);
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = baseAlpha;
+    ctx.globalCompositeOperation = baseOp;
   }
 
   private drawFlipbook(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {

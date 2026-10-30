@@ -126,6 +126,8 @@ export class PaintView {
   private readonly ghosts = new Map<string, { key: string; canvas: OffscreenCanvas }>();
   private pendingNav: { row: number; index: number } | null = null;
   private readonly parked = new Map<string, PaintDoc>();
+  private readonly pending = new Map<string, number>();
+  private readonly discarded = new WeakSet<PaintDoc>();
   private saving: Promise<void> = Promise.resolve();
   private readonly thumbs = new Map<string, { key: string; canvas: OffscreenCanvas }>();
 
@@ -225,6 +227,7 @@ export class PaintView {
     setText(this.modeName, c.kind === 'flipbook' ? 'Flipbook' : 'Drawing');
     this.modeIcon.innerHTML = icon(c.kind === 'flipbook' ? 'flipbook' : 'drawing', 18);
     setHidden(this.strip.root, c.kind !== 'flipbook');
+    setClass(this.root, 'has-strip', c.kind === 'flipbook');
     this.setSelection(null);
     this.root.hidden = false;
     this.deps.onOpenChange(true);
@@ -240,6 +243,7 @@ export class PaintView {
   async done(stay = false): Promise<void> {
     if (!this.contentId || this.busy) return;
     this.busy = true;
+    this.cancelStroke();
     this.tools.finish();
     this.stopPlay();
     await this.commitDoc();
@@ -249,11 +253,26 @@ export class PaintView {
 
   discard(): void {
     if (!this.contentId) return;
+    this.cancelStroke();
     this.tools.cancel();
+    // a pending background save of this same picture must not write the discarded strokes
+    if (this.doc) this.discarded.add(this.doc);
     this.close();
   }
 
+  /** Throws away a stroke in progress (navigation, Finish or Discard while the pen is down). */
+  private cancelStroke(): void {
+    const s = this.stroke, doc = this.doc;
+    this.stroke = null;
+    this.strokePointer = -1;
+    if (!s || !doc) return;
+    const r = s.cancel();
+    if (r) doc.markDirty(doc.active, r);
+    doc.settle();
+  }
+
   private close(): void {
+    this.cancelStroke();
     this.stopPlay();
     for (const p of [this.colour, this.brushPanel, this.layersPanel, this.settings]) p.close();
     this.menu.hidden = true;
@@ -317,9 +336,16 @@ export class PaintView {
     const key = this.frameKey(c);
     const contentId = c.id;
     if (background) this.parked.set(key, doc);
-    const job = this.saving.then(() => this.encodeDoc(doc, contentId, key)).catch(() => { toast('A frame could not be saved.', 'error'); });
+    // a frame can be saved twice before the first save lands (left, reopened, left again): only the last
+    // pending save releases it, and a failed save keeps it parked so its pixels are not lost
+    this.pending.set(key, (this.pending.get(key) ?? 0) + 1);
+    let failed = false;
+    const job = this.saving.then(() => this.encodeDoc(doc, contentId, key)).catch(() => { failed = true; toast('A frame could not be saved.', 'error'); });
     this.saving = job.finally(() => {
-      if (this.parked.get(key) === doc) {
+      const left = (this.pending.get(key) ?? 1) - 1;
+      if (left > 0) { this.pending.set(key, left); return; }
+      this.pending.delete(key);
+      if (!failed && this.parked.get(key) === doc) {
         this.parked.delete(key);
         if (this.doc !== doc) doc.dispose();
       }
@@ -328,7 +354,7 @@ export class PaintView {
   }
 
   private async encodeDoc(doc: PaintDoc, contentId: string, key: string): Promise<void> {
-    if (!doc.isChanged()) return;
+    if (!doc.isChanged() || this.discarded.has(doc)) return;
     const out = await doc.encode(() => uid('p'));
     const blobs = new Map<string, Blob>();
     for (const { asset, blob } of out.assets) { this.engine.assets.set(asset.id, blob); blobs.set(asset.id, blob); }
@@ -356,6 +382,7 @@ export class PaintView {
     if (this.busy) { this.pendingNav = { row, index }; return; }
     if (row === this.row && index === this.index) return;
     this.busy = true;
+    this.cancelStroke();
     this.tools.finish();
     await this.commitDoc(true);
     const fresh = this.content();
@@ -396,6 +423,7 @@ export class PaintView {
   private async runFlip(label: string, fn: (c: Content) => Content, merge?: string): Promise<void> {
     if (!this.contentId || this.busy) return;
     this.busy = true;
+    this.cancelStroke();
     this.tools.finish();
     await this.commitDoc();
     const before = this.content();
@@ -1018,8 +1046,16 @@ export class PaintView {
     this.colour.commit(this.colour.get());
   }
 
-  private undo(): void { if (this.doc?.undo()) this.syncUndo(); }
-  private redo(): void { if (this.doc?.redo()) this.syncUndo(); }
+  /** Undo and redo never run under a live stroke, transform or filter (their patches would be built on stale bytes). */
+  private undo(): void {
+    if (this.stroke) return;
+    if (this.tools.mode() === 'transform' || this.tools.mode() === 'filters') { this.tools.cancel(); return; }
+    if (this.doc?.undo()) this.syncUndo();
+  }
+  private redo(): void {
+    if (this.stroke || this.tools.mode() === 'transform' || this.tools.mode() === 'filters') return;
+    if (this.doc?.redo()) this.syncUndo();
+  }
 
   private key(e: KeyboardEvent): void {
     if (!this.isOpen()) return;
@@ -1086,7 +1122,7 @@ export class PaintView {
     if (e.pointerType === 'touch') {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
       if (this.touches.size >= 2) {
-        if (this.stroke) { const r = this.stroke.cancel(); this.stroke = null; this.strokePointer = -1; if (r) this.doc.markDirty(this.doc.active, r); }
+        this.cancelStroke();
         this.startGesture();
         cv.setPointerCapture(e.pointerId);
         return;
@@ -1202,6 +1238,7 @@ export class PaintView {
     if (cancelled) {
       const r = s.cancel();
       if (r) doc.markDirty(doc.active, r);
+      doc.settle();
     } else {
       this.feed(this.input.up(e));
       const patch = s.finish();

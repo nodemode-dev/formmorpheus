@@ -136,11 +136,12 @@ export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', del
     }
   } else {
     const prevEnd = idx > 0 ? end(items[idx - 1]) : 0;
-    const roomBack = ripple ? c.start : c.start - prevEnd;
+    const roomBack = ripple ? items[0].start : c.start - prevEnd;
     const sourceBack = Number.isFinite(limit) ? c.offset : Number.POSITIVE_INFINITY;
     const d = Math.max(-Math.min(roomBack, sourceBack), Math.min(c.duration - 1, deltaFrames));
     // keys are local to the content's first frame: shift them back so they stay put in movie time
-    next = shiftKeys({ ...c, start: c.start + d, duration: c.duration - d, offset: Math.max(0, c.offset + d) }, -d);
+    // looping or unbounded content (flipbooks, groups, drawings) may take a negative offset, so its frames stay put too
+    next = shiftKeys({ ...c, start: c.start + d, duration: c.duration - d, offset: Number.isFinite(limit) ? Math.max(0, c.offset + d) : c.offset + d }, -d);
     if (ripple) {
       const shifted = items.map((x, i) => (i < idx ? { ...x, start: Math.max(0, x.start + d) } : i === idx ? next : x));
       return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: shifted }));
@@ -315,7 +316,8 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
       const scale = (c: Content): Content => scaleKeyTimes({
         ...c,
         start: Math.round(c.start * ratio),
-        duration: Math.max(1, Math.round(c.duration * ratio)),
+        // round the end, not the length, so neighbours that touched still touch and never overlap
+        duration: Math.max(1, Math.round((c.start + c.duration) * ratio) - Math.round(c.start * ratio)),
         offset: Math.round(c.offset * ratio),
         tracks: c.tracks.map((t) => ({ ...t, content: t.content.map(scale) })),
         flip: c.flip.map((t) => ({ ...t, frames: t.frames.map((f) => ({ ...f, hold: Math.max(1, Math.round(f.hold * ratio)) })) })),

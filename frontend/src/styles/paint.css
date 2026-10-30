@@ -238,6 +238,7 @@
   z-index: var(--z-menu);
 }
 .fm-ptools[hidden], .fm-ptools [hidden] { display: none; }
+.fm-paint.has-strip .fm-ptools { bottom: 152px; }
 .fm-ptools-modes, .fm-ptools-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1); }
 .fm-ptools-mode, .fm-ptools-act {
   height: 30px;

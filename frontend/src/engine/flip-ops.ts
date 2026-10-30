@@ -1,6 +1,7 @@
 // Flipbook edits (Phase 5). Pure: each returns a new Content or Movie and never mutates.
-import { content as makeContent, drawingLayer, end, flipFrame, flipLength, flipStartOf, flipTrack, track as makeTrack, uid } from './model';
-import { OpError, deleteContent, placeContent, updateContent } from './ops';
+import { content as makeContent, drawingLayer, end, flipFrame, flipIndexAt, flipLength, flipTrack, track as makeTrack, uid } from './model';
+import { shiftKeys } from './key-ops';
+import { OpError, deleteContent, placeContent } from './ops';
 import type { Content, DrawingLayer, FlipTrack, FlipbookFrame, Movie, Track } from './types';
 
 function rows(c: Content, row: number, fn: (t: FlipTrack) => FlipTrack): Content {
@@ -61,35 +62,6 @@ export function pasteFrames(c: Content, row: number, after: number, items: Flipb
   return fit(frames(c, row, (f) => [...f.slice(0, after + 1), ...items.map(copyFrame), ...f.slice(after + 1)]));
 }
 
-/** Splits the flipbook at a frame: the frames from `index` on go to a new flipbook right after this one on the same track. */
-export function splitFlipbook(movie: Movie, id: string, row: number, index: number): Movie {
-  let rightPart: Content | null = null;
-  const m = updateContent(movie, id, (c) => {
-    const t = c.flip[row];
-    if (!t || index <= 0 || index >= t.frames.length) throw new OpError('Split needs a frame after the first.');
-    const at = flipStartOf(t, index);
-    const left = { ...c, duration: at, flip: c.flip.map((x) => ({ ...x, frames: x.frames.slice(0, Math.max(1, cutIndex(x, at))) })) };
-    rightPart = makeContent('flipbook', c.start + at, Math.max(1, c.duration - at), {
-      name: c.name, highlight: c.highlight, transform: { ...c.transform }, opacity: c.opacity, blend: c.blend,
-      flip: c.flip.map((x) => ({ ...x, id: uid('ft'), frames: x.frames.slice(cutIndex(x, at)).map(copyFrame) })).map((x) => (x.frames.length ? x : { ...x, frames: [flipFrame()] })),
-    });
-    return left;
-  });
-  const placed = rightPart as Content | null;
-  if (!placed) return m;
-  const host = m.tracks.find((t) => t.content.some((c) => c.id === id));
-  return placeContent(m, host?.id ?? null, placed).movie;
-}
-
-function cutIndex(t: FlipTrack, at: number): number {
-  let acc = 0;
-  for (let i = 0; i < t.frames.length; i++) {
-    if (acc >= at) return i;
-    acc += Math.max(1, t.frames[i].hold);
-  }
-  return t.frames.length;
-}
-
 export function addFlipTrack(c: Content, fps: number): Content {
   const count = Math.max(1, Math.min(flipDuration(c) || Math.round(fps), 2000));
   return { ...c, flip: [flipTrack(`Track ${c.flip.length + 1}`, count), ...c.flip] };
@@ -121,17 +93,22 @@ export function flipbookToTracks(movie: Movie, id: string): { movie: Movie; ids:
   const made: Track[] = [];
   const ids: string[] = [];
   fb.flip.forEach((t) => {
+    if (t.hidden || !t.frames.length) return;
     const items: Content[] = [];
+    // walk the movie frames the content shows (its offset included) and emit one Drawing per run of the same frame
     let at = 0;
-    let i = 0;
-    while (at < fb.duration && t.frames.length) {
-      const f = t.frames[i % t.frames.length];
-      const hold = Math.min(Math.max(1, f.hold), fb.duration - at);
-      const d = makeContent('drawing', fb.start + at, hold, { name: `${t.name} ${(i % t.frames.length) + 1}`, layers: freshLayers(f.layers), transform: { ...fb.transform }, opacity: fb.opacity * t.opacity, blend: t.blend, highlight: t.highlight });
+    while (at < fb.duration) {
+      const fi = flipIndexAt(t, at + fb.offset);
+      let run = 1;
+      while (at + run < fb.duration && flipIndexAt(t, at + run + fb.offset) === fi) run++;
+      const f = t.frames[fi];
+      const d = makeContent('drawing', fb.start + at, run, {
+        name: `${t.name} ${fi + 1}`, layers: freshLayers(f.layers), transform: { ...fb.transform }, opacity: fb.opacity * t.opacity,
+        blend: t.blend, highlight: t.highlight, keys: shiftKeys(fb, -at).keys, mask: fb.mask, maskInvert: fb.maskInvert,
+      });
       items.push(d);
       ids.push(d.id);
-      at += hold;
-      i++;
+      at += run;
     }
     made.push(makeTrack(fb.flip.length > 1 ? `${fb.name} ${t.name}` : fb.name, items));
   });
@@ -157,10 +134,14 @@ export function tracksToFlipbook(movie: Movie, ids: string[]): { movie: Movie; i
       out.push({ id: uid('f'), hold: c.duration, layers: freshLayers(c.layers) });
       at = end(c);
     }
+    // rows loop, so a row that ends early is padded with a blank frame to the common end
+    if (at < stop) out.push({ id: uid('f'), hold: stop - at, layers: [drawingLayer()] });
     return { ...flipTrack(`Track ${i + 1}`, 1), frames: out };
   });
   const topIndex = movie.tracks.findIndex((t) => t.content.some((c) => idSet.has(c.id)));
-  const fb = makeContent('flipbook', start, stop - start, { name: 'Flipbook', flip });
+  // the first Drawing lends its placement and keys (drawings made by flipbookToTracks all share them)
+  const lead = picked[0][0];
+  const fb = makeContent('flipbook', start, stop - start, { name: 'Flipbook', flip, transform: { ...lead.transform }, keys: shiftKeys(lead, lead.start - start).keys, mask: lead.mask, maskInvert: lead.maskInvert });
   const stripped = deleteContent(movie, picked.flat().map((c) => c.id));
   const host = stripped.tracks[topIndex];
   return { movie: placeContent(stripped, host?.id ?? null, fb, Math.max(0, topIndex)).movie, id: fb.id };
