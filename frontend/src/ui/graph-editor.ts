@@ -10,6 +10,7 @@ import { evalChannel, kindSpec, laneChannels, laneOf } from '../engine/keys';
 import type { ChannelSpec } from '../engine/keys';
 import type { Content, Ease, Key, KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setText } from './dom';
+import { t } from './i18n';
 
 const PL = 56;
 const PT = 26;
@@ -502,7 +503,7 @@ export class GraphEditor {
       b.disabled = !hasSpan;
     }
     const shown = (v: number): string => `${Math.round(v * (spec?.display ?? 1) * 100) / 100}${spec?.unit === 'deg' ? '°' : spec?.unit ?? ''}`;
-    setText(this.read, key ? `Frame ${key.frame} · ${shown(key.value)}` : '');
+    setText(this.read, key ? `${t('Frame')} ${key.frame} · ${shown(key.value)}` : '');
 
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;

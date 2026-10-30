@@ -48,6 +48,8 @@ const LABELS: Partial<Record<BlendMode, string>> = {
   normal: 'Normal', multiply: 'Multiply', darken: 'Darken', 'color-burn': 'Color Burn', screen: 'Screen', lighten: 'Lighten',
   'color-dodge': 'Color Dodge', add: 'Linear Dodge (Add)', overlay: 'Overlay', 'soft-light': 'Soft Light', 'hard-light': 'Hard Light',
   difference: 'Difference', exclusion: 'Exclusion', hue: 'Hue', saturation: 'Saturation', color: 'Color', luminosity: 'Luminosity',
+  'linear-burn': 'Linear Burn', 'darker-color': 'Darker Color', 'lighter-color': 'Lighter Color', 'vivid-light': 'Vivid Light', 'linear-light': 'Linear Light',
+  'pin-light': 'Pin Light', 'hard-mix': 'Hard Mix', subtract: 'Subtract', divide: 'Divide',
 };
 const FROM_LABEL = new Map<string, BlendMode>(Object.entries(LABELS).map(([k, v]) => [v as string, k as BlendMode]));
 

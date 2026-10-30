@@ -2,7 +2,7 @@ import type { Engine } from '../engine/engine';
 import { el, q, setText } from '../ui/dom';
 import { Dialog } from '../ui/dialogs';
 import { toast } from '../ui/toast';
-import { t } from '../ui/i18n';
+import { t, tn } from '../ui/i18n';
 import { api, serviceReady } from './api';
 
 export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number }
@@ -42,9 +42,9 @@ class RecoverDialog extends Dialog {
 
   ask(items: RecoveryEntry[]): Promise<'recover' | 'discard' | 'later'> {
     const n = items.length;
-    setText(this.question, `formmorpheus quit unexpectedly. Recover ${n} ${n === 1 ? 'movie' : 'movies'}?`);
+    setText(this.question, `${t('formmorpheus quit unexpectedly.')} ${tn(n, 'Recover {n} movie?', 'Recover {n} movies?')}`);
     const shown = items.slice(0, 4).map((i) => i.name).join(', ');
-    setText(this.names, `${shown}${n > 4 ? `, and ${n - 4} more` : ''}. Recovered movies open as unsaved copies.`);
+    setText(this.names, `${shown}${n > 4 ? `, ${tn(n - 4, 'and {n} more', 'and {n} more')}` : ''}. ${t('Recovered movies open as unsaved copies.')}`);
     this.open(this.recover);
     return new Promise((r) => { this.resolve = r; });
   }

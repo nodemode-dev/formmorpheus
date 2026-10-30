@@ -3,8 +3,9 @@ import { baseName, isDiskPath } from '../io/disk';
 import { el, patchList, q, setClass, setHidden, setText, setTitle, swapMedia } from './dom';
 import { confirmAction } from './dialogs';
 import { icon } from './icons';
-import { dateText, onLanguage } from './i18n';
+import { dateText, onLanguage, t } from './i18n';
 import { toast } from './toast';
+import { TheaterTools, keyOf, type Target } from './home-theater';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
  *  thumbnail grid or a list with name, kind, size and when it changed; filter, sort, open on click, and Remove from
@@ -23,7 +24,7 @@ type Sort = 'opened' | 'name' | 'size' | 'kind';
 type View = 'grid' | 'list';
 type Thumb = { name: string } | { path: string; project: boolean } | null;
 
-interface Item { key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null }
+interface Item { key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null; target?: Target }
 
 const PREFS = 'formmorpheus.home';
 const PICTURE = /\.(png|jpe?g|webp|gif|avif)$/i;
@@ -90,6 +91,9 @@ export class HomeFiles {
   private readonly thumbs = new Map<string, string>();
   private readonly loading = new Set<string>();
   private run = 0;
+  /** Select mode, the movie menu and stacks: the Movies page only. */
+  private readonly theater: TheaterTools | null;
+  private pressTimer = 0;
 
   /** `fixed` shows one tab only (Home's own pages, 1.87.3); `limit` with `compact` is the Start page's short grid. */
   constructor(private readonly d: HomeFilesDeps, private readonly opts: { fixed?: Tab; limit?: number; compact?: boolean; onCount?: (n: number) => void } = {}) {
@@ -106,9 +110,16 @@ export class HomeFiles {
     this.items.addEventListener('click', (e) => {
       const t = e.target as HTMLElement, row = t.closest<HTMLElement>('.cv-hf-item'), item = row ? this.all.find((i) => i.key === row.dataset.key) : undefined;
       if (!item) return;
+      if (this.theater?.suppressClick) { this.theater.suppressClick = false; return; }
       if (t.closest('.cv-hf-remove')) { item.remove?.(); return; }
+      if (this.theater?.selecting && item.target) { this.theater.toggle(item.key); return; }
       if (t.closest('.cv-hf-open')) item.open();
     });
+    this.theater = opts.fixed === 'projects' ? new TheaterTools({
+      refresh: () => this.refresh(), render: () => this.render(), open: (n) => this.d.openRecent(n),
+      isOpen: (n) => this.d.openName?.() === n, forget: (n) => this.d.removeRecent(n),
+    }, q(this.root, '.cv-hf-bar')) : null;
+    if (this.theater) this.wireTheater(this.theater);
     this.chrome();
   }
 
@@ -137,7 +148,18 @@ export class HomeFiles {
     const run = ++this.run, tab = this.prefs.tab;
     let items: Item[] = [];
     if (tab === 'projects') {
-      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, open: () => this.d.openRecent(i.name), remove: () => { if (this.d.openName?.() === i.name) { toast('Close the movie before deleting it.', 'error'); return; } void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
+      await this.theater?.load();
+      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, target: { movie: i.name }, open: () => this.d.openRecent(i.name), remove:() => { if (this.d.openName?.() === i.name) { toast('Close the movie before deleting it.', 'error'); return; } void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
+      if (this.theater) {
+        const byName = new Map(items.map((i) => [i.name, i]));
+        for (const s of this.theater.stacks) {
+          const inside = s.items.map((n) => byName.get(n)).filter((i): i is Item => !!i);
+          if (!inside.length) continue;
+          const id = s.id;
+          items.push({ key: `stk:${id}`, name: s.name, kind: `${t('Stack')} · ${inside.length}`, size: inside.reduce((a, i) => a + i.size, 0), when: Math.max(...inside.map((i) => i.when)), missing: false,
+            where: 'Stack', thumb: inside[0].thumb, target: { stack: id }, open: () => this.theater?.enter(id), remove: () => { void this.theater?.ungroup(id); } });
+        }
+      }
     } else if (tab === 'outputs') {
       const engine = await api.outputs(), seen = new Set(engine.map((o) => o.path)), extra = storedOutputs().filter((p) => !seen.has(p));
       const stats = await api.stat(extra);
@@ -160,7 +182,9 @@ export class HomeFiles {
   /** Filter and sort the read files, then patch the rows by key. */
   private render(): void {
     const f = this.filter.value.trim().toLowerCase(), sort = this.prefs.sort;
-    const shown = this.all.filter((i) => !f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f);
+    const th = this.theater;
+    const shown = this.all.filter((i) => (!f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f) && (!th || !i.target || (i.target.stack ? !th.current : th.visible(i.target.movie ?? ''))));
+    setClass(this.root, 'is-selecting', !!th?.selecting);
     if (sort === 'name') shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     else if (sort === 'size') shown.sort((a, b) => b.size - a.size);
     else if (sort === 'kind') shown.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
@@ -172,8 +196,58 @@ export class HomeFiles {
     setHidden(this.empty, shown.length > 0);
   }
 
+  /** Context menu (right click, or hold with touch and pen), and dragging a movie onto a movie or a stack. */
+  private wireTheater(th: TheaterTools): void {
+    const itemOf = (t: EventTarget | null): { row: HTMLElement; item: Item } | null => {
+      const row = (t as HTMLElement | null)?.closest<HTMLElement>('.cv-hf-item');
+      const item = row ? this.all.find((i) => i.key === row.dataset.key) : undefined;
+      return row && item?.target ? { row, item } : null;
+    };
+    this.items.addEventListener('contextmenu', (e) => {
+      const hit = itemOf(e.target);
+      if (!hit?.item.target) return;
+      e.preventDefault();
+      th.show(hit.item.target, e.clientX, e.clientY);
+    });
+    this.items.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      const hit = itemOf(e.target);
+      if (!hit?.item.target) return;
+      const target = hit.item.target, x = e.clientX, y = e.clientY;
+      window.clearTimeout(this.pressTimer);
+      this.pressTimer = window.setTimeout(() => { th.suppressClick = true; th.show(target, x, y); }, 550);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointermove'] as const) this.items.addEventListener(ev, () => window.clearTimeout(this.pressTimer));
+    this.items.addEventListener('dragstart', (e) => {
+      const hit = itemOf(e.target);
+      if (!hit?.item.target?.movie || !e.dataTransfer) { e.preventDefault(); return; }
+      e.dataTransfer.setData('text/plain', hit.item.key);
+      e.dataTransfer.effectAllowed = 'move';
+      setClass(hit.row, 'is-dragging', true);
+    });
+    this.items.addEventListener('dragend', () => {
+      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop'))) { n.classList.remove('is-dragging'); n.classList.remove('is-drop'); }
+    });
+    this.items.addEventListener('dragover', (e) => {
+      const hit = itemOf(e.target);
+      if (!hit || hit.row.classList.contains('is-dragging')) return;
+      e.preventDefault();
+      for (const n of Array.from(this.items.querySelectorAll('.is-drop'))) if (n !== hit.row) n.classList.remove('is-drop');
+      setClass(hit.row, 'is-drop', true);
+    });
+    this.items.addEventListener('drop', (e) => {
+      const hit = itemOf(e.target);
+      if (!hit?.item.target) return;
+      e.preventDefault();
+      const key = e.dataTransfer?.getData('text/plain') ?? '';
+      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop'))) { n.classList.remove('is-dragging'); n.classList.remove('is-drop'); }
+      void th.dropOn(key, hit.item.target);
+    });
+  }
+
   private row(i: Item): HTMLElement {
     const n = el(`<div class="cv-hf-item" role="listitem">
+      <span class="cv-hf-check">${icon('check', 12)}</span>
       <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" hidden><span class="cv-hf-glyph">${icon('fileImage', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
       <button class="cv-hf-remove" type="button" title="Remove from Recent" aria-label="Remove from Recent">${icon('close', 12)}</button>
     </div>`);
@@ -188,6 +262,9 @@ export class HomeFiles {
     setText(q(n, '.cv-hf-when'), whenText(i.when));
     setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : i.where);
     setClass(n, 'is-missing', i.missing);
+    setClass(n, 'is-selected', !!this.theater?.selected.has(i.key));
+    setClass(n, 'is-stack', !!i.target?.stack);
+    if (this.theater && i.target && (n.draggable) !== !!i.target.movie) n.draggable = !!i.target.movie;
     setHidden(q(n, '.cv-hf-remove'), !i.remove);
     const rm = this.prefs.tab === 'recent' ? 'Remove from Recent' : 'Delete';
     setTitle(q(n, '.cv-hf-remove'), rm);

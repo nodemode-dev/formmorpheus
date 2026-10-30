@@ -13,12 +13,19 @@ import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { cameraMode } from './camera-view';
-import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
+import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
+import { EndBarMenu, KeySelMenu, KeySelection, inPoly, lassoTouches, nearTrail, type Pt } from './timeline-extras';
+import type { KeyRef } from '../engine/key-sel-ops';
 
 const RULER_H = 28;
-const BLOCK_H = 44;
+// Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
+let BLOCK_H = 44;
 const LANE_GAP = 10;
-const STRIDE = BLOCK_H + LANE_GAP;
+let STRIDE = BLOCK_H + LANE_GAP;
+const MIN_BLOCK_H = 26;
+const MAX_BLOCK_H = 110;
+const FREE_RED = '#e5484d';
+const MINI_H = 14;
 const LEFT = 14;
 const RIGHT = 24;
 const TOP_PAD = 26;
@@ -40,11 +47,13 @@ export interface TimelineHooks {
 
 type Drag =
   | { kind: 'scrub' }
-  | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number }
+  | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number; moved?: boolean }
   | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean }
-  | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string }
+  | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
-  | { kind: 'duration'; x0: number; d0: number; tag: string }
+  | { kind: 'lasso'; pts: Pt[]; base: string[] }
+  | { kind: 'keylasso'; pts: Pt[]; base: Map<string, KeyRef[]> }
+  | { kind: 'duration'; x0: number; d0: number; tag: string; moved?: boolean }
   | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number }
   | { kind: 'key'; id: string; lk: KeyKind; channel: string | null; from0: number; cur: number; base: Content; x0: number; tag: string };
 
@@ -90,7 +99,7 @@ export class TimelineView {
     </div>
     <div class="fm-tl-body">
       <canvas class="fm-tl-ruler" aria-label="Ruler"></canvas>
-      <div class="fm-tl-lanes"><canvas class="fm-tl-tracks" aria-label="Tracks"></canvas><button class="fm-edit-pill" type="button" hidden></button><button class="fm-key-pill" type="button" hidden aria-label="Action" title="Action"><span class="fm-key-glyph"></span></button></div>
+      <div class="fm-tl-lanes"><canvas class="fm-tl-tracks" aria-label="Tracks"></canvas><div class="fm-freetrim" hidden>Free Trim</div><button class="fm-edit-pill" type="button" hidden></button><button class="fm-key-pill" type="button" hidden aria-label="Action" title="Action"><span class="fm-key-glyph"></span></button></div>
       <div class="fm-tl-empty" hidden><p>Use the plus button to add a drawing, a flipbook, text or a picture, or drop pictures here.</p></div>
       <div class="fm-modes" role="tablist" aria-label="Mode">
         <button class="fm-mode" type="button" role="tab" data-mode="compose">${icon('compose', 18)}<span>Compose</span></button>
@@ -130,6 +139,18 @@ export class TimelineView {
   private frameReq = 0;
   private fitted = false;
   private multi = false;
+  private readonly freeBanner = q(this.root, '.fm-freetrim');
+  private altDown = false;
+  private readonly keySel = new KeySelection();
+  private readonly keyMenu: KeySelMenu;
+  private readonly endMenu: EndBarMenu;
+  /** The selection before the current one, and the press that brings it back (hold the Multi-select button). */
+  private prevSel: string[] = [];
+  private lastSel: string[] = [];
+  private reloadTimer = 0;
+  private reloadHeld = false;
+  /** Group blocks opened in place (their tracks show under the block in Compose mode). */
+  private readonly opened = new Set<string>();
   private pal: Palette | null = null;
   private thumbs = new WeakMap<Content, HTMLCanvasElement>();
   private thumbGen = 0;
@@ -143,7 +164,23 @@ export class TimelineView {
     host.appendChild(this.root);
     this.actionMenu = new ActionMenu(engine, this.keyState);
     this.laneMenu = new LaneMenu(engine, this.keyState);
+    this.keyMenu = new KeySelMenu(engine, this.keySel, () => this.schedule());
+    this.endMenu = new EndBarMenu(engine, () => this.fit());
     setGlyphLoadHandler(() => this.schedule());
+    // Alt held is Free Trim for the next edge drag: the banner shows while it is down
+    const alt = (e: KeyboardEvent): void => { const on = e.altKey; if (on !== this.altDown) { this.altDown = on; this.syncFreeTrim(); } };
+    window.addEventListener('keydown', alt);
+    window.addEventListener('keyup', alt);
+    window.addEventListener('blur', () => { if (this.altDown) { this.altDown = false; this.syncFreeTrim(); } });
+    // hold the Multi-select button to bring the previous selection back
+    this.multiBtn.addEventListener('pointerdown', () => {
+      this.reloadHeld = false;
+      window.clearTimeout(this.reloadTimer);
+      this.reloadTimer = window.setTimeout(() => { this.reloadHeld = true; this.reloadSelection(); }, 550);
+    });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) this.multiBtn.addEventListener(ev, () => window.clearTimeout(this.reloadTimer));
+    this.multiBtn.addEventListener('click', (e) => { if (this.reloadHeld) { this.reloadHeld = false; e.stopImmediatePropagation(); } }, true);
+    this.ruler.addEventListener('dblclick', (e) => this.zoomToFrames(e.clientX));
     this.keyPill.addEventListener('click', () => this.actionMenu.open(this.keyPill));
     perform.onChange(() => this.schedule());
     // the pill sits on the key at the Playhead: a right-click on it opens that key's menu
@@ -171,7 +208,15 @@ export class TimelineView {
     this.ruler.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     this.editPill.addEventListener('click', () => { const c = this.engine.selected[0]; if (c) this.hooks.edit(c); });
     engine.on('movie', () => { this.thumbGen++; this.schedule(); });
-    engine.on('selection', () => this.schedule());
+    engine.on('selection', () => {
+      const now = engine.selection.content;
+      if (now.join() !== this.lastSel.join()) {
+        if (this.lastSel.length) this.prevSel = this.lastSel;
+        this.lastSel = now.slice();
+        this.keySel.keepOnly(new Set(now));
+      }
+      this.schedule();
+    });
     engine.on('time', () => this.schedule());
     engine.on('mode', (m) => this.syncMode(m));
     engine.on('playing', (on) => this.syncPlay(on));
@@ -205,6 +250,51 @@ export class TimelineView {
     this.multiBtn.setAttribute('aria-pressed', String(on));
   }
 
+  /** Free Trim is on while Alt is held or an edge drag was held long enough to turn red. */
+  private freeTrim(): boolean {
+    return this.altDown || (this.drag?.kind === 'trim' && this.drag.ripple);
+  }
+
+  private syncFreeTrim(): void {
+    setHidden(this.freeBanner, !this.freeTrim());
+    this.schedule();
+  }
+
+  private reloadSelection(): void {
+    const m = this.engine.movie;
+    if (!m || !this.prevSel.length) return;
+    const ids = this.prevSel.filter((id) => !!locate(m, id));
+    if (!ids.length) return;
+    this.toggleMulti(true);
+    this.engine.select(ids);
+    setClass(this.multiBtn, 'is-reload', true);
+    window.setTimeout(() => setClass(this.multiBtn, 'is-reload', false), 500);
+  }
+
+  /** Track height: one rate for the whole Timeline, clamped. */
+  setRowHeight(h: number): void {
+    const next = Math.round(Math.min(MAX_BLOCK_H, Math.max(MIN_BLOCK_H, h)));
+    if (next === BLOCK_H) return;
+    BLOCK_H = next;
+    STRIDE = BLOCK_H + LANE_GAP;
+    this.layoutFor = null;
+    this.thumbGen++;
+    this.schedule();
+  }
+
+  /** Double-click: zoom to frame level around the click (frame numbers show), or back to the whole movie. */
+  private zoomToFrames(clientX: number): void {
+    const m = this.engine.movie;
+    if (!m || this.width <= 0) return;
+    if (this.ppf >= 20) { this.fit(); return; }
+    const r = this.lanes.getBoundingClientRect();
+    const x = clientX - r.left, anchor = this.xf(x);
+    this.ppf = Math.min(MAX_PPF, 24);
+    this.start = Math.max(0, anchor - (x - LEFT) / this.ppf);
+    this.fitted = true;
+    this.schedule();
+  }
+
   zoomBy(factor: number): void {
     const m = this.engine.movie;
     if (!m) return;
@@ -212,6 +302,14 @@ export class TimelineView {
     const x = this.fx(anchor);
     this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), this.ppf * factor));
     this.start = Math.max(0, anchor - (x - LEFT) / this.ppf);
+    this.schedule();
+  }
+
+  /** Scroll so the Playhead sits in the middle of the view. */
+  centerOnPlayhead(): void {
+    if (!this.engine.movie || this.width <= 0) return;
+    this.start = Math.max(0, this.engine.frame - (this.width - LEFT - RIGHT) / this.ppf / 2);
+    this.fitted = false;
     this.schedule();
   }
 
@@ -250,6 +348,7 @@ export class TimelineView {
     for (const t of m.tracks) {
       let extra = 0;
       if (lanes) for (const c of t.content) extra = Math.max(extra, lanesHeight(c));
+      else for (const c of t.content) if (c.kind === 'group' && this.opened.has(c.id)) extra = Math.max(extra, c.tracks.length * (MINI_H + 2) + 6);
       this.tops.push(y);
       this.rowH.push(STRIDE + extra);
       y += STRIDE + extra;
@@ -450,7 +549,7 @@ export class TimelineView {
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
-      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)));
+      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined);
     }
     this.drawLinks(c, m, p.accent);
     if (endX < this.width) {
@@ -468,6 +567,29 @@ export class TimelineView {
       c.setLineDash([4, 4]);
       c.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
       c.setLineDash([]);
+    }
+    if ((this.drag?.kind === 'lasso' || this.drag?.kind === 'keylasso') && this.drag.pts.length > 1) {
+      // the glowing trail of the freehand selection, closed back to its start with a faint line
+      const pts = this.drag.pts;
+      c.save();
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      c.strokeStyle = FREE_RED;
+      c.shadowColor = FREE_RED;
+      c.shadowBlur = 10;
+      c.lineWidth = 2.5;
+      c.beginPath();
+      c.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+      c.stroke();
+      c.globalAlpha = 0.35;
+      c.setLineDash([3, 5]);
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      c.lineTo(pts[0][0], pts[0][1]);
+      c.stroke();
+      c.restore();
     }
     const px = Math.round(this.fx(this.engine.frame)) + 0.5;
     c.strokeStyle = this.engine.mode === 'perform' ? p.accent : p.playhead;
@@ -594,13 +716,55 @@ export class TimelineView {
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
     }
-    if (selected && w > 16) {
-      c.fillStyle = p.accent;
-      this.round(c, x0 + 2, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+    if (item.kind === 'group' && w > 70) {
+      const open = this.opened.has(item.id), ax = x1 - 18, ay = y + 6;
+      c.fillStyle = p.chip;
+      this.round(c, ax - 3, ay - 2, 18, 16, 4);
       c.fill();
-      this.round(c, x1 - 5, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+      c.strokeStyle = p.text;
+      c.lineWidth = 1.6;
+      c.beginPath();
+      if (open) { c.moveTo(ax, ay + 3); c.lineTo(ax + 6, ay + 9); c.lineTo(ax + 12, ay + 3); } else { c.moveTo(ax + 3, ay); c.lineTo(ax + 9, ay + 6); c.lineTo(ax + 3, ay + 12); }
+      c.stroke();
+      c.lineWidth = 1;
+    }
+    if (selected && w > 16) {
+      // Free Trim turns the grabbed edges red and taller
+      const free = this.freeTrim(), hh = free ? Math.min(BLOCK_H - 6, 26) : 16;
+      c.fillStyle = free ? FREE_RED : p.accent;
+      this.round(c, x0 + 2, y + BLOCK_H / 2 - hh / 2, free ? 4 : 3, hh, 1.5);
+      c.fill();
+      this.round(c, x1 - (free ? 6 : 5), y + BLOCK_H / 2 - hh / 2, free ? 4 : 3, hh, 1.5);
       c.fill();
     }
+    if (item.kind === 'group' && this.opened.has(item.id)) this.drawInner(c, item, x0, w, y + BLOCK_H + 4, p);
+  }
+
+  /** The tracks inside an opened group, as thin bars in the group's own frames, under its block. */
+  private drawInner(c: CanvasRenderingContext2D, g: Content, x0: number, w: number, top: number, p: Palette): void {
+    c.save();
+    c.beginPath();
+    c.rect(x0, top - 4, w, g.tracks.length * (MINI_H + 2) + 8);
+    c.clip();
+    c.fillStyle = p.laneAlt;
+    c.fillRect(x0, top - 4, w, g.tracks.length * (MINI_H + 2) + 8);
+    c.font = '600 9px Inter, system-ui, sans-serif';
+    c.textBaseline = 'middle';
+    c.textAlign = 'left';
+    g.tracks.forEach((t, i) => {
+      const y = top + i * (MINI_H + 2);
+      for (const it of t.content) {
+        const a = x0 + (it.start - g.offset) * this.ppf, b = x0 + (end(it) - g.offset) * this.ppf;
+        if (b < x0 || a > x0 + w) continue;
+        this.round(c, a, y, Math.max(3, b - a), MINI_H, 4);
+        c.fillStyle = it.highlight === 'none' ? p.block : p.hl[it.highlight];
+        c.fill();
+        c.strokeStyle = p.blockLine;
+        c.stroke();
+        if (b - a > 34) { c.fillStyle = p.text; c.fillText(it.name, a + 5, y + MINI_H / 2 + 0.5, b - a - 8); }
+      }
+    });
+    c.restore();
   }
 
   private drawThumbs(c: CanvasRenderingContext2D, m: Movie, item: Content, x0: number, y: number, w: number): void {
@@ -756,9 +920,13 @@ export class TimelineView {
     if (!m || e.button !== 0) return;
     this.ruler.setPointerCapture(e.pointerId);
     this.engine.stop();
-    if (e.altKey) {
-      const r = this.ruler.getBoundingClientRect();
-      this.drag = { kind: 'zoom', x0: e.clientX, ppf0: this.ppf, anchorFrame: this.xf(e.clientX - r.left) };
+    const r = this.ruler.getBoundingClientRect();
+    const rx = e.clientX - r.left;
+    // a plain slide on the Ruler changes the time scale (the frame under the pen stays put); the Playhead
+    // handle, or Shift, scrubs; a click without a slide still moves the Playhead there
+    if (e.altKey || (!e.shiftKey && Math.abs(rx - this.fx(this.engine.frame)) >= 10)) {
+      this.drag = { kind: 'zoom', x0: e.clientX, ppf0: this.ppf, anchorFrame: this.xf(rx) };
+      if (!e.altKey) this.scrubTo(e);
       return;
     }
     this.drag = { kind: 'scrub' };
@@ -789,12 +957,26 @@ export class TimelineView {
       return;
     }
     const lh = this.laneHit(e);
-    if (lh && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) { this.laneDown(e, lh); return; }
+    if (lh && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) { this.keySel.clear(); this.laneDown(e, lh); return; }
     const additive = this.multi || e.shiftKey || e.metaKey || e.ctrlKey;
+    if (lh) { this.keyDown(e, lh, x, e.clientY - r.top); return; }
     if (h?.item) {
       this.tracksCanvas.setPointerCapture(e.pointerId);
+      if (h.item.kind === 'group' && this.engine.mode === 'compose' && end(h.item) > h.item.start && h.y - this.laneTop(h.index) < 24) {
+        const x1 = this.fx(end(h.item));
+        if (x1 - this.fx(h.item.start) > 70 && x >= x1 - 22 && x <= x1 - 1) {
+          if (this.opened.has(h.item.id)) this.opened.delete(h.item.id); else this.opened.add(h.item.id);
+          this.layoutFor = null;
+          this.schedule();
+          return;
+        }
+      }
       if (h.edge) {
-        this.drag = { kind: 'trim', id: h.item.id, edge: h.edge, x0: e.clientX, applied: 0, ripple: e.altKey, tag: `trim-${Date.now()}` };
+        const d: Drag = { kind: 'trim', id: h.item.id, edge: h.edge, x0: e.clientX, applied: 0, ripple: e.altKey || this.altDown, tag: `trim-${Date.now()}` };
+        this.drag = d;
+        // held still on an edge until it turns red: the drag then pushes and pulls what follows
+        if (!d.ripple) d.hold = window.setTimeout(() => { if (this.drag === d && d.applied === 0) { d.ripple = true; this.syncFreeTrim(); } }, 450);
+        else this.syncFreeTrim();
         return;
       }
       if (additive) this.engine.toggleSelect(h.item.id);
@@ -806,9 +988,11 @@ export class TimelineView {
     this.tracksCanvas.setPointerCapture(e.pointerId);
     if (additive || this.multi) {
       const y = e.clientY - r.top;
-      this.drag = { kind: 'box', x0: x, y0: y, x1: x, y1: y, base: this.engine.selection.content.slice() };
+      if (this.multi) this.drag = { kind: 'lasso', pts: [[x, y]], base: this.engine.selection.content.slice() };
+      else this.drag = { kind: 'box', x0: x, y0: y, x1: x, y1: y, base: this.engine.selection.content.slice() };
       return;
     }
+    this.keySel.clear();
     this.engine.select([], h?.track.id ?? this.engine.selection.track);
     this.drag = { kind: 'scrub' };
     this.engine.seek(Math.floor(this.xf(x)));
@@ -861,6 +1045,47 @@ export class TimelineView {
     }
   }
 
+  /** Multi-select on the key lanes: a click chooses or drops a key; a drag draws a lasso over keys. */
+  private keyDown(e: PointerEvent, lh: { c: Content; track: Track; hit: LaneHit }, x: number, y: number): void {
+    this.tracksCanvas.setPointerCapture(e.pointerId);
+    const { c, hit } = lh;
+    if (hit.key !== null) {
+      this.keySel.toggle(c.id, hit.slot.lane.kind, hit.key);
+      if (!this.engine.selection.content.includes(c.id)) this.engine.toggleSelect(c.id);
+      this.schedule();
+      return;
+    }
+    const base = new Map<string, KeyRef[]>();
+    for (const id of this.keySel.ids()) base.set(id, this.keySel.refs(id));
+    this.drag = { kind: 'keylasso', pts: [[x, y]], base };
+  }
+
+  /** Keys whose glyph the lasso encloses or crosses, per content. */
+  private keysUnder(pts: readonly Pt[], m: Movie): Map<string, KeyRef[]> {
+    const out = new Map<string, KeyRef[]>();
+    if (this.engine.mode === 'compose') return out;
+    m.tracks.forEach((t, i) => {
+      const top = this.laneTop(i) + BLOCK_H + LANES_GAP;
+      if (top > this.height + 200 || top + this.rowH[i] < -200) return;
+      for (const c of t.content) {
+        if (!c.keys.length) continue;
+        const seen = new Set<string>();
+        for (const slot of laneSlots(c)) {
+          for (const row of slot.rows) {
+            const cy = top + slot.y + row.y + row.h / 2;
+            for (const f of laneFrames(slot.lane, row.channel ?? undefined)) {
+              const k = `${slot.lane.kind}:${f}`;
+              if (seen.has(k)) continue;
+              const kx = this.fx(c.start + f);
+              if (inPoly(pts, kx, cy) || nearTrail(pts, kx, cy, 8)) { seen.add(k); (out.get(c.id) ?? out.set(c.id, []).get(c.id)!).push({ kind: slot.lane.kind, frame: f }); }
+            }
+          }
+        }
+      }
+    });
+    return out;
+  }
+
   private cancelLongPress(): void {
     if (this.longPress) { window.clearTimeout(this.longPress); this.longPress = 0; }
   }
@@ -898,6 +1123,8 @@ export class TimelineView {
       const r = this.ruler.getBoundingClientRect();
       this.engine.seek(Math.floor(this.xf(e.clientX - r.left)));
     } else if (d.kind === 'zoom') {
+      if (Math.abs(e.clientX - d.x0) < 3 && !d.moved) return;
+      d.moved = true;
       const factor = Math.exp((e.clientX - d.x0) * 0.01);
       const ax = this.fx(d.anchorFrame);
       this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), d.ppf0 * factor));
@@ -931,7 +1158,44 @@ export class TimelineView {
       m.tracks.forEach((t, i) => { if (i < l0 || i > l1) return; for (const c of t.content) if (end(c) > f0 && c.start < f1) ids.add(c.id); });
       this.engine.select([...ids]);
       this.schedule();
+    } else if (d.kind === 'lasso') {
+      const r = this.tracksCanvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top, last = d.pts[d.pts.length - 1];
+      if (Math.hypot(x - last[0], y - last[1]) < 2) return;
+      d.pts.push([x, y]);
+      // crossing what is already chosen drops it; enclosing or crossing anything else adds it
+      const next = new Set(d.base), base = new Set(d.base);
+      m.tracks.forEach((t, i) => {
+        const y0 = this.laneTop(i);
+        for (const c of t.content) {
+          const a = this.fx(c.start), b = this.fx(end(c));
+          if (!lassoTouches(d.pts, a, y0, Math.max(3, b - a), BLOCK_H)) continue;
+          if (base.has(c.id)) next.delete(c.id); else next.add(c.id);
+        }
+      });
+      this.engine.select([...next]);
+      this.schedule();
+    } else if (d.kind === 'keylasso') {
+      const r = this.tracksCanvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top, last = d.pts[d.pts.length - 1];
+      if (Math.hypot(x - last[0], y - last[1]) < 2) return;
+      d.pts.push([x, y]);
+      const touched = this.keysUnder(d.pts, m), result = new Map<string, KeyRef[]>();
+      const names = new Set([...d.base.keys(), ...touched.keys()]);
+      for (const id of names) {
+        const was = new Map((d.base.get(id) ?? []).map((k) => [`${k.kind}:${k.frame}`, k]));
+        const hit = new Map((touched.get(id) ?? []).map((k) => [`${k.kind}:${k.frame}`, k]));
+        const merged = new Map(was);
+        for (const [k, ref] of hit) { if (was.has(k)) merged.delete(k); else merged.set(k, ref); }
+        if (merged.size) result.set(id, [...merged.values()]);
+      }
+      const ids = [...result.keys()];
+      const cur = this.engine.selection.content;
+      if (ids.length && (ids.length !== cur.length || ids.some((id) => !cur.includes(id)))) this.engine.select(ids);
+      this.keySel.set(result);
+      this.schedule();
     } else if (d.kind === 'duration') {
+      if (Math.abs(e.clientX - d.x0) > 3) d.moved = true;
       const next = Math.max(1, Math.round(d.d0 + (e.clientX - d.x0) / this.ppf));
       if (next !== m.duration) this.tryRun('Movie Duration', (mv) => ops.patchMovie(mv, { duration: next }), d.tag);
     }
@@ -950,6 +1214,8 @@ export class TimelineView {
     this.cancelLongPress();
     try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* released */ }
     if (!d) return;
+    if (d.kind === 'trim') { window.clearTimeout(d.hold); this.syncFreeTrim(); }
+    if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
     if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) {
       const h = this.hit(e);
@@ -960,7 +1226,10 @@ export class TimelineView {
 
   private contextMenu(e: MouseEvent): void {
     e.preventDefault();
+    const m = this.engine.movie;
+    if (m && Math.abs(e.clientX - this.tracksCanvas.getBoundingClientRect().left - this.fx(m.duration) - 4) < 8) { this.endMenu.open(e.clientX, e.clientY); return; }
     const lh = this.laneHit(e);
+    if (lh && this.keySel.size && (lh.hit.key === null ? this.multi : this.keySel.has(lh.c.id, lh.hit.slot.lane.kind, lh.hit.key))) { this.keyMenu.open(e.clientX, e.clientY); return; }
     if (lh) { this.openLaneMenu(lh, e.clientX, e.clientY); return; }
     const h = this.hit(e);
     if (!h) return;
@@ -976,6 +1245,7 @@ export class TimelineView {
   private doubleClick(e: MouseEvent): void {
     const h = this.hit(e);
     if (h?.item) this.hooks.edit(h.item);
+    else this.zoomToFrames(e.clientX);
   }
 
   private clampScroll(y: number, m: Movie): number {
@@ -989,6 +1259,12 @@ export class TimelineView {
     if (!m) return;
     e.preventDefault();
     const r = this.lanes.getBoundingClientRect();
+    if (e.shiftKey && (e.ctrlKey || e.metaKey)) {
+      // track height: up enlarges the tracks, down shrinks them to fit more
+      this.setRowHeight(BLOCK_H * Math.exp(-e.deltaY * 0.002));
+      this.scrollY = this.clampScroll(this.scrollY, m);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) {
       const x = e.clientX - r.left, anchor = this.xf(x);
       this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), this.ppf * Math.exp(-e.deltaY * 0.002)));

@@ -1,5 +1,7 @@
+import json
 import os
 import re
+import uuid
 import shutil
 import time
 import zipfile
@@ -52,6 +54,113 @@ def list_projects() -> dict:
     return {"folder": str(folder), "items": items}
 
 
+# Stacks (folders of the Theater): one flat level, a movie sits in at most one stack. Kept in a small
+# hidden file beside the movies so renames and deletes can follow; the movies themselves never move.
+_STACKS = ".stacks.json"
+_SID = re.compile(r"^s[0-9a-f]{8}$")
+
+
+def _stacks_path() -> Path:
+    return config.library_dir() / _STACKS
+
+
+def _load_stacks() -> list[dict]:
+    try:
+        data = json.loads(_stacks_path().read_text("utf-8"))
+        out = []
+        for s in data.get("stacks", []):
+            if isinstance(s, dict) and _SID.match(str(s.get("id", ""))) and isinstance(s.get("items"), list):
+                out.append({"id": s["id"], "name": str(s.get("name") or "Stack")[:80], "items": [str(i) for i in s["items"]]})
+        return out
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def _save_stacks(stacks: list[dict]) -> None:
+    path = _stacks_path()
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.part")
+    tmp.write_text(json.dumps({"stacks": stacks}), "utf-8")
+    os.replace(tmp, path)
+
+
+class StackBody(BaseModel):
+    name: str | None = None
+    items: list[str] | None = None
+
+
+def _known(names: list[str]) -> list[str]:
+    seen: list[str] = []
+    for n in names:
+        n = clean_name(n)
+        if n not in seen and project_path(n).is_file():
+            seen.append(n)
+    return seen
+
+
+def _take_out(stacks: list[dict], names: list[str]) -> list[dict]:
+    for s in stacks:
+        s["items"] = [i for i in s["items"] if i not in names]
+    return [s for s in stacks if s["items"]]
+
+
+@router.get("/_stacks")
+def list_stacks() -> dict:
+    stacks = _load_stacks()
+    have = {p.stem for p in config.library_dir().glob(f"*{config.PROJECT_EXT}")}
+    for s in stacks:
+        s["items"] = [i for i in s["items"] if i in have]
+    return {"stacks": [s for s in stacks if s["items"]]}
+
+
+@router.post("/_stacks")
+def create_stack(body: StackBody) -> dict:
+    names = _known(body.items or [])
+    if len(names) < 1:
+        raise HTTPException(400, "A stack needs at least one movie.")
+    stacks = _take_out(_load_stacks(), names)
+    stack = {"id": "s" + uuid.uuid4().hex[:8], "name": (body.name or "Stack").strip()[:80] or "Stack", "items": names}
+    stacks.append(stack)
+    _save_stacks(stacks)
+    return stack
+
+
+@router.post("/_stacks/{sid}")
+def update_stack(sid: str, body: StackBody) -> dict:
+    if not _SID.match(sid):
+        raise HTTPException(400, "That stack id cannot be used.")
+    stacks = _load_stacks()
+    stack = next((s for s in stacks if s["id"] == sid), None)
+    if stack is None:
+        raise HTTPException(404, "No stack by that id.")
+    if body.name is not None:
+        stack["name"] = body.name.strip()[:80] or "Stack"
+    if body.items is not None:
+        names = _known(body.items)
+        stacks = _take_out([s for s in stacks if s is not stack], names)
+        stack["items"] = names
+        stacks.append(stack)
+        stacks = [s for s in stacks if s["items"]]
+    _save_stacks(stacks)
+    return {"ok": True}
+
+
+@router.delete("/_stacks/{sid}")
+def ungroup_stack(sid: str) -> dict:
+    if not _SID.match(sid):
+        raise HTTPException(400, "That stack id cannot be used.")
+    _save_stacks([s for s in _load_stacks() if s["id"] != sid])
+    return {"ok": True}
+
+
+def _follow(old: str, new: str | None) -> None:
+    stacks = _load_stacks()
+    if not any(old in s["items"] for s in stacks):
+        return
+    for s in stacks:
+        s["items"] = [new if i == old else i for i in s["items"] if not (i == old and new is None)]
+    _save_stacks([s for s in stacks if s["items"]])
+
+
 @router.get("/{name}")
 def read_project(name: str) -> Response:
     path = project_path(name)
@@ -100,6 +209,8 @@ def rename_project(name: str, body: RenameBody) -> dict:
     if dst.exists() and dst != src:
         raise HTTPException(409, "A project with that name already exists.")
     os.replace(src, dst)
+    if dst != src:
+        _follow(src.stem, dst.stem)
     return entry(dst)
 
 
@@ -122,4 +233,5 @@ def delete_project(name: str) -> dict:
     dst = config.trash_dir() / f"{src.stem} {time.strftime('%Y%m%d-%H%M%S')}{config.PROJECT_EXT}"
     os.replace(src, dst)
     trash.record(dst, src.name, "movie")
+    _follow(src.stem, None)
     return {"deleted": src.stem, "kept": str(dst)}

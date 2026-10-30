@@ -20,6 +20,8 @@ const BLEND_OUT: Record<BlendMode, string> = {
   normal: 'Normal', multiply: 'Multiply', screen: 'Screen', overlay: 'Overlay', darken: 'Darken', lighten: 'Lighten',
   'color-dodge': 'ColorDodge', 'color-burn': 'ColorBurn', 'hard-light': 'HardLight', 'soft-light': 'SoftLight', difference: 'Difference',
   exclusion: 'Exclusion', hue: 'Hue', saturation: 'Saturation', color: 'Color', luminosity: 'Luminosity', add: 'Add', passthrough: 'Normal',
+  'linear-burn': 'LinearBurn', 'darker-color': 'DarkerColor', 'lighter-color': 'LighterColor', 'vivid-light': 'VividLight', 'linear-light': 'LinearLight',
+  'pin-light': 'PinLight', 'hard-mix': 'HardMix', subtract: 'Subtract', divide: 'Divide',
 };
 const BLEND_IN = new Map<string, BlendMode>([...Object.entries(BLEND_OUT).filter(([k]) => k !== 'passthrough').map(([k, v]) => [v, k as BlendMode] as [string, BlendMode]), ['LinearDodge', 'add']]);
 

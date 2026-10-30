@@ -128,6 +128,7 @@ export class ActionMenu {
     setHidden(this.cardHost, true);
     this.pop.onHide(() => { this.anchor = null; this.cardKind = null; this.endRec(); this.cardTag = null; });
     for (const ev of ['time', 'movie', 'selection'] as const) engine.on(ev, () => { if (this.pop.isOpen && this.view === 'card') this.syncCard(); });
+    engine.on('movie', () => { if (this.pop.isOpen) this.paintKeyed(); });
     // a held slider still records: every Playhead step repeats its last value
     engine.on('time', () => { const r = this.take; if (r && r.last !== null && engine.playing) this.recordValue(r, r.last); });
   }
@@ -147,6 +148,7 @@ export class ActionMenu {
     setHidden(this.filterBtn, audio);
     setHidden(this.levelBtn, !audio);
     this.show('action');
+    this.paintKeyed();
     this.pop.showFor(anchor, 'above');
     this.reposition();
   }
@@ -162,7 +164,34 @@ export class ActionMenu {
     const r = popRow(null, spec.label);
     r.ico.innerHTML = spec.icon;
     r.el.addEventListener('click', () => this.choose(kind));
-    return r.el;
+    // a property the content already animates reads red, with a Clear button that removes its lane
+    const wrap = el(`<div class="fm-ka-krow"></div>`);
+    const clear = el<HTMLButtonElement>('<button class="fm-ka-clear" type="button" hidden>Clear</button>');
+    clear.addEventListener('click', () => {
+      const t = targetOf(this.engine);
+      if (!t) return;
+      this.engine.run(`Clear ${spec.label}`, (m) => ops.updateContent(m, t.c.id, (cc) => keyOps.deleteLane(cc, kind)));
+      this.paintKeyed();
+    });
+    wrap.append(r.el, clear);
+    this.keyRows.set(kind, { wrap, clear });
+    return wrap;
+  }
+
+  private readonly keyRows = new Map<KeyKind, { wrap: HTMLElement; clear: HTMLButtonElement }>();
+
+  /** Tints the rows (and the Move, Filter and Level buttons) of properties the target already animates. */
+  private paintKeyed(): void {
+    const t = targetOf(this.engine);
+    for (const [kind, r] of this.keyRows) {
+      const on = !!t && laneOf(t.c, kind) !== null;
+      setClass(r.wrap, 'is-keyed', on);
+      setHidden(r.clear, !on);
+    }
+    const has = (kinds: KeyKind[]): boolean => !!t && kinds.some((k) => laneOf(t.c, k) !== null);
+    setClass(this.moveBtn, 'is-keyed', has(['move', 'warp', 'distort', 'bones']));
+    setClass(this.filterBtn, 'is-keyed', has(KEY_KINDS.filter((k) => k.group === 'filter').map((k) => k.kind)));
+    setClass(this.levelBtn, 'is-keyed', has(['volume']));
   }
 
   private show(view: View): void {

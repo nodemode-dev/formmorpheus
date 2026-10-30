@@ -83,7 +83,7 @@ function drawGlyph(c: CanvasRenderingContext2D, kind: KeyKind, color: string, cx
 }
 
 /** Draw every lane of `c`; `top` is the y of the first lane. */
-export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number): void {
+export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number, chosen?: (kind: KeyKind, frame: number) => boolean): void {
   const w = Math.max(3, g.x1 - g.x0);
   c.save();
   c.font = '600 9px Inter, system-ui, sans-serif';
@@ -123,6 +123,15 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         const x = g.x(frames[i]);
         if (x < -GLYPH || x > g.width + GLYPH) continue;
         const onBar = !!row.channel && frames.length > 1 && (i + 1 < frames.length || i > 0);
+        if (chosen?.(kind, frames[i])) {
+          // a chosen key: a ring in the text color behind its glyph
+          c.strokeStyle = p.text;
+          c.lineWidth = 2;
+          c.beginPath();
+          c.arc(x, cy, GLYPH / 2 + 2, 0, Math.PI * 2);
+          c.stroke();
+          c.lineWidth = 1;
+        }
         drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy);
       }
       if (row.channel) {

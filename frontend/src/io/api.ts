@@ -10,6 +10,7 @@ export interface Capabilities {
 }
 
 export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number }
+export interface LibraryStack { id: string; name: string; items: string[] }
 export interface OutputItem { name: string; path: string; modified: number; size: number; kind: string }
 export interface TrashItem { id: string; name: string; original: string; kind: 'movie' | 'export'; deleted: number; size: number; daysLeft: number }
 
@@ -72,6 +73,18 @@ export const api = {
   },
   async duplicateMovie(name: string): Promise<LibraryItem> {
     return (await (await request(`${lib(name)}/duplicate`, { method: 'POST' })).json()) as LibraryItem;
+  },
+  async stacks(): Promise<LibraryStack[]> {
+    try { return ((await (await request('/library/_stacks')).json()) as { stacks: LibraryStack[] }).stacks; } catch { return []; }
+  },
+  async createStack(items: string[], name?: string): Promise<LibraryStack> {
+    return (await (await request('/library/_stacks', { method: 'POST', body: JSON.stringify({ items, name }), headers: { 'Content-Type': 'application/json' } })).json()) as LibraryStack;
+  },
+  async updateStack(id: string, patch: { name?: string; items?: string[] }): Promise<void> {
+    await request(`/library/_stacks/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(patch), headers: { 'Content-Type': 'application/json' } });
+  },
+  async ungroupStack(id: string): Promise<void> {
+    await request(`/library/_stacks/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
   async deleteMovie(name: string): Promise<void> {
     await request(lib(name), { method: 'DELETE' });
