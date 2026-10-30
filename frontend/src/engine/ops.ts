@@ -1,6 +1,7 @@
 import type { BlendMode, Content, Highlight, MaskMode, Movie, PlaybackMode, Track, Transform } from './types';
 import { clampSide, content as makeContent, end, fits, sourceFrames, sortContent, track as makeTrack, trackName, uid, contentEnd } from './model';
 import { clampFps } from './time';
+import { scaleKeyTimes, shiftKeys } from './key-ops';
 
 export class OpError extends Error {}
 
@@ -138,7 +139,8 @@ export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', del
     const roomBack = ripple ? c.start : c.start - prevEnd;
     const sourceBack = Number.isFinite(limit) ? c.offset : Number.POSITIVE_INFINITY;
     const d = Math.max(-Math.min(roomBack, sourceBack), Math.min(c.duration - 1, deltaFrames));
-    next = { ...c, start: c.start + d, duration: c.duration - d, offset: Math.max(0, c.offset + d) };
+    // keys are local to the content's first frame: shift them back so they stay put in movie time
+    next = shiftKeys({ ...c, start: c.start + d, duration: c.duration - d, offset: Math.max(0, c.offset + d) }, -d);
     if (ripple) {
       const shifted = items.map((x, i) => (i < idx ? { ...x, start: Math.max(0, x.start + d) } : i === idx ? next : x));
       return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: shifted }));
@@ -152,7 +154,7 @@ export function splitContent(movie: Movie, id: string, frame: number): { movie: 
   const c = t.content.find((x) => x.id === id) as Content;
   if (frame <= c.start || frame >= end(c)) throw new OpError('Put the Playhead inside the content to split it.');
   const leftLen = frame - c.start;
-  const right = { ...cloneContent(c, frame), duration: c.duration - leftLen, offset: c.offset + leftLen, name: c.name };
+  const right = shiftKeys({ ...cloneContent(c, frame), duration: c.duration - leftLen, offset: c.offset + leftLen, name: c.name }, -leftLen);
   const left = { ...c, duration: leftLen };
   const m = replaceTrack(movie, t.id, (tr) => ({ ...tr, content: sortContent(tr.content.map((x) => (x.id === id ? left : x)).concat(right)) }));
   return { movie: m, right: right.id };
@@ -310,13 +312,14 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
     const ratio = fps / movie.fps;
     next.fps = fps;
     if (ratio !== 1) {
-      const scale = (c: Content): Content => ({
+      const scale = (c: Content): Content => scaleKeyTimes({
         ...c,
         start: Math.round(c.start * ratio),
         duration: Math.max(1, Math.round(c.duration * ratio)),
         offset: Math.round(c.offset * ratio),
         tracks: c.tracks.map((t) => ({ ...t, content: t.content.map(scale) })),
-      });
+        flip: c.flip.map((t) => ({ ...t, frames: t.frames.map((f) => ({ ...f, hold: Math.max(1, Math.round(f.hold * ratio)) })) })),
+      }, ratio);
       next.tracks = movie.tracks.map((t) => ({ ...t, content: t.content.map(scale) }));
       next.duration = Math.max(1, Math.round(movie.duration * ratio));
     }

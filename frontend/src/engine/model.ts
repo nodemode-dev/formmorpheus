@@ -1,6 +1,6 @@
 import {
   FORMAT_VERSION, MAX_SIDE,
-  type Content, type ContentKind, type DrawingLayer, type Movie, type OnionSettings, type TextStyle, type Track, type Transform,
+  type Content, type ContentKind, type DrawingLayer, type FlipTrack, type FlipbookFrame, type Movie, type OnionSettings, type TextStyle, type Track, type Transform,
 } from './types';
 import { clampFps, framesFor } from './time';
 
@@ -16,7 +16,40 @@ export function identity(): Transform {
 }
 
 export function defaultOnion(): OnionSettings {
-  return { enabled: true, backwards: true, forwards: true, frames: 2, opacity: 0.35, tint: true, backColor: '#ff4f7a', foreColor: '#3a9bff', blendPrimary: false };
+  return { enabled: true, backFrames: 2, foreFrames: 1, opacity: 0.4, tint: true, backColor: '#ff4f7a', foreColor: '#3a9bff', blendPrimary: false };
+}
+
+export function flipFrame(layerName = 'Layer 1'): FlipbookFrame {
+  return { id: uid('f'), hold: 1, layers: [drawingLayer(layerName)] };
+}
+
+export function flipTrack(name: string, count: number): FlipTrack {
+  return { id: uid('ft'), name, hidden: false, opacity: 1, blend: 'normal', highlight: 'none', frames: Array.from({ length: Math.max(1, count) }, () => flipFrame()) };
+}
+
+/** Total length of one Flipbook row in movie frames (the sum of its holds). */
+export function flipLength(t: FlipTrack): number {
+  return t.frames.reduce((sum, f) => sum + Math.max(1, f.hold), 0);
+}
+
+/** The frame of a Flipbook row shown at a content-local time; rows loop. */
+export function flipIndexAt(t: FlipTrack, local: number): number {
+  const total = flipLength(t);
+  if (!total) return -1;
+  let at = ((local % total) + total) % total;
+  for (let i = 0; i < t.frames.length; i++) {
+    const hold = Math.max(1, t.frames[i].hold);
+    if (at < hold) return i;
+    at -= hold;
+  }
+  return t.frames.length - 1;
+}
+
+/** Content-local time at which frame `index` of a row starts. */
+export function flipStartOf(t: FlipTrack, index: number): number {
+  let at = 0;
+  for (let i = 0; i < index && i < t.frames.length; i++) at += Math.max(1, t.frames[i].hold);
+  return at;
 }
 
 export function drawingLayer(name = 'Layer 1'): DrawingLayer {
@@ -51,7 +84,9 @@ export function content(kind: ContentKind, start: number, duration: number, extr
     transform: identity(),
     asset: null,
     layers: kind === 'drawing' ? [drawingLayer()] : [],
-    frames: [],
+    flip: [],
+    onion: null,
+    keys: [],
     text: kind === 'text' ? defaultText() : null,
     tracks: [],
     volume: 1,
@@ -96,7 +131,7 @@ export function newMovie(opts: NewMovieOptions = {}): Movie {
     assets: {},
   };
   if (opts.flipbook) {
-    const fb = content('flipbook', 0, Math.min(duration, Math.round(fps)), { name: 'Flipbook' });
+    const fb = content('flipbook', 0, Math.min(duration, Math.round(fps)), { name: 'Flipbook', flip: [flipTrack('Track 1', Math.round(fps))] });
     movie.tracks = [track('Track 1', [fb])];
   }
   return movie;
@@ -114,7 +149,6 @@ export function end(c: Content): number {
 }
 
 export function sourceFrames(movie: Movie, c: Content): number {
-  if (c.kind === 'flipbook') return c.frames.reduce((sum, f) => sum + Math.max(1, f.hold), 0) || Number.POSITIVE_INFINITY;
   if (c.kind !== 'video' && c.kind !== 'audio') return Number.POSITIVE_INFINITY;
   const asset = c.asset ? movie.assets[c.asset] : undefined;
   return asset && asset.frames > 0 ? asset.frames : Number.POSITIVE_INFINITY;

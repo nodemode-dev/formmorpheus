@@ -63,6 +63,46 @@ export interface FlipbookFrame {
   layers: DrawingLayer[];
 }
 
+/** One row of a Flipbook: its frames play in order, each for `hold` movie frames, and loop. */
+export interface FlipTrack {
+  id: string;
+  name: string;
+  hidden: boolean;
+  opacity: number;
+  blend: BlendMode;
+  highlight: Highlight;
+  frames: FlipbookFrame[];
+}
+
+/** Easing of the span that leaves a key; 'hold' keeps the value until the next key. */
+export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold';
+
+export const EASES: { id: Ease; label: string }[] = [
+  { id: 'linear', label: 'Linear' },
+  { id: 'in', label: 'Ease in' },
+  { id: 'out', label: 'Ease out' },
+  { id: 'inout', label: 'Ease in & out' },
+  { id: 'hold', label: 'Hold' },
+];
+
+/** A key at a frame local to its content (0 is the content's first frame). */
+export interface Key {
+  frame: number;
+  value: number;
+  ease: Ease;
+}
+
+export type KeyKind = 'move' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'volume';
+
+/** One lane under a content: a set of channels keyed together (Move & Scale has x, y, scaleX, scaleY, rotation). */
+export interface KeyLane {
+  kind: KeyKind;
+  expanded: boolean;
+  channels: Record<string, Key[]>;
+  /** Settings of the lane that are not animated (the Noise style, Additive, Multichannel). */
+  options: Record<string, string | number | boolean>;
+}
+
 export interface TextStyle {
   text: string;
   font: string;
@@ -87,7 +127,9 @@ export interface Content {
   transform: Transform;
   asset: string | null;
   layers: DrawingLayer[];
-  frames: FlipbookFrame[];
+  flip: FlipTrack[];
+  onion: OnionSettings | null;
+  keys: KeyLane[];
   text: TextStyle | null;
   tracks: Track[];
   volume: number;
@@ -113,9 +155,9 @@ export interface Asset {
 
 export interface OnionSettings {
   enabled: boolean;
-  backwards: boolean;
-  forwards: boolean;
-  frames: number;
+  /** Ghost frames shown before and after the current frame; 0 turns that side off. */
+  backFrames: number;
+  foreFrames: number;
   opacity: number;
   tint: boolean;
   backColor: string;

@@ -1,4 +1,7 @@
-import { end } from './model';
+import { end, flipIndexAt } from './model';
+import { animate, type Animated } from './keys';
+import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
+import type { Raster } from '../paint/types';
 import type { BlendMode, Content, Movie, Track } from './types';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -31,6 +34,7 @@ export class Renderer {
   private readonly pool: Surface[] = [];
   private pw = 0;
   private ph = 0;
+  private spare: Raster = { width: 0, height: 0, data: new Uint8ClampedArray(0) };
 
   constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
 
@@ -109,10 +113,10 @@ export class Renderer {
   }
 
   private composeTracks(out: OffscreenCanvasRenderingContext2D, tracks: Track[], frame: number, view: View, movie: Movie): void {
-    let held: { layer: Surface; c: Content } | null = null;
+    let held: { layer: Surface; c: Content; opacity: number } | null = null;
     const commit = (): void => {
       if (!held) return;
-      out.globalAlpha = held.c.opacity;
+      out.globalAlpha = held.opacity;
       out.globalCompositeOperation = BLEND_OP[held.c.blend];
       out.drawImage(held.layer, 0, 0);
       out.globalAlpha = 1;
@@ -125,9 +129,12 @@ export class Renderer {
       if (t.hidden) continue;
       const c = t.content.find((x) => frame >= x.start && frame < end(x));
       if (!c || c.opacity <= 0) continue;
+      const a = animate(c, frame - c.start);
+      if (a.opacity <= 0) continue;
       const layer = this.surface();
       const lc = layer.getContext('2d') as OffscreenCanvasRenderingContext2D;
-      this.drawContent(lc, c, frame - c.start, view, movie);
+      this.drawContent(lc, c, frame - c.start, view, movie, a);
+      this.applyFilters(layer, a, view, movie);
       if ((c.mask === 'alpha' || c.mask === 'luminance') && held) {
         this.applyMask(held.layer, layer, c.mask, c.maskInvert);
         this.release(layer);
@@ -139,7 +146,7 @@ export class Renderer {
         lc.globalCompositeOperation = 'source-over';
       }
       commit();
-      held = { layer, c };
+      held = { layer, c, opacity: a.opacity };
     }
     commit();
   }
@@ -166,12 +173,12 @@ export class Renderer {
     tc.globalCompositeOperation = 'source-over';
   }
 
-  drawContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie): void {
-    const t = c.transform;
+  drawContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie, anim?: Animated): void {
+    const t = anim ?? animate(c, local);
     ctx.save();
     ctx.translate(view.ox + (movie.width / 2 + t.x) * view.scale, view.oy + (movie.height / 2 + t.y) * view.scale);
     ctx.rotate((t.rotation * Math.PI) / 180);
-    ctx.scale(t.scale * view.scale * (t.flipH ? -1 : 1), t.scale * view.scale * (t.flipV ? -1 : 1));
+    ctx.scale(t.scaleX * view.scale * (t.flipH ? -1 : 1), t.scaleY * view.scale * (t.flipV ? -1 : 1));
     ctx.translate(-movie.width / 2, -movie.height / 2);
     switch (c.kind) {
       case 'image': this.drawImageContent(ctx, c, movie); break;
@@ -192,6 +199,11 @@ export class Renderer {
     ctx.drawImage(bmp, (movie.width - w) / 2, (movie.height - h) / 2, w, h);
   }
 
+  /** Draws a set of drawing layers in canvas pixels (the Draw & Paint view uses it for onion skins). */
+  layersInto(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
+    this.drawLayers(ctx, layers, movie);
+  }
+
   private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
@@ -207,14 +219,39 @@ export class Renderer {
   }
 
   private drawFlipbook(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
-    if (!c.frames.length) return;
-    const total = c.frames.reduce((s, f) => s + Math.max(1, f.hold), 0);
-    let at = ((local % total) + total) % total;
-    for (const f of c.frames) {
-      const hold = Math.max(1, f.hold);
-      if (at < hold) { this.drawLayers(ctx, f.layers, movie); return; }
-      at -= hold;
+    for (let i = c.flip.length - 1; i >= 0; i--) {
+      const t = c.flip[i];
+      if (t.hidden || t.opacity <= 0) continue;
+      const index = flipIndexAt(t, local);
+      if (index < 0) continue;
+      ctx.save();
+      ctx.globalAlpha *= t.opacity;
+      ctx.globalCompositeOperation = BLEND_OP[t.blend];
+      this.drawLayers(ctx, t.frames[index].layers, movie);
+      ctx.restore();
     }
+  }
+
+  /** Applies the live filters of a content (its keyframed Blur, Sharpen, Noise, HSB and Lens Blur) to its drawn surface. */
+  private applyFilters(s: Surface, a: Animated, view: View, movie: Movie): void {
+    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens) return;
+    const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    const img = sc.getImageData(0, 0, s.width, s.height);
+    let cur: Raster = { width: s.width, height: s.height, data: img.data };
+    if (this.spare.data.length !== cur.data.length) this.spare = { width: s.width, height: s.height, data: new Uint8ClampedArray(cur.data.length) };
+    let other: Raster = { width: s.width, height: s.height, data: this.spare.data };
+    const step = (fn: (src: Raster, dst: Raster) => void): void => { fn(cur, other); const t = cur; cur = other; other = t; };
+    const side = Math.max(movie.width, movie.height) * 0.05 * view.scale;
+    if (a.hsb) hsb(cur, cur, a.hsb.hue, a.hsb.saturation, a.hsb.brightness);
+    if (a.blur > 0) step((src, dst) => gaussianBlur(src, dst, a.blur * side));
+    if (a.lens && a.lens.radius > 0) { const l = a.lens; step((src, dst) => lensBlur(src, dst, l.radius * side, l.brightness, l.contrast)); }
+    if (a.sharpen > 0) step((src, dst) => sharpen(src, dst, a.sharpen));
+    if (a.noise && a.noise.amount > 0) {
+      const n = a.noise;
+      step((src, dst) => noise(src, dst, { ...n, scale: Math.max(1, n.scale * view.scale), offsetX: n.offsetX * view.scale, offsetY: n.offsetY * view.scale }, 7));
+    }
+    if (cur.data !== img.data) img.data.set(cur.data);
+    sc.putImageData(img, 0, 0);
   }
 
   private drawText(ctx: OffscreenCanvasRenderingContext2D, c: Content, movie: Movie): void {

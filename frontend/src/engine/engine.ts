@@ -1,6 +1,6 @@
 import { Emitter } from './events';
 import { History, type RecoveryPoint } from './history';
-import { content as makeContent, contentEnd, end, kindName, locate, newMovie, type NewMovieOptions } from './model';
+import { content as makeContent, contentEnd, end, flipTrack, kindName, locate, newMovie, type NewMovieOptions } from './model';
 import * as ops from './ops';
 import type { Asset, Content, ContentKind, Mode, Movie, Selection } from './types';
 
@@ -294,7 +294,8 @@ export class Engine extends Emitter<EngineEvents> {
     if (!m) return null;
     const start = Math.max(0, Math.min(at, m.duration - 1));
     const length = kind === 'flipbook' ? Math.max(1, Math.round(m.fps)) : Math.max(1, m.duration - start);
-    const item = makeContent(kind, start, extra.duration ?? length, { name: extra.name ?? kindName(kind), ...extra });
+    const flip = kind === 'flipbook' && !extra.flip ? [flipTrack('Track 1', length)] : undefined;
+    const item = makeContent(kind, start, extra.duration ?? length, { name: extra.name ?? kindName(kind), ...(flip ? { flip } : {}), ...extra });
     const trackIndex = this.selection.track ? Math.max(0, m.tracks.findIndex((t) => t.id === this.selection.track)) : 0;
     const ok = this.run(`Add ${item.name}`, (mv) => {
       const placed = ops.placeContent(mv, null, item, trackIndex);
