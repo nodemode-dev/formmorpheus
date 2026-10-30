@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import re
@@ -6,8 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 
 from app.core import config
 from app.core.upload import read_limited
@@ -24,7 +23,13 @@ GRACE_SECONDS = 4        # a dropped stream is given this long to reconnect
 UNKNOWN_SECONDS = 15     # after an engine restart, windows that have not reconnected by now are gone
 _streams: dict[str, int] = {}
 _closed: dict[str, float] = {}
-STREAM_BEAT = 5.0
+PRUNE_SECONDS = 120      # past the grace a closed record says nothing the boot age does not (gone), so it is dropped
+
+
+def _prune() -> None:
+    cut = time.time() - PRUNE_SECONDS
+    for k in [k for k, t in _closed.items() if t < cut]:
+        _closed.pop(k, None)
 
 
 def _gone(session: str, idle: float) -> bool | None:
@@ -98,6 +103,7 @@ def _entry(session: str, fmo: Path, side: Path) -> dict:
 @router.get("")
 def list_snapshots() -> dict:
     items = []
+    _prune()
     for fmo in recovery_dir().glob(f"*{config.PROJECT_EXT}"):
         if fmo.is_file() and _SESSION.match(fmo.stem):
             try:
@@ -108,28 +114,32 @@ def list_snapshots() -> dict:
     return {"items": items}
 
 
-@router.get("/{session}/live")
-async def live(session: str, request: Request) -> StreamingResponse:
-    """A window keeps this open while it lives; the engine learns the moment it closes, however the window died."""
-    _session(session)
+@router.websocket("/{session}/live")
+async def live(ws: WebSocket, session: str) -> None:
+    """A window keeps this socket open while it lives; the engine learns the moment it closes, however the window died.
 
-    async def body():
-        _streams[session] = _streams.get(session, 0) + 1
-        _closed.pop(session, None)
-        try:
-            yield b"\n"
-            while not await request.is_disconnected():
-                await asyncio.sleep(STREAM_BEAT)
-                yield b"\n"
-        finally:
-            n = _streams.get(session, 1) - 1
-            if n > 0:
-                _streams[session] = n
-            else:
-                _streams.pop(session, None)
-                _closed[session] = time.time()
-
-    return StreamingResponse(body(), media_type="text/plain", headers={"Cache-Control": "no-store"})
+    A socket, not a streamed GET: it holds no slot of the browser's six HTTP connections per host and does not
+    keep uvicorn from shutting down. The registry is per process, so the engine must run as a single worker.
+    """
+    if not _SESSION.match(session):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    _streams[session] = _streams.get(session, 0) + 1
+    _closed.pop(session, None)
+    try:
+        while (await ws.receive())["type"] != "websocket.disconnect":
+            pass
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        n = _streams.get(session, 1) - 1
+        if n > 0:
+            _streams[session] = n
+        else:
+            _streams.pop(session, None)
+            _closed[session] = time.time()
+        _prune()
 
 
 @router.get("/{session}")

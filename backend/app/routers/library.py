@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import re
@@ -306,29 +307,30 @@ def read_project(name: str) -> Response:
 
 
 @router.get("/{name}/poster")
-def read_poster(name: str) -> Response:
+def read_poster(name: str, v: str | None = None) -> Response:
     path = project_path(name)
     if not path.is_file():
         raise HTTPException(404, "No project by that name.")
-    return _picture(path, "poster.png")
+    return _picture(path, "poster.png", v)
 
 
-def _picture(path: Path, member: str) -> Response:
+def _picture(path: Path, member: str, v: str | None = None) -> Response:
+    # With ?v=<modified time> the address changes whenever the movie does, so the browser may keep it a while.
     # No picture is an empty 204, not a 404, so the browser console stays quiet for movies saved without one.
     try:
         with zipfile.ZipFile(path) as archive:
             data = archive.read(member)
     except (KeyError, zipfile.BadZipFile, OSError):
         return Response(status_code=204)
-    return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
+    return Response(data, media_type="image/png", headers={"Cache-Control": "private, max-age=300" if v else "no-store"})
 
 
 @router.get("/{name}/preview")
-def read_preview(name: str) -> Response:
+def read_preview(name: str, v: str | None = None) -> Response:
     path = project_path(name)
     if not path.is_file():
         raise HTTPException(404, "No project by that name.")
-    return _picture(path, "preview.png")
+    return _picture(path, "preview.png", v)
 
 
 @router.put("/{name}")
@@ -369,11 +371,22 @@ def duplicate_project(name: str) -> dict:
     src = project_path(name)
     if not src.is_file():
         raise HTTPException(404, "No project by that name.")
-    dst = unique_path(f"{src.stem} copy", src.parent)
-    if not _copy_with_new_id(src, dst):
-        shutil.copy2(src, dst)
-    os.utime(dst, None)
-    return entry(dst)
+    for _ in range(100):
+        dst = unique_path(f"{src.stem} copy", src.parent)
+        tmp = dst.with_name(f".{dst.name}.{uuid.uuid4().hex[:8]}.part")
+        try:
+            if not _copy_with_new_id(src, dst, tmp):
+                shutil.copy2(src, tmp)
+            os.utime(tmp, None)
+            _publish(tmp, dst)
+            return entry(dst)
+        except FileExistsError:
+            continue   # the name was taken a moment ago: take the next one
+        except OSError:
+            raise HTTPException(400, "formmorpheus could not duplicate the movie.")
+        finally:
+            tmp.unlink(missing_ok=True)
+    raise HTTPException(409, "No free name for the copy.")
 
 
 class CopyToBody(BaseModel):
@@ -387,30 +400,52 @@ def copy_project_to(name: str, body: CopyToBody) -> dict:
     src = project_path(name)
     if not src.is_file():
         raise HTTPException(404, "No project by that name.")
-    folder = _safe_folder(body.dir)
+    folder = _safe_folder(body.dir, create=False)   # a typo must not leave new folders behind
     if folder == src.parent.resolve():
         raise HTTPException(400, "That is the folder the movie is already in.")
-    dst = folder / src.name
-    n = 2
-    while dst.exists():
-        dst = folder / f"{src.stem} {n}{src.suffix}"
-        n += 1
-    tmp = dst.with_name(f".{dst.name}.{os.getpid()}.part")
+    tmp = folder / f".{src.name}.{uuid.uuid4().hex[:8]}.part"
     try:
         shutil.copy2(src, tmp)
-        os.replace(tmp, dst)
+        n = 1
+        while True:
+            dst = folder / (src.name if n == 1 else f"{src.stem} {n}{src.suffix}")
+            try:
+                _publish(tmp, dst)   # exclusive: never replaces a file that appeared meanwhile
+                break
+            except FileExistsError:
+                n += 1
     except OSError:
-        tmp.unlink(missing_ok=True)
         raise HTTPException(400, "formmorpheus could not copy the movie there.")
+    finally:
+        tmp.unlink(missing_ok=True)
     return {"path": str(dst), "name": dst.stem}
 
 
-def _copy_with_new_id(src: Path, dst: Path) -> bool:
-    """A duplicate is a different movie: a fresh id (and its own name) in movie.json, every other entry copied as is."""
-    tmp = dst.with_name(f".{dst.name}.{os.getpid()}.part")
+def _publish(tmp: Path, dst: Path) -> None:
+    """Puts a finished temp file at dst only if dst does not exist (a hard link is atomic and exclusive; a copy with 'x' where links are not supported)."""
+    try:
+        os.link(tmp, dst)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    with open(tmp, "rb") as fin, open(dst, "xb") as fout:
+        shutil.copyfileobj(fin, fout, 1024 * 1024)
+
+
+_JSON_LIMIT = 64 * 1024 * 1024
+
+
+def _copy_with_new_id(src: Path, dst: Path, tmp: Path) -> bool:
+    """A duplicate is a different movie: a fresh id (and its own name) in movie.json, every other entry streamed across as is."""
     try:
         with zipfile.ZipFile(src) as zin:
-            data = json.loads(zin.read("movie.json"))
+            with zin.open("movie.json") as f:
+                raw = f.read(_JSON_LIMIT + 1)
+            if len(raw) > _JSON_LIMIT:
+                return False
+            data = json.loads(raw)
             if not isinstance(data, dict) or not isinstance(data.get("id"), str):
                 return False
             data["id"] = f"m{uuid.uuid4().hex[:16]}"
@@ -418,9 +453,14 @@ def _copy_with_new_id(src: Path, dst: Path) -> bool:
                 data["name"] = dst.stem
             with zipfile.ZipFile(tmp, "w") as zout:
                 for info in zin.infolist():
-                    body = json.dumps(data).encode("utf-8") if info.filename == "movie.json" else zin.read(info)
-                    zout.writestr(info, body)
-        os.replace(tmp, dst)
+                    out = copy.copy(info)   # the writer fills in offsets; the source's listing stays as read
+                    if info.filename == "movie.json":
+                        zout.writestr(out, json.dumps(data).encode("utf-8"))
+                    elif info.is_dir():
+                        zout.writestr(out, b"")
+                    else:
+                        with zin.open(info) as fi, zout.open(out, "w", force_zip64=info.file_size > zipfile.ZIP64_LIMIT) as fo:
+                            shutil.copyfileobj(fi, fo, 1024 * 1024)
         return True
     except (OSError, KeyError, ValueError, zipfile.BadZipFile):
         tmp.unlink(missing_ok=True)

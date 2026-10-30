@@ -27,7 +27,7 @@ def main() -> int:
     from app.main import app as fastapi_app
 
     port = int(os.environ.get("FORMMORPHEUS_PORT", "0") or 0)
-    server = uvicorn.Server(uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="info"))
+    server = uvicorn.Server(uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="info", timeout_graceful_shutdown=3))
     server.run()
     return 0
 

@@ -8,6 +8,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 mod packaged;
+mod folder;
 mod recent;
 mod reveal;
 mod text_edit;
@@ -224,7 +225,8 @@ fn main() {
             recent::note_recent_document,
             traffic_lights::set_window_title,
             reveal::app_ready,
-            text_edit::text_edit
+            text_edit::text_edit,
+            folder::reveal_folder
         ])
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())

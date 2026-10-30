@@ -1,4 +1,4 @@
-const APP_COMMANDS: &[&str] = &["app_ready", "set_window_title", "text_edit", "take_pending_opens", "note_recent_document"];
+const APP_COMMANDS: &[&str] = &["app_ready", "set_window_title", "text_edit", "take_pending_opens", "note_recent_document", "reveal_folder"];
 
 fn main() {
     tauri_build::try_build(

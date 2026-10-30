@@ -20,7 +20,7 @@ def _icloud() -> Path | None:
     return drive if drive.is_dir() else None
 
 
-def _safe_folder(raw: str) -> Path:
+def _safe_folder(raw: str, create: bool = True) -> Path:
     raw = raw.strip()
     if not raw or len(raw) > 1000 or "\x00" in raw:
         raise HTTPException(400, "That folder cannot be used.")
@@ -38,6 +38,8 @@ def _safe_folder(raw: str) -> Path:
             raise HTTPException(400, "That folder is used for something else.")
     if path.exists() and not path.is_dir():
         raise HTTPException(400, "That path is a file, not a folder.")
+    if not create and not path.is_dir():
+        raise HTTPException(400, "That folder does not exist.")
     try:
         path.mkdir(parents=True, exist_ok=True)
         probe = path / f".fm-write-test-{os.getpid()}"

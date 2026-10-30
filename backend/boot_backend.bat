@@ -6,4 +6,4 @@ if not exist venv\Scripts\activate.bat (
 )
 call venv\Scripts\activate.bat
 if "%FORMMORPHEUS_PORT%"=="" set FORMMORPHEUS_PORT=9494
-uvicorn app.main:app --reload --host 127.0.0.1 --port %FORMMORPHEUS_PORT%
+uvicorn app.main:app --reload --timeout-graceful-shutdown 3 --host 127.0.0.1 --port %FORMMORPHEUS_PORT%
