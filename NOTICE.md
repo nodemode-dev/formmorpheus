@@ -8,7 +8,8 @@ formmorpheus is licensed under the Apache License 2.0 (`LICENSE`). It includes o
 | formvis desktop shell (splash and reveal sequence, traffic light placement, text edit routing, packaged engine lookup, window state), by nodemode-ai | `src-tauri/src`, `frontend/public/splash.html`, `setup/` | Apache-2.0 |
 | formvfx engine patterns (typed event emitter, timeline mapping, ruler ticks, gesture merge for undo), by nodemode-ai | `frontend/src/engine/events.ts`, `frontend/src/ui/timeline.ts`, `frontend/src/engine/history.ts` | Apache-2.0 |
 | Remix Icon paths in `frontend/src/ui/icons.ts` (via formvis) | inline SVG icons | Apache-2.0 |
-| fflate | `.fmo` movie files (zip) | MIT |
+| fflate | `.fmo` movie files (zip), exported frame archives | MIT |
+| mediabunny 1.61.5 (Vanilagy), used unmodified from npm; source: https://github.com/Vanilagy/mediabunny | reading video and sound files, writing MP4, WebM and MOV exports | MPL-2.0 (file-level copyleft: its files are shipped unedited) |
 | Inter and JetBrains Mono (`@fontsource`) | interface fonts | SIL Open Font License 1.1 |
 | FastAPI, Starlette, Uvicorn | the engine service | MIT (FastAPI), BSD-3-Clause (Starlette, Uvicorn) |
 | PyInstaller (build only, `backend/requirements_desktop.txt`) | freezes the engine for the desktop app | GPL-2.0 with the bootloader exception: the frozen program is not covered by the GPL |

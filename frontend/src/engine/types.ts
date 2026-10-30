@@ -144,13 +144,19 @@ export interface Track {
 
 export interface Asset {
   id: string;
-  kind: 'image' | 'video' | 'audio' | 'pixels';
+  kind: 'image' | 'video' | 'audio' | 'pixels' | 'font';
   name: string;
   mime: string;
   width: number;
   height: number;
   frames: number;
   size: number;
+  /** Video and sound: length in seconds (movie frames follow from the movie's frame rate). */
+  seconds?: number;
+  /** Video: whether the file carries sound (so it can be separated into an audio block). */
+  hasAudio?: boolean;
+  /** Fonts: the family name registered for Text content. */
+  family?: string;
 }
 
 export interface OnionSettings {

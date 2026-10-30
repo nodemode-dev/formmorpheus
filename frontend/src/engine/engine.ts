@@ -14,6 +14,8 @@ export interface EngineEvents {
   mode: Mode;
   history: void;
   playing: boolean;
+  /** Playback jumped (loop back to the start, or a ping pong turn): sound restarts from here. */
+  wrap: { frame: number; direction: 1 | -1 };
   projects: void;
   notice: Notice;
   progress: void;
@@ -51,7 +53,7 @@ export class Engine extends Emitter<EngineEvents> {
   private tick = 0;
   private playFrom = 0;
   private playStart = 0;
-  private direction = 1;
+  private direction: 1 | -1 = 1;
   private nextJob = 1;
 
   get projects(): readonly Movie[] {
@@ -274,6 +276,7 @@ export class Engine extends Emitter<EngineEvents> {
       }
       this.playStart = this.ticker.now();
       f = this.playFrom;
+      this.emit('wrap', { frame: f, direction: this.direction });
     }
     this.seek(f);
     this.tick = this.ticker.request(() => this.loop());

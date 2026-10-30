@@ -151,6 +151,7 @@ export function end(c: Content): number {
 export function sourceFrames(movie: Movie, c: Content): number {
   if (c.kind !== 'video' && c.kind !== 'audio') return Number.POSITIVE_INFINITY;
   const asset = c.asset ? movie.assets[c.asset] : undefined;
+  if (asset?.seconds) return Math.max(1, Math.floor(asset.seconds * movie.fps));
   return asset && asset.frames > 0 ? asset.frames : Number.POSITIVE_INFINITY;
 }
 

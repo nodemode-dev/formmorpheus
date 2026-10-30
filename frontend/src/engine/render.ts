@@ -2,6 +2,7 @@ import { end, flipIndexAt } from './model';
 import { animate, type Animated } from './keys';
 import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
 import type { Raster } from '../paint/types';
+import type { VideoSource } from '../media/types';
 import type { BlendMode, Content, Movie, Track } from './types';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -39,6 +40,7 @@ export class Renderer {
   private pw = 0;
   private ph = 0;
   private spare: Raster = { width: 0, height: 0, data: new Uint8ClampedArray(0) };
+  private video: VideoSource | null = null;
 
   constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
 
@@ -98,12 +100,18 @@ export class Renderer {
     if (this.pool.length < 12) this.pool.push(s);
   }
 
-  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null }): void {
+  /** `keepAlpha`: export of a transparent movie: nothing is filled behind the content. */
+  drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean }): void {
     this.pw = Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, view.width, view.height);
+    if (opts.keepAlpha && movie.transparent) {
+      this.composeTracks(ctx as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = opts.background;
     ctx.fillRect(0, 0, view.width, view.height);
     const mw = movie.width * view.scale, mh = movie.height * view.scale;
@@ -201,6 +209,7 @@ export class Renderer {
     ctx.translate(-movie.width / 2, -movie.height / 2);
     switch (c.kind) {
       case 'image': this.drawImageContent(ctx, c, movie); break;
+      case 'video': this.drawVideoContent(ctx, c, local, movie); break;
       case 'drawing': this.drawLayers(ctx, c.layers, movie); break;
       case 'flipbook': this.drawFlipbook(ctx, c, local + c.offset, movie); break;
       case 'text': this.drawText(ctx, c, movie); break;
@@ -208,6 +217,53 @@ export class Renderer {
       default: break;
     }
     ctx.restore();
+  }
+
+  /** Seconds into the video asset shown at a content-local frame. */
+  static videoSeconds(c: Content, local: number, movie: Movie): number {
+    return Math.max(0, (local + c.offset) / movie.fps);
+  }
+
+  private drawVideoContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
+    const asset = c.asset ? movie.assets[c.asset] : undefined;
+    if (!asset || !this.video || !c.asset) return;
+    const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie));
+    if (!img) return;
+    const w = asset.width, h = asset.height;
+    ctx.drawImage(img, (movie.width - w) / 2, (movie.height - h) / 2, w, h);
+  }
+
+  setVideo(v: VideoSource | null): void {
+    this.video = v;
+  }
+
+  /**
+   * Makes the next drawFrame of `frame` exact: every visible picture decoded and every visible video
+   * frame decoded for its time (export and still frames use it; on-screen drawing does not wait).
+   */
+  async prepareFrame(movie: Movie, frame: number): Promise<void> {
+    const waits: Promise<void>[] = [];
+    const blobs = new Map<string, Blob>();
+    const visit = (tracks: Track[], f: number): void => {
+      for (const t of tracks) {
+        if (t.hidden) continue;
+        const c = t.content.find((x) => f >= x.start && f < end(x));
+        if (!c) continue;
+        const local = f - c.start;
+        const want = (id: string | null): void => { if (id && !this.bitmaps.get(id)) { const b = this.blobOf(id); if (b) blobs.set(id, b); } };
+        if (c.kind === 'image') want(c.asset);
+        if (c.kind === 'drawing') c.layers.forEach((l) => want(l.pixels));
+        if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, local + c.offset); if (i >= 0) row.frames[i].layers.forEach((l) => want(l.pixels)); }
+        if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie)));
+        if (c.kind === 'group') visit(c.tracks, local + c.offset);
+      }
+    };
+    visit(movie.tracks, frame);
+    if (blobs.size) {
+      for (const id of blobs.keys()) this.bitmaps.delete(id);
+      waits.push(this.preload(blobs));
+    }
+    await Promise.all(waits);
   }
 
   private drawImageContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, movie: Movie): void {
