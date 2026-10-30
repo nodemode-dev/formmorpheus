@@ -32,6 +32,8 @@ export class Popover {
     if (document.querySelector('.cv-dd-pop:not([hidden])')) return;
     e.preventDefault();
     e.stopPropagation();
+    // a submenu in view closes first; the menu itself on the next Escape
+    for (const p of this.subs.keys()) if (!p.hidden) { this.closeSubs(); return; }
     this.hide();
   };
   private readonly blur = (): void => this.hide();

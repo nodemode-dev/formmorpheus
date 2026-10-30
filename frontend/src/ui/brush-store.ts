@@ -7,6 +7,8 @@
 import { ALL_STARTERS, BRUSH_SETS, OLD_SET_NAMES, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
 import { ANIMATION_SETS } from '../paint/brushes-animation';
 import type { Brush } from '../paint/types';
+import { importBrushFile } from '../io/brush-import';
+import { BrushDisk, type BrushMeta, type Tree, type Want } from './brush-disk';
 
 /** `lib` names the library a set sits in; absent means Classic. */
 export interface BrushSet { id: string; name: string; ids: string[]; lib?: string }
@@ -112,6 +114,14 @@ class BrushStore {
   private readonly subs = new Set<() => void>();
   private loading: Promise<void> | null = null;
   private timer = 0;
+  /** The libraries as files (Brushes/<Library>/<Set>/<Brush>.brush); IndexedDB keeps a copy for when the engine is away. */
+  private readonly disk = new BrushDisk();
+  /** Tips and grains of loaded brushes arrive after the lists, so the panel opens at once. */
+  private readonly pendingTip = new Map<string, { w: number; h: number; key: string }>();
+  private readonly pendingGrain = new Set<string>();
+  private tipsReady: Promise<void> = Promise.resolve();
+  private tipsFailed = false;
+  private migrating: Promise<void> = Promise.resolve();
   loaded = false;
   /** False once a save failed in both places. */
   kept = true;
@@ -122,6 +132,9 @@ class BrushStore {
   load(): Promise<void> { return (this.loading ??= this.doLoad()); }
 
   subscribe(fn: () => void): () => void { this.subs.add(fn); return () => { this.subs.delete(fn); }; }
+
+  /** The folder the brush files live in, once the engine has said (empty before that). */
+  folder(): string { return this.disk.folder; }
 
   sets(): readonly BrushSet[] { return this.st.sets; }
 
@@ -356,6 +369,8 @@ class BrushStore {
   resetAll(): void {
     for (const id of this.custom.keys()) unregisterBrush(id);
     this.custom.clear();
+    this.pendingTip.clear();
+    this.pendingGrain.clear();
     this.st = defaults();
     this.rebuildAll();
     this.refresh();
@@ -423,27 +438,133 @@ class BrushStore {
     this.timer = window.setTimeout(() => { this.timer = 0; void this.save(); }, 300);
   }
 
+  /** What a brush's file records beyond the .brush export; null for an unedited starter, which has no file. */
+  private metaOf(id: string): BrushMeta | null {
+    const c = this.custom.get(id);
+    if (c) {
+      const { tipImage, grainImage, set: _set, ...rest } = c;
+      const tip = tipImage ? { w: tipImage.w, h: tipImage.h, key: tipImage.key } : this.pendingTip.get(id);
+      return { v: 1, id, kind: 'custom', brush: rest as unknown as Record<string, unknown>, ...(tip ? { tipImage: tip } : {}), ...(grainImage || this.pendingGrain.has(id) ? { grain: true } : {}) };
+    }
+    const nm = this.st.names[id], tw = this.st.tweaks[id];
+    if ((!nm && !tw) || !starterBrush(id)) return null;
+    return { v: 1, id, kind: 'starter', ...(nm ? { name: nm } : {}), ...(tw ? { tweaks: tw as Record<string, unknown> } : {}) };
+  }
+
+  private want(): Want {
+    const brushes = new Map<string, { name: string; meta: BrushMeta }>();
+    for (const s of this.st.sets) for (const id of s.ids) {
+      const meta = this.metaOf(id);
+      if (meta) brushes.set(id, { name: brushById(id)?.name ?? id, meta });
+    }
+    return {
+      libs: this.st.libs!.map((l) => ({ id: l.id, name: l.name })),
+      sets: this.st.sets.map((s) => ({ id: s.id, name: s.name, lib: s.lib ?? LIB_CLASSIC, ids: s.ids })),
+      active: this.st.active!,
+      deleted: this.st.deleted,
+      brushes,
+    };
+  }
+
   async save(): Promise<void> {
+    await this.migrating;
+    await this.tipsReady;
     const text = this.snapshot();
     let ok = false;
-    try { const r = await fetch('/api/brushes', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text }); ok = r.ok; } catch { ok = false; }
+    // A brush whose tip could not be read is never written back without it.
+    if (!this.tipsFailed) { try { await this.disk.sync(() => this.want()); ok = true; } catch { ok = false; } }
     try { await idbPut(text); ok = true; } catch { /* the engine copy may still hold */ }
     this.kept = ok;
   }
 
   private async doLoad(): Promise<void> {
-    let raw: unknown = null;
-    try {
-      const r = await fetch('/api/brushes');
-      if (r.ok) { const j = await r.json(); if (j && (j as Saved).v === 1) raw = j; }
-    } catch { raw = null; }
-    if (!raw) {
-      const t = await idbGet();
-      if (typeof t === 'string') { try { const j = JSON.parse(t); if (j && j.v === 1) raw = j; } catch { raw = null; } }
+    let tree: Tree | null = null;
+    try { tree = await this.disk.tree(); } catch { tree = null; }
+    if (tree && !tree.fresh) {
+      await this.adoptTree(tree);
+      if (tree.legacy) void this.disk.markMigrated().catch(() => { /* tried again next start */ });
+    } else {
+      // Nothing saved as files yet: the old single-file store (or the browser copy) is moved over once.
+      let raw: unknown = null;
+      if (tree?.legacy) { try { const j = await this.disk.legacy(); if (j && (j as Saved).v === 1) raw = j; } catch { raw = null; } }
+      if (!raw && !(tree && tree.libs.length)) {
+        const t = await idbGet();
+        if (typeof t === 'string') { try { const j = JSON.parse(t); if (j && j.v === 1) raw = j; } catch { raw = null; } }
+      }
+      if (raw) {
+        this.adopt(raw as Saved);
+        if (tree) this.migrating = this.disk.migrate(() => this.want()).catch(() => { this.kept = false; });
+      } else if (tree && tree.libs.length) await this.adoptTree(tree);   // folders the person put there
+      else if (tree) this.disk.attach(tree, () => undefined);
     }
-    if (raw) this.adopt(raw as Saved);
     this.loaded = true;
     for (const fn of Array.from(this.subs)) fn();
+  }
+
+  /** Reads the library from the folder: sets and settings now, tips and grains in the background. */
+  private async adoptTree(t: Tree): Promise<void> {
+    const sets: BrushSet[] = [], libs: BrushLib[] = [], custom: Record<string, SavedBrush> = {}, names: Record<string, string> = {}, tweaks: Record<string, Partial<Brush>> = {};
+    const foreign = new Map<string, string>();
+    this.pendingTip.clear();
+    this.pendingGrain.clear();
+    for (const l of t.libs) {
+      libs.push({ id: l.id, name: l.dir });
+      for (const s of l.sets) {
+        const ids = s.ids.slice();
+        for (const f of s.files) {
+          const m = f.meta;
+          if (!m) {
+            // A .brush made elsewhere and dropped in: read it like an import; the next save rewrites it as ours.
+            const bytes = await this.disk.fetchAt(l.dir, s.dir, f.file);
+            if (!bytes) continue;
+            try {
+              const r = await importBrushFile(new File([bytes as unknown as BlobPart], f.file));
+              r.brushes.forEach((b, i) => { custom[b.id] = pack({ ...b, custom: true }); ids.push(b.id); if (i === 0) foreign.set(`${s.id}\0${f.file}`, b.id); });
+            } catch { /* not a brush file */ }
+            continue;
+          }
+          if (m.kind === 'custom' && m.brush) {
+            custom[m.id] = { ...(m.brush as unknown as SavedBrush), id: m.id, custom: true };
+            if (m.tipImage) this.pendingTip.set(m.id, m.tipImage);
+            if (m.grain) this.pendingGrain.add(m.id);
+          } else if (m.kind === 'starter') {
+            if (m.name) names[m.id] = m.name;
+            if (m.tweaks) tweaks[m.id] = m.tweaks as Partial<Brush>;
+          }
+          if (!ids.includes(m.id)) ids.push(m.id);
+        }
+        sets.push({ id: s.id, name: s.dir, lib: l.id, ids });
+      }
+    }
+    this.adopt({ v: 1, sets, custom, names, tweaks, deleted: t.deleted, libs, active: t.active ?? undefined });
+    this.disk.attach(t, (setId, file) => foreign.get(`${setId}\0${file}`));
+    this.tipsFailed = false;
+    this.tipsReady = this.loadTips(Array.from(this.pendingTip.keys(), (k) => k).concat(Array.from(this.pendingGrain).filter((g) => !this.pendingTip.has(g))));
+  }
+
+  /** Fetches the pixel data of loaded brushes a few at a time and refreshes each as it lands. */
+  private async loadTips(ids: string[]): Promise<void> {
+    for (let i = 0; i < ids.length; i += 6) {
+      const batch = ids.slice(i, i + 6);
+      await Promise.all(batch.map(async (id) => {
+        let r = await this.disk.read(id).catch(() => null);
+        if (!r) r = await this.disk.read(id).catch(() => null);
+        const c = this.custom.get(id), tm = this.pendingTip.get(id);
+        if (!r || !c) { this.tipsFailed = true; return; }
+        const next: Brush = { ...c };
+        if (tm) {
+          if (r.tip && r.tip.length === tm.w * tm.h) next.tipImage = { w: tm.w, h: tm.h, key: tm.key, data: r.tip }; else this.tipsFailed = true;
+        }
+        if (this.pendingGrain.has(id)) {
+          if (r.grain && r.grain.length === 65536) next.grainImage = r.grain; else this.tipsFailed = true;
+        }
+        this.custom.set(id, next);
+        this.pendingTip.delete(id);
+        this.pendingGrain.delete(id);
+        this.touch(id);
+      }));
+      for (const fn of Array.from(this.subs)) fn();
+    }
   }
 
   private adopt(s: Saved): void {

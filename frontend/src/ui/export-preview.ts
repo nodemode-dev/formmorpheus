@@ -164,7 +164,7 @@ export class ExportPreview {
         if (my !== this.token) { fail(); return; }
         const f = frameAt(steps[i], o.from, o.to);
         await this.deps.renderer.prepareFrame(movie, f);
-        this.deps.renderer.drawFrame(ctx, movie, f, view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: spec.keepAlpha });
+        this.deps.renderer.drawFrame(ctx, movie, f, view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: spec.keepAlpha, exact: true });
         if (o.format === 'gif') raw.push(ctx.getImageData(0, 0, pw, ph));
         else if (spec.lossy) {
           const blob = await canvas.convertToBlob({ type: spec.lossy === 'jpg' ? 'image/jpeg' : 'image/webp', quality: { low: 0.6, medium: 0.8, high: 0.92, 'very-high': 0.98 }[o.quality] });

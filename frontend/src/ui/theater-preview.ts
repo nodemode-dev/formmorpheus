@@ -38,7 +38,8 @@ export class TheaterPreview {
     if (have) { this.strips.delete(ck); this.strips.set(ck, have); this.play(row, have); return; }   // re-insert: most recent
     if (have === null || this.loading.has(ck)) return;
     this.loading.add(ck);
-    void api.preview(name).then(async (blob) => {
+    const when = Number((row.dataset.thumb ?? '').split('|')[1]);
+    void api.preview(name, when > 0 ? when : undefined).then(async (blob) => {
       this.loading.delete(ck);
       let strip: Strip | null = null;
       if (blob) {

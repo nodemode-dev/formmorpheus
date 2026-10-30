@@ -26,13 +26,13 @@ const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>';
 
 type Tool = 'paint' | 'smudge' | 'erase';
-type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib' | 'export' | 'exportlib';
+type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib' | 'export' | 'exportlib' | 'showfolder';
 
 const LABEL: Record<Act, string> = {
   rename: 'Rename', duplicate: 'Duplicate', delete: 'Delete', up: 'Move up', down: 'Move down',
   pressure: 'Pressure & Smoothing', import: 'Import brushes', newset: 'New set', restore: 'Restore starter brushes',
   newlib: 'New library', renamelib: 'Rename library', deletelib: 'Delete library',
-  export: 'Export brush', exportlib: 'Export library',
+  export: 'Export brush', exportlib: 'Export library', showfolder: 'Show brush folder',
 };
 
 const ICON_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
@@ -61,6 +61,9 @@ export class BrushPanel {
   private readonly sliders: Record<string, { input: HTMLInputElement; out: HTMLElement }> = {};
   private readonly pixEl: HTMLInputElement;
   private readonly previews = new Map<string, Prev>();
+  /** Previews wait their turn: the panel opens at once and the strokes fill in a few per frame. */
+  private paintQ: string[] = [];
+  private paintRaf = 0;
   private recent: string[] = [];
   private activeSet = RECENT;
   private currentId = '';
@@ -86,13 +89,18 @@ export class BrushPanel {
   private readonly onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return;
     e.stopPropagation();
-    if (this.renaming) { this.endRename(false); return; }
-    if (!this.menuEl.hidden) { this.closeMenu(); return; }
-    if (!this.libMenuEl.hidden) { this.closeLibMenu(); return; }
-    if (!this.cardEl.hidden) { this.closeCard(); return; }
-    if (this.searchEl.value) { this.searchEl.value = ''; this.onSearch(); return; }
-    this.close();
+    if (!this.closeInner()) this.close();
   };
+
+  /** Escape steps in: the innermost open piece (rename, menus, card, search text) goes first; false when none was open. */
+  closeInner(): boolean {
+    if (this.renaming) { this.endRename(false); return true; }
+    if (!this.menuEl.hidden) { this.closeMenu(); return true; }
+    if (!this.libMenuEl.hidden) { this.closeLibMenu(); return true; }
+    if (!this.cardEl.hidden) { this.closeCard(); return true; }
+    if (this.searchEl.value) { this.searchEl.value = ''; this.onSearch(); return true; }
+    return false;
+  }
 
   constructor(private readonly opts: { onPick: (brush: Brush) => void }) {
     this.root = el<HTMLElement>(`<div class="fm-bp fm-pp-glass" hidden>
@@ -115,7 +123,7 @@ export class BrushPanel {
       <input class="fm-bp-file" type="file" accept=".abr,.brush,.brushset,.brushlib,image/*" multiple hidden>
       <input class="fm-bp-rename" type="text" maxlength="60" hidden spellcheck="false" autocomplete="off">
       <div class="fm-bp-libmenu fm-pp-glass" hidden></div>
-      <div class="fm-bp-menu fm-pp-glass" hidden>${(Array.from({ length: 7 }, () => '<button type="button" class="fm-bp-mi" hidden></button>')).join('')}</div>
+      <div class="fm-bp-menu fm-pp-glass" hidden>${(Array.from({ length: 8 }, () => '<button type="button" class="fm-bp-mi" hidden></button>')).join('')}</div>
       <div class="fm-bp-card" hidden>
         <div class="fm-bp-card-head"><div class="fm-bp-card-title">Pressure &amp; Smoothing</div><button type="button" class="fm-bp-card-done">Done</button></div>
         <div class="fm-bp-card-name"></div>
@@ -384,8 +392,19 @@ export class BrushPanel {
       this.previews.set(b.id, p);
     }
     p.rev = rev;
-    paintPreview(p.canvas, b);
+    if (!this.paintQ.includes(b.id)) this.paintQ.push(b.id);
+    if (!this.paintRaf) this.paintRaf = requestAnimationFrame(() => this.drainPaint());
     return p.canvas;
+  }
+
+  private drainPaint(): void {
+    this.paintRaf = 0;
+    const t0 = performance.now();
+    while (this.paintQ.length && performance.now() - t0 < 8) {
+      const id = this.paintQ.shift()!, b = brushStore.brush(id), p = this.previews.get(id);
+      if (b && p) paintPreview(p.canvas, b);
+    }
+    if (this.paintQ.length) this.paintRaf = requestAnimationFrame(() => this.drainPaint());
   }
 
   private pick(b: Brush): void {
@@ -404,7 +423,7 @@ export class BrushPanel {
     let acts: Act[];
     if (target.kind === 'brush') acts = ['pressure', 'rename', 'duplicate', 'export', 'up', 'down', 'delete'];
     else if (target.kind === 'set') acts = ['rename', 'duplicate', 'export', 'up', 'down', 'delete'];
-    else acts = ['import', 'newset', 'newlib', 'renamelib', 'exportlib', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
+    else acts = ['import', 'newset', 'newlib', 'renamelib', 'exportlib', 'showfolder', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
     if (target.kind === 'set' && target.id === IMPORTED_ID) acts = ['export', 'up', 'down'];
     this.menuItems.forEach((b, i) => {
       const a = acts[i];
@@ -473,6 +492,7 @@ export class BrushPanel {
       else if (act === 'newset') this.newSet();
       else if (act === 'newlib') this.newLib();
       else if (act === 'exportlib') this.exportLib(brushStore.activeLib());
+      else if (act === 'showfolder') void this.showFolder();
       else if (act === 'renamelib') this.beginRename('lib', brushStore.activeLib());
       else if (act === 'deletelib') { brushStore.removeLib(brushStore.activeLib()); this.pickFirstSet(); }
       else if (act === 'restore') { brushStore.resetAll(); this.activeSet = brushStore.sets()[0]?.id ?? RECENT; this.sync(); this.note('Starter brushes restored'); }
@@ -564,6 +584,20 @@ export class BrushPanel {
     if (added) { if (plain) { brushStore.setActiveLib(brushStore.libOf(IMPORTED_ID)); this.activeSet = IMPORTED_ID; } this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }
     this.note(added ? tn(added, 'Imported {n} brush', 'Imported {n} brushes') : (last || t('No brushes found in that file')));
     if (added && failed) this.note(`${tn(added, 'Imported {n} brush', 'Imported {n} brushes')}, ${tn(failed, '{n} skipped', '{n} skipped')}`);
+  }
+
+  /** Desktop: opens the folder with the system file browser; the browser has no way to, so it shows the path. */
+  private async showFolder(): Promise<void> {
+    const dir = brushStore.folder();
+    if (!dir) { this.note('The brush folder is not available yet'); return; }
+    if ('__TAURI_INTERNALS__' in window) {
+      try {
+        const core = await import('@tauri-apps/api/core');
+        await core.invoke('reveal_folder', { path: dir });
+        return;
+      } catch { /* the shell refused the folder; the path is shown instead */ }
+    }
+    this.note(`${t('Brush folder')}: ${dir}`);
   }
 
   private note(text: string): void {

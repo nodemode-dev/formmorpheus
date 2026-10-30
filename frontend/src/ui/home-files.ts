@@ -133,7 +133,7 @@ export class HomeFiles {
 
   /** Moves a movie or export to Recently Deleted after a confirmation, then re-reads the page. */
   private async trashIt(label: string, act: () => Promise<void>): Promise<void> {
-    if (!(await confirmAction('Delete?', `${label} moves to Recently Deleted, where it stays for 30 days.`, 'Delete', true))) return;
+    if (!(await confirmAction('Delete?', t('{name} moves to Recently Deleted, where it stays for 30 days.').replace('{name}', label), 'Delete', true))) return;
     try { await act(); } catch (err) { toast((err as Error).message, 'error'); }
     void this.refresh();
     document.dispatchEvent(new CustomEvent('fm:library-changed'));   // the Recently Deleted count follows
@@ -273,9 +273,9 @@ export class HomeFiles {
     const th = i.thumb;
     void (async () => {
       let blob: Blob | null = null;
-      if ('name' in th) blob = await api.thumbnail({ name: th.name });
+      if ('name' in th) blob = await api.thumbnail({ name: th.name, el: n, v: i.key.startsWith('lib:') ? i.when : undefined });
       else if (th.project) blob = await api.thumbnail({ path: th.path });
-      else blob = await api.readPath(th.path).catch(() => null);
+      else blob = await api.readPath(th.path, n).catch(() => null);
       this.loading.delete(tk);
       if (!blob || !blob.size) return;
       const u = URL.createObjectURL(blob);

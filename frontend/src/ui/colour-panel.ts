@@ -806,6 +806,8 @@ export class ColourPanel {
       const [x, y] = squareToDisc(s * 2 - 1, v * 2 - 1);
       place(n.dsb, ROUT + x * DISC_IN, ROUT - y * DISC_IN);
       setStyleVar(n.dsb, '--c', me);
+      // the reticle's left half is the previous color (the secondary before any pick), the right half the current one
+      setStyleVar(n.dsb, '--p', css(this.prev && !this.held ? this.prev : this.sec));
     } else if (m === 'classic' && this.cl) {
       setStyleVar(n.sq, '--c', hue);
       place(n.sqRet, s * n.sq.offsetWidth, (1 - v) * n.sq.offsetHeight);

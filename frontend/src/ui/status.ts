@@ -5,6 +5,7 @@ import { el, pendingClass, q, setClass, setStyleVar, setText, setTitle } from '.
 import { icon } from './icons';
 import { onLanguage, t, tn } from './i18n';
 import { contentName } from './canvas-words';
+import { historyLabel } from './history-label';
 import { JobsList } from './jobs-list';
 
 export const SERVICE_NOTE = 'The engine service saves and opens movies in the library. Start it with ./formmorpheus.';
@@ -81,8 +82,8 @@ export class StatusBar {
     const h = this.engine.history;
     if (this.undoBtn.disabled !== !h.canUndo) this.undoBtn.disabled = !h.canUndo;
     if (this.redoBtn.disabled !== !h.canRedo) this.redoBtn.disabled = !h.canRedo;
-    setTitle(this.undoBtn, h.canUndo ? `${t('Undo')} ${t(h.undoLabel ?? '')}` : t('Undo'));
-    setTitle(this.redoBtn, h.canRedo ? `${t('Redo')} ${t(h.redoLabel ?? '')}` : t('Redo'));
+    setTitle(this.undoBtn, h.canUndo ? `${t('Undo')} ${historyLabel(h.undoLabel ?? '')}` : t('Undo'));
+    setTitle(this.redoBtn, h.canRedo ? `${t('Redo')} ${historyLabel(h.redoLabel ?? '')}` : t('Redo'));
   }
 
   private syncHint(): void {

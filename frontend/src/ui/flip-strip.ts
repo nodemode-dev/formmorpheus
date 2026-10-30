@@ -103,7 +103,7 @@ export class FlipStrip {
   readonly preview: FlipPreview;
   private previewBtn: HTMLElement | null = null;
   private readonly cm: {
-    cut: ReturnType<typeof tile>; copy: ReturnType<typeof tile>; paste: ReturnType<typeof tile>; dup: ReturnType<typeof tile>;
+    cut: ReturnType<typeof tile>; copy: ReturnType<typeof tile>; paste: ReturnType<typeof tile>; pasteIns: ReturnType<typeof popRow>; dup: ReturnType<typeof tile>;
     hold: ReturnType<typeof popField>; clear: ReturnType<typeof popRow>; del: ReturnType<typeof popRow>; ins: ReturnType<typeof popRow>;
     split: ReturnType<typeof popRow>; fill: ReturnType<typeof popRow>; flip: ReturnType<typeof popRow>; opts: ReturnType<typeof popRow>;
   };
@@ -454,7 +454,7 @@ export class FlipStrip {
     }
   }
 
-  private cellAction(kind: 'cut' | 'copy' | 'paste' | 'dup' | 'ins' | 'clear' | 'del' | 'split' | 'fill' | 'flip' | 'opts'): void {
+  private cellAction(kind: 'cut' | 'copy' | 'paste' | 'pasteins' | 'dup' | 'ins' | 'clear' | 'del' | 'split' | 'fill' | 'flip' | 'opts'): void {
     const tg = this.cellTarget;
     const hit = tg ? this.find(tg.track, tg.frame) : null;
     this.cellMenu.hide();
@@ -482,6 +482,10 @@ export class FlipStrip {
       case 'paste':
         if (!clipboard.length) return;
         { const snap = clipboard, refs = clipRefs; this.host.run('Paste frames', (c) => { const live = refs ? this.framesOf(refs, c) : []; return pasteIntoFree(c, r, i, live.length === snap.length ? live : snap); }); }
+        break;
+      case 'pasteins':
+        if (!clipboard.length) return;
+        { const snap = clipboard, refs = clipRefs; this.host.run('Paste and Insert frames', (c) => { const live = refs ? this.framesOf(refs, c) : []; return pasteFrames(c, r, i, live.length === snap.length ? live : snap); }); }
         break;
       case 'dup': this.host.run('Duplicate frame', (c) => duplicateFrame(c, r, i)); afterInsert(1); break;
       case 'ins': this.host.run('Insert frame', (c) => insertFrame(c, r, i)); afterInsert(1); break;
@@ -571,9 +575,11 @@ export class FlipStrip {
     const tiles = el<HTMLElement>('<div class="fm-cm-tiles"></div>');
     const cut = tile(ICO.cut, 'Cut', () => this.cellAction('cut'));
     const copy = tile(ICO.copy, 'Copy', () => this.cellAction('copy'));
-    const paste = tile(ICO.paste, 'Paste', () => this.cellAction('paste'));
+    const paste = tile(ICO.paste, 'Paste', (e) => this.cellAction(e.altKey ? 'pasteins' : 'paste'));
     const dup = tile(ICO.dup, 'Duplicate', () => this.cellAction('dup'));
     tiles.append(cut.el, copy.el, paste.el, dup.el);
+    const pasteIns = popRow('paste', 'Paste and Insert');
+    pasteIns.el.addEventListener('click', () => this.cellAction('pasteins'));
     const ins = popRow('plus', 'Insert frame');
     ins.el.addEventListener('click', () => this.cellAction('ins'));
     const hold = popField('film', 'Frame duration', () => this.commitHold());
@@ -591,8 +597,8 @@ export class FlipStrip {
     flip.el.addEventListener('click', () => this.cellAction('flip'));
     const opts = popRow('sliders', 'Track options');
     opts.el.addEventListener('click', () => this.cellAction('opts'));
-    this.cellMenu.body.append(tiles, popSep(), ins.el, split.el, fill.el, flip.el, hold.el, opts.el, popSep(), clear.el, del.el);
-    return { cut, copy, paste, dup, hold, clear, del, ins, split, fill, flip, opts };
+    this.cellMenu.body.append(tiles, popSep(), pasteIns.el, ins.el, split.el, fill.el, flip.el, hold.el, opts.el, popSep(), clear.el, del.el);
+    return { cut, copy, paste, pasteIns, dup, hold, clear, del, ins, split, fill, flip, opts };
   }
 
   private buildRowMenu(): FlipStrip['rm'] {
@@ -731,6 +737,8 @@ export class FlipStrip {
     setClass(this.cm.opts.el, 'is-gone', many);
     this.cm.hold.set(String(Math.max(1, hit.t.frames[hit.i].hold)));
     this.cm.paste.setDisabled(!clipboard.length || many);
+    setClass(this.cm.pasteIns.el, 'is-disabled', !clipboard.length);
+    setClass(this.cm.pasteIns.el, 'is-gone', many);
     this.cellMenu.showAt(x, y);
   }
 
@@ -1296,7 +1304,7 @@ export class FlipStrip {
   playheadWithin(): number { return this.curWithin(); }
 }
 
-function tile(svgStr: string, label: string, on: () => void): { el: HTMLButtonElement; setDisabled(v: boolean): void } {
+function tile(svgStr: string, label: string, on: (e: MouseEvent) => void): { el: HTMLButtonElement; setDisabled(v: boolean): void } {
   const b = el<HTMLButtonElement>(`<button class="fm-cm-tile" type="button">${glyph(svgStr, 18)}<span>${label}</span></button>`);
   b.addEventListener('click', on);
   return { el: b, setDisabled: (v) => setClass(b, 'is-disabled', v) };

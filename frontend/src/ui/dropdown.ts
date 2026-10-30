@@ -7,6 +7,16 @@ import { icon } from './icons';
  *  value and fires its change event, so the code that owns it is unchanged; values it is given show on the button.
  *  `onHover`, when given, hears the value under the pointer or the arrow keys as a live preview, and null when the menu
  *  closes or the pointer leaves it without a choice; a choice fires change as ever, and onHover(null) follows it. */
+// The one open list, if any. Escape is taken at the window in the capture phase so it closes only the list: no
+// tool, selection or card handler downstream hears it.
+let openList: (() => void) | null = null;
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !openList) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  openList();
+}, true);
+
 export function enhanceSelect(select: HTMLSelectElement, opts: { search?: string; onHover?: (value: string | null) => void } = {}): void {
   const btn = el<HTMLButtonElement>(`<button class="cv-dd-btn" type="button" aria-haspopup="listbox"><span class="cv-dd-label"></span>${icon('chevronDown', 12)}</button>`);
   const pop = el(`<div class="cv-dd-pop" role="listbox" hidden>${opts.search ? '<input class="cv-dd-search" type="search">' : ''}<div class="cv-dd-list"></div></div>`);
@@ -55,8 +65,10 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { search?: string
     mark();
   };
   const mark = (): void => { list.querySelectorAll<HTMLElement>('.cv-dd-item').forEach((i, n) => i.classList.toggle('is-picked', n === picked)); };
-  const close = (): void => { setHidden(pop, true); btn.setAttribute('aria-expanded', 'false'); opts.onHover?.(null); };
+  const escape = (): void => { close(); btn.focus(); };
+  const close = (): void => { setHidden(pop, true); btn.setAttribute('aria-expanded', 'false'); opts.onHover?.(null); if (openList === escape) openList = null; };
   const open = (): void => {
+    openList = escape;
     if (search) search.value = '';
     fill();
     setHidden(pop, false);

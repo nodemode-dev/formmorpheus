@@ -25,11 +25,12 @@ import { icon } from './icons';
 import { StageBoxMenu } from './stage-box-menu';
 import { anchorMode } from './anchor-mode';
 import { boxOf, frameLines, snapAngle, snapBox, type Box } from './stage-snap';
-import { layoutText } from '../engine/text-layout';
+import { fontEpoch, layoutText } from '../engine/text-layout';
 import { TextStage } from './text-stage';
 import type { TextStyle } from '../engine/types';
 import { GestureCache } from './stage-gesture-cache';
 import { Fringe } from './stage-fringe';
+import { DragCache, pictureSig, sameSig } from './stage-drag-cache';
 import '../styles/stage-box.css';
 
 /** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
@@ -97,6 +98,12 @@ export class StageView {
   /** Low-resolution picture around the Stage that covers the edge a pan uncovers. */
   private readonly fringe: Fringe;
   private stale = true;
+  /** Set by anything but a movie edit: the picture is drawn again even when the movie's visible content is unchanged. */
+  private hard = true;
+  /** What the last drawn picture depended on (stage-drag-cache): a movie edit that leaves it equal draws nothing. */
+  private lastSig: unknown[] | null = null;
+  /** Layers below and above a block under the pointer, kept while it is dragged. */
+  private readonly drag: DragCache;
   private width = 0;
   private height = 0;
   private dpr = 1;
@@ -117,6 +124,7 @@ export class StageView {
     this.nav = new StageNav(this.root, engine);
     this.fringe = new Fringe(this.space, this.canvas);
     this.gesture = new GestureCache(this.canvas, () => this.schedule(), (v) => this.fringe.follow(v, this.width, this.height));
+    this.drag = new DragCache(renderer);
     this.nav.onChange = () => this.scheduleView();
     this.nav.isDragging = () => !!this.grab;
     this.nav.isEmpty = (x, y) => { const m = this.engine.movie; return !!m && !!this.view && !this.pick(m, x, y); };
@@ -124,7 +132,8 @@ export class StageView {
     this.root.tabIndex = 0;
     this.root.addEventListener('keydown', (e) => this.arrowKey(e));
     new ResizeObserver(() => this.resize()).observe(this.root);
-    for (const ev of ['movie', 'time', 'selection', 'projects'] as const) engine.on(ev, () => this.schedule());
+    for (const ev of ['time', 'selection', 'projects'] as const) engine.on(ev, () => this.schedule());
+    engine.on('movie', () => this.scheduleSoft());
     this.banner = new PerformBanner(engine);
     this.root.appendChild(this.banner.root);
     this.warp = new WarpOverlay(this.space, engine);
@@ -150,7 +159,7 @@ export class StageView {
       editStyle: (id, x, y) => this.onEditTextStyle?.(id, x, y),
       focus: () => this.root.focus({ preventScroll: true }),
     });
-    window.addEventListener('fm:fonts', () => this.schedule());
+    window.addEventListener('fm:fonts', () => { this.frames.clear(); this.hard = true; this.schedule(); });
     const dbl = (e: MouseEvent): void => {
       const m = this.engine.movie;
       if (!m || !this.view || this.nav.preview || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
@@ -232,8 +241,19 @@ export class StageView {
     this.req = requestAnimationFrame(() => { this.req = 0; this.draw(); });
   }
 
+  /** A movie edit: drawn again only when what the Stage shows changed (a Timeline block moved in time often changes nothing). */
+  private scheduleSoft(): void {
+    this.stale = true;
+    if (this.req) return;
+    this.req = requestAnimationFrame(() => { this.req = 0; this.draw(); });
+  }
+
+  /** Teardown: the fringe's window listeners and timers go. */
+  dispose(): void { this.fringe.dispose(); }
+
   schedule(): void {
     this.stale = true;
+    this.hard = true;
     if (this.req) return;
     this.req = requestAnimationFrame(() => { this.req = 0; this.draw(); });
   }
@@ -251,10 +271,17 @@ export class StageView {
     }
     const view = this.nav.view(m, this.dpr);
     const preview = this.nav.preview;
+    const soft = !this.hard;
+    this.hard = false;
+    if (this.stale && soft && this.lastSig && sameSig(this.lastSig, pictureSig(m, this.engine.frame))) {
+      this.gesture.rebind(m);
+      this.stale = false;
+    }
     const reuse = !this.stale && this.gesture.reuse(m, this.engine.frame, view, this.canvas.width, this.canvas.height, preview, this.dpr);
     if (!reuse) {
       this.stale = false;
       this.renderPicture(ctx, m, view, preview);
+      this.lastSig = pictureSig(m, this.engine.frame);
       this.gesture.store(m, this.engine.frame, view, this.canvas.width, this.canvas.height, preview, this.dpr);
       this.fringe.queue((fc, cw, ch, k) => this.drawFringe(fc, m, this.engine.frame, view, preview, cw, ch, k));
     }
@@ -283,13 +310,18 @@ export class StageView {
     const frame = this.engine.frame;
     const opts = { backstage: !preview, background: this.bg, transparentChecker: this.pattern, noCamera: cameraMode.on };
     const { lo, last } = this.engine.playSpan();
-    this.frames.retarget({ movie: m, view, opts, lo, last, sig: `${this.canvas.width}x${this.canvas.height}:${view.scale.toFixed(5)}:${view.ox.toFixed(2)}:${view.oy.toFixed(2)}:${this.bg}:${preview}:${cameraMode.on}:${this.renderer.gpuActive}:${this.checkerGen}` });
-    const hit = this.frames.blit(ctx, frame);
-    if (!hit) {
-      this.renderer.drawFrame(ctx, m, frame, view, opts);
-      this.frames.capture(this.canvas, frame, this.renderer.takeComplete());
+    this.frames.retarget({ movie: m, view, opts, lo, last, sig: `${this.canvas.width}x${this.canvas.height}:${view.scale.toFixed(5)}:${view.ox.toFixed(2)}:${view.oy.toFixed(2)}:${this.bg}:${preview}:${cameraMode.on}:${this.renderer.gpuActive}:${this.checkerGen}:${fontEpoch()}` });
+    const g = this.grab;
+    const moved = g && !g.rec && !this.nav.preview ? (g.kind === 'move' ? g.ids : [g.id]) : null;
+    if (!moved && this.drag.live) this.drag.drop();
+    if (!(moved && this.drag.paint(ctx, m, frame, view, moved, opts, cameraMode.on))) {
+      const hit = this.frames.blit(ctx, frame);
+      if (!hit) {
+        this.renderer.drawFrame(ctx, m, frame, view, opts);
+        this.frames.capture(this.canvas, frame, this.renderer.takeComplete());
+      }
+      this.frames.note(frame, this.engine.playing, hit);
     }
-    this.frames.note(frame, this.engine.playing, hit);
     if (!preview) {
       // a thin outline so the Stage edge shows on any background
       const lw = Math.max(1, Math.round(this.dpr));
@@ -743,6 +775,9 @@ export class StageView {
     this.endRec(this.grab);
     this.grab = null;
     this.engine.endGesture();
+    // the gesture's caches go; one full render follows
+    this.drag.drop();
+    this.schedule();
     try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* released */ }
     const m = this.engine.movie, v = this.view;
     if (m && v) this.snapLines(m, v, null, null);

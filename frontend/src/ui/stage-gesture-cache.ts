@@ -30,6 +30,11 @@ export class GestureCache {
     this.setTransform('');
   }
 
+  /** The movie object changed but the picture did not: keep the cached picture for the new object. */
+  rebind(movie: Movie): void {
+    if (this.shot) this.shot = { ...this.shot, movie };
+  }
+
   /** The picture on the canvas is stale for another reason (an edit, a new frame). */
   invalidate(): void {
     this.shot = null;

@@ -29,6 +29,7 @@ import { setupOnboarding } from '../ui/onboarding';
 import { previewFor } from '../ui/preview-strip';
 import { HomeScreen } from '../ui/home';
 import { t } from '../ui/i18n';
+import { historyLabel } from '../ui/history-label';
 import { icon } from '../ui/icons';
 import '../ui/icons-morph';
 import { MenuBar, PopupMenu, setMenuStyle, type MenuDef } from '../ui/menu';
@@ -440,8 +441,8 @@ export function startApp(): void {
     { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
     { id: 'settings', label: 'Preferences...', keys: ['Mod+,'], run: () => settings.show() },
     { id: 'search', label: 'Search Commands...', keys: ['Mod+K'], run: () => palette.show() },
-    { id: 'undo', label: () => (engine.history.canUndo ? `${t('Undo')} ${t(engine.history.undoLabel ?? '')}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
-    { id: 'redo', label: () => (engine.history.canRedo ? `${t('Redo')} ${t(engine.history.redoLabel ?? '')}` : 'Redo'), keys: ['Shift+Mod+Z', 'Mod+Y'], enabled: () => engine.history.canRedo, run: () => engine.redo() },
+    { id: 'undo', label: () => (engine.history.canUndo ? `${t('Undo')} ${historyLabel(engine.history.undoLabel ?? '')}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
+    { id: 'redo', label: () => (engine.history.canRedo ? `${t('Redo')} ${historyLabel(engine.history.redoLabel ?? '')}` : 'Redo'), keys: ['Shift+Mod+Z', 'Mod+Y'], enabled: () => engine.history.canRedo, run: () => engine.redo() },
     { id: 'cut', label: 'Cut', keys: ['Mod+X'], enabled: sel, run: () => engine.copy(true) },
     { id: 'copy', label: 'Copy', keys: ['Mod+C'], enabled: sel, run: () => engine.copy(false) },
     { id: 'paste', label: 'Paste', keys: ['Mod+V'], enabled: () => has() && engine.hasClipboard, run: () => engine.paste() },

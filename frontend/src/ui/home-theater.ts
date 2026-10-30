@@ -3,7 +3,7 @@ import { el, q, setClass, setDisabled, setHidden, setText } from './dom';
 import { confirmAction, promptName } from './dialogs';
 import { icon } from './icons';
 import { Popover, popRow, popSep, type PopRow } from './popover';
-import { tn } from './i18n';
+import { t, tn } from './i18n';
 import { toast } from './toast';
 import { shareMovie } from './theater-share';
 import { copyMoviesToFolder } from './theater-storage';
@@ -281,8 +281,8 @@ export class TheaterTools {
   async trash(names: string[]): Promise<void> {
     const open = names.find((n) => this.h.isOpen(n));
     if (open) { toast('Close the movie before deleting it.', 'error'); return; }
-    const label = names.length === 1 ? `"${names[0]}"` : `${names.length} movies`;
-    if (!(await confirmAction('Delete?', `${label} moves to Recently Deleted, where it stays for 30 days.`, 'Delete', true))) return;
+    const label = names.length === 1 ? `"${names[0]}"` : tn(names.length, '{n} movie', '{n} movies');
+    if (!(await confirmAction('Delete?', t('{name} moves to Recently Deleted, where it stays for 30 days.').replace('{name}', label), 'Delete', true))) return;
     for (const n of names) { await api.deleteMovie(n); this.h.forget(n); }
     this.selected.clear();
     this.paint();

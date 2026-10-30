@@ -5,6 +5,16 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.12.0', name: 'Faster playback, smooth dragging and brush folders',
+    additions: [
+      { title: 'Faster playback', text: 'Movies with many sparse drawings play faster from the first pass.', command: 'play' },
+      { title: 'Smooth dragging', text: 'Moving, scaling and turning a block on the Stage stays smooth on big movies.', command: 'home' },
+      { title: 'Quicker video jumps', text: 'Jumping far into a long video reaches the exact frame sooner.', command: 'import-file' },
+      { title: 'Brush folders', text: 'Your brush libraries are folders of brush files you can browse. Show brush folder opens them.', command: 'new-flipbook' },
+      { title: 'Paste and Insert', text: 'In a Flipbook, Paste and Insert (or Alt with Paste) pushes the later frames along.', command: 'new-flipbook' },
+    ],
+  },
+  {
     version: '0.11.0', name: 'A smoother Stage, a second color and tips',
     additions: [
       { title: 'Smooth zoom and pan', text: 'Zooming and panning the Stage stays smooth on big movies, and playback reuses frames it has already drawn.', command: 'play' },

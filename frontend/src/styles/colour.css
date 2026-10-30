@@ -62,7 +62,7 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.4);
   transform: translate(var(--x, 0), var(--y, 0));
 }
-.fm-col-ret.is-sb { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+.fm-col-ret.is-sb { width: 14px; height: 14px; margin: -7px 0 0 -7px; background: linear-gradient(to right, var(--p, var(--c, #fff)) 50%, var(--c, #fff) 50%); }
 .fm-col-ret.is-hx { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-width: 1.5px; }
 .fm-col-ret.is-hp { width: 16px; height: 16px; margin: -8px 0 0 -8px; }
 

@@ -22,9 +22,30 @@ export class Fringe {
     this.cv.style.cssText = 'position:absolute;pointer-events:none;display:none;image-rendering:auto;';
     space.insertBefore(this.cv, main);
     const mark = (): void => { this.lastInput = performance.now(); };
-    for (const t of ['pointermove', 'wheel', 'keydown']) window.addEventListener(t, mark, { capture: true, passive: true });
-    window.addEventListener('pointerdown', () => { this.down = true; mark(); }, { capture: true, passive: true });
-    for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () => { this.down = false; mark(); }, { capture: true, passive: true });
+    const press = (): void => { this.down = true; mark(); };
+    const release = (): void => { this.down = false; mark(); };
+    const on = (t: string, fn: () => void): void => {
+      window.addEventListener(t, fn, { capture: true, passive: true });
+      this.offs.push(() => window.removeEventListener(t, fn, { capture: true }));
+    };
+    for (const t of ['pointermove', 'wheel', 'keydown']) on(t, mark);
+    on('pointerdown', press);
+    for (const t of ['pointerup', 'pointercancel']) on(t, release);
+  }
+
+  private readonly offs: Array<() => void> = [];
+
+  /** Removes the window listeners, cancels the timers and takes the canvas out; call when the Stage is torn down. */
+  dispose(): void {
+    for (const off of this.offs.splice(0)) off();
+    window.clearTimeout(this.timer);
+    this.timer = 0;
+    if (this.pending) {
+      if (typeof cancelIdleCallback === 'function') cancelIdleCallback(this.pending); else window.clearTimeout(this.pending);
+      this.pending = 0;
+    }
+    this.draw = null;
+    this.cv.remove();
   }
 
   /** The canvas was just drawn afresh: the fringe is stale until it is drawn again (when idle). `draw` renders the area

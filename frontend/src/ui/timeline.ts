@@ -169,6 +169,7 @@ export class TimelineView {
   private pal: Palette | null = null;
   private thumbs = new WeakMap<Content, HTMLCanvasElement>();
   private thumbGen = 0;
+  private thumbStale = false;
   private lastMovieId = '';
   private video: VideoPool | null = null;
   private audio: AudioEngine | null = null;
@@ -236,7 +237,12 @@ export class TimelineView {
     this.ruler.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     this.bindGestures();
     this.editPill.addEventListener('click', () => { const c = this.engine.selected[0]; if (c) this.hooks.edit(c); });
-    engine.on('movie', () => { this.thumbGen++; this.schedule(); });
+    // While a block is dragged or trimmed only its position changes: the thumbnails are kept and renewed once at the drop.
+    engine.on('movie', () => {
+      const k = this.drag?.kind;
+      if (k === 'move' || k === 'trim' || k === 'inner' || k === 'key') this.thumbStale = true; else this.thumbGen++;
+      this.schedule();
+    });
     engine.on('selection', () => {
       const now = engine.selection.content;
       if (now.join() !== this.lastSel.join()) {
@@ -1155,13 +1161,7 @@ export class TimelineView {
       if (!additive && (onLine || e.pointerType !== 'touch')) {
         // held still (mouse or pen: anywhere on the block; a finger: on the Playhead line): its options, with Split at the Playhead
         const px = e.clientX, py = e.clientY;
-        this.pressAt = [px, py];
-        this.cancelLongPress();
-        this.longPress = window.setTimeout(() => {
-          this.longPress = 0;
-          this.drag = null;
-          this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true }));
-        }, 500);
+        this.holdFor(this.drag, px, py, () => this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true })));
       }
       return;
     }
@@ -1174,19 +1174,31 @@ export class TimelineView {
     }
     this.keySel.clear();
     this.engine.select([], h?.track.id ?? this.engine.selection.track);
-    this.drag = { kind: 'scrub' };
+    const sd: Drag = { kind: 'scrub' };
+    this.drag = sd;
     this.engine.seek(Math.floor(this.xf(x)));
     if (e.pointerType !== 'touch') {
       // a mouse or pen held still on empty track area opens the same menu as a right-click
       const px = e.clientX, py = e.clientY;
-      this.pressAt = [px, py];
-      this.cancelLongPress();
-      this.longPress = window.setTimeout(() => {
-        this.longPress = 0;
-        this.drag = null;
-        this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true }));
-      }, 500);
+      this.holdFor(sd, px, py, () => this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true })));
     }
+  }
+
+  /** Arms the press-and-hold menu. It opens only if the press has not moved: the Playhead is where the press put it
+   *  and no drag has begun; the history gesture, if one is open, is closed. */
+  private holdFor(d: Drag, x: number, y: number, open: () => void): void {
+    this.pressAt = [x, y];
+    this.cancelLongPress();
+    const f0 = this.engine.frame;
+    this.longPress = window.setTimeout(() => {
+      this.longPress = 0;
+      if (this.drag !== d || this.engine.frame !== f0) return;
+      if (d.kind === 'move' && (d.moved || d.applied !== 0 || d.appliedTrack !== 0)) return;
+      if (d.kind === 'key' && d.cur !== d.from0) return;
+      this.drag = null;
+      this.engine.endGesture();
+      open();
+    }, 500);
   }
 
   private laneHit(e: { clientX: number; clientY: number }): { c: Content; track: Track; hit: LaneHit } | null {
@@ -1232,13 +1244,7 @@ export class TimelineView {
     }
     {
       const x = e.clientX, y = e.clientY;
-      this.pressAt = [x, y];
-      this.cancelLongPress();
-      this.longPress = window.setTimeout(() => {
-        this.longPress = 0;
-        this.drag = null;
-        this.openLaneMenu(lh, x, y);
-      }, 500);
+      if (this.drag) this.holdFor(this.drag, x, y, () => this.openLaneMenu(lh, x, y));
     }
   }
 
@@ -1426,6 +1432,7 @@ export class TimelineView {
   private pointerUp(e: PointerEvent): void {
     const d = this.drag;
     this.drag = null;
+    if (this.thumbStale) { this.thumbStale = false; this.thumbGen++; }
     this.cancelLongPress();
     try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* released */ }
     const fl = this.flick;

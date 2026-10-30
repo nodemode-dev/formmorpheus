@@ -1800,6 +1800,7 @@ export class PaintView {
     else if (e.key === 'Escape' && this.previewSaved) this.togglePreview();
     else if (e.key === 'Escape') {
       if (this.strip.closeMenus()) { e.preventDefault(); e.stopPropagation(); return; }
+      if (this.brushPanel.isOpen() && this.brushPanel.closeInner()) { e.preventDefault(); e.stopPropagation(); return; }
       const open =[this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
       if (open) { this.closePanels(); this.clip.hide(); this.menu.hidden = true; this.syncChrome(); }
       else if (this.pickArmed || this.dropper.continuing) { this.pickArmed = false; this.dropper.stopContinue(); this.syncChrome(); }
