@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.9.0
-Last updated: 2026-10-30 · transcode jobs, library folder, previews, H.264 and audio codecs in jobs
+Current build version: v0.10.0
+Last updated: 2026-10-30 · stack folders, the host and origin guard, safe moves, streamed uploads, transcode caps, HEIC
 
 ---
 
@@ -150,3 +150,10 @@ A job w/ no upload or poll for 10 min is cancelled and removed, checked every mi
 - logged: v0.9.0 · 2026-10-30
 
 `/api/transcode` turns video the window cannot decode into H.264 MP4 (VP9 WebM when the source has alpha) and sound into 48 kHz WAV, w/ the job pattern of jobs.py. The library folder is chosen at runtime (`settings.json` in the data folder); `FORMMORPHEUS_LIBRARY_DIR` still wins; system and relative paths are refused. A movie w/o a poster or preview answers 204, not 404. Jobs can write H.264, choose AAC or PCM (PCM only in .mov) and a ProRes profile; libx264 had to be added to the encoders the probe looks for.
+
+### v0.10.0 · stack folders, the host guard, safe moves, caps
+- refers-to: app/routers/library.py :: stacks, order; app/core/guard.py; app/core/fsmove.py :: safe_move; app/core/upload.py; app/core/config.py :: window_origins; app/routers/jobs.py :: sweep_abandoned; app/routers/transcode.py :: heic, cap; app/routers/recovery.py; app/routers/system.py :: library copy; app/routers/trash.py :: restore
+- kind: explainer
+- logged: v0.10.0 · 2026-10-30
+
+A stack is a folder `Library/<Stack>/<movie>.fmo`, one level deep; movie names stay unique across the whole library so open, save and trash keep addressing by name. `.stacks.json` migrates once to folders and is renamed `.stacks.json.migrated`. `.order.json` per folder holds the manual order. The guard is the outermost middleware: loopback hosts only, and state-changing requests need no Origin, one of `window_origins()` or the request's own scheme and host (the desktop engine's random port); a new window origin must be added to `window_origins()`. `safe_move` falls back to copy, fsync, replace and remove on EXDEV. Uploads are streamed w/ size checks while reading. The jobs sweep skips folders owned by either job registry and keeps orphans and unfetched results 30 minutes. Transcodes run at most 2 at a time, probes time out after 30 s, and a cancel before the process exists still kills it. HEIC goes through pillow-heif if installed, else ffmpeg 7.1+ (older builds return one tile, so they are refused). A library folder change copies stack folders and order files too; Recently Deleted restores to a name free across the library.

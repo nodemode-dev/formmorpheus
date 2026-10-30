@@ -247,6 +247,20 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
+## New in 0.10.0
+
+**Theater.** A stack is now a real folder in the library. Drag a movie onto another to make one, onto a stack to add to it, or between cards to reorder (the order is kept). Select several movies and carry them together; hover a stack while carrying to go in, hover the back control to come out. Click a movie or stack name to rename it. On touch, hold a card to pick it up, or hold and lift for its menu.
+
+**Crop and resize.** Settings · Canvas · Crop and resize now works on the canvas itself: drag the edge and corner handles (Shift keeps proportions), type X, Y, W and H, zoom and pan, switch to Resample to scale, hold to see the original. In a Flipbook the time bar scrubs every frame so you can check they all fit. Ctrl or Cmd+Z undoes a crop from Draw and Paint.
+
+**Brushes and text.** Right-click a brush for Export brush, a set for Export set, or use the library's ··· menu for Export library. The Text card's Fonts list has 15 built-in families, incl. Arabic, Japanese, Chinese, Korean, Thai and Devanagari faces that load only when text needs them.
+
+**Video and pictures.** Video w/ transparency (VP9 w/ alpha, ProRes 4444) keeps it on the Stage and in export. HEIC pictures the window cannot open go through the engine when ffmpeg 7.1 or newer is installed. Settings · Add · Insert a file adds TGA, TIFF, HEIC, BMP, GIF, WebP and AVIF pictures to a Drawing.
+
+**Timeline.** Content · Push Content moves a block one frame earlier or later w/ what it touches; Extend and Push and Contract and Pull change a block's length and move the rest of the track. Flip Content Order reverses two or more selected blocks. Set Loop Start and Set Loop End at the Playhead make playback loop inside a range (Clear Loop Range ends it). Preferences can make the pen button play and pause, and turn rotation from a twisting pen in Perform on or off. A four-finger tap toggles full-screen preview.
+
+**Safety.** Edit · Recover Lost Movies... offers recovery snapshots again at any time. The engine accepts requests only from this computer and from formmorpheus's own windows, moves files safely between drives, and checks the size of what it unpacks. Movies saved by older versions open cleanly.
+
 ## New in 0.9.0
 
 **Start.** formmorpheus opens on the Movies grid (the Theater). The brand name at the top of Home opens About, What's New, Help and Reset Examples. Three example movies are built at first run, and Help · Take the Tour points out the Stage, Timeline, modes, Create menu and Stage Options. Hover a movie to preview it; Share offers the movie w/ its full undo history or a smaller file. Preferences · Change Library Folder... moves the library.

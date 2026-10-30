@@ -11,6 +11,7 @@ formmorpheus is licensed under the Apache License 2.0 (`LICENSE`). It includes o
 | fflate | `.fmo` movie files (zip), exported frame archives | MIT |
 | mediabunny 1.61.5 (Vanilagy), used unmodified from npm; source: https://github.com/Vanilagy/mediabunny | reading video and sound files, writing MP4, WebM and MOV exports | MPL-2.0 (file-level copyleft: its files are shipped unedited) |
 | Inter and JetBrains Mono (`@fontsource`) | interface fonts | SIL Open Font License 1.1 |
+| Built-in text fonts through `@fontsource` 5.3.0 (5.3.1 for Noto Sans JP, SC, KR): Lora, Nunito, Bebas Neue, Caveat, Press Start 2P, VT323, Noto Sans, Noto Sans Arabic, Thai and Devanagari, Noto Sans JP, SC and KR (SIL Open Font License 1.1); Roboto Slab and Permanent Marker (Apache-2.0); loaded on demand | Text card Fonts list, Stage and export | OFL-1.1, Apache-2.0 |
 | FastAPI, Starlette, Uvicorn | the engine service | MIT (FastAPI), BSD-3-Clause (Starlette, Uvicorn) |
 | PyInstaller (build only, `backend/requirements_desktop.txt`) | freezes the engine for the desktop app | GPL-2.0 with the bootloader exception: the frozen program is not covered by the GPL |
 | Vite, TypeScript, Tauri API, CLI and plugins (shell, dialog, single instance) | build and desktop | MIT, Apache-2.0, MIT OR Apache-2.0 |

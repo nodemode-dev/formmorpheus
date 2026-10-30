@@ -7,7 +7,7 @@
 <p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.9.0-f97316" alt="version v0.9.0" />
+  <img src="https://img.shields.io/badge/version-v0.10.0-f97316" alt="version v0.10.0" />
   <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
@@ -17,7 +17,7 @@
 
 formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.9.0, phases 1 to 22 of 22 (parity awaiting the owner's pass)
+**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.10.0, phases 1 to 25 of 25 (parity awaiting the owner's pass)
 
 ## Highlights
 
@@ -39,7 +39,9 @@ formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in 
 - **In your language** the interface in 30 languages, right to left included; an in-app manual (F1) w/ search
 - **Stage you can move around** zoom toward the pointer, pan, fit, rotate the view & a full-screen preview; Stage Options for the background colour, transparency, backstage & timecode
 - **Rigging & motion** a Graph editor for custom eases, curved motion paths, pivots, parenting, a keyed camera & bones, plus lip-sync from sound & a Boil effect
-- **Brushes** 165 original brushes in 19 sets, `.abr` & `.brushset` import, per-brush pressure & smoothing
+- **Brushes** 165 original brushes in 19 sets, `.abr` & `.brushset` import, export of a brush, a set or a whole library, per-brush pressure & smoothing
+- **Text in many scripts** 15 built-in open-licence font families loaded on demand, incl. Arabic, Japanese, Chinese, Korean, Thai & Devanagari
+- **Theater** stacks are real folders, carry several movies at once, enter a stack mid-drag, manual order kept by the engine
 - **Desktop apps** `./build_app` makes the macOS app & dmg, Windows msi & installer, Linux deb & AppImage; `.fmo` files open in the running app & join the OS recent list
 - **Keyframes** Move & Scale plus live filters (opacity, Gaussian blur, sharpen, noise, hue saturation brightness, lens blur) keyed on lanes under each block, easing (linear, ease in, ease out, ease in & out, hold), expanded per-channel rows, copy, paste & reverse
 - **The form family shell** the same splash & reveal, title bar, menus (in the window or the macOS menu bar), Home screen, Preferences & status bar as formvis, w/ 28 shared themes & zero flash on load
@@ -117,7 +119,7 @@ formmorpheus/
 
 ## Status
 
-All 22 phases of the plan have landed; parity w/ the reference is now measured by a fresh audit (most rows present; the rest listed in the planning notes) and waits on the owner's own pass. Phases 1 to 19 brought the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work, the documentation, the carried items (layer groups & masks, Warp & Distort keys, the GPU compositor), the extras beyond the reference (graph editor, motion paths, pivots, parenting, camera, bones, lip-sync, boil, round trips w/ formvis & formvfx), & the first wave of reference parity (Stage navigation & options, the Compose box, keyboard shortcuts, the Flipbook workflow & Mini Flipbook, paint feel & clipboard, the brush library, Timeline ergonomics, all blend modes, Theater management). Phases 20 to 22 added text formatting & inline editing, onboarding (What's New, About, example movies, a tour), export & import parity (TIFF / TGA / BMP frames, ProRes profiles, PCM or AAC, PSD / ORA / KRA layered import, TGA, AIFF / CAF / AC3), a canvas of its own for each Drawing, touch & pen gestures, the Animation & Classic brush libraries w/ wet mix & colour dynamics, & a fix wave from a fresh audit. The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
+All 22 phases of the plan have landed; parity w/ the reference is now measured by a fresh audit (most rows present; the rest listed in the planning notes) and waits on the owner's own pass. Phases 1 to 19 brought the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work, the documentation, the carried items (layer groups & masks, Warp & Distort keys, the GPU compositor), the extras beyond the reference (graph editor, motion paths, pivots, parenting, camera, bones, lip-sync, boil, round trips w/ formvis & formvfx), & the first wave of reference parity (Stage navigation & options, the Compose box, keyboard shortcuts, the Flipbook workflow & Mini Flipbook, paint feel & clipboard, the brush library, Timeline ergonomics, all blend modes, Theater management). Phases 20 to 22 added text formatting & inline editing, onboarding (What's New, About, example movies, a tour), export & import parity (TIFF / TGA / BMP frames, ProRes profiles, PCM or AAC, PSD / ORA / KRA layered import, TGA, AIFF / CAF / AC3), a canvas of its own for each Drawing, touch & pen gestures, the Animation & Classic brush libraries w/ wet mix & colour dynamics, & a fix wave from a fresh audit. Phases 23 to 25 closed most remaining audit rows (push, extend & contract content, flip content order, a loop range, pen button play), crop on the canvas w/ a Flipbook time bar, brush export, bundled fonts, video w/ transparency, HEIC through the engine, & a full review w/ a hardening wave (host & origin checks on the engine, safe moves across drives, size caps, old files normalised on load). The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
 
 ## Development
 

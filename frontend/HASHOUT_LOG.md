@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.9.0
-Last updated: 2026-10-30 · phases 20 to 22 (reference parity waves two and three, the fresh audit's fix wave)
+Current build version: v0.10.0
+Last updated: 2026-10-30 · phases 23 to 25 (the remaining audit rows, v0.9.0's open items, review and hardening)
 
 ---
 
@@ -660,3 +660,10 @@ Measured against the reference inventory and audit in the planning sidecar. The 
 - logged: v0.9.0 · 2026-10-30
 
 One text layout (`layoutText`) serves the renderer, the GPU text texture (keyed w/ `fontEpoch`), warp rects and the Stage box. `Content.canvas` (movie pixels) is written only when it differs from the movie rect; paint docs load at canvas size. The PSD reader is written from the spec (formvis uses a library this repo does not carry). Layered imports become movie-sized PNG assets per layer and mask. Videos and sounds the window cannot decode go through the engine's `/api/transcode` (the person's own ffmpeg). The gesture hub (`gestures.ts`) recognises multi-touch and turns a second finger into Shift. The Animation brush library is original (180 brushes); `.brush` import keys beyond spacing, jitter, scatter, rotation, texture, dynamics and opacity are assumptions, listed in BUILD_NOTES. Text defaults to #111111 so it reads on the default Stage. `--glass-bg` went to 99% opacity so popovers over a white canvas read as one piece. Process: the text builder rewrote `ui/text-card.ts` whole (SEDO), logged and kept.
+
+### Phases 23 to 25 (v0.10.0)
+- refers-to: src/ui/theater-carry.ts, home-theater.ts, home-files.ts, theater-preview.ts; src/ui/paint-crop-surface.ts, paint-view.ts; src/io/brush-export.ts, bplist-write.ts, safe-unzip.ts; src/media/font-bundle.ts, fonts.ts, video.ts; src/engine/push-ops.ts, flip-order.ts, normalize.ts, render.ts, blend.ts, transform.ts, text-layout.ts; src/app/push-commands.ts, loop-commands.ts; src/ui/pen-play.ts, paint-tools.ts, tour.ts, whats-new-data.ts
+- kind: explainer
+- logged: v0.10.0 · 2026-10-30
+
+Theater carry is pointer-based (6 px or a 380 ms hold), one ghost moved by transform; a 650 ms hover enters a stack, stacks never nest. The manual order is the engine's (`.order.json` per folder); old localStorage orders are handed over once. The on-canvas crop surface shares the bake maths w/ the old dialog, which stays as the fallback under 560 x 420; Ctrl+Z falls through to the movie history when the paint document has nothing left and the top step is the crop. Brush export writes keyed binary plists; the value scales and the newer dynamics keys are assumptions (header of brush-export.ts). Fonts: one dynamic CSS import per family, Noto faces loaded per script as text needs them (`fontCss` falls back per glyph; Japanese before Chinese in the fallback order). Alpha video needed only `alpha: true` on every CanvasSink. Every movie entry point goes through `unpackMovie`, which runs `normalizeMovie` on the movie and its history states. Pixel-only blend surfaces are sized to the destination, never stretched; the Warp / Distort / Bones flat surface is capped at 8192 a side and 48 MP (`flatScale`, `WarpView.srcScale`). `levelFrameOf` gives the group-local frame for parenting. Text layouts are cached per style, text and movie size, cleared w/ the font epoch. The GPU probe drops only its own textures (`dropLive`). `paint-tools.ts` builds each variant once and toggles it. A Home DOM growth seen in review is the Recent grid filling to its 20-item cap, not a leak. Process: no SEDO breach was reported by this turn's builders.
