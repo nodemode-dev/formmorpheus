@@ -24,4 +24,5 @@ export const esMX: Record<string, string> = {
   'Deleted movies and exports, kept for 30 days.': "Películas y exportaciones borradas, conservadas durante 30 días.",
   'Items stay here for 30 days, then are deleted for good.': "Los elementos permanecen aquí 30 días y después se borran definitivamente.",
   'Nothing was deleted lately.': "No se ha borrado nada recientemente.", 'Recently Deleted': "Borrados recientemente", 'Empty Recently Deleted?': "¿Vaciar Borrados recientemente?",
+  "right-click to add to favorites": "clic derecho para agregar a favoritos",
 };

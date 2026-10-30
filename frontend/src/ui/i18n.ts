@@ -79,8 +79,24 @@ export function tn(n: number, one: string, other: string): string {
   return form.replace('{n}', shown);
 }
 
+/** A date in the app language (not the browser's). */
+export function dateText(ms: number): string {
+  try { return new Intl.DateTimeFormat(current, { dateStyle: 'medium' }).format(new Date(ms)); } catch { return new Date(ms).toLocaleDateString(); }
+}
+
 /** Whether `text` has an entry in the current language (the page translator only touches text that does). */
-const known = (text: string): boolean => current !== 'en' && t(text) !== text;
+const known = (text: string): boolean => current !== 'en' && tp(text) !== text;
+
+/** `t` for translator text: a trailing " (group)" (a shortcut, a hint) is split off, its label and its group each looked
+ *  up, and the group kept as it is when it has no entry ("Undo (Ctrl+Z)", "Theme (right-click to add to favorites)"). */
+function tp(text: string): string {
+  const whole = t(text);
+  if (whole !== text || current === 'en') return whole;
+  const m = /^(.*\S) \(([^()]+)\)$/.exec(text);
+  if (!m) return text;
+  const head = t(m[1]!), group = t(m[2]!);
+  return head === m[1] && group === m[2] ? text : `${head} (${group})`;
+}
 
 /** Switches language once its table has loaded, then tells every listener, which re-label their text in place. A later
  *  call wins over an earlier one still loading. */
@@ -131,14 +147,14 @@ const skipped = (n: Node | null): boolean => {
 function translateText(node: Text): void {
   const raw = node.data, rec = textEn.get(node);
   if (rec && raw === rec.shown) {   // ours: shown in an earlier language, the English kept
-    const next = t(rec.en);
+    const next = tp(rec.en);
     if (next !== raw) { rec.shown = next; node.data = next; }
     if (current === 'en' || next === rec.en) textEn.delete(node);
     return;
   }
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 200 || !known(trimmed) || skipped(node)) { if (rec) textEn.delete(node); return; }
-  const next = raw.replace(trimmed, t(trimmed));
+  const next = raw.replace(trimmed, tp(trimmed));
   textEn.set(node, { en: raw, shown: next });
   node.data = next;
 }
@@ -150,13 +166,13 @@ function translateAttrs(el: Element): void {
     let recs = attrEn.get(el);
     const rec = recs?.get(a);
     if (rec && v === rec.shown) {
-      const next = t(rec.en);
+      const next = tp(rec.en);
       if (next !== v) { rec.shown = next; el.setAttribute(a, next); }
       continue;
     }
     if (!known(v) || skippedAttr(el)) { recs?.delete(a); continue; }
     if (!recs) { recs = new Map(); attrEn.set(el, recs); }
-    const next = t(v);
+    const next = tp(v);
     recs.set(a, { en: v, shown: next });
     el.setAttribute(a, next);
   }
@@ -164,18 +180,18 @@ function translateAttrs(el: Element): void {
 
 /** Attributes follow a narrower rule than text (36.32c): a field's placeholder, title and label are interface text even
  *  though its value is the person's, so inputs and text areas are not skipped for them. */
-const SKIP_ATTR = SKIP.replace('textarea, input, ', '');
+const SKIP_ATTR = SKIP.replace('textarea, input, ', '').replace('canvas, ', '');   // a canvas keeps its aria-label translatable
 const skippedAttr = (e: Element): boolean => !!e.closest(SKIP_ATTR);
 
 function walk(root: Node): void {
   if (root instanceof Text) { translateText(root); return; }
   if (!(root instanceof Element)) return;
-  if (root.closest(SKIP)) { if (root.matches('input, textarea')) translateAttrs(root); return; }
+  if (root.closest(SKIP)) { if (root.matches('input, textarea, canvas')) translateAttrs(root); return; }
   translateAttrs(root);
   const it = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => {
       if (!(n instanceof Element) || !n.matches(SKIP)) return NodeFilter.FILTER_ACCEPT;
-      if (n.matches('input, textarea')) translateAttrs(n);   // its attributes, never its value
+      if (n.matches('input, textarea, canvas')) translateAttrs(n);   // its attributes, never its value
       return NodeFilter.FILTER_REJECT;
     },
   });
