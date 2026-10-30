@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.11.0
-Last updated: 2026-10-30 · phases 26 to 28 (rows and gaps still open, performance, a third fresh audit and its fix wave)
+Current build version: v0.12.0
+Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still open, second review round)
 
 ---
 
@@ -674,3 +674,10 @@ Theater carry is pointer-based (6 px or a 380 ms hold), one ghost moved by trans
 - logged: v0.11.0 · 2026-10-30
 
 Stage view changes go through `scheduleView()`, which keeps the cached picture and moves it w/ a CSS transform; a real render follows 160 ms after the gesture or past a 2x scale change; every other change marks the picture stale. The frame cache keeps finished Stage frames as ImageBitmaps (384 MB cap), never incomplete frames or frames w/ video, is dropped on any change of movie object, view, background, preview, camera mode or GPU state, and renders ahead only while cheap; look-ahead uses an HTML canvas because an OffscreenCanvas anti-aliases clip edges differently. The profile showed 72% of playback time in software `drawImage`, so a worker adds nothing on a loaded machine w/o spare cores; export still yields per frame. Filmstrip tiles decode from the nearest key frame (exact within 0.2 s), over 3 decoders, cache tag k2 (older entries dropped). Warp triangles are pushed out 0.75 px against seams; `options.resample` is written only when not the default. Shipped brushes keep corners: `keepCorners` lowers smoothing so the card's Stabilization (now read by the stroke as `stabilizationRope`) adds back to the old total. Escape no longer finishes a Drawing. Process: a third-audit auditor appended its item table to its own planning file w/ a shell `cat` (planning sidecar, not the repo); logged.
+
+### Phases 29 to 31 (v0.12.0)
+- refers-to: src/engine/sparse.ts, render.ts :: drawFrame exact, drawLayers, composeLayer; src/ui/stage-drag-cache.ts, stage-view.ts :: content signature, dispose; src/media/video.ts :: VideoSampleSink, toCanvas, EXACT_BEHIND; src/ui/brush-disk.ts, brush-store.ts, brush-panel.ts :: Show brush folder; src/io/recovery.ts :: keepLive (WebSocket); src/engine/layer-split-ops.ts; src/ui/colour-panel.ts :: split reticle; src/ui/flip-strip.ts :: Paste and Insert; src/ui/dropdown.ts, timeline.ts :: holdFor, thumbStale; src/ui/stage-fringe.ts :: dispose
+- kind: explainer
+- logged: v0.12.0 · 2026-10-30
+
+Playback cost here is per destination pixel (about 3 ns), not per source pixel: a proxy (downscaled source) cache was built, measured to give nothing and removed (`engine/proxy-cache.ts` and its `opts.proxy` hooks in render.ts; `composeLayer` keeps an ignored `_proxy` parameter its caller passes). What helped: `sparse.ts` scans each decoded bitmap of 160k px or more once for ink bands and clips the draw to them (axis-aligned, plain composite only), T200 cold 12 to 17.7 fps, UHD 20 to 23.7. The clip moves 4 to 11 anti-aliased edge pixels a frame by up to 16 levels, so exports and the export preview pass `exact: true` and draw whole. Dropping `willReadFrequently` on pooled surfaces measured no change and was reverted. The drag cache composites the tracks below and above the moved blocks once per gesture; the mid-drag picture can differ on about 1,000 low-alpha edge pixels (8-bit premultiplied storage of the above bitmap), gone at release. Stage redraws are keyed by a content signature, so a Timeline edit that changes nothing visible draws nothing; Timeline thumbnails are renewed once at pointerup (`thumbStale`). Video seeks decode samples and convert only frames kept in the window. Brush sync deletes only ids the window knew, runs under a Web Lock and tells other windows through a BroadcastChannel. The frame cache key carries the font epoch. Process: the brush-files builder rewrote `backend/app/routers/brushes.py` largely in place (320 lines added); reviewed by the review round, logged and kept.

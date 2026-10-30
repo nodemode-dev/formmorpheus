@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.11.0
-Last updated: 2026-10-30 · copy-to, recovery live stream, unfetched job outputs kept
+Current build version: v0.12.0
+Last updated: 2026-10-30 · brush libraries as files, recovery presence over a WebSocket, streamed duplicates
 
 ---
 
@@ -164,3 +164,10 @@ A stack is a folder `Library/<Stack>/<movie>.fmo`, one level deep; movie names s
 - logged: v0.11.0 · 2026-10-30
 
 `POST /api/library/{name}/copy-to` copies a movie to a folder the person picked (the `_safe_folder` checks, never overwrites: a taken name becomes "Name 2", a `.part` file renamed into place). A duplicate gets a fresh movie id and its own inner name (since the 0.10.0 tester found copies sharing an id). Each window holds `GET /api/recovery/{session}/live` open; a closed stream counts as gone after 4 s, and after an engine restart a session that has not reconnected in 15 s counts as gone, so a crashed window's work is offered at once. A finished job's output is kept until fetched or 24 h old even past the 40-job record cap. The 10-minute sweep in transcode.py (import conversions) is unchanged: imports fetch their result at once.
+
+### v0.12.0 · brush files, presence socket, streamed copies
+- refers-to: app/routers/brushes.py; app/routers/recovery.py :: live (WebSocket); app/routers/library.py :: _copy_with_new_id, copy_to; app/routers/system.py :: _safe_folder(create); boot_backend, setup/serve, formmorpheus_engine.py :: timeout_graceful_shutdown
+- kind: explainer
+- logged: v0.12.0 · 2026-10-30
+
+Brush libraries live as `Brushes/<Library>/<Set>/<Brush>.brush` (the export format plus a `formmorpheus/` folder w/ the exact settings, tip and grain), w/ `.order.json` per level and a one-time migration of `brushes.json` (renamed `.migrated`). Only brushes the person made or changed get files. Deletes remove only `*.brush`, `.order.json` and `.*.part` and then an empty folder; symlinks are never followed; Windows device names (CON, NUL, COM1 and the rest) and paths over 240 characters are refused; names that differ only by case are a 409. The recovery presence moved from a held GET to a WebSocket: a held HTTP/1.1 request per window blocked shutdown and, at about six windows, used up the browser's connections per host. Its registry is per process, so the engine must run as one worker. All boot scripts pass a 3 s graceful shutdown. Duplicates and copies stream zip entries and publish w/ an exclusive create; copy-to never creates folders.

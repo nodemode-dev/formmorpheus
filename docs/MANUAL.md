@@ -250,6 +250,14 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
+## New in 0.12.0
+
+**Speed.** Movies with many sparse drawings play faster from the first pass, moving, scaling or turning a block on the Stage stays smooth on big movies, and a far jump into a long video reaches the exact frame sooner. Exports are drawn exactly as before.
+
+**Brush folders.** Your brush libraries are now folders in the engine's data folder: a folder per library, a folder per set and a `.brush` file per brush you have made or changed (the built-in brushes stay built in until you edit one). Show brush folder in the brush panel's menu opens it on the desktop, or shows where it is in a browser. Files you add there yourself are left alone.
+
+**Flipbooks and color.** Paste and Insert (in the frame menu, or Alt with Paste) puts the copied frames after the current one and pushes the later frames along; plain Paste still fills the next blank frame. The color disc's ring shows the previous color on its left half and the current color on its right.
+
 ## New in 0.11.0
 
 **The main screen.** The movie's name sits in the middle of the title bar ("Untitled" until saved); click it to rename. A short tip appears the first time you enter Perform, Keyframe, a Flipbook or Draw and Paint (Preferences · Show tips turns them off). Holding the mouse button still on a block, a key lane or empty track area opens the same menu as a right-click. Hover the ruler to see that dragging it scales time; it numbers frames once there is room. Zooming and panning the Stage now stay smooth on big movies: the picture follows your gesture and sharpens when you stop.
