@@ -597,8 +597,12 @@ export class PaintView {
     this.cssW = r.width;
     this.cssH = r.height;
     this.dpr = dpr;
-    this.canvas.width = Math.round(r.width * dpr);
-    this.canvas.height = Math.round(r.height * dpr);
+    // setting a canvas size clears it, even to the same value: only touch it when it changes (the
+    // ResizeObserver also fires right after the view is shown, and a clear there showed one empty frame)
+    const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    if (this.canvas.width === w && this.canvas.height === h) return;
+    this.canvas.width = w;
+    this.canvas.height = h;
     if (first && this.contentId) this.fit();
     this.full = true;
     this.redraw();
