@@ -1,0 +1,441 @@
+import { Engine } from '../engine/engine';
+import { content as makeContent, uid } from '../engine/model';
+import * as ops from '../engine/ops';
+import { Renderer } from '../engine/render';
+import type { Asset, Content } from '../engine/types';
+import { api, capabilities, onServiceChange } from '../io/api';
+import { packMovie, unpackMovie } from '../io/fmo';
+import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
+import { CommandPalette } from '../ui/command-palette';
+import { Commands, type Command } from '../ui/commands';
+import { ContentMenu } from '../ui/content-menu';
+import { anyDialogOpen, confirmAction, promptName } from '../ui/dialogs';
+import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../ui/dom';
+import { enhanceAllSelects } from '../ui/dropdown';
+import { HomeScreen } from '../ui/home';
+import { t } from '../ui/i18n';
+import { icon } from '../ui/icons';
+import '../ui/icons-morph';
+import { MenuBar, PopupMenu, setMenuStyle, type MenuDef } from '../ui/menu';
+import { MovieSettings } from '../ui/movie-settings';
+import { MENUS_IN_WINDOW_KEY, NativeMenus, menusInWindow, wantsNativeMenus } from '../ui/native-menu';
+import { NewMovieDialog } from '../ui/new-movie-dialog';
+import { installNumberFields } from '../ui/number-fields';
+import { applyShellPrefs, loadPrefs, updatePrefs, type Prefs } from '../ui/prefs';
+import { SettingsDialog } from '../ui/settings-dialog';
+import { StageView } from '../ui/stage-view';
+import { StatusBar } from '../ui/status';
+import { TimelineView } from '../ui/timeline';
+import { TitleTools } from '../ui/titlebar-tools';
+import { toast } from '../ui/toast';
+import { TrackMenu } from '../ui/track-menu';
+import { VERSION } from '../version';
+
+const SHELL = `<div class="cv-app fm-app">
+<header class="cv-titlebar">
+<nav class="cv-menubar" aria-label="Main menu"></nav>
+<div class="cv-tb-doc"></div>
+<div class="cv-tb-app">formmorpheus</div>
+<div class="cv-zoom">
+<button class="cv-tt-btn" type="button" data-cmd="settings">${icon('settings', 16)}</button>
+</div>
+</header>
+<div class="cv-main fm-main">
+<main class="cv-stage fm-stage-wrap"></main>
+<div class="fm-split" role="separator" aria-orientation="horizontal" aria-label="Resize the Stage and the Timeline"></div>
+<div class="fm-tl-host"></div>
+<div class="cv-drop" hidden><div class="cv-drop-text">Drop pictures to add them to the movie</div></div>
+</div>
+<footer class="cv-status"></footer>
+</div>`;
+
+const CUSTOM_TITLE_KEY = 'formmorpheus.customTitleBar';
+const stored = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
+const store = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
+
+export function startApp(): void {
+  const host = document.getElementById('app') as HTMLElement;
+  mountOnce(host, SHELL);
+  const root = q(host, '.cv-app');
+  const engine = new Engine();
+  engine.setTicker({ now: () => performance.now(), request: (fn) => requestAnimationFrame(fn), cancel: (id) => cancelAnimationFrame(id) });
+  let prefs = loadPrefs();
+  engine.setUndoDepth(prefs.undoDepth);
+
+  let stage: StageView | null = null;
+  let timeline: TimelineView | null = null;
+  const renderer = new Renderer((id) => engine.assets.get(id), () => { stage?.schedule(); timeline?.refreshThumbs(); });
+  engine.on('projects', () => { if (!engine.movie) renderer.forget(); });
+  stage = new StageView(q(root, '.fm-stage-wrap'), engine, renderer);
+  const commands = new Commands();
+  const contentMenu = new ContentMenu(engine);
+  const trackMenu = new TrackMenu(engine);
+  const movieSettings = new MovieSettings(engine);
+  const newMovie = new NewMovieDialog(engine);
+  const createMenu = new PopupMenu(commands, null, true);
+  timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
+    contentMenu: (x, y) => contentMenu.open(x, y),
+    trackMenu: (x, y, id) => trackMenu.open(x, y, id),
+    movieSettings: (a) => movieSettings.toggle(a),
+    home: () => home.show(),
+    create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(r.right, r.top - 6); },
+    edit: (c) => editContent(c),
+    scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
+  });
+  const status = new StatusBar(q(root, '.cv-status'), engine);
+  engine.on('notice', (n) => { if (n.kind === 'error') toast(n.text, 'error'); });
+
+  const remember = (name: string): void => {
+    const recent = [name, ...prefs.recent.filter((r) => r !== name)].slice(0, 20);
+    prefs = updatePrefs({ recent });
+  };
+
+  const home = new HomeScreen(q(root, '.cv-stage'), {
+    engine,
+    autoShow: () => prefs.autoShowHome,
+    afterClose: () => prefs.homeOnLastClose,
+    recent: () => prefs.recent,
+    openRecent: (name) => { void openFromLibrary(name); },
+    openPath: () => toast('Opening files by path arrives with the desktop file panels.'),
+    removeRecent: (name) => { prefs = updatePrefs({ recent: prefs.recent.filter((r) => r !== name) }); },
+    run: (cmd) => { commands.run(cmd); },
+  });
+
+  const settings = new SettingsDialog((p: Prefs) => {
+    prefs = p;
+    applyShellPrefs(p);
+    engine.setUndoDepth(p.undoDepth);
+    home.sync();
+    scheduleAutosave();
+  });
+  const menus: MenuDef[] = [];
+  const palette = new CommandPalette(commands, () => menus);
+
+  const askToKeep = async (): Promise<boolean> => {
+    if (!engine.movie || !engine.modified) return true;
+    const keep = await confirmAction('Unsaved changes', `Save the changes to "${engine.movie.name}" first?`, 'Save', false, 'Discard');
+    if (keep) return save(false);
+    return true;
+  };
+
+  async function openFromLibrary(name: string): Promise<void> {
+    if (!(await askToKeep())) return;
+    const job = engine.startJob(`Open ${name}`, 1);
+    try {
+      const file = await unpackMovie(await api.readMovie(name));
+      renderer.forget();
+      await renderer.preload(file.assets);
+      engine.open(file.movie, name, file.assets, file.past, file.recovery);
+      remember(name);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The movie could not be opened.', 'error');
+    } finally {
+      engine.endJob(job);
+    }
+  }
+
+  async function openFile(file: File): Promise<void> {
+    if (!(await askToKeep())) return;
+    try {
+      const data = await unpackMovie(file);
+      renderer.forget();
+      await renderer.preload(data.assets);
+      engine.open(data.movie, null, data.assets, data.past, data.recovery);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The movie could not be opened.', 'error');
+    }
+  }
+
+  async function save(asNew: boolean): Promise<boolean> {
+    const m = engine.movie;
+    if (!m) return false;
+    let name = asNew ? null : engine.libraryName;
+    if (!name) {
+      name = await promptName(asNew ? 'Save As' : 'Save Movie', m.name, 'Save');
+      if (!name) return false;
+    }
+    const job = engine.startJob(`Save ${name}`, 1);
+    try {
+      engine.nameMovie(name);
+      const poster = stage ? await stage.snapshot(480) : null;
+      const blob = await packMovie(engine.movie ?? m, engine.history.past, engine.history.recovery, engine.assets, poster, true);
+      const saved = await api.writeMovie(name, blob);
+      engine.markSaved(saved.name);
+      remember(saved.name);
+      return true;
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The movie could not be saved.', 'error');
+      return false;
+    } finally {
+      engine.endJob(job);
+    }
+  }
+
+  async function exportFile(withHistory: boolean): Promise<void> {
+    const m = engine.movie;
+    if (!m) return;
+    const poster = stage ? await stage.snapshot(480) : null;
+    const blob = await packMovie(m, engine.history.past, engine.history.recovery, engine.assets, poster, withHistory);
+    const a = el<HTMLAnchorElement>('<a hidden></a>');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${m.name}.fmo`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  let autosaveTimer = 0;
+  function scheduleAutosave(): void {
+    window.clearInterval(autosaveTimer);
+    autosaveTimer = 0;
+    if (prefs.autosaveSeconds > 0) autosaveTimer = window.setInterval(() => { if (engine.movie && engine.modified && engine.libraryName && !engine.playing) void save(false); }, prefs.autosaveSeconds * 1000);
+  }
+  scheduleAutosave();
+
+  async function importFiles(files: File[]): Promise<void> {
+    const m = engine.movie;
+    if (!m) { toast('Open or create a movie first.'); return; }
+    for (const f of files) {
+      if (/\.fmo$/i.test(f.name)) { await openFile(f); return; }
+      if (f.type.startsWith('image/')) { await importImage(f); continue; }
+      if (f.type.startsWith('video/') || f.type.startsWith('audio/')) { toast('Video and sound arrive with the media phase of the plan.'); continue; }
+      toast(`${f.name} is not a picture formmorpheus can place yet.`, 'error');
+    }
+  }
+
+  async function importImage(f: File): Promise<void> {
+    const m = engine.movie;
+    if (!m) return;
+    let bmp: ImageBitmap;
+    try { bmp = await createImageBitmap(f); } catch { toast(`${f.name} could not be read.`, 'error'); return; }
+    const asset: Asset = { id: uid('a'), kind: 'image', name: f.name.replace(/\.[^.]+$/, ''), mime: f.type || 'image/png', width: bmp.width, height: bmp.height, frames: 0, size: f.size };
+    bmp.close();
+    const scale = Math.min(1, m.width / asset.width, m.height / asset.height);
+    engine.assets.set(asset.id, f);
+    await renderer.preload(new Map([[asset.id, f]]));
+    const item = makeContent('image', engine.frame, Math.max(1, m.duration - engine.frame), { name: asset.name, asset: asset.id, transform: { x: 0, y: 0, scale: Math.round(scale * 1000) / 1000, rotation: 0, flipH: false, flipV: false } });
+    const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
+    engine.run(`Add ${asset.name}`, (mv) => {
+      const withAsset = { ...mv, assets: { ...mv.assets, [asset.id]: asset } };
+      const placed = ops.placeContent(withAsset, null, item, ti);
+      return { movie: placed.movie, select: [item.id] };
+    });
+  }
+
+  const picker = el<HTMLInputElement>('<input type="file" hidden multiple accept="image/*,video/*,audio/*,.fmo">');
+  document.body.appendChild(picker);
+  let pickMode: 'open' | 'import' = 'import';
+  picker.addEventListener('change', () => {
+    const files = Array.from(picker.files ?? []);
+    picker.value = '';
+    if (!files.length) return;
+    if (pickMode === 'open') void openFile(files[0]);
+    else void importFiles(files);
+  });
+
+  async function editContent(c: Content): Promise<void> {
+    if (c.kind === 'text' && c.text) {
+      const value = await promptName('Edit Text', c.text.text, 'Done');
+      if (value === null) return;
+      engine.run('Edit Text', (m) => ops.updateContent(m, c.id, (x) => ({ ...x, text: x.text ? { ...x.text, text: value } : x.text, name: value.split('\n')[0].slice(0, 40) || x.name })));
+      return;
+    }
+    if (c.kind === 'drawing' || c.kind === 'flipbook') toast('Draw and Paint lands with the painting phase of the plan.');
+  }
+
+  const has = (): boolean => !!engine.movie;
+  const sel = (): boolean => engine.selection.content.length > 0;
+  const add: Command[] = [
+    { id: 'new', label: 'New Movie...', keys: ['Mod+N'], run: () => newMovie.show(false) },
+    { id: 'new-flipbook', label: 'New Flipbook...', run: () => newMovie.show(true) },
+    { id: 'open', label: 'Open...', keys: ['Mod+O'], run: () => home.show('projects') },
+    { id: 'open-file', label: 'Open Movie File...', keys: ['Shift+Mod+O'], run: () => { pickMode = 'open'; picker.accept = '.fmo'; picker.click(); } },
+    { id: 'save', label: 'Save', keys: ['Mod+S'], enabled: has, run: () => { void save(false); } },
+    { id: 'save-as', label: 'Save As...', keys: ['Shift+Mod+S'], enabled: has, run: () => { void save(true); } },
+    { id: 'export-fmo', label: 'Share Movie File', enabled: has, run: () => { void exportFile(false); } },
+    { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
+    { id: 'import-media', label: 'Import Pictures...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = 'image/*,video/*,audio/*,.fmo'; picker.click(); } },
+    { id: 'close', label: 'Close Movie', keys: ['Mod+W'], enabled: has, run: () => { void askToKeep().then((ok) => { if (ok) engine.close(); }); } },
+    { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
+    { id: 'settings', label: 'Preferences...', keys: ['Mod+,'], run: () => settings.show() },
+    { id: 'search', label: 'Search Commands...', keys: ['Mod+K'], run: () => palette.show() },
+    { id: 'undo', label: () => (engine.history.canUndo ? `Undo ${engine.history.undoLabel}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
+    { id: 'redo', label: () => (engine.history.canRedo ? `Redo ${engine.history.redoLabel}` : 'Redo'), keys: ['Shift+Mod+Z', 'Mod+Y'], enabled: () => engine.history.canRedo, run: () => engine.redo() },
+    { id: 'cut', label: 'Cut', keys: ['Mod+X'], enabled: sel, run: () => engine.copy(true) },
+    { id: 'copy', label: 'Copy', keys: ['Mod+C'], enabled: sel, run: () => engine.copy(false) },
+    { id: 'paste', label: 'Paste', keys: ['Mod+V'], enabled: () => has() && engine.hasClipboard, run: () => engine.paste() },
+    { id: 'duplicate', label: 'Duplicate', keys: ['Mod+D'], enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Duplicate', (m) => { const r = ops.duplicateContent(m, id); return { movie: r.movie, select: [r.copy] }; }); } },
+    { id: 'duplicate-after', label: 'Duplicate After', keys: ['Alt+Mod+D'], enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Duplicate After', (m) => { const r = ops.duplicateAfter(m, id); return { movie: r.movie, select: [r.copy] }; }); } },
+    { id: 'split', label: 'Split Content', keys: ['Mod+B'], enabled: () => engine.selected.some((c) => engine.isOver(c)), run: () => { const c = engine.selected.find((x) => engine.isOver(x)); if (c) engine.run('Split Content', (m) => { const r = ops.splitContent(m, c.id, engine.frame); return { movie: r.movie, select: [r.right] }; }); } },
+    { id: 'fill-duration', label: 'Fill Duration', enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Fill Duration', (m) => ops.fillDuration(m, id)); } },
+    { id: 'delete', label: 'Delete Content', keys: ['Delete', 'Backspace'], enabled: sel, run: () => { void (async () => { if (prefs.confirmDelete && !(await confirmAction('Delete content', 'Delete the selected content?', 'Delete', true))) return; const ids = engine.selection.content.slice(); engine.run('Delete Content', (m) => ops.deleteContent(m, ids)); })(); } },
+    { id: 'group', label: 'Group', keys: ['Mod+G'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Group', (m) => { const r = ops.groupContent(m, ids); return { movie: r.movie, select: [r.group] }; }); } },
+    { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.some((c) => c.kind === 'group'), run: () => { const g = engine.selected.find((c) => c.kind === 'group'); if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
+    { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
+    { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
+    { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { engine.insert('drawing'); } },
+    { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { engine.insert('flipbook'); } },
+    { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { void (async () => { const value = await promptName('New Text', 'Text', 'Add'); if (!value) return; engine.insert('text', { name: value.split('\n')[0].slice(0, 40), text: { text: value, font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' } }); })(); } },
+    { id: 'add-track', label: 'Track', icon: 'track', keys: ['Shift+Mod+T'], enabled: has, run: () => { const m = engine.movie; if (!m) return; const at = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0; engine.run('Add Track', (mv) => ops.addTrack(mv, at).movie); } },
+    { id: 'play', label: () => (engine.playing ? 'Pause' : 'Play'), keys: ['Space'], enabled: has, run: () => engine.togglePlay() },
+    { id: 'prev-frame', label: 'Previous Frame', keys: ['Left', ','], enabled: has, run: () => engine.step(-1) },
+    { id: 'next-frame', label: 'Next Frame', keys: ['Right', '.'], enabled: has, run: () => engine.step(1) },
+    { id: 'go-start', label: 'Go to Start', keys: ['Home'], enabled: has, run: () => { engine.stop(); engine.seek(0); } },
+    { id: 'go-end', label: 'Go to End', keys: ['End'], enabled: has, run: () => { const m = engine.movie; engine.stop(); if (m) engine.seek(m.duration - 1); } },
+    { id: 'mode-compose', label: 'Compose', keys: ['Mod+1'], enabled: has, checked: () => engine.mode === 'compose', run: () => engine.setMode('compose') },
+    { id: 'mode-perform', label: 'Perform', keys: ['Mod+2'], enabled: has, checked: () => engine.mode === 'perform', run: () => engine.setMode('perform') },
+    { id: 'mode-keyframe', label: 'Keyframe', keys: ['Mod+3'], enabled: has, checked: () => engine.mode === 'keyframe', run: () => engine.setMode('keyframe') },
+    { id: 'multi-select', label: 'Multi-select', keys: ['Shift+M'], enabled: has, run: () => timeline?.toggleMulti() },
+    { id: 'timeline-in', label: 'Zoom Timeline In', keys: ['Mod+='], enabled: has, run: () => timeline?.zoomBy(1.4) },
+    { id: 'timeline-out', label: 'Zoom Timeline Out', keys: ['Mod+-'], enabled: has, run: () => timeline?.zoomBy(1 / 1.4) },
+    { id: 'timeline-fit', label: 'Fit Timeline', keys: ['Mod+0'], enabled: has, run: () => timeline?.fit() },
+    { id: 'movie-settings', label: 'Movie Settings...', keys: ['Mod+J'], enabled: has, run: () => movieSettings.toggle(q(root, '[data-act="settings"]')) },
+    { id: 'fit-to-content', label: 'Fit Duration to Content', enabled: has, run: () => engine.run('Fit to Content', (m) => ops.fitToContent(m)) },
+    { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
+    { id: 'menus-in-window', label: 'Menus in Window', enabled: () => '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.platform), checked: menusInWindow, run: () => { const on = !menusInWindow(); store(MENUS_IN_WINDOW_KEY, on ? '1' : '0'); toast(on ? 'The menus stay in the window from the next start.' : 'The menus go to the menu bar from the next start.'); } },
+    { id: 'custom-title-bar', label: 'Custom Title Bar', enabled: wantsCustomTitleBar, checked: () => stored(CUSTOM_TITLE_KEY) === '1', run: () => { store(CUSTOM_TITLE_KEY, stored(CUSTOM_TITLE_KEY) === '1' ? '0' : '1'); captions.sync(); } },
+    { id: 'help', label: 'formmorpheus Help', keys: ['F1'], run: () => toast(`formmorpheus ${VERSION} · Compose: drag content, trim edges, right-click for options. Space plays.`) },
+    { id: 'about', label: 'About formmorpheus', run: () => toast(`formmorpheus ${VERSION} by NodeMode · Apache-2.0`) },
+  ];
+  commands.add(...add);
+  for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
+
+  menus.push(
+    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', 'export-fmo', 'export-fmo-history', '-', 'import-media', '-', 'close'] },
+    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', '-', 'settings'] },
+    { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'Help', items: ['help', 'about'] },
+  );
+  const syncRecentCommands = (): void => {
+    for (const r of prefs.recent.slice(0, 10)) if (!commands.get(`recent:${r}`)) commands.add({ id: `recent:${r}`, label: r, run: () => { void openFromLibrary(r); } });
+  };
+  syncRecentCommands();
+  engine.on('saved', syncRecentCommands);
+  engine.on('projects', syncRecentCommands);
+
+  setMenuStyle(prefs.menuHidden, prefs.menuColors);
+  const menubar = new MenuBar(q(root, '.cv-menubar'), commands, menus);
+  if (wantsNativeMenus()) {
+    const native = new NativeMenus(commands, () => menus);
+    void native.build().catch(() => undefined);
+    for (const ev of ['movie', 'selection', 'history', 'mode', 'playing'] as const) engine.on(ev, () => native.refresh());
+    engine.on('projects', () => { void native.build().catch(() => undefined); });
+  }
+
+  new TitleTools(q(root, '.cv-titlebar'), { commands });
+  const captions = new CaptionButtons(q(root, '.cv-titlebar'), () => stored(CUSTOM_TITLE_KEY) === '1');
+  enhanceAllSelects();
+
+  const docTitle = q(root, '.cv-tb-doc');
+  let windowTitle = '';
+  const syncTitle = (): void => {
+    const m = engine.movie;
+    const shown = m ? `${engine.modified ? '• ' : ''}${m.name}` : '';
+    setText(docTitle, shown);
+    const title = m ? `${shown} - formmorpheus` : 'formmorpheus';
+    if (title === windowTitle) return;
+    windowTitle = title;
+    document.title = title;
+    if ('__TAURI_INTERNALS__' in window) void import('@tauri-apps/api/core').then((mod) => mod.invoke('set_window_title', { title })).catch(() => undefined);
+  };
+  for (const ev of ['projects', 'movie', 'saved'] as const) engine.on(ev, syncTitle);
+  syncTitle();
+
+  let chromeFrame = 0;
+  const syncChrome = (): void => {
+    if (chromeFrame) return;
+    chromeFrame = requestAnimationFrame(() => {
+      chromeFrame = 0;
+      for (const b of Array.from(root.querySelectorAll<HTMLButtonElement>('button[data-cmd]'))) {
+        const cmd = commands.get(b.dataset.cmd ?? '');
+        if (!cmd) continue;
+        setDisabled(b, !commands.enabled(cmd));
+        const label = commands.label(cmd).replace(/\.\.\.$/, '');
+        const keys = commands.keyLabel(cmd);
+        setTitle(b, keys ? `${label} (${keys})` : label);
+      }
+    });
+  };
+  for (const ev of ['projects', 'history', 'selection', 'movie', 'mode'] as const) engine.on(ev, syncChrome);
+  syncChrome();
+  root.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-cmd]');
+    if (b && root.contains(b) && !b.disabled) commands.run(b.dataset.cmd ?? '');
+  });
+  document.getElementById('overlay-root')?.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-cmd]');
+    if (b && !b.disabled && b.closest('.cv-home')) commands.run(b.dataset.cmd ?? '');
+  });
+
+  installNumberFields();
+  let twoFinger = 0;
+  window.addEventListener('keydown', (e) => {
+    if (anyDialogOpen() || e.defaultPrevented) return;
+    if (menubar.isOpen || createMenu.isOpen) {
+      if (e.key === 'Escape') { e.preventDefault(); menubar.close(); createMenu.close(); }
+      return;
+    }
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (home.isShown && e.key !== 'Escape' && !(e.metaKey || e.ctrlKey)) return;
+    const cmd = commands.forEvent(e);
+    if (!cmd) return;
+    e.preventDefault();
+    if (!e.repeat || /^(undo|redo|prev-frame|next-frame)$/.test(cmd.id)) commands.run(cmd.id);
+  });
+  root.addEventListener('touchstart', (e) => { twoFinger = e.touches.length; }, { passive: true });
+  root.addEventListener('touchend', (e) => {
+    if (!prefs.undoGestures || e.touches.length) return;
+    if (twoFinger === 2) engine.undo();
+    else if (twoFinger === 3) engine.redo();
+    twoFinger = 0;
+  }, { passive: true });
+
+  const split = q(root, '.fm-split');
+  const main = q(root, '.fm-main');
+  split.addEventListener('pointerdown', (e) => {
+    split.setPointerCapture(e.pointerId);
+    const r = main.getBoundingClientRect();
+    const move = (ev: PointerEvent): void => {
+      const share = Math.min(0.8, Math.max(0.25, (ev.clientY - r.top) / r.height));
+      document.documentElement.style.setProperty('--fm-stage-share', share.toFixed(3));
+    };
+    const up = (): void => {
+      split.removeEventListener('pointermove', move);
+      split.removeEventListener('pointerup', up);
+      const v = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fm-stage-share')) || 0.56;
+      prefs = updatePrefs({ stageShare: v });
+    };
+    split.addEventListener('pointermove', move);
+    split.addEventListener('pointerup', up);
+  });
+
+  const drop = q(root, '.cv-drop');
+  let depth = 0;
+  const hasFiles = (e: DragEvent): boolean => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; drop.hidden = false; });
+  window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) drop.hidden = true; });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0;
+    drop.hidden = true;
+    void importFiles(Array.from(e.dataTransfer?.files ?? []));
+  });
+  window.addEventListener('beforeunload', (e) => { if (engine.movie && engine.modified && !('__TAURI_INTERNALS__' in window)) e.preventDefault(); });
+
+  status.setEngine('Engine: checking');
+  const probe = (): void => {
+    void capabilities().then((c) => status.setEngine(c ? `Engine ${c.version}${c.desktop ? ' · desktop' : ''}` : 'Engine offline', c ? c.libraryDir : t('The engine service saves and opens movies in the library. Start it with ./formmorpheus.')));
+  };
+  probe();
+  onServiceChange(() => probe());
+
+  applyShellPrefs(prefs);
+  const faces = Promise.all(['400', '500', '600'].map((w) => document.fonts.load(`${w} 12px Inter`)));
+  void Promise.race([faces, new Promise((r) => window.setTimeout(r, 2500))]).then(() => requestAnimationFrame(() => revealApp()));
+}

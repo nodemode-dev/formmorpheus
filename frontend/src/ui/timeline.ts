@@ -1,0 +1,658 @@
+import type { Engine } from '../engine/engine';
+import { end, fits, kindName, locate } from '../engine/model';
+import * as ops from '../engine/ops';
+import type { Renderer } from '../engine/render';
+import { timecode } from '../engine/time';
+import type { Content, Highlight, Mode, Movie, Track } from '../engine/types';
+import { el, q, setClass, setHidden, setText, setTitle } from './dom';
+import { icon } from './icons';
+
+const RULER_H = 28;
+const BLOCK_H = 44;
+const LANE_GAP = 10;
+const STRIDE = BLOCK_H + LANE_GAP;
+const LEFT = 14;
+const RIGHT = 24;
+const TOP_PAD = 26;
+const EDGE = 7;
+const MIN_PPF = 0.05;
+const MAX_PPF = 64;
+
+export interface TimelineHooks {
+  contentMenu(x: number, y: number): void;
+  trackMenu(x: number, y: number, trackId: string): void;
+  movieSettings(anchor: HTMLElement): void;
+  home(): void;
+  create(anchor: HTMLElement): void;
+  edit(c: Content): void;
+  scrubSpeed(): number;
+}
+
+type Drag =
+  | { kind: 'scrub' }
+  | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number }
+  | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean }
+  | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string }
+  | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
+  | { kind: 'duration'; x0: number; d0: number; tag: string }
+  | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number };
+
+interface Palette {
+  lane: string;
+  laneAlt: string;
+  block: string;
+  blockLine: string;
+  text: string;
+  muted: string;
+  accent: string;
+  playhead: string;
+  ruler: string;
+  tick: string;
+  end: string;
+  chip: string;
+  hl: Record<Highlight, string>;
+}
+
+const KIND_ICON: Record<Content['kind'], string> = { drawing: 'drawing', flipbook: 'flipbook', image: 'image', video: 'video', audio: 'audio', text: 'text', group: 'group' };
+
+export class TimelineView {
+  readonly root = el(`<section class="fm-timeline" aria-label="Timeline">
+    <div class="fm-transport">
+      <div class="fm-transport-left">
+        <button class="fm-pill-btn" type="button" data-act="home">Theater</button>
+        <button class="fm-round-btn" type="button" data-act="settings" title="Movie settings" aria-label="Movie settings">${icon('movieSettings', 18)}</button>
+        <button class="fm-round-btn" type="button" data-act="multi" title="Multi-select" aria-label="Multi-select" aria-pressed="false">${icon('multiSelect', 18)}</button>
+      </div>
+      <div class="fm-transport-mid">
+        <button class="fm-ghost-btn" type="button" data-act="back" title="Previous frame" aria-label="Previous frame">${icon('stepBack', 16)}</button>
+        <button class="fm-play-btn" type="button" data-act="play" title="Play" aria-label="Play"><span class="fm-play-on">${icon('play', 22)}</span><span class="fm-play-off" hidden>${icon('pause', 22)}</span></button>
+        <button class="fm-ghost-btn" type="button" data-act="fwd" title="Next frame" aria-label="Next frame">${icon('stepForward', 16)}</button>
+      </div>
+      <div class="fm-transport-right">
+        <span class="fm-frame-readout"></span>
+        <button class="fm-round-btn is-strong" type="button" data-act="create" title="Create" aria-label="Create">${icon('plus', 18)}</button>
+      </div>
+    </div>
+    <div class="fm-tl-body">
+      <canvas class="fm-tl-ruler" aria-label="Ruler"></canvas>
+      <div class="fm-tl-lanes"><canvas class="fm-tl-tracks" aria-label="Tracks"></canvas><button class="fm-edit-pill" type="button" hidden></button></div>
+      <div class="fm-tl-empty" hidden><p>Use the plus button to add a drawing, a flipbook, text or a picture, or drop pictures here.</p></div>
+      <div class="fm-modes" role="tablist" aria-label="Mode">
+        <button class="fm-mode" type="button" role="tab" data-mode="compose">${icon('compose', 18)}<span>Compose</span></button>
+        <button class="fm-mode" type="button" role="tab" data-mode="perform">${icon('perform', 18)}<span>Perform</span></button>
+        <button class="fm-mode" type="button" role="tab" data-mode="keyframe">${icon('keyframe', 18)}<span>Keyframe</span></button>
+      </div>
+    </div>
+  </section>`);
+
+  private readonly ruler = q<HTMLCanvasElement>(this.root, '.fm-tl-ruler');
+  private readonly tracksCanvas = q<HTMLCanvasElement>(this.root, '.fm-tl-tracks');
+  private readonly lanes = q(this.root, '.fm-tl-lanes');
+  private readonly editPill = q<HTMLButtonElement>(this.root, '.fm-edit-pill');
+  private readonly empty = q(this.root, '.fm-tl-empty');
+  private readonly readout = q(this.root, '.fm-frame-readout');
+  private readonly multiBtn = q<HTMLButtonElement>(this.root, '[data-act="multi"]');
+  private ppf = 4;
+  private start = 0;
+  private scrollY = 0;
+  private width = 0;
+  private height = 0;
+  private dpr = 1;
+  private drag: Drag | null = null;
+  private frameReq = 0;
+  private fitted = false;
+  private multi = false;
+  private pal: Palette | null = null;
+  private thumbs = new WeakMap<Content, HTMLCanvasElement>();
+  private thumbGen = 0;
+  private lastMovieId = '';
+
+  constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
+    host.appendChild(this.root);
+    const ro = new ResizeObserver(() => this.resize());
+    ro.observe(this.lanes);
+    ro.observe(this.ruler);
+    this.root.addEventListener('click', (e) => this.onClick(e));
+    this.ruler.addEventListener('pointerdown', (e) => this.rulerDown(e));
+    this.tracksCanvas.addEventListener('pointerdown', (e) => this.tracksDown(e));
+    for (const c of [this.ruler, this.tracksCanvas]) {
+      c.addEventListener('pointermove', (e) => this.pointerMove(e));
+      c.addEventListener('pointerup', (e) => this.pointerUp(e));
+      c.addEventListener('pointercancel', (e) => this.pointerUp(e));
+    }
+    this.tracksCanvas.addEventListener('pointermove', (e) => { if (!this.drag) this.hover(e); });
+    this.tracksCanvas.addEventListener('contextmenu', (e) => this.contextMenu(e));
+    this.tracksCanvas.addEventListener('dblclick', (e) => this.doubleClick(e));
+    this.lanes.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    this.ruler.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    this.editPill.addEventListener('click', () => { const c = this.engine.selected[0]; if (c) this.hooks.edit(c); });
+    engine.on('movie', () => { this.thumbGen++; this.schedule(); });
+    engine.on('selection', () => this.schedule());
+    engine.on('time', () => this.schedule());
+    engine.on('mode', (m) => this.syncMode(m));
+    engine.on('playing', (on) => this.syncPlay(on));
+    engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.schedule(); } });
+    document.addEventListener('nm:ui-settings-changed', () => { this.pal = null; this.thumbs = new WeakMap(); this.schedule(); });
+    this.syncMode(engine.mode);
+    this.syncPlay(false);
+  }
+
+  refreshThumbs(): void {
+    this.thumbs = new WeakMap();
+    this.schedule();
+  }
+
+  toggleMulti(on = !this.multi): void {
+    this.multi = on;
+    setClass(this.multiBtn, 'is-on', on);
+    this.multiBtn.setAttribute('aria-pressed', String(on));
+  }
+
+  zoomBy(factor: number): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    const anchor = this.engine.frame;
+    const x = this.fx(anchor);
+    this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), this.ppf * factor));
+    this.start = Math.max(0, anchor - (x - LEFT) / this.ppf);
+    this.schedule();
+  }
+
+  fit(): void {
+    const m = this.engine.movie;
+    if (!m || this.width <= 0) return;
+    this.ppf = Math.min(MAX_PPF, Math.max(MIN_PPF, (this.width - LEFT - RIGHT) / Math.max(1, m.duration)));
+    this.start = 0;
+    this.fitted = true;
+    this.schedule();
+  }
+
+  private minPpf(m: Movie): number {
+    return Math.max(MIN_PPF, Math.min(1, (this.width - LEFT - RIGHT) / Math.max(1, m.duration * 4)));
+  }
+
+  private fx(frame: number): number { return LEFT + (frame - this.start) * this.ppf; }
+  private xf(x: number): number { return this.start + (x - LEFT) / this.ppf; }
+  private laneTop(i: number): number { return TOP_PAD + i * STRIDE - this.scrollY; }
+  private laneAt(y: number): number { return Math.floor((y + this.scrollY - TOP_PAD) / STRIDE); }
+
+  private syncMode(m: Mode): void {
+    for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-mode'))) {
+      const on = b.dataset.mode === m;
+      setClass(b, 'is-active', on);
+      b.setAttribute('aria-selected', String(on));
+    }
+    setClass(this.root, 'is-perform', m === 'perform');
+    setClass(this.root, 'is-keyframe', m === 'keyframe');
+    this.schedule();
+  }
+
+  private syncPlay(on: boolean): void {
+    setHidden(q(this.root, '.fm-play-on'), on);
+    setHidden(q(this.root, '.fm-play-off'), !on);
+    const b = q<HTMLButtonElement>(this.root, '.fm-play-btn');
+    setTitle(b, on ? 'Pause' : 'Play');
+    b.setAttribute('aria-label', on ? 'Pause' : 'Play');
+  }
+
+  private onClick(e: MouseEvent): void {
+    const t = e.target as HTMLElement;
+    const mode = (t.closest('[data-mode]') as HTMLElement | null)?.dataset.mode as Mode | undefined;
+    if (mode) { this.engine.setMode(mode); return; }
+    const act = (t.closest('[data-act]') as HTMLElement | null)?.dataset.act;
+    const btn = t.closest('[data-act]') as HTMLElement | null;
+    if (!act || !btn) return;
+    if (act === 'home') this.hooks.home();
+    else if (act === 'settings') this.hooks.movieSettings(btn);
+    else if (act === 'multi') this.toggleMulti();
+    else if (act === 'play') this.engine.togglePlay();
+    else if (act === 'back') this.engine.step(-1);
+    else if (act === 'fwd') this.engine.step(1);
+    else if (act === 'create') this.hooks.create(btn);
+  }
+
+  private resize(): void {
+    const r = this.lanes.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+    if (w === this.width && h === this.height && dpr === this.dpr) return;
+    this.width = w;
+    this.height = h;
+    this.dpr = dpr;
+    for (const [c, ch] of [[this.ruler, RULER_H], [this.tracksCanvas, h]] as const) {
+      const pw = Math.round(w * dpr), ph = Math.round(ch * dpr);
+      if (c.width !== pw) c.width = pw;
+      if (c.height !== ph) c.height = ph;
+    }
+    if (!this.fitted) this.fit();
+    this.draw();
+  }
+
+  schedule(): void {
+    if (this.frameReq) return;
+    this.frameReq = requestAnimationFrame(() => { this.frameReq = 0; this.draw(); });
+  }
+
+  private palette(): Palette {
+    if (this.pal) return this.pal;
+    const s = getComputedStyle(this.root);
+    const v = (n: string, d: string): string => s.getPropertyValue(n).trim() || d;
+    this.pal = {
+      lane: v('--fm-lane', '#1b1b1f'), laneAlt: v('--fm-lane-alt', '#202026'), block: v('--fm-block', '#2c2c33'), blockLine: v('--fm-block-line', '#3a3a44'),
+      text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#f97316'), playhead: v('--fm-playhead', '#f2f2f2'),
+      ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-chip', 'rgba(10,10,12,.72)'),
+      hl: {
+        none: v('--fm-block', '#2c2c33'), red: v('--fm-hl-red', '#e5484d'), orange: v('--fm-hl-orange', '#f97316'), yellow: v('--fm-hl-yellow', '#e8c547'),
+        green: v('--fm-hl-green', '#46a758'), teal: v('--fm-hl-teal', '#12a594'), blue: v('--fm-hl-blue', '#3a7bff'), purple: v('--fm-hl-purple', '#8e4ec6'), pink: v('--fm-hl-pink', '#e93d82'),
+      },
+    };
+    return this.pal;
+  }
+
+  private draw(): void {
+    const m = this.engine.movie;
+    setHidden(this.empty, !m || m.tracks.length > 0);
+    if (!m || this.width <= 0) { this.clear(); return; }
+    if (!this.fitted) this.fit();
+    this.drawRuler(m);
+    this.drawTracks(m);
+    setText(this.readout, `${timecode(this.engine.frame, m.fps)} · ${this.engine.frame + 1} / ${m.duration}`);
+    this.placePill(m);
+  }
+
+  private clear(): void {
+    for (const c of [this.ruler, this.tracksCanvas]) (c.getContext('2d') as CanvasRenderingContext2D).clearRect(0, 0, c.width, c.height);
+    setHidden(this.editPill, true);
+  }
+
+  private tickStep(m: Movie): { major: number; minor: number; seconds: boolean } {
+    const fps = m.fps;
+    const second = Math.max(1, Math.round(fps));
+    const secondsSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300].map((s) => s * second);
+    const frameSteps = [1, 2, 5, 10, Math.max(1, Math.round(fps / 2))].sort((a, b) => a - b);
+    const major = second * this.ppf >= 40
+      ? secondsSteps.find((s) => s * this.ppf >= 56) ?? secondsSteps[secondsSteps.length - 1]
+      : frameSteps.find((s) => s * this.ppf >= 56) ?? second;
+    const minor = major >= fps ? Math.max(1, Math.round(major / (major >= fps * 5 ? 5 : fps >= 10 ? 4 : 2))) : Math.max(1, Math.round(major / 5));
+    return { major, minor, seconds: major % Math.round(fps) === 0 };
+  }
+
+  private drawRuler(m: Movie): void {
+    const p = this.palette();
+    const c = this.ruler.getContext('2d') as CanvasRenderingContext2D;
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.clearRect(0, 0, this.width, RULER_H);
+    c.fillStyle = p.ruler;
+    c.fillRect(0, 0, this.width, RULER_H);
+    const { major, minor, seconds } = this.tickStep(m);
+    const first = Math.max(0, Math.floor(this.start / minor) * minor);
+    const last = Math.min(m.duration, Math.ceil(this.xf(this.width) / minor) * minor);
+    c.font = '600 10px Inter, system-ui, sans-serif';
+    c.textBaseline = 'top';
+    for (let f = first; f <= last; f += minor) {
+      const x = Math.round(this.fx(f)) + 0.5;
+      const isMajor = f % major === 0;
+      c.strokeStyle = p.tick;
+      c.beginPath();
+      c.moveTo(x, RULER_H);
+      c.lineTo(x, RULER_H - (isMajor ? 10 : 5));
+      c.stroke();
+      if (isMajor) {
+        c.fillStyle = p.muted;
+        const label = seconds ? `${Math.round(f / m.fps)}s` : String(f);
+        c.fillText(label, x + 3, 5);
+      }
+    }
+    const endX = this.fx(m.duration);
+    if (endX < this.width) {
+      c.fillStyle = p.end;
+      c.fillRect(endX, 0, this.width - endX, RULER_H);
+    }
+    const px = Math.round(this.fx(this.engine.frame)) + 0.5;
+    c.fillStyle = p.accent;
+    c.fillRect(px - 1, RULER_H - 12, 2, 12);
+  }
+
+  private visibleRows(m: Movie): number {
+    return m.tracks.length;
+  }
+
+  private drawTracks(m: Movie): void {
+    const p = this.palette();
+    const c = this.tracksCanvas.getContext('2d') as CanvasRenderingContext2D;
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.clearRect(0, 0, this.width, this.height);
+    const endX = this.fx(m.duration);
+    const sel = new Set(this.engine.selection.content);
+    const rows = this.visibleRows(m);
+    for (let i = 0; i < rows; i++) {
+      const y = this.laneTop(i);
+      if (y + BLOCK_H < 0 || y > this.height) continue;
+      const t = m.tracks[i];
+      c.fillStyle = t.id === this.engine.selection.track ? p.laneAlt : p.lane;
+      this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
+      c.fill();
+      for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
+    }
+    if (endX < this.width) {
+      c.fillStyle = p.end;
+      c.globalAlpha = 0.55;
+      c.fillRect(endX + 6, 0, this.width - endX, this.height);
+      c.globalAlpha = 1;
+      c.fillStyle = p.tick;
+      this.round(c, endX + 2, TOP_PAD - this.scrollY, 5, Math.max(BLOCK_H, rows * STRIDE - LANE_GAP), 3);
+      c.fill();
+    }
+    if (this.drag?.kind === 'box') {
+      const d = this.drag;
+      c.strokeStyle = p.accent;
+      c.setLineDash([4, 4]);
+      c.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      c.setLineDash([]);
+    }
+    const px = Math.round(this.fx(this.engine.frame)) + 0.5;
+    c.strokeStyle = this.engine.mode === 'perform' ? p.accent : p.playhead;
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.moveTo(px, 0);
+    c.lineTo(px, this.height);
+    c.stroke();
+    c.lineWidth = 1;
+  }
+
+  private drawBlock(c: CanvasRenderingContext2D, m: Movie, t: Track, item: Content, y: number, selected: boolean, p: Palette): void {
+    const x0 = this.fx(item.start), x1 = this.fx(end(item));
+    if (x1 < 0 || x0 > this.width) return;
+    const w = Math.max(3, x1 - x0);
+    c.save();
+    this.round(c, x0, y, w, BLOCK_H, 6);
+    c.clip();
+    c.fillStyle = item.highlight === 'none' ? p.block : p.hl[item.highlight];
+    c.fillRect(x0, y, w, BLOCK_H);
+    this.drawThumbs(c, m, item, x0, y, w);
+    if (t.hidden) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(x0, y, w, BLOCK_H); }
+    c.restore();
+    c.strokeStyle = selected ? p.accent : p.blockLine;
+    c.lineWidth = selected ? 2 : 1;
+    this.round(c, x0 + (selected ? 1 : 0.5), y + (selected ? 1 : 0.5), w - (selected ? 2 : 1), BLOCK_H - (selected ? 2 : 1), 6);
+    c.stroke();
+    c.lineWidth = 1;
+    if (w > 46) {
+      const label = item.name;
+      c.font = '600 10px Inter, system-ui, sans-serif';
+      const tw = Math.min(w - 16, c.measureText(label).width + 24);
+      c.fillStyle = p.chip;
+      this.round(c, x0 + 5, y + 5, tw, 15, 4);
+      c.fill();
+      c.strokeStyle = p.text;
+      c.strokeRect(x0 + 9.5, y + 8.5, 7, 7);
+      if (!t.hidden) { c.beginPath(); c.moveTo(x0 + 10.5, y + 12); c.lineTo(x0 + 12.5, y + 14); c.lineTo(x0 + 16, y + 9.5); c.stroke(); }
+      c.fillStyle = p.text;
+      c.textBaseline = 'middle';
+      c.save();
+      c.beginPath();
+      c.rect(x0 + 19, y + 5, tw - 15, 15);
+      c.clip();
+      c.fillText(label, x0 + 20, y + 13);
+      c.restore();
+    }
+    if (selected && w > 16) {
+      c.fillStyle = p.accent;
+      this.round(c, x0 + 2, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+      c.fill();
+      this.round(c, x1 - 5, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+      c.fill();
+    }
+  }
+
+  private drawThumbs(c: CanvasRenderingContext2D, m: Movie, item: Content, x0: number, y: number, w: number): void {
+    if (item.kind === 'audio' || item.kind === 'video') {
+      c.fillStyle = this.palette().muted;
+      c.globalAlpha = 0.5;
+      const step = 3;
+      for (let x = Math.max(x0, 0); x < Math.min(x0 + w, this.width); x += step) {
+        const h = (Math.sin((x - x0) * 0.13) * 0.5 + 0.5) * (BLOCK_H - 22) + 4;
+        c.fillRect(x, y + BLOCK_H / 2 - h / 2 + 6, 1.5, h);
+      }
+      c.globalAlpha = 1;
+      return;
+    }
+    const tileW = Math.round(BLOCK_H * (m.width / m.height));
+    const thumb = this.thumbFor(m, item, tileW);
+    if (!thumb) return;
+    const from = Math.max(x0, x0 + Math.floor((0 - x0) / tileW) * tileW);
+    for (let x = from; x < Math.min(x0 + w, this.width); x += tileW) c.drawImage(thumb, x, y, tileW, BLOCK_H);
+  }
+
+  private thumbFor(m: Movie, item: Content, tileW: number): HTMLCanvasElement | null {
+    const have = this.thumbs.get(item);
+    if (have && have.dataset.gen === String(this.thumbGen) && have.width === Math.round(tileW * this.dpr)) return have;
+    const cv = have ?? document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(tileW * this.dpr));
+    cv.height = Math.max(1, Math.round(BLOCK_H * this.dpr));
+    cv.dataset.gen = String(this.thumbGen);
+    const ctx = cv.getContext('2d') as CanvasRenderingContext2D;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    this.renderer.thumb(ctx, m, item, 0, cv.width, cv.height);
+    this.thumbs.set(item, cv);
+    return cv;
+  }
+
+  private placePill(m: Movie): void {
+    const sel = this.engine.selected;
+    const c = sel.length === 1 ? sel[0] : null;
+    const at = c ? locate(m, c.id) : null;
+    const editable = !!c && (c.kind === 'text' || c.kind === 'drawing' || c.kind === 'flipbook');
+    if (!c || !at || !editable || this.drag?.kind === 'move') { setHidden(this.editPill, true); return; }
+    const y = this.laneTop(at.trackIndex) - 16;
+    const x = Math.max(LEFT, Math.min(this.width - 120, this.fx(c.start) + 6));
+    setText(this.editPill, `Edit ${kindName(c.kind)}`);
+    this.editPill.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    setHidden(this.editPill, y < -20 || y > this.height);
+  }
+
+  private round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    c.beginPath();
+    c.roundRect(x, y, Math.max(0, w), Math.max(0, h), Math.min(r, w / 2, h / 2));
+  }
+
+  private hit(e: PointerEvent | MouseEvent): { track: Track; index: number; item: Content | null; edge: 'start' | 'end' | null; x: number; y: number } | null {
+    const m = this.engine.movie;
+    if (!m) return null;
+    const r = this.tracksCanvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const index = this.laneAt(y);
+    const t = m.tracks[index];
+    if (!t) return null;
+    const ly = y - this.laneTop(index);
+    if (ly < 0 || ly > BLOCK_H) return { track: t, index, item: null, edge: null, x, y };
+    for (const item of t.content) {
+      const x0 = this.fx(item.start), x1 = this.fx(end(item));
+      if (x < x0 - EDGE || x > x1 + EDGE) continue;
+      const sel = this.engine.selection.content.includes(item.id);
+      const edge = sel && x1 - x0 > EDGE * 3 ? (Math.abs(x - x0) <= EDGE ? 'start' : Math.abs(x - x1) <= EDGE ? 'end' : null) : null;
+      if (x >= x0 || edge) return { track: t, index, item, edge, x, y };
+    }
+    return { track: t, index, item: null, edge: null, x, y };
+  }
+
+  private hover(e: PointerEvent): void {
+    const h = this.hit(e);
+    const m = this.engine.movie;
+    const nearEnd = !!m && Math.abs((e.clientX - this.tracksCanvas.getBoundingClientRect().left) - this.fx(m.duration) - 4) < 6;
+    this.tracksCanvas.style.cursor = h?.edge || nearEnd ? 'ew-resize' : h?.item ? 'grab' : 'default';
+  }
+
+  private rulerDown(e: PointerEvent): void {
+    const m = this.engine.movie;
+    if (!m || e.button !== 0) return;
+    this.ruler.setPointerCapture(e.pointerId);
+    this.engine.stop();
+    if (e.altKey) {
+      const r = this.ruler.getBoundingClientRect();
+      this.drag = { kind: 'zoom', x0: e.clientX, ppf0: this.ppf, anchorFrame: this.xf(e.clientX - r.left) };
+      return;
+    }
+    this.drag = { kind: 'scrub' };
+    this.scrubTo(e);
+  }
+
+  private scrubTo(e: PointerEvent): void {
+    const r = this.ruler.getBoundingClientRect();
+    this.engine.seek(Math.floor(this.xf(e.clientX - r.left)));
+  }
+
+  private tracksDown(e: PointerEvent): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    if (e.button === 1) {
+      this.tracksCanvas.setPointerCapture(e.pointerId);
+      this.drag = { kind: 'pan', x0: e.clientX, start0: this.start, y0: e.clientY, scroll0: this.scrollY };
+      return;
+    }
+    if (e.button !== 0) return;
+    this.engine.stop();
+    const r = this.tracksCanvas.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const h = this.hit(e);
+    if (!h?.edge && Math.abs(x - this.fx(m.duration) - 4) < 6) {
+      this.tracksCanvas.setPointerCapture(e.pointerId);
+      this.drag = { kind: 'duration', x0: e.clientX, d0: m.duration, tag: `dur-${Date.now()}` };
+      return;
+    }
+    const additive = this.multi || e.shiftKey || e.metaKey || e.ctrlKey;
+    if (h?.item) {
+      this.tracksCanvas.setPointerCapture(e.pointerId);
+      if (h.edge) {
+        this.drag = { kind: 'trim', id: h.item.id, edge: h.edge, x0: e.clientX, applied: 0, ripple: e.altKey, tag: `trim-${Date.now()}` };
+        return;
+      }
+      if (additive) this.engine.toggleSelect(h.item.id);
+      else if (!this.engine.selection.content.includes(h.item.id)) this.engine.select([h.item.id], h.track.id);
+      if (!additive) this.engine.seek(Math.max(h.item.start, Math.min(end(h.item) - 1, Math.floor(this.xf(x)))));
+      this.drag = { kind: 'move', x0: e.clientX, y0: e.clientY, applied: 0, appliedTrack: 0, tag: `move-${Date.now()}`, moved: false };
+      return;
+    }
+    this.tracksCanvas.setPointerCapture(e.pointerId);
+    if (additive || this.multi) {
+      const y = e.clientY - r.top;
+      this.drag = { kind: 'box', x0: x, y0: y, x1: x, y1: y, base: this.engine.selection.content.slice() };
+      return;
+    }
+    this.engine.select([], h?.track.id ?? this.engine.selection.track);
+    this.drag = { kind: 'scrub' };
+    this.engine.seek(Math.floor(this.xf(x)));
+  }
+
+  private pointerMove(e: PointerEvent): void {
+    const d = this.drag;
+    const m = this.engine.movie;
+    if (!d || !m) return;
+    const speed = this.hooks.scrubSpeed();
+    if (d.kind === 'scrub') {
+      const r = this.ruler.getBoundingClientRect();
+      this.engine.seek(Math.floor(this.xf(e.clientX - r.left)));
+    } else if (d.kind === 'zoom') {
+      const factor = Math.exp((e.clientX - d.x0) * 0.01);
+      const ax = this.fx(d.anchorFrame);
+      this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), d.ppf0 * factor));
+      this.start = Math.max(0, d.anchorFrame - (ax - LEFT) / this.ppf);
+      this.schedule();
+    } else if (d.kind === 'pan') {
+      this.start = Math.max(0, d.start0 - (e.clientX - d.x0) / this.ppf);
+      this.scrollY = this.clampScroll(d.scroll0 - (e.clientY - d.y0), m);
+      this.schedule();
+    } else if (d.kind === 'move') {
+      const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
+      const lanes = Math.round((e.clientY - d.y0) / STRIDE);
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 3 && Math.abs(e.clientY - d.y0) < 3) return;
+      d.moved = true;
+      const step = total - d.applied, laneStep = lanes - d.appliedTrack;
+      if (!step && !laneStep) return;
+      const ids = this.engine.selection.content;
+      if (this.tryRun('Move Content', (mv) => ops.moveContent(mv, ids, step, laneStep), d.tag)) { d.applied = total; d.appliedTrack = lanes; }
+    } else if (d.kind === 'trim') {
+      const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
+      const step = total - d.applied;
+      if (!step) return;
+      if (this.tryRun(d.ripple ? 'Free Trim' : 'Trim', (mv) => ops.trimContent(mv, d.id, d.edge, step, d.ripple), d.tag)) d.applied = total;
+    } else if (d.kind === 'box') {
+      const r = this.tracksCanvas.getBoundingClientRect();
+      d.x1 = e.clientX - r.left;
+      d.y1 = e.clientY - r.top;
+      const f0 = this.xf(Math.min(d.x0, d.x1)), f1 = this.xf(Math.max(d.x0, d.x1));
+      const l0 = this.laneAt(Math.min(d.y0, d.y1)), l1 = this.laneAt(Math.max(d.y0, d.y1));
+      const ids = new Set(d.base);
+      m.tracks.forEach((t, i) => { if (i < l0 || i > l1) return; for (const c of t.content) if (end(c) > f0 && c.start < f1) ids.add(c.id); });
+      this.engine.select([...ids]);
+      this.schedule();
+    } else if (d.kind === 'duration') {
+      const next = Math.max(1, Math.round(d.d0 + (e.clientX - d.x0) / this.ppf));
+      if (next !== m.duration) this.tryRun('Movie Duration', (mv) => ops.patchMovie(mv, { duration: next }), d.tag);
+    }
+  }
+
+  private tryRun(label: string, fn: (m: Movie) => Movie, tag: string): boolean {
+    const m = this.engine.movie;
+    if (!m) return false;
+    try { fn(m); } catch (err) { if (err instanceof ops.OpError) return false; throw err; }
+    return this.engine.run(label, fn, tag);
+  }
+
+  private pointerUp(e: PointerEvent): void {
+    const d = this.drag;
+    this.drag = null;
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* released */ }
+    if (!d) return;
+    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration') this.engine.endGesture();
+    if (d.kind === 'move' && !d.moved && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) {
+      const h = this.hit(e);
+      if (h?.item) this.engine.select([h.item.id], h.track.id);
+    }
+    this.schedule();
+  }
+
+  private contextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    const h = this.hit(e);
+    if (!h) return;
+    if (h.item) {
+      if (!this.engine.selection.content.includes(h.item.id)) this.engine.select([h.item.id], h.track.id);
+      this.hooks.contentMenu(e.clientX, e.clientY);
+    } else {
+      this.engine.select([], h.track.id);
+      this.hooks.trackMenu(e.clientX, e.clientY, h.track.id);
+    }
+  }
+
+  private doubleClick(e: MouseEvent): void {
+    const h = this.hit(e);
+    if (h?.item) this.hooks.edit(h.item);
+  }
+
+  private clampScroll(y: number, m: Movie): number {
+    const content = TOP_PAD + m.tracks.length * STRIDE + 80;
+    return Math.max(0, Math.min(Math.max(0, content - this.height), y));
+  }
+
+  private wheel(e: WheelEvent): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    e.preventDefault();
+    const r = this.lanes.getBoundingClientRect();
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      const x = e.clientX - r.left, anchor = this.xf(x);
+      this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), this.ppf * Math.exp(-e.deltaY * 0.002)));
+      this.start = Math.max(0, anchor - (x - LEFT) / this.ppf);
+    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      this.start = Math.max(0, this.start + (e.shiftKey ? e.deltaY : e.deltaX) / this.ppf);
+    } else {
+      this.scrollY = this.clampScroll(this.scrollY + e.deltaY, m);
+    }
+    this.schedule();
+  }
+
+  canPlace(t: Track, start: number, duration: number): boolean {
+    return fits(t, start, duration);
+  }
+}
