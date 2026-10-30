@@ -10,6 +10,7 @@ import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
 import { BoilMake } from './boil-make';
 import { canConvert } from './flip-convert';
+import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
 
@@ -42,6 +43,7 @@ export class ContentMenu {
   private readonly boilMake: BoilMake;
   private readonly toTracks: PopRow;
   private readonly fill: PopRow;
+  private readonly splitLayers: PopRow;
   private readonly lip: PopRow;
   /** Opens the lip-sync dialog for the selection (set by the app). */
   onLipsync: (() => void) | null = null;
@@ -175,6 +177,12 @@ export class ContentMenu {
       this.pop.hide();
     });
     this.fill = popRow('fillDuration', 'Fill duration');
+    this.splitLayers = popRow('layers', 'Convert Layers to Tracks');
+    this.splitLayers.el.addEventListener('click', () => {
+      const id = this.ids[0];
+      this.engine.run('Convert Layers to Tracks', (m) => { const r = layersToTracks(m, id); return { movie: r.movie, select: r.ids }; });
+      this.pop.hide();
+    });
     this.lip = popRow('audio', 'Lip-sync from Sound...');
     this.lip.el.addEventListener('click', () => { this.pop.hide(); this.onLipsync?.(); });
     this.formvis = popRow('layers', 'Edit in formvis');
@@ -215,7 +223,7 @@ export class ContentMenu {
     this.parents = new ParentPicker(engine, this.pop);
     this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows, popSep(),
-      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -238,18 +246,24 @@ export class ContentMenu {
     this.vrange.style.setProperty('--fm-pct', `${v / 2}%`);
   }
 
-  /** The video goes silent and a new audio block on the same asset takes over, on a track just below. */
+  /** The video goes silent and a new audio block on the same asset takes over, on a new track directly above; each selected video gets its own. */
   private separateAudio(): void {
-    const c = this.engine.selected[0];
-    if (!c || c.kind !== 'video' || !c.asset) return;
-    const id = c.id, assetId = c.asset;
+    const vids = this.engine.selected.filter((c) => c.kind === 'video' && c.asset);
+    if (!vids.length) return;
+    const ids = vids.map((c) => c.id);
     this.engine.run('Separate Audio and Video', (m) => {
-      const cur = locate(m, id);
-      if (!cur) throw new ops.OpError('That content no longer exists.');
-      const item = content('audio', cur.content.start, cur.content.duration, { name: `${cur.content.name} audio`, asset: assetId, offset: cur.content.offset, volume: cur.content.volume });
-      const muted = ops.patchContent(m, [id], { volume: 0 });
-      const placed = ops.placeContent(muted, null, item, cur.trackIndex + 1);
-      return { movie: placed.movie, select: [item.id] };
+      let acc = m;
+      const made: string[] = [];
+      for (const id of ids) {
+        const cur = locate(acc, id);
+        if (!cur || !cur.content.asset) continue;
+        const item = content('audio', cur.content.start, cur.content.duration, { name: `${cur.content.name} audio`, asset: cur.content.asset, offset: cur.content.offset, volume: cur.content.volume });
+        const muted = ops.patchContent(acc, [id], { volume: 0 });
+        acc = ops.placeContent(muted, null, item, cur.trackIndex).movie;
+        made.push(item.id);
+      }
+      if (!made.length) throw new ops.OpError('That content no longer exists.');
+      return { movie: acc, select: made };
     });
   }
 
@@ -318,6 +332,7 @@ export class ContentMenu {
     setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => canConvert(c)));
     setClass(this.toBoil.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     setClass(this.toTracks.el, 'is-gone', !(sel.length === 1 && first.kind === 'flipbook'));
+    setClass(this.splitLayers.el, 'is-gone', !(sel.length === 1 && canSplitLayers(first)));
     const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
     setClass(this.lip.el, 'is-gone', !lipOk);
     setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));

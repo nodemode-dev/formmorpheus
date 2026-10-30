@@ -116,6 +116,12 @@
   border-radius: 50%;
   background: var(--c);
   box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--glass-border);
+  position: relative;
+}
+/* the secondary color as a second, smaller swatch at the corner */
+.fm-paint-colour > span::after {
+  content: ''; position: absolute; right: -6px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--c2, #fff); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--glass-border);
 }
 
 /* size and opacity sidebar */

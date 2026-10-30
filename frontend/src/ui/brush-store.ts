@@ -4,7 +4,7 @@
 // cleared browser profile cannot lose it. IndexedDB holds a copy so the library still loads when the engine
 // is not answering. paint/brushes.ts keeps the live lookup that strokes read.
 
-import { ALL_STARTERS, BRUSH_SETS, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
+import { ALL_STARTERS, BRUSH_SETS, OLD_SET_NAMES, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
 import { ANIMATION_SETS } from '../paint/brushes-animation';
 import type { Brush } from '../paint/types';
 
@@ -75,8 +75,8 @@ function unpack(s: SavedBrush): Brush | null {
 function defaults(): Saved {
   const sets: BrushSet[] = ANIMATION_SETS.map((n) => ({ id: animId(n), name: n, lib: LIB_ANIMATION, ids: ALL_STARTERS.filter((b) => b.lib === 'animation' && b.set === n).map((b) => b.id) }));
   for (const n of BRUSH_SETS) sets.push({ id: slug(n), name: n, lib: LIB_CLASSIC, ids: ALL_STARTERS.filter((b) => !b.lib && b.set === n).map((b) => b.id) });
-  sets.push({ id: IMPORTED_ID, name: 'Imported', lib: LIB_IMPORTED, ids: [] });
-  const libs: BrushLib[] = [{ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }, { id: LIB_IMPORTED, name: 'Imported' }];
+  sets.push({ id: IMPORTED_ID, name: 'Imported', lib: LIB_CLASSIC, ids: [] });
+  const libs: BrushLib[] = [{ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }];
   return { v: 1, sets, custom: {}, names: {}, tweaks: {}, deleted: [], libs, active: LIB_ANIMATION };
 }
 
@@ -168,7 +168,7 @@ class BrushStore {
   }
 
   /** The Imported library cannot go: imported brushes need somewhere to land. */
-  canDeleteLib(id: string): boolean { return id !== LIB_IMPORTED && this.st.libs!.length > 1 && !!this.lib(id); }
+  canDeleteLib(id: string): boolean { return id !== LIB_CLASSIC && this.st.libs!.length > 1 && !!this.lib(id); }
 
   removeLib(id: string): void {
     if (!this.canDeleteLib(id)) return;
@@ -337,15 +337,15 @@ class BrushStore {
 
   /** Puts imported brushes into the Imported set. */
   addImported(list: Brush[]): void {
-    const s = this.set(IMPORTED_ID);
-    if (!s) return;
+    let s = this.set(IMPORTED_ID);
+    if (!s) { s = { id: IMPORTED_ID, name: 'Imported', lib: this.st.libs!.some((l) => l.id === LIB_CLASSIC) ? LIB_CLASSIC : this.st.active, ids: [] }; this.st.sets.push(s); }
     for (const b of list) { this.custom.set(b.id, { ...b, set: s.name, custom: true }); s.ids.push(b.id); }
     this.refresh(...list.map((b) => b.id));
   }
 
   /** Puts an imported brush set in the Imported library under the name it came with; returns the set's id. */
   addImportedSet(name: string, list: Brush[]): string {
-    const rec: BrushSet = { id: uid('set'), name: this.uniqueSetName(name.trim().slice(0, 40) || 'Imported'), lib: LIB_IMPORTED, ids: [] };
+    const rec: BrushSet = { id: uid('set'), name: this.uniqueSetName(name.trim().slice(0, 40) || 'Imported'), lib: this.st.active, ids: [] };
     this.st.sets.push(rec);
     for (const b of list) { this.custom.set(b.id, { ...b, set: rec.name, custom: true }); rec.ids.push(b.id); }
     this.refresh(...list.map((b) => b.id));
@@ -459,16 +459,24 @@ class BrushStore {
       if (!rec || typeof rec.id !== 'string' || typeof rec.name !== 'string' || !Array.isArray(rec.ids)) continue;
       const ids = rec.ids.filter((id) => typeof id === 'string' && !placed.has(id) && (this.custom.has(id) || (starterBrush(id) && !st.deleted.includes(id))));
       ids.forEach((id) => placed.add(id));
-      const lib = typeof rec.lib === 'string' ? rec.lib : rec.id === IMPORTED_ID ? LIB_IMPORTED : LIB_CLASSIC;
+      // The separate Imported library is gone: its sets move into Classic.
+      const lib = typeof rec.lib === 'string' && rec.lib !== LIB_IMPORTED ? rec.lib : LIB_CLASSIC;
       sets.push({ id: rec.id, name: rec.name, ids, lib });
+    }
+    // Classic sets saved under the shorter names take the full names; Touch-ups folds into Drawing. Renamed-by-hand sets stay.
+    for (const [from, to] of Object.entries(OLD_SET_NAMES)) {
+      const old = sets.find((x) => x.id === slug(from) && x.name === from && (x.lib ?? LIB_CLASSIC) === LIB_CLASSIC);
+      if (!old) continue;
+      const into = to === 'Drawing' ? sets.find((x) => x.id === 'drawing') : undefined;
+      if (into) { into.ids.push(...old.ids); sets.splice(sets.indexOf(old), 1); }
+      else if (to !== 'Drawing' && !sets.some((x) => x.id === slug(to))) { old.id = slug(to); old.name = to; }
     }
     // Libraries: a file from before libraries has none, so its sets stay in Classic and Animation is added.
     const savedLibs = Array.isArray(s.libs) ? s.libs.filter((l) => l && typeof l.id === 'string' && typeof l.name === 'string') : [];
-    const libs: BrushLib[] = savedLibs.length ? savedLibs.map((l) => ({ id: l.id, name: l.name.slice(0, 40) })) : [];
-    if (!savedLibs.length) libs.push({ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }, { id: LIB_IMPORTED, name: 'Imported' });
+    const libs: BrushLib[] = savedLibs.length ? savedLibs.filter((l) => l.id !== LIB_IMPORTED).map((l) => ({ id: l.id, name: l.name.slice(0, 40) })) : [];
+    if (!savedLibs.length) libs.push({ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' });
     for (const set of sets) if (!libs.some((l) => l.id === set.lib)) set.lib = LIB_CLASSIC;
     if (!libs.some((l) => l.id === LIB_CLASSIC)) libs.push({ id: LIB_CLASSIC, name: 'Classic' });
-    if (!libs.some((l) => l.id === LIB_IMPORTED)) libs.push({ id: LIB_IMPORTED, name: 'Imported' });
     // Starter brushes the saved library does not know yet (added by an update) join their own set.
     // Animation sets come back only for a file that never had libraries; a deleted Animation library stays deleted.
     const animHidden = savedLibs.length > 0 && !libs.some((l) => l.id === LIB_ANIMATION);
@@ -485,7 +493,7 @@ class BrushStore {
       }
       home.ids.push(b.id);
     }
-    if (!sets.some((x) => x.id === IMPORTED_ID)) sets.push({ id: IMPORTED_ID, name: 'Imported', ids: [], lib: LIB_IMPORTED });
+    if (!sets.some((x) => x.id === IMPORTED_ID)) sets.push({ id: IMPORTED_ID, name: 'Imported', ids: [], lib: LIB_CLASSIC });
     st.sets = sets;
     st.libs = libs;
     st.active = typeof s.active === 'string' && libs.some((l) => l.id === s.active) ? s.active : libs[0].id;

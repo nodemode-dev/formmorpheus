@@ -3,6 +3,7 @@ import { FPS_PRESETS } from '../engine/time';
 import { MAX_SIDE, MOVIE_PRESETS } from '../engine/types';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setText } from './dom';
+import { followLanguage, fpsText } from './fps-label';
 
 const KEY = 'formmorpheus.newMovie2';
 const BOX = 44;
@@ -41,7 +42,7 @@ export class NewMovieDialog extends Dialog {
   private readonly sizes: HTMLSelectElement[] = [];
   private readonly width = el<HTMLInputElement>('<input class="cv-input" type="number" min="16" max="3840" value="1920" aria-label="Width">');
   private readonly height = el<HTMLInputElement>('<input class="cv-input" type="number" min="16" max="3840" value="1080" aria-label="Height">');
-  private readonly fps = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Frame rate">${FPS_PRESETS.map((p) => `<option value="${p.fps}">${p.fps} · ${p.label}</option>`).join('')}</select>`);
+  private readonly fps = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Frame rate">${FPS_PRESETS.map((p) => `<option value="${p.fps}">${fpsText(p)}</option>`).join('')}</select>`);
   private readonly seconds = el<HTMLInputElement>('<input class="cv-input" type="number" min="1" max="3600" step="1" value="10" aria-label="Duration in seconds">');
   private readonly starts: HTMLButtonElement[] = [];
   private state: Saved = load();
@@ -51,6 +52,7 @@ export class NewMovieDialog extends Dialog {
 
   constructor(private readonly engine: Engine) {
     super('New Movie', 560);
+    followLanguage(this.fps);
     const grid = el<HTMLElement>('<div class="fm-nm-grid"></div>');
     MOVIE_PRESETS.forEach((p, i) => {
       const card = el<HTMLElement>('<div class="fm-nm-card" role="button" tabindex="0"><span class="fm-nm-label"></span><span class="fm-nm-ratio"></span></div>');

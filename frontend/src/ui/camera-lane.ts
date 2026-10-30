@@ -10,6 +10,7 @@ import { EASES, type Content, type Movie } from '../engine/types';
 import { cameraMode } from './camera-view';
 import { drawLanes, LANE_H, type LaneGeom } from './key-lanes';
 import type { TimelineView } from './timeline';
+import { redrawOnLanguage, word } from './canvas-words';
 import { el, setClass } from './dom';
 import { Popover, popRow, popSep } from './popover';
 
@@ -56,6 +57,7 @@ export class CameraLane {
     timeline.onDrawn = () => this.schedule();
     for (const ev of ['movie', 'time', 'projects'] as const) engine.on(ev, () => this.schedule());
     cameraMode.onChange(() => this.schedule());
+    redrawOnLanguage(() => this.schedule());
     this.canvas.addEventListener('pointerdown', (e) => this.down(e));
     this.canvas.addEventListener('pointermove', (e) => this.move(e));
     this.canvas.addEventListener('pointerup', (e) => this.up(e));
@@ -108,14 +110,14 @@ export class CameraLane {
       c.font = '600 10px Inter, system-ui, sans-serif';
       c.textBaseline = 'middle';
       c.textAlign = 'left';
-      c.fillText('Drag the frame on the Stage to key the camera', Math.max(8, x0 + 10), 1 + LANE_H / 2);
+      c.fillText(word('Drag the frame on the Stage to key the camera'), Math.max(8, x0 + 10), 1 + LANE_H / 2);
     }
     if (si) {
       c.fillStyle = v('--text-muted', '#8a8a8a');
       c.font = '600 9px Inter, system-ui, sans-serif';
       c.textBaseline = 'middle';
       c.textAlign = 'right';
-      c.fillText('Camera', Math.min(w - 8, x1 - 8), 1 + LANE_H / 2);
+      c.fillText(word('Camera'), Math.min(w - 8, x1 - 8), 1 + LANE_H / 2);
     }
     const px = Math.round(ax.x(this.engine.frame)) + 0.5;
     c.strokeStyle = v('--fm-playhead', '#f2f2f2');

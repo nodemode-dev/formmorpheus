@@ -9,6 +9,8 @@ import { timecode } from '../engine/time';
 import type { Content, Highlight, KeyKind, Mode, Movie, Track } from '../engine/types';
 import * as keyOps from '../engine/key-ops';
 import { kindSpec, laneFrames } from '../engine/keys';
+import { contentName, redrawOnLanguage, secondsLabel } from './canvas-words';
+import { t } from './i18n';
 import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
 import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
@@ -18,6 +20,7 @@ import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeig
 import { EndBarMenu, KeySelMenu, KeySelection, inPoly, lassoTouches, nearTrail, type Pt } from './timeline-extras';
 import type { KeyRef } from '../engine/key-sel-ops';
 import { gestureRegion, penHover, touchModifier } from './gestures';
+import { loadPrefs } from './prefs';
 
 const RULER_H = 28;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
@@ -117,6 +120,7 @@ export class TimelineView {
   </section>`);
 
   private readonly ruler = q<HTMLCanvasElement>(this.root, '.fm-tl-ruler');
+  private readonly modesEl = q(this.root, '.fm-modes');
   private readonly tracksCanvas = q<HTMLCanvasElement>(this.root, '.fm-tl-tracks');
   private readonly lanes = q(this.root, '.fm-tl-lanes');
   private readonly editPill = q<HTMLButtonElement>(this.root, '.fm-edit-pill');
@@ -204,7 +208,7 @@ export class TimelineView {
     this.keyPill.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const r = this.tracksCanvas.getBoundingClientRect(), p = this.keyPill.getBoundingClientRect();
-      const y = Math.min(r.bottom - 1, Math.max(r.top, p.top + p.height / 2));
+      const y = Math.min(r.bottom - 1, Math.max(r.top, this.keyPill.classList.contains('is-keyed') ? p.top + 49 : p.top + p.height / 2));
       this.contextMenu(new MouseEvent('contextmenu', { clientX: p.left + p.width / 2, clientY: y, bubbles: false, cancelable: true }));
     });
     const ro = new ResizeObserver(() => this.resize());
@@ -212,6 +216,13 @@ export class TimelineView {
     ro.observe(this.ruler);
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.ruler.addEventListener('pointerdown', (e) => this.rulerDown(e));
+    // a cue for the ruler's drag: a slide scales time, the Playhead handle or Shift scrubs
+    this.ruler.title = 'Drag to scale time. Drag the Playhead, or hold Shift, to scrub.';
+    this.ruler.addEventListener('pointermove', (e) => {
+      if (this.drag || e.pointerType === 'touch') return;
+      const nearHead = Math.abs(e.clientX - this.ruler.getBoundingClientRect().left - this.fx(this.engine.frame)) < 10;
+      this.ruler.style.cursor = e.shiftKey || nearHead ? 'grab' : 'ew-resize';
+    });
     this.tracksCanvas.addEventListener('pointerdown', (e) => this.tracksDown(e));
     for (const c of [this.ruler, this.tracksCanvas]) {
       c.addEventListener('pointermove', (e) => this.pointerMove(e));
@@ -239,6 +250,7 @@ export class TimelineView {
     engine.on('mode', (m) => this.syncMode(m));
     engine.on('playing', (on) => this.syncPlay(on));
     engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.schedule(); } });
+    redrawOnLanguage(() => this.schedule());
     document.addEventListener('nm:ui-settings-changed', () => { this.pal = null; this.thumbs = new WeakMap(); this.schedule(); });
     cameraMode.onChange(() => {
       const b = q<HTMLButtonElement>(this.root, '[data-act="camera"]');
@@ -519,12 +531,14 @@ export class TimelineView {
     const fps = m.fps;
     const second = Math.max(1, Math.round(fps));
     const secondsSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300].map((s) => s * second);
-    const frameSteps = [1, 2, 5, 10, Math.max(1, Math.round(fps / 2))].sort((a, b) => a - b);
-    const major = second * this.ppf >= 40
+    const frameSteps = [1, 2, 5, 10, Math.max(1, Math.round(fps / 2)), second].sort((a, b) => a - b);
+    // from about 6 px a frame there is room for frame numbers, so they show without a double-click zoom
+    const bySeconds = second * this.ppf >= 40 && this.ppf < 6;
+    const major = bySeconds
       ? secondsSteps.find((s) => s * this.ppf >= 56) ?? secondsSteps[secondsSteps.length - 1]
       : frameSteps.find((s) => s * this.ppf >= 56) ?? second;
     const minor = major >= fps ? Math.max(1, Math.round(major / (major >= fps * 5 ? 5 : fps >= 10 ? 4 : 2))) : Math.max(1, Math.round(major / 5));
-    return { major, minor, seconds: major % Math.round(fps) === 0 };
+    return { major, minor, seconds: bySeconds };
   }
 
   private drawRuler(m: Movie): void {
@@ -560,7 +574,7 @@ export class TimelineView {
       c.stroke();
       if (isMajor) {
         c.fillStyle = p.muted;
-        const label = seconds ? `${Math.round(f / m.fps)}s` : String(f);
+        const label = seconds ? secondsLabel(Math.round(f / m.fps)) : String(f);
         // Left-aligned whatever the page direction; a label that would pass the movie's end (or the right edge) ends at its tick instead.
         const lw = c.measureText(label).width;
         c.textAlign = x + 3 + lw > Math.min(this.width, this.fx(m.duration)) - 2 ? 'right' : 'left';
@@ -751,7 +765,9 @@ export class TimelineView {
     setClass(this.keyPill, 'is-rec', perf && perform.recording);
     // kept whole at frame 0 and at the right edge instead of being cut off by the panel
     const left = Math.max(2, Math.min(spot.x - 32, this.width - 66));
-    const at = `translate(${Math.round(left)}px, ${Math.round(spot.y - 20)}px)`;
+    // on a key the pill rides just above the lane so the key stays visible and tappable
+    const top = !perf && keyed ? Math.max(0, spot.y - 49) : spot.y - 20;
+    const at = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
     if (at !== this.keyPillAt) { this.keyPillAt = at; this.keyPill.style.transform = at; }
     setHidden(this.keyPill, false);
     this.actionMenu.follow();
@@ -776,7 +792,7 @@ export class TimelineView {
     c.stroke();
     c.lineWidth = 1;
     if (w > 46) {
-      const label = item.name;
+      const label = contentName(item.name);
       c.font = '600 10px Inter, system-ui, sans-serif';
       const tw = Math.min(w - 16, c.measureText(label).width + 24);
       c.fillStyle = p.chip;
@@ -988,7 +1004,7 @@ export class TimelineView {
     if (!c || !at || !editable || this.drag?.kind === 'move') { setHidden(this.editPill, true); return; }
     const y = this.laneTop(at.trackIndex) - 16;
     const x = Math.max(LEFT, Math.min(this.width - 120, this.fx(c.start) + 6));
-    setText(this.editPill, `Edit ${kindName(c.kind)}`);
+    setText(this.editPill, t('Edit {kind}').replace('{kind}', t(kindName(c.kind))));
     this.editPill.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     setHidden(this.editPill, y < -20 || y > this.height);
   }
@@ -1098,8 +1114,8 @@ export class TimelineView {
       return;
     }
     const lh = this.laneHit(e);
-    if (lh && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) { this.keySel.clear(); this.laneDown(e, lh); return; }
-    const additive = this.multi || e.shiftKey || e.metaKey || e.ctrlKey;
+    if (lh && !this.addsToSelection(e)) { this.keySel.clear(); this.laneDown(e, lh); return; }
+    const additive = this.addsToSelection(e);
     if (lh) { this.keyDown(e, lh, x, e.clientY - r.top); return; }
     const inner = this.engine.mode === 'compose' ? this.innerHit(e) : null;
     if (inner) {
@@ -1136,8 +1152,8 @@ export class TimelineView {
       else if (!this.engine.selection.content.includes(h.item.id)) this.engine.select([h.item.id], h.track.id);
       if (!additive) this.engine.seek(Math.max(h.item.start, Math.min(end(h.item) - 1, Math.floor(this.xf(x)))));
       this.drag = { kind: 'move', x0: e.clientX, y0: e.clientY, applied: 0, appliedTrack: 0, tag: `move-${Date.now()}`, moved: false };
-      if (!additive && onLine) {
-        // held still on the Playhead line over a block: its options, with Split at the Playhead
+      if (!additive && (onLine || e.pointerType !== 'touch')) {
+        // held still (mouse or pen: anywhere on the block; a finger: on the Playhead line): its options, with Split at the Playhead
         const px = e.clientX, py = e.clientY;
         this.pressAt = [px, py];
         this.cancelLongPress();
@@ -1160,6 +1176,17 @@ export class TimelineView {
     this.engine.select([], h?.track.id ?? this.engine.selection.track);
     this.drag = { kind: 'scrub' };
     this.engine.seek(Math.floor(this.xf(x)));
+    if (e.pointerType !== 'touch') {
+      // a mouse or pen held still on empty track area opens the same menu as a right-click
+      const px = e.clientX, py = e.clientY;
+      this.pressAt = [px, py];
+      this.cancelLongPress();
+      this.longPress = window.setTimeout(() => {
+        this.longPress = 0;
+        this.drag = null;
+        this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true }));
+      }, 500);
+    }
   }
 
   private laneHit(e: { clientX: number; clientY: number }): { c: Content; track: Track; hit: LaneHit } | null {
@@ -1203,7 +1230,7 @@ export class TimelineView {
       this.engine.seek(c.start + Math.max(0, Math.min(last, hit.at)));
       this.drag = { kind: 'scrub' };
     }
-    if (e.pointerType !== 'mouse') {
+    {
       const x = e.clientX, y = e.clientY;
       this.pressAt = [x, y];
       this.cancelLongPress();
@@ -1254,6 +1281,11 @@ export class TimelineView {
       }
     });
     return out;
+  }
+
+  /** Multi-select button, a modifier key, or (a finger with the "Multi-select with finger" preference) a plain touch. */
+  private addsToSelection(e: PointerEvent): boolean {
+    return this.multi || e.shiftKey || e.metaKey || e.ctrlKey || (e.pointerType === 'touch' && loadPrefs().multiFinger);
   }
 
   private cancelLongPress(): void {
@@ -1406,9 +1438,11 @@ export class TimelineView {
       const dt = last[0] - from[0];      if (dt > 0 && (last[1] - from[1]) / dt < -0.9 && last[1] - from[1] < -40 && last[0] - e.timeStamp > -80) this.engine.play();
     }
     if (d.kind === 'trim') { window.clearTimeout(d.hold); this.syncFreeTrim(); }
+    // a tap on a key (no drag) opens its values
+    if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform') this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
     if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner') this.engine.endGesture();
-    if (d.kind === 'move' && !d.moved && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) {
+    if (d.kind === 'move' && !d.moved && !this.addsToSelection(e)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);
     }
@@ -1441,7 +1475,9 @@ export class TimelineView {
 
   private clampScroll(y: number, m: Movie): number {
     this.layout(m);
-    const content = TOP_PAD + this.totalH + 100;   // room for the floating mode switch
+    // room for the floating mode switch: its height and the gap under it, so the last lane scrolls clear
+    const sw = this.modesEl.offsetHeight;
+    const content = TOP_PAD + this.totalH + (sw > 0 ? sw + 12 + 12 : 100);
     return Math.max(0, Math.min(Math.max(0, content - this.height), y));
   }
 

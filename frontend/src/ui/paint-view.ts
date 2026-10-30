@@ -12,7 +12,7 @@ import { flipIndexAt, flipLength, flipStartOf, locate, uid } from '../engine/mod
 import * as ops from '../engine/ops';
 import { BLEND_OP, type Renderer } from '../engine/render';
 import type { Content, DrawingLayer, Movie, OnionSettings } from '../engine/types';
-import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById } from '../paint/brushes';
+import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById, stabilizationRope } from '../paint/brushes';
 import { PaintDoc } from '../paint/doc';
 import { historyNotice } from '../paint/history';
 import { baseDiameter, setPressureCurve } from '../paint/dynamics';
@@ -149,6 +149,9 @@ export class PaintView {
   /** Markers for the four remembered size and opacity values of the brush. */
   private slots: BrushSlots | null = null;
   private strokePointer = -1;
+  /** Painting while the strip's scrub wheel is held: the pen that was painting when the frame changed, and its last move. */
+  private resumePointer = -1;
+  private lastStrokeMove: PointerEvent | null = null;
   private readonly touches = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
   private gesture: { d: number; ang: number; cx: number; cy: number; scale: number; rot: number; anchor: Point; d0: number; count: number; t: number; moved: boolean } | null = null;
   private pan: { x: number; y: number; ox: number; oy: number; id: number } | null = null;
@@ -269,7 +272,7 @@ export class PaintView {
     // Preferences > Gestures can change finger painting while this view exists
     document.addEventListener('fm:gesture-prefs', () => { this.prefs = { ...this.prefs, fingerPaints: loadPaintPrefs().fingerPaints }; this.input.fingerPaints = this.prefs.fingerPaints; });
 
-    this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb), onSwatchDrag: (e) => this.swatchDrag(e) });
+    this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb), onSecondary: (rgb) => setStyleVar(this.colourBtn, '--c2', `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`), onSwatchDrag: (e) => this.swatchDrag(e) });
     this.brushPanel = new BrushPanel({ onPick: (b) => this.pickBrush(b) });
     this.layersPanel = new LayersPanel({ doc: () => this.doc });
     this.settings = new PaintSettings({
@@ -355,10 +358,13 @@ export class PaintView {
     wireBrushDrop();
     this.wire();
     this.setColourChip(this.colour.get());
+    const sc = this.colour.secondary();
+    setStyleVar(this.colourBtn, '--c2', `rgb(${sc.r}, ${sc.g}, ${sc.b})`);
     new ResizeObserver(() => this.resize()).observe(this.root);
   }
 
   isOpen(): boolean { return this.contentId !== null; }
+  openId(): string | null { return this.contentId; }
 
   // ---------------------------------------------------------------- open / close
 
@@ -592,6 +598,8 @@ export class PaintView {
       index: () => (this.playTimer ? this.playIndex() : this.index),
       select: (row, index) => {
         this.stopPlay();
+        // a second pointer paints while the wheel is held: the stroke so far stays on this frame, the pen carries on in the next
+        if (this.stroke && this.lastStrokeMove && !this.busy) { const id = this.strokePointer; this.up(this.lastStrokeMove); this.resumePointer = id; }
         // the Timeline moves (and sound is scrubbed) at once; the frame itself loads when the save before it lands
         const c = this.content();
         const t = c?.flip[row];
@@ -971,20 +979,17 @@ export class PaintView {
       ctx.strokeStyle = 'rgba(255,255,255,0.8)';
       ctx.strokeRect(v.ox - kv.x * v.scale, v.oy - kv.y * v.scale, m.width * v.scale, m.height * v.scale);
       ctx.restore();
-      ctx.strokeStyle = '#e8c53a';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(v.ox, v.oy, w, h);
-    } else {
-      // the canvas edge is always drawn: a light line with a dark hairline inside so it reads on a white or a black picture
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 1.5;
-      roundRect(ctx, v.ox, v.oy, w, h, 12);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-      ctx.lineWidth = 1;
-      roundRect(ctx, v.ox + 1.5, v.oy + 1.5, Math.max(0, w - 3), Math.max(0, h - 3), 11);
-      ctx.stroke();
     }
+    // the canvas edge is a clear accent outline just outside the picture, with a dark rim so it reads on any backdrop
+    const accent = getComputedStyle(this.root).getPropertyValue('--accent-color').trim() || '#ff8a1f';
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 4;
+    roundRect(ctx, v.ox - 1.5, v.oy - 1.5, w + 3, h + 3, own ? 0 : 13);
+    ctx.stroke();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    roundRect(ctx, v.ox - 1.5, v.oy - 1.5, w + 3, h + 3, own ? 0 : 13);
+    ctx.stroke();
     this.drawCursor(ctx);
     ctx.restore();
     this.full = false;
@@ -1316,17 +1321,11 @@ export class PaintView {
         const out = new OffscreenCanvas(Math.max(1, Math.round(k.w * sc)), Math.max(1, Math.round(k.h * sc)));
         const g = out.getContext('2d') as OffscreenCanvasRenderingContext2D;
         g.scale(sc, sc);
-        for (let i = cur.flip.length - 1; i >= 0; i--) {
-          const tr = cur.flip[i];
-          if (tr.hidden || tr.opacity <= 0) continue;
-          const fi = flipIndexAt(tr, time);
-          if (fi < 0) continue;
-          g.save();
-          g.globalAlpha = tr.opacity;
-          if (i === this.row && fi === this.index && this.doc) this.doc.composite(g as unknown as CanvasRenderingContext2D);
-          else this.renderer.layersInto(g, tr.frames[fi].layers, m, { w: k.w, h: k.h });
-          g.restore();
-        }
+        // the same row compositor as the canvas: row masks, blends and clipping show in the time bar picture
+        const editing = this.doc && flipIndexAt(cur.flip[this.row], time) === this.index;
+        const live = { row: editing ? this.row : -1, draw: (lg: OffscreenCanvasRenderingContext2D) => this.doc?.composite(lg as unknown as CanvasRenderingContext2D) };
+        this.rowPreview.draw(g, cur, time, live, (lg, l) => this.renderer.layersInto(lg, l, m, { w: k.w, h: k.h }), (b) => BLEND_OP[b],
+          (lg, s, b, alpha) => { if (!isPixelBlend(b)) return false; blendCanvasOnto(lg, s, b, alpha); return true; });
         return out;
       };
       const frames = c.kind === 'flipbook' ? Math.max(1, flipOps.flipDuration(c)) : 1;
@@ -1805,7 +1804,7 @@ export class PaintView {
       if (open) { this.closePanels(); this.clip.hide(); this.menu.hidden = true; this.syncChrome(); }
       else if (this.pickArmed || this.dropper.continuing) { this.pickArmed = false; this.dropper.stopContinue(); this.syncChrome(); }
       else if (this.tools.mode() !== 'paint') this.tools.cancel();
-      else if (this.content()?.kind !== 'flipbook') void this.done(); // a Flipbook is left by Finish, never by Escape
+      // with nothing open Escape does nothing: a Drawing or Flipbook is left by Finish (title menu or double-click), never by a stray key
     }
     else if (e.key === 'Enter') { if (this.tools.mode() !== 'paint') this.tools.finish(); else void this.done(); }
     else if (e.key === '0') this.fit();
@@ -1941,7 +1940,7 @@ export class PaintView {
     const b = this.brush();
     const st = this.state(b);
     const fo = this.feel.get(b.id);
-    this.input.smoothing = Math.min(1, b.smoothing + (fo.stabilization ?? this.prefs.smoothing));
+    this.input.smoothing = Math.min(1, b.smoothing + stabilizationRope(b) + (fo.stabilization ?? this.prefs.smoothing));
     this.input.motion = fo.motion ?? this.prefs.motionFilter;
     this.input.expression = fo.expression ?? this.prefs.expression;
     if (fo.gamma !== undefined) { setPressureGamma(fo.gamma); this.gammaOwn = true; }
@@ -2034,7 +2033,8 @@ export class PaintView {
       this.showLoupe(e.clientX, e.clientY, false);
       return;
     }
-    if (this.stroke && e.pointerId === this.strokePointer) this.feed(this.input.move(e));
+    if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; this.feed(this.input.move(e)); }
+    else if (!this.stroke && !this.busy && this.doc && e.pointerId === this.resumePointer && e.buttons) { this.resumePointer = -1; this.startStroke(e); }
     if (e.pointerType !== 'touch') {
       const old = this.cursorBox;
       this.cursor = this.toCanvas(e.clientX, e.clientY);
@@ -2132,6 +2132,7 @@ export class PaintView {
     if (this.dropper.active && this.dropPointer === e.pointerId) { this.dropPointer = -1; this.finishDrop(); return; }
     if (this.pan && this.pan.id === e.pointerId) { this.pan = null; return; }
     if (this.interaction) { this.interaction.up(e); return; }
+    if (e.pointerId === this.resumePointer && !this.stroke) this.resumePointer = -1;
     if (!this.stroke || e.pointerId !== this.strokePointer) return;
     const s = this.stroke;
     const doc = this.doc as PaintDoc;

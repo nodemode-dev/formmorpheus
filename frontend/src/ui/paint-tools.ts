@@ -12,7 +12,9 @@ import type { CombineMode, Interpolation, Mask, PaintLayer, Point, Raster, Rect,
 import { el, q, setHidden, setText } from './dom';
 import { t as tr } from './i18n';
 import { HoldRepeat } from './paint-gestures';
+import { sampleAll } from './paint-sample-all';
 import { popRow, popSep, Popover } from './popover';
+import { drawGridPreview, drawQuadPreview } from './warp-drag-preview';
 
 export interface Interaction {
   down(e: PointerEvent): void;
@@ -249,10 +251,11 @@ export class PaintTools {
       this.variant(this.modes, 'select', () => htmlOf(SELECT_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-sel="${m.id}">${tr(m.label)}</button>`).join('')));
       this.variant(this.actions, 'select', () => htmlOf([
         ['add', 'Add'], ['remove', 'Remove'], ['invert', 'Invert'],
-        ['reload', 'Reload'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'], ['none', 'Deselect'], ['done', 'Done'],
+        ['all', 'Sample all layers'], ['reload', 'Reload'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'], ['none', 'Deselect'], ['done', 'Done'],
       ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${tr(label)}</button>`).join('')));
       for (const b of this.modes.querySelectorAll<HTMLElement>('[data-sel]')) b.classList.toggle('is-active', b.dataset.sel === this.selectMode);
       for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="add"],[data-act="remove"]')) b.classList.toggle('is-active', b.dataset.act === this.combineMode);
+      for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="all"]')) b.classList.toggle('is-active', sampleAll.on);
     } else if (this.current === 'transform') {
       this.variant(this.modes, 'transform', () => htmlOf(TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-tr="${m.id}">${tr(m.label)}</button>`).join('')));
       this.variant(this.actions, 'transform', () => htmlOf(nudgePad() + [
@@ -376,6 +379,7 @@ export class PaintTools {
     switch (act) {
       case 'add': this.combineMode = this.combineMode === 'add' ? 'replace' : 'add'; this.build(); break;
       case 'remove': this.combineMode = this.combineMode === 'remove' ? 'replace' : 'remove'; this.build(); break;
+      case 'all': sampleAll.on = !sampleAll.on; this.build(); break;
       case 'invert': this.host.setSelection(sel ? invertMask(sel) : null); break;
       case 'none': this.host.setSelection(null); break;
       case 'fill': {
@@ -437,7 +441,7 @@ export class PaintTools {
     const p = this.host.toCanvas(e.clientX, e.clientY);
     const base = { start: p, last: p, pts: [p], i: -1, j: -1, quad0: this.float?.quad.map((x) => ({ ...x })) ?? [], grid0: this.float?.grid?.map((r) => r.map((x) => ({ ...x }))) ?? null, th0: this.threshold, cx: e.clientX };
     if (this.current === 'select') { this.drag = { kind: this.selectMode, ...base }; return; }
-    if (this.current === 'filters') { this.drag = { kind: 'filter', ...base, th0: this.values[this.firstParam()] ?? 0 }; return; }
+    if (this.current === 'filters') { this.drag = { kind: 'filter', ...base, th0: this.values[this.firstParam()] ?? FILTERS.find((x) => x.id === this.filter)?.params[0]?.def ?? 0 }; return; }
     if (this.current === 'transform' && this.float) {
       const hit = this.hitHandle(e);
       if (hit.kind === 'fit') { this.toggleFit(); return; }
@@ -497,7 +501,7 @@ export class PaintTools {
       else if (d.kind === 'freehand' && d.pts.length > 2) m = polygonMask(doc.width, doc.height, d.pts);
       else if (d.kind === 'automatic') {
         const x = Math.floor(d.start.x), y = Math.floor(d.start.y);
-        if (x >= 0 && y >= 0 && x < doc.width && y < doc.height) m = autoMask(doc.activeLayer().raster, x, y, this.threshold);
+        if (x >= 0 && y >= 0 && x < doc.width && y < doc.height) m = autoMask(sampleAll.on ? doc.flattened() : doc.activeLayer().raster, x, y, this.threshold);
       } else if (this.combineMode === 'replace') { this.host.setSelection(null); return; }
       if (!m) { this.host.redraw(); return; }
       const next = combine(this.host.selection(), m, this.combineMode);
@@ -694,6 +698,12 @@ export class PaintTools {
     if (f.preview && (this.transformMode === 'distort' || this.transformMode === 'warp' || f.grid)) {
       ctx.drawImage(f.preview.canvas, f.preview.rect.x, f.preview.rect.y);
       for (const p of f.more ?? []) if (p.preview) ctx.drawImage(p.preview.canvas, p.preview.rect.x, p.preview.rect.y);
+      return;
+    }
+    if (f.grid || this.transformMode === 'distort') {
+      // mid-drag: a cheap triangle mesh; the full resample runs on release
+      const pieces = [f.canvas, ...(f.more ?? []).map((p) => p.canvas)];
+      if (f.grid) drawGridPreview(ctx, pieces, f.grid, f.bend); else drawQuadPreview(ctx, pieces, f.quad);
       return;
     }
     const [a, b, , d] = f.quad;

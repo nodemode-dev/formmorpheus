@@ -86,6 +86,7 @@ export class ActionMenu {
   private readonly levelBtn: HTMLButtonElement;
   private readonly moveGrp: HTMLElement;
   private readonly filterGrp: HTMLElement;
+  private readonly passHint: HTMLElement;
   private readonly cards = new Map<KeyKind, Card>();
   private readonly cardHost = el('<div class="fm-kc-host"></div>');
   private view: View = 'action';
@@ -135,6 +136,13 @@ export class ActionMenu {
     };
     this.moveGrp = group('Move', mlist);
     this.filterGrp = group('Live Filters', flist);
+    this.passHint = el('<div class="fm-ka-hint" hidden><span class="fm-ka-hint-text">Filters need a normal blend. A Passthrough group has no picture of its own.</span><button class="fm-ka-hint-fix" type="button">Use Normal</button></div>');
+    this.filterGrp.insertBefore(this.passHint, flist);
+    q(this.passHint, '.fm-ka-hint-fix').addEventListener('click', () => {
+      const t = targetOf(this.engine);
+      if (t) this.engine.run('Blend Mode', (m) => ops.patchContent(m, [t.c.id], { blend: 'normal' }));
+      this.paintKeyed();
+    });
     setHidden(this.moveBtn, true);
     setHidden(this.filterBtn, true);
     this.views = { action, motion, filter };
@@ -178,6 +186,17 @@ export class ActionMenu {
     this.choose(kind);
   }
 
+  /** Tapping a key on a lane: open that property's card on the key at the Playhead (no new key). */
+  editKey(anchor: HTMLElement, kind: KeyKind): void {
+    const t = targetOf(this.engine);
+    if (!t || kind === 'bones' || !laneOf(t.c, kind)) return;
+    this.anchor = anchor;
+    this.cardTag = null;
+    this.show('action');
+    this.pop.showFor(anchor, 'above');
+    this.openCard(kind);
+  }
+
   /** Keep the open menu attached to the pill as the Playhead moves. */
   follow(): void {
     // a card being performed stays put: the slider must not travel under a still pen while the movie plays
@@ -208,6 +227,7 @@ export class ActionMenu {
   /** Tints the rows (and the Move, Filter and Level buttons) of properties the target already animates. */
   private paintKeyed(): void {
     const t = targetOf(this.engine);
+    setHidden(this.passHint, !(t && t.c.kind === 'group' && t.c.blend === 'passthrough'));
     for (const [kind, r] of this.keyRows) {
       const on = !!t && laneOf(t.c, kind) !== null;
       setClass(r.wrap, 'is-keyed', on);

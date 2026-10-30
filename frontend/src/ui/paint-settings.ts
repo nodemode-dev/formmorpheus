@@ -1,6 +1,7 @@
 import type { OnionSettings } from '../engine/types';
 import type { CursorMode, OutlineStyle, PenButton, ScalingMode } from '../paint/feel';
 import { loadPrefs, updatePrefs } from './prefs';
+import { ColourPanel } from './colour-panel';
 import { el, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 
 export interface PaintPrefs {
@@ -214,7 +215,8 @@ export class PaintSettings {
   private readonly opacity: SliderRow;
   private readonly tint: ToggleRow;
   private readonly colorBar: HTMLElement;
-  private readonly colorInput: HTMLInputElement;
+  private readonly colorInput: HTMLButtonElement;
+  private tintPanel: ColourPanel | null = null;
   private readonly blend: ToggleRow;
   private readonly scrubShow: ToggleRow;
   private readonly scopeSeg: Seg | null = null;
@@ -242,7 +244,7 @@ export class PaintSettings {
 
   private readonly down = (e: PointerEvent): void => {
     const t = e.target as Node | null;
-    if (!t || this.root.contains(t) || this.anchor?.contains(t)) return;
+    if (!t || this.root.contains(t) || this.anchor?.contains(t) || this.tintPanel?.root.contains(t)) return;
     this.close();
   };
   private readonly key = (e: KeyboardEvent): void => {
@@ -290,9 +292,31 @@ export class PaintSettings {
     this.frames = sliderRow('Frames', 0, 12, 1, (v) => o.setOnion(this.side === 'back' ? { backFrames: v } : { foreFrames: v }, `onion-frames-${this.side}`));
     this.opacity = sliderRow('Opacity', 0, 1, 0.01, (v) => o.setOnion(this.side === 'back' ? { backOpacity: v } : { foreOpacity: v }, `onion-opacity-${this.side}`));
     this.tint = toggleRow('Color tint', (v) => o.setOnion(this.side === 'back' ? { backTint: v } : { foreTint: v }));
-    this.colorBar = el('<div class="fm-ps-colorbar"><input type="color" aria-label="Onion tint color"></div>');
-    this.colorInput = q<HTMLInputElement>(this.colorBar, 'input');
-    this.colorInput.addEventListener('input', () => o.setOnion(this.side === 'back' ? { backColor: this.colorInput.value } : { foreColor: this.colorInput.value }, `onion-color-${this.side}`));
+    this.colorBar = el('<div class="fm-ps-colorbar"><button type="button" aria-label="Onion tint color"></button></div>');
+    this.colorInput = q<HTMLButtonElement>(this.colorBar, 'button');
+    // the app's own Color disc, opened beside the Settings card
+    this.colorInput.addEventListener('click', () => {
+      if (this.tintPanel?.isOpen()) { this.tintPanel.close(); return; }
+      if (!this.tintPanel) {
+        this.tintPanel = new ColourPanel({
+          keepColours: true,
+          onPick: (c, final) => {
+            const h = '#' + [c.r, c.g, c.b].map((x) => x.toString(16).padStart(2, '0')).join('');
+            this.o.setOnion(this.side === 'back' ? { backColor: h } : { foreColor: h }, `onion-color-${this.side}`);
+            if (final) this.tintPanel?.commit(c);
+          },
+        });
+        (document.getElementById('overlay-root') ?? document.body).appendChild(this.tintPanel.root);
+      }
+      const on = this.o.onion(), col = (this.side === 'back' ? on.backColor : on.foreColor) ?? '#2f6bf0';
+      const n = parseInt(col.replace('#', '').slice(0, 6), 16) || 0;
+      this.tintPanel.set({ r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 });
+      this.tintPanel.open(this.colorBar);
+      const r = this.root.getBoundingClientRect(), w = this.tintPanel.root.offsetWidth || 280;
+      const left = r.right + 8 + w <= window.innerWidth - 8 ? r.right + 8 : Math.max(8, r.left - w - 8);
+      this.tintPanel.root.style.left = `${Math.round(left)}px`;
+      this.tintPanel.root.style.top = `${Math.max(8, Math.round(r.top))}px`;
+    });
     this.blend = toggleRow('Blend primary frame', (v) => o.setOnion({ blendPrimary: v }));
     this.scrubShow = toggleRow('Show while scrubbing', (v) => o.setOnion({ showWhileScrubbing: v }));
     this.scopeWrap = el('<div class="fm-ps-scope"></div>');
@@ -382,6 +406,7 @@ export class PaintSettings {
     this.opened = false;
     this.root.hidden = true;
     this.anchor = null;
+    this.tintPanel?.close(true);
     document.removeEventListener('pointerdown', this.down, true);
     document.removeEventListener('keydown', this.key, true);
     this.dragIdx = -1;
@@ -425,7 +450,6 @@ export class PaintSettings {
     this.tint.set(tn);
     const col = this.side === 'back' ? on.backColor : on.foreColor;
     setStyleVar(this.colorBar, '--c', col);
-    if (/^#[0-9a-f]{6}$/i.test(col) && this.colorInput.value.toLowerCase() !== col.toLowerCase()) this.colorInput.value = col;
     setClass(this.colorBar, 'is-disabled', !tn);
     this.blend.set(on.blendPrimary);
     this.scrubShow.set(on.showWhileScrubbing !== false);

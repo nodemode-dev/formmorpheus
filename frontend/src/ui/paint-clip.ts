@@ -10,6 +10,7 @@ import { extract, rectMask } from '../paint/select';
 import type { Mask, Raster, Rect } from '../paint/types';
 import { popRow, popSep, Popover, type PopRow } from './popover';
 import { t as tr } from './i18n';
+import { sampleAll } from './paint-sample-all';
 
 export interface ClipHost {
   doc(): PaintDoc | null;
@@ -87,12 +88,17 @@ export class PaintClip {
   isOpen(): boolean { return this.pop.isOpen; }
 
   /** The piece a clipboard action works on: the selection, else the whole layer's pixels. */
-  private source(): (Piece & { mask: Mask | null; layer: string }) | null {
+  private source(merged = false): (Piece & { mask: Mask | null; layer: string }) | null {
     const doc = this.host.doc();
     if (!doc || doc.maskEditing()) return null;
     const layer = doc.activeLayer();
     if (layer.group) return null;
     const sel = this.host.selection();
+    // "Sample all layers": the merged picture inside the selection
+    if (sel && merged) {
+      const p = extract(doc.flattened(), sel);
+      return p.rect.w > 0 ? { ...p, mask: sel, layer: layer.id } : null;
+    }
     if (sel) {
       const p = extract(layer.raster, sel);
       return p.rect.w > 0 ? { ...p, mask: sel, layer: layer.id } : null;
@@ -104,7 +110,7 @@ export class PaintClip {
   }
 
   copy(): boolean {
-    const s = this.source();
+    const s = this.source(sampleAll.on);
     if (!s) { this.host.say(tr('Nothing to copy on this layer')); return false; }
     this.clip = { raster: s.raster, rect: s.rect };
     void this.toSystem(s.raster);
@@ -113,7 +119,7 @@ export class PaintClip {
   }
 
   cut(): void {
-    const s = this.source();
+    const s = this.source(sampleAll.on);
     if (!s) { this.host.say(tr('Nothing to cut on this layer')); return; }
     this.clip = { raster: s.raster, rect: s.rect };
     void this.toSystem(s.raster);

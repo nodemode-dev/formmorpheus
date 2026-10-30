@@ -5,6 +5,18 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.11.0', name: 'A smoother Stage, a second color and tips',
+    additions: [
+      { title: 'Smooth zoom and pan', text: 'Zooming and panning the Stage stays smooth on big movies, and playback reuses frames it has already drawn.', command: 'play' },
+      { title: 'Your movie by name', text: 'The movie name sits in the title bar. Click it to rename the movie.', command: 'home' },
+      { title: 'Copy to Folder', text: 'Copy movies to any folder from the Theater, and see or change where your library lives.', command: 'home' },
+      { title: 'Layers to tracks', text: 'A layered Drawing can turn each of its layers into its own track.', command: 'add-drawing' },
+      { title: 'Secondary color', text: 'Pick a real secondary color, swap the two, and click the previous color to go back.', command: 'new-flipbook' },
+      { title: 'Transform several layers', text: 'Select several layers and move, scale or warp them together.', command: 'new-flipbook' },
+      { title: 'Tips', text: 'A short tip shows the first time you open each mode. Turn tips off in Preferences.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.10.0', name: 'Folders, crop on the canvas, more fonts and sturdier files',
     additions: [
       { title: 'Theater folders', text: 'Movies can be stacked into real folders, and you can hold and carry several movies at once into a folder.', command: 'home' },

@@ -4,6 +4,7 @@ import { HomeFiles } from './home-files';
 import { HomeTrash } from './home-trash';
 import { icon } from './icons';
 import { ExamplesRow } from './examples-row';
+import { mountStorageButton } from './theater-storage';
 import { Popover, popRow } from './popover';
 
 export interface HomeDeps {
@@ -43,6 +44,7 @@ export class HomeScreen {
     const sizes = PRESETS.map((p, i) => `<button class="cv-home-size" type="button" data-size="${i}"><span class="cv-home-size-box"><span style="aspect-ratio: ${p.w} / ${p.h}"></span></span><span class="cv-home-size-name">${p.name}</span><span class="cv-home-size-meta">${p.w} x ${p.h} px · ${p.fps} fps</span></button>`).join('');
     this.root.innerHTML = `<nav class="cv-home-nav" aria-label="Home">
       <button class="cv-home-brand" type="button" data-brand aria-haspopup="menu" title="About, What's New, Help">formmorpheus <span>by NodeMode</span>${icon('chevronDown', 12)}</button>
+      <button class="cv-home-nav-item cv-home-storage" type="button" data-storage>${icon('folder', 16)}<span>Library folder</span></button>
       ${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
       <div class="cv-home-nav-sep"></div>
       <div class="cv-home-nav-title">Create</div>
@@ -105,6 +107,7 @@ export class HomeScreen {
     }
     const brandBtn = this.root.querySelector('[data-brand]') as HTMLElement;
     brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
+    mountStorageButton(this.root.querySelector('[data-storage]') as HTMLElement);
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.forced && d.engine.projects.length) { this.forced = false; this.sync(); } });

@@ -30,6 +30,6 @@
 .fm-crop-hold:active { border-color: var(--accent-color); }
 .fm-crop-btn.is-primary { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent); }
 .fm-crop-info { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); padding: 2px var(--space-3); border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.45); color: var(--text-secondary); font-size: var(--fs-11); pointer-events: none; white-space: nowrap; }
-.fm-crop-time:not([hidden]) ~ .fm-crop-info, .fm-crop:has(.fm-crop-time:not([hidden])) .fm-crop-info { bottom: 64px; }
+.fm-crop-time:not([hidden]) ~ .fm-crop-info, .fm-crop:has(.fm-crop-time:not([hidden])) .fm-crop-info { bottom: 88px; }
 .fm-crop-time input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: var(--accent-color); }
 .fm-crop-timelabel { min-width: 90px; text-align: right; color: var(--text-secondary); }

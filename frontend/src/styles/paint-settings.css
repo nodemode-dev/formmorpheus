@@ -72,7 +72,8 @@
   box-shadow: inset 0 0 0 1px var(--glass-border);
 }
 .fm-ps-colorbar.is-disabled { opacity: 0.4; pointer-events: none; }
-.fm-ps-colorbar input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.fm-ps-colorbar button { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.fm-ps-colorbar button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 
 .fm-ps-curve { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-2) 0 var(--space-1); }
 .fm-ps-curve canvas { display: block; border-radius: var(--radius-lg); background: var(--surface-field); touch-action: none; cursor: crosshair; }

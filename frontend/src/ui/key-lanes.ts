@@ -8,8 +8,8 @@ export const ROW_H = 24;
 export const LANE_SPACING = 3;
 /** Gap between a block and its first lane. */
 export const LANES_GAP = 4;
-const GLYPH = 14;
-const KEY_HIT = 8;
+const GLYPH = 16;
+const KEY_HIT = 9;
 
 export interface LaneRow { channel: string | null; label: string; y: number; h: number }
 export interface LaneSlot { lane: KeyLane; y: number; h: number; rows: LaneRow[] }
@@ -150,7 +150,8 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           round(c, xa, cy - 8, xb - xa, 16, 8);
           c.fill();
           const e = easeAt(slot.lane, frames[i], row.channel);
-          const label = EASES.find((x) => x.id === e)?.label ?? (e === 'custom' ? 'Custom' : '');
+          const english = EASES.find((x) => x.id === e)?.label ?? (e === 'custom' ? 'Custom' : '');
+          const label = english ? tt(english) : '';
           if (label && xb - xa > c.measureText(label).width + GLYPH * 2 + 6) {
             c.fillStyle = p.onAccent;
             c.textAlign = 'center';
@@ -174,7 +175,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy);
       }
       if (nameAt !== null) {
-        const tw = c.measureText(row.label).width;
+        const tw = c.measureText(tt(row.label)).width;
         c.fillStyle = p.bar;
         c.globalAlpha = 0.92;
         round(c, nameAt - 4, cy - 9, tw + 8, 18, 6);
@@ -182,14 +183,14 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         c.globalAlpha = 1;
         c.fillStyle = p.text;
         c.textAlign = 'left';
-        c.fillText(row.label, nameAt, cy);
+        c.fillText(tt(row.label), nameAt, cy);
       }
       if (row.channel) {
         const lx = Math.max(g.x0, 0) + 12;
         const overBar = frames.length > 1 && g.x(frames[0]) - g.x0 < 36;
         c.fillStyle = overBar ? p.onAccent : p.accent;
         c.textAlign = 'left';
-        c.fillText(row.label, lx, cy);
+        c.fillText(tt(row.label), lx, cy);
         if (hasGraphPill(slot, row, g)) {
           const px = graphPillX(g);
           c.fillStyle = p.text;

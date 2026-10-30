@@ -3,6 +3,7 @@ import { end, locate } from '../engine/model';
 import { canvasCentreOffset, canvasOf } from '../engine/canvas';
 import * as ops from '../engine/ops';
 import type { Renderer, View } from '../engine/render';
+import { FrameStore } from '../engine/frame-cache';
 import { StageNav } from './stage-nav';
 import { loadPrefs } from './prefs';
 import { TOUCH_SLOP, snapMod } from './gestures';
@@ -27,6 +28,8 @@ import { boxOf, frameLines, snapAngle, snapBox, type Box } from './stage-snap';
 import { layoutText } from '../engine/text-layout';
 import { TextStage } from './text-stage';
 import type { TextStyle } from '../engine/types';
+import { GestureCache } from './stage-gesture-cache';
+import { Fringe } from './stage-fringe';
 import '../styles/stage-box.css';
 
 /** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
@@ -89,6 +92,11 @@ export class StageView {
   private readonly paths: PathView;
   private readonly camera: CameraOverlay;
   private view: View | null = null;
+  /** The last picture can stand in during a view gesture; any other change marks it stale. */
+  private readonly gesture: GestureCache;
+  /** Low-resolution picture around the Stage that covers the edge a pan uncovers. */
+  private readonly fringe: Fringe;
+  private stale = true;
   private width = 0;
   private height = 0;
   private dpr = 1;
@@ -107,7 +115,9 @@ export class StageView {
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer) {
     host.appendChild(this.root);
     this.nav = new StageNav(this.root, engine);
-    this.nav.onChange = () => this.schedule();
+    this.fringe = new Fringe(this.space, this.canvas);
+    this.gesture = new GestureCache(this.canvas, () => this.schedule(), (v) => this.fringe.follow(v, this.width, this.height));
+    this.nav.onChange = () => this.scheduleView();
     this.nav.isDragging = () => !!this.grab;
     this.nav.isEmpty = (x, y) => { const m = this.engine.movie; return !!m && !!this.view && !this.pick(m, x, y); };
     this.boxMenu = new StageBoxMenu(engine, () => this.root.focus({ preventScroll: true }));
@@ -146,7 +156,7 @@ export class StageView {
       if (!m || !this.view || this.nav.preview || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
       const id = this.pick(m, ...this.nav.local(e));
       const c = id ? locate(m, id)?.content : null;
-      if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); }
+      if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); this.textStage.showMenu(e.clientX, e.clientY); }
     };
     this.root.addEventListener('dblclick', dbl);
     this.bones = new BonesOverlay(this.space, engine);
@@ -176,9 +186,20 @@ export class StageView {
     c.fillStyle = b; c.fillRect(0, 0, 8, 8); c.fillRect(8, 8, 8, 8);
     const ctx = this.canvas.getContext('2d') as CanvasRenderingContext2D;
     this.pattern = ctx.createPattern(tile, 'repeat');
+    this.checkerGen++;
   }
 
   private pattern: CanvasPattern | null = null;
+  /** Finished frames kept for playback (engine/frame-cache); `checkerGen` counts colour reads so a new checker drops them. */
+  private framesOf: FrameStore | null = null;
+  private get frames(): FrameStore { return this.framesOf ?? (this.framesOf = new FrameStore(this.renderer, (w, h) => this.aheadSurface(w, h))); }
+  private ahead: HTMLCanvasElement | null = null;
+  private aheadSurface(w: number, h: number): HTMLCanvasElement {
+    const c = this.ahead ?? (this.ahead = document.createElement('canvas'));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return c;
+  }
+  private checkerGen = 0;
 
   private resize(): void {
     const r = this.root.getBoundingClientRect();
@@ -205,7 +226,14 @@ export class StageView {
     this.box.setAttribute('viewBox', `0 0 ${sw} ${sh}`);
   }
 
+  /** A view gesture step: the picture may be moved or scaled instead of rendered again. */
+  private scheduleView(): void {
+    if (this.req) return;
+    this.req = requestAnimationFrame(() => { this.req = 0; this.draw(); });
+  }
+
   schedule(): void {
+    this.stale = true;
     if (this.req) return;
     this.req = requestAnimationFrame(() => { this.req = 0; this.draw(); });
   }
@@ -223,7 +251,45 @@ export class StageView {
     }
     const view = this.nav.view(m, this.dpr);
     const preview = this.nav.preview;
-    this.renderer.drawFrame(ctx, m, this.engine.frame, view, { backstage: !preview, background: this.bg, transparentChecker: this.pattern, noCamera: cameraMode.on });
+    const reuse = !this.stale && this.gesture.reuse(m, this.engine.frame, view, this.canvas.width, this.canvas.height, preview, this.dpr);
+    if (!reuse) {
+      this.stale = false;
+      this.renderPicture(ctx, m, view, preview);
+      this.gesture.store(m, this.engine.frame, view, this.canvas.width, this.canvas.height, preview, this.dpr);
+      this.fringe.queue((fc, cw, ch, k) => this.drawFringe(fc, m, this.engine.frame, view, preview, cw, ch, k));
+    }
+    this.view = { scale: view.scale / this.dpr, ox: view.ox / this.dpr, oy: view.oy / this.dpr, width: this.width, height: this.height };
+    if (reuse) {
+      this.camera.sync(preview ? null : this.view);
+      this.drawBox(m);
+      return;
+    }
+    setText(this.tc, stamp(this.engine.frame, m.fps));
+    this.tc.hidden = preview || m.timecode === false;
+    this.camera.sync(preview ? null : this.view);
+    this.drawBox(m);
+  }
+
+  /** The fringe picture: one viewport beyond each side of the Stage at scale k, drawn from what the Stage shows now. */
+  private drawFringe(fc: CanvasRenderingContext2D, m: Movie, frame: number, view: View, preview: boolean, cw: number, ch: number, k: number): boolean {
+    if (this.engine.movie !== m || this.engine.frame !== frame) return false;
+    const w = this.canvas.width, h = this.canvas.height;
+    const v = { scale: view.scale * k, ox: (view.ox + w) * k, oy: (view.oy + h) * k, width: cw, height: ch };
+    this.renderer.drawFrame(fc, m, frame, v, { backstage: !preview, background: this.bg, transparentChecker: null, noCamera: cameraMode.on });
+    return this.renderer.takeComplete();
+  }
+
+  private renderPicture(ctx: CanvasRenderingContext2D, m: Movie, view: View, preview: boolean): void {
+    const frame = this.engine.frame;
+    const opts = { backstage: !preview, background: this.bg, transparentChecker: this.pattern, noCamera: cameraMode.on };
+    const { lo, last } = this.engine.playSpan();
+    this.frames.retarget({ movie: m, view, opts, lo, last, sig: `${this.canvas.width}x${this.canvas.height}:${view.scale.toFixed(5)}:${view.ox.toFixed(2)}:${view.oy.toFixed(2)}:${this.bg}:${preview}:${cameraMode.on}:${this.renderer.gpuActive}:${this.checkerGen}` });
+    const hit = this.frames.blit(ctx, frame);
+    if (!hit) {
+      this.renderer.drawFrame(ctx, m, frame, view, opts);
+      this.frames.capture(this.canvas, frame, this.renderer.takeComplete());
+    }
+    this.frames.note(frame, this.engine.playing, hit);
     if (!preview) {
       // a thin outline so the Stage edge shows on any background
       const lw = Math.max(1, Math.round(this.dpr));
@@ -235,11 +301,6 @@ export class StageView {
       ctx.strokeRect(Math.round(view.ox) - lw / 2, Math.round(view.oy) - lw / 2, Math.round(m.width * view.scale) + lw, Math.round(m.height * view.scale) + lw);
       ctx.restore();
     }
-    this.view = { scale: view.scale / this.dpr, ox: view.ox / this.dpr, oy: view.oy / this.dpr, width: this.width, height: this.height };
-    setText(this.tc, stamp(this.engine.frame, m.fps));
-    this.tc.hidden = preview || m.timecode === false;
-    this.camera.sync(preview ? null : this.view);
-    this.drawBox(m);
   }
 
   /** Screen pixels as a content's parent space shows them to real screen pixels (parents and group; the camera too unless Camera mode is on). */

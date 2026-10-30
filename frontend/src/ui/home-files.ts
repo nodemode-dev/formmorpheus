@@ -136,6 +136,7 @@ export class HomeFiles {
     if (!(await confirmAction('Delete?', `${label} moves to Recently Deleted, where it stays for 30 days.`, 'Delete', true))) return;
     try { await act(); } catch (err) { toast((err as Error).message, 'error'); }
     void this.refresh();
+    document.dispatchEvent(new CustomEvent('fm:library-changed'));   // the Recently Deleted count follows
   }
 
   private save(): void {

@@ -47,6 +47,9 @@ import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
 import { GraphEditor } from '../ui/graph-editor';
 import { TitleTools } from '../ui/titlebar-tools';
+import { TitleName, movieLabel } from '../ui/title-name';
+import { Tips } from '../ui/tips';
+import { findContent } from '../engine/transform';
 import { ShortcutsDialog } from '../ui/shortcuts-dialog';
 import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
@@ -166,8 +169,15 @@ export function startApp(): void {
   const paint = new PaintView(q(root, '.fm-main'), {
     engine,
     renderer,
-    onOpenChange: (open) => { root.classList.toggle('is-painting', open); if (!open) { stage?.schedule(); timeline?.refreshThumbs(); } },
+    onOpenChange: (open) => {
+      root.classList.toggle('is-painting', open);
+      const id = open ? paint.openId() : null, c = id && engine.movie ? findContent(engine.movie, id) : null;
+      if (c) tips.enter(c.kind === 'flipbook' ? 'flipbook' : 'paint');
+      if (!open) { stage?.schedule(); timeline?.refreshThumbs(); }
+    },
   });
+  const tips = new Tips();
+  engine.on('mode', (m) => { if (engine.movie && (m === 'perform' || m === 'keyframe')) tips.enter(m); });
   newMovie.onFlipbook = (id) => { void paint.open(id); };
   const status = new StatusBar(q(root, '.cv-status'), engine);
   engine.on('notice', (n) => { if (n.kind === 'error') toast(n.text, 'error'); });
@@ -565,10 +575,11 @@ export function startApp(): void {
   enhanceAllSelects();
 
   const docTitle = q(root, '.cv-tb-doc');
+  new TitleName(docTitle, engine);
   let windowTitle = '';
   const syncTitle = (): void => {
     const m = engine.movie;
-    const shown = m ? `${engine.modified ? '• ' : ''}${m.name}` : '';
+    const shown = movieLabel(engine);
     setText(docTitle, shown);
     const title = m ? `${shown} - formmorpheus` : 'formmorpheus';
     if (title === windowTitle) return;

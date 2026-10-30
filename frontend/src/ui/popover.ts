@@ -21,11 +21,15 @@ export class Popover {
     if (t instanceof Element && t.closest('.fm-col')) return;
     // the Warp / Distort card stays open while its handles are dragged on the Stage
     if (t instanceof Element && t.closest('.fm-warp-h')) return;
+    // a dropdown list opened from a select inside the card sits in the overlay layer, outside the card
+    if (t instanceof Element && t.closest('.cv-dd-pop')) return;
     for (const p of this.subs.keys()) if (p.contains(t)) return;
     this.hide();
   };
   private readonly key = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return;
+    // Escape in an open dropdown list (dropdown.ts) closes only the list
+    if (document.querySelector('.cv-dd-pop:not([hidden])')) return;
     e.preventDefault();
     e.stopPropagation();
     this.hide();

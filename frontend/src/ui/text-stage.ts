@@ -7,6 +7,7 @@ import { fontCss, layoutText } from '../engine/text-layout';
 import type { Content } from '../engine/types';
 import { ensureTextFont } from '../media/fonts';
 import { setClass } from './dom';
+import { TextEditMenu } from './text-edit-menu';
 
 /** What the Stage lends the text tools. */
 export interface TextStageHooks {
@@ -24,6 +25,7 @@ export interface TextStageHooks {
 
 export class TextStage {
   private readonly ta = document.createElement('textarea');
+  private readonly menu = new TextEditMenu();
   private id = '';
   private drag: { id: string; sign: 1 | -1; pointer: number; tag: string } | null = null;
   private readonly onMove = (e: PointerEvent): void => this.moveWrap(e);
@@ -50,12 +52,20 @@ export class TextStage {
     ta.addEventListener('contextmenu', (e) => {
       if (e.shiftKey || !this.id) return;
       e.preventDefault();
-      this.hooks.editStyle(this.id, e.clientX, e.clientY);
+      this.showMenu(e.clientX, e.clientY);
     });
+    ta.addEventListener('dblclick', (e) => this.showMenu(e.clientX, e.clientY));
     engine.on('movie', () => this.pull());
   }
 
   get editing(): string { return this.id; }
+
+  /** Cut, Copy, Paste, Select All and Edit Style, at a screen point. */
+  showMenu(x: number, y: number): void {
+    const id = this.id;
+    if (!id) return;
+    this.menu.open(this.ta, x, y, () => this.hooks.editStyle(id, x, y));
+  }
 
   /** Starts editing; the whole text is selected so typing replaces it. */
   start(id: string, selectAll = true): void {

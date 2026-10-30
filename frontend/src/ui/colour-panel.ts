@@ -3,6 +3,7 @@
 // over canvases that are drawn once, so a drag never repaints a canvas, it only moves reticles and sets variables.
 
 import type { RGB } from '../paint/types';
+import '../styles/rw-extras.css';
 import { el, q, patchList, setClass, setHidden, setStyleVar, setText, setValue } from './dom';
 
 type Mode = 'disc' | 'classic' | 'harmony' | 'value' | 'palettes';
@@ -188,8 +189,9 @@ const TEMPLATE = `
       <div class="fm-col-sub"><span class="fm-col-hexlabel"></span><button type="button" class="fm-col-harm" aria-label="Harmony style" hidden><span></span><svg viewBox="0 0 10 10" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5L5 6.5L8 3.5"/></svg></button></div>
     </div>
     <div class="fm-col-chips">
-      <span class="fm-col-chip is-primary" title="Primary"></span>
-      <button type="button" class="fm-col-chip is-secondary" title="Swap primary and secondary" aria-label="Swap colors"></button>
+      <button type="button" class="fm-col-chip is-primary" title="Primary (the left half is the previous color: click to go back)" aria-label="Previous color"></button>
+      <button type="button" class="fm-col-chip is-secondary" title="Secondary color: click to pick it, click again to go back" aria-label="Edit the secondary color"></button>
+      <button type="button" class="fm-col-swap" title="Swap primary and secondary" aria-label="Swap colors"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h8M8 2l2 2-2 2M10 8H2M4 6l-2 2 2 2"/></svg></button>
     </div>
   </div>
   <div class="fm-col-bodies">
@@ -256,6 +258,10 @@ export class ColourPanel {
   /** The panel was pulled off its anchor by the grip (Color Companion): it stays open while painting. */
   private detached = false;
   private sec: RGB = { r: 255, g: 255, b: 255 };
+  /** The secondary follows the previous color until the person sets or swaps it. */
+  private secCustom = false;
+  /** While the secondary is being picked, the real primary waits here and the pickers work on `cur`. */
+  private held: { cur: RGB; prev: RGB | null; base: RGB } | null = null;
   private mode: Mode = 'disc';
   /** Inner-disc magnification for fine control (1 = off). */
   private dzoom = 1;
@@ -285,7 +291,17 @@ export class ColourPanel {
 
   /** `keepColours`: a second panel (the Stage background) shares history and palettes but leaves the stored brush colours alone. */
   constructor(opts: ColourPanelOptions) {
-    this.opts = opts;
+    this.opts = {
+      ...opts,
+      // while the secondary is open, every picker result goes to it and the brush color stays put
+      onPick: (c, f) => {
+        if (!this.held) { opts.onPick(c, f); return; }
+        this.sec = copy(c); this.secCustom = true;
+        this.render();
+        opts.onSecondary?.(copy(c));
+        if (f) this.save();
+      },
+    };
     this.load();
     this.base = copy(this.cur);
     this.root = el(TEMPLATE);
@@ -300,8 +316,15 @@ export class ColourPanel {
   get(): RGB { return copy(this.cur); }
   secondary(): RGB { return copy(this.sec); }
 
+  /** Sets the primary (an eyedropper sample, a drop); the secondary pick ends first. */
   set(rgb: RGB): void {
+    this.endSecondary();
+    this.put(rgb);
+  }
+
+  private put(rgb: RGB): void {
     this.cur = copy(rgb);
+    if (this.held) { this.sec = copy(rgb); this.secCustom = true; }
     const t = rgb2hsv(rgb, this.h);
     this.h = t.h; this.s = t.s; this.v = t.v;
     this.settle();
@@ -311,9 +334,33 @@ export class ColourPanel {
 
   /** A pick is final: the colour it started from becomes the previous one. */
   private settle(): void {
-    if (same(this.cur, this.base)) return;
+    if (this.held || same(this.cur, this.base)) return;
     this.prev = copy(this.base);
     this.base = copy(this.cur);
+    if (!this.secCustom) { this.sec = copy(this.prev); this.opts.onSecondary?.(copy(this.sec)); }
+  }
+
+  isEditingSecondary(): boolean { return this.held !== null; }
+
+  /** Picks the secondary with the same pickers; calling again returns to the primary. */
+  toggleSecondary(): void {
+    if (this.held) { this.endSecondary(); return; }
+    this.held = { cur: copy(this.cur), prev: this.prev ? copy(this.prev) : null, base: copy(this.base) };
+    this.cur = copy(this.sec);
+    const t = rgb2hsv(this.cur, this.h);
+    this.h = t.h; this.s = t.s; this.v = t.v;
+    this.render();
+  }
+
+  private endSecondary(): void {
+    const k = this.held;
+    if (!k) return;
+    this.held = null;
+    this.cur = k.cur; this.prev = k.prev; this.base = k.base;
+    const t = rgb2hsv(this.cur, this.h);
+    this.h = t.h; this.s = t.s; this.v = t.v;
+    this.render();
+    this.save();
   }
 
   hasPrevious(): boolean { return this.prev !== null; }
@@ -321,7 +368,7 @@ export class ColourPanel {
   /** Swap to the colour used before the current one; calling it again swaps back. */
   togglePrevious(): boolean {
     const p = this.prev;
-    if (!p) return false;
+    if (!p || this.held) return false;
     const c = copy(this.cur);
     this.set(p);
     this.prev = c;
@@ -333,6 +380,8 @@ export class ColourPanel {
   isDetached(): boolean { return this.detached; }
 
   swap(): void {
+    this.endSecondary();
+    this.secCustom = true;
     const t = this.sec;
     this.sec = this.cur;
     this.set(t);
@@ -365,6 +414,7 @@ export class ColourPanel {
     if (this.detached && !force) return;
     this.opened = false;
     this.detached = false;
+    this.endSecondary();
     setClass(this.root, 'is-detached', false);
     setHidden(this.n.x, true);
     this.root.hidden = true;
@@ -449,7 +499,9 @@ export class ColourPanel {
       segs: Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-seg button')), hsw: [] as HTMLElement[], gsw: [] as HTMLElement[], x: q<HTMLButtonElement>(r, '.fm-col-x'),
     };
 
-    n.secondary.addEventListener('click', () => this.swap());
+    n.secondary.addEventListener('click', () => this.toggleSecondary());
+    q(r, '.fm-col-swap').addEventListener('click', () => this.swap());
+    n.primary.addEventListener('click', () => { if (this.togglePrevious()) this.render(); });
     this.gripDrag();
     for (const k of Object.keys(HARMONY) as Harmony[]) n.hmenu.append(el(`<button type="button" data-h="${k}">${HARMONY[k].label}</button>`));
     n.harmSel.addEventListener('click', () => {
@@ -572,7 +624,7 @@ export class ColourPanel {
       });
       vals.append(row); this.vs.push({ k: d.k, sl, num, max: d.max });
     }
-    const hexApply = (): void => { const c = fromHex(n.hex.value); if (c) { this.set(c); this.opts.onPick(copy(c), true); } else this.render(); };
+    const hexApply = (): void => { const c = fromHex(n.hex.value); if (c) { this.put(c); this.opts.onPick(copy(c), true); } else this.render(); };
     n.hex.addEventListener('change', hexApply);
     n.hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { hexApply(); n.hex.blur(); } });
 
@@ -600,7 +652,7 @@ export class ColourPanel {
       if (!sw) return;
       if (this.lp.fired) { this.lp.fired = false; return; }
       const c = this.swatchColor(sw);
-      if (c) { this.set(c); this.opts.onPick(copy(c), true); }
+      if (c) { this.put(c); this.opts.onPick(copy(c), true); }
     });
     r.addEventListener('contextmenu', (e) => {
       const sw = (e.target as HTMLElement).closest<HTMLElement>('.fm-col-sw[data-pal], .fm-col-grid .fm-col-sw');
@@ -738,8 +790,12 @@ export class ColourPanel {
   private render(): void {
     const { h, s, v, cur, n } = this;
     const hue = css(hsv2rgb(h, 1, 1)), me = css(cur);
-    setStyleVar(n.primary, '--c', me);
+    const shown = this.held ? css(this.held.cur) : me;
+    setStyleVar(n.primary, '--c', shown);
+    setStyleVar(n.primary, '--p', this.prev && !this.held ? css(this.prev) : shown);
+    setClass(n.primary, 'has-prev', this.prev !== null && !this.held);
     setStyleVar(n.secondary, '--c', css(this.sec));
+    setClass(n.secondary, 'is-editing', this.held !== null);
     setText(n.hexLabel, toHex(cur).toUpperCase());
     const m = this.mode;
     if (m === 'disc') {
@@ -929,7 +985,7 @@ export class ColourPanel {
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       try {
-        let cur: RGB = this.cur, sec: RGB = this.sec;
+        let cur: RGB = this.held ? this.held.cur : this.cur, sec: RGB = this.sec;
         if (this.opts.keepColours) {
           const old = JSON.parse(localStorage.getItem(KEY) ?? '{}') as { cur?: RGB; sec?: RGB };
           if (old.cur) cur = old.cur;
@@ -937,7 +993,7 @@ export class ColourPanel {
         }
         localStorage.setItem(KEY, JSON.stringify({
           mode: this.mode, harm: this.harm, view: this.view, active: this.active, h: this.h,
-          cur, sec, hist: this.hist,
+          cur, sec, secCustom: this.secCustom, hist: this.hist,
           pals: this.pals.map((p) => ({ id: p.id, name: p.name, colors: p.colors.map((c) => (c ? toHex(c) : null)) })),
         }));
       } catch { /* storage blocked */ }
@@ -956,6 +1012,7 @@ export class ColourPanel {
       if (typeof d.h === 'number') this.h = d.h;
       const c = rgb(d.cur); if (c) this.cur = c;
       const s2 = rgb(d.sec); if (s2) this.sec = s2;
+      this.secCustom = d.secCustom === true;
       if (Array.isArray(d.hist)) this.hist = (d.hist as unknown[]).map(rgb).filter((x): x is RGB => !!x).slice(0, HIST_MAX);
       if (Array.isArray(d.pals)) {
         const out: Palette[] = [];

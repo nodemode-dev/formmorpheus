@@ -215,7 +215,9 @@ export class LayersPanel {
   selectedLeaves(): string[] {
     const d = this.doc();
     if (!d || this.sel.size < 2) return [];
-    return d.layers.filter((l) => !l.group && this.sel.has(l.id)).map((l) => l.id);
+    // a picked group counts as every layer inside it
+    const picked = (l: { id: string }): boolean => this.sel.has(l.id) || [...this.sel].some((s) => isInside(d.layers, l.id, s));
+    return d.layers.filter((l) => !l.group && picked(l)).map((l) => l.id);
   }
 
   refresh(): void {

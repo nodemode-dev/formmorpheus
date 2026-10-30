@@ -11,6 +11,7 @@ import { el, setClass, setText, setValue } from './dom';
 const MAX_HANDLES = WARP_MAX * WARP_MAX;
 const CORNERS = ['Top left', 'Top right', 'Bottom right', 'Bottom left'];
 import { warpMode, type WarpKind } from './warp-view';
+import { ensureLane, newKeyState } from './action-menu';
 
 const HINT: Record<WarpKind, string> = {
   warp: 'Drag a node on the Stage to bend the picture. Each drag writes a keyframe at the Playhead.',
@@ -24,6 +25,7 @@ export class WarpCard {
   private readonly fx = document.createElement('input');
   private readonly fy = document.createElement('input');
   private bilinear!: HTMLButtonElement;
+  private readonly quality = new Map<string, HTMLButtonElement>();
   private last: { c: Content; lane: KeyLane | null } | null = null;
 
   constructor(private readonly engine: Engine, private readonly kind: WarpKind, private readonly onDone: () => void) {
@@ -68,6 +70,17 @@ export class WarpCard {
     bil.addEventListener('click', () => this.toggleBilinear());
     this.bilinear = bil;
     this.root.appendChild(bil);
+    const ql = el('<div class="fm-wc-label"></div>');
+    setText(ql, 'Quality');
+    const qs = el('<div class="fm-kc-seg" role="group" aria-label="Quality"></div>');
+    for (const [id, label] of [['smooth', 'Smooth'], ['nearest', 'Nearest'], ['high', 'High']] as const) {
+      const b = el<HTMLButtonElement>('<button class="fm-kc-segbtn" type="button"></button>');
+      setText(b, label);
+      b.addEventListener('click', () => this.setResample(id));
+      this.quality.set(id, b);
+      qs.appendChild(b);
+    }
+    this.root.append(ql, qs);
     const actions = el('<div class="fm-wc-actions"></div>');
     const reset = el<HTMLButtonElement>('<button class="fm-wc-btn" type="button"></button>');
     const done = el<HTMLButtonElement>('<button class="fm-wc-btn" type="button"></button>');
@@ -87,7 +100,17 @@ export class WarpCard {
     }
     setClass(this.bilinear, 'is-active', lane?.options.bilinear === true);
     this.bilinear.setAttribute('aria-pressed', String(lane?.options.bilinear === true));
+    const rs = lane?.options.resample === 'nearest' || lane?.options.resample === 'high' ? lane.options.resample : 'smooth';
+    for (const [id, b] of this.quality) setClass(b, 'is-active', id === rs);
     this.fill();
+  }
+
+  /** Smooth is the default and leaves no field in the file; the other two are written on the lane. */
+  private setResample(id: 'smooth' | 'nearest' | 'high'): void {
+    const t = this.target();
+    const lane = t ? laneOf(t.c, this.kind) : null;
+    if (!t || !lane) return;
+    this.engine.run('Resample quality', (m) => ops.updateContent(m, t.c.id, (cc) => (id === 'smooth' ? keyOps.clearLaneOption(cc, this.kind, 'resample') : keyOps.setLaneOption(cc, this.kind, 'resample', id))));
   }
 
   private count(): number { return this.kind === 'distort' ? 4 : warpSize(this.last?.lane ?? null) ** 2; }
@@ -121,15 +144,17 @@ export class WarpCard {
   /** Typed offsets become a key at the Playhead for that node, like a drag does. */
   private enter(): void {
     const t = this.target();
-    const lane = t ? laneOf(t.c, this.kind) : null;
-    if (!t || !lane) return;
+    if (!t) return;
+    const lane = laneOf(t.c, this.kind);
     const [ix, iy] = this.ids(Math.min(warpMode.handle, this.count() - 1));
     const x = Number(this.fx.value), y = Number(this.fy.value);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { this.fill(); return; }
     const { c, local } = t;
     if (local < 0 || local >= c.duration) return;
-    const vals = { ...evalLane(c, lane, local), [ix]: x, [iy]: y };
-    this.engine.run(this.kind === 'warp' ? 'Warp Keyframe' : 'Distort Keyframe', (m) => ops.updateContent(m, c.id, (cc) => keyOps.setKeys(cc, this.kind, local, vals)));
+    const vals = { ...(lane ? evalLane(c, lane, local) : {}), [ix]: x, [iy]: y };
+    const ease = newKeyState().lastEase;
+    // one commit, one undo step; a card opened before any drag makes the lane first
+    this.engine.run(this.kind === 'warp' ? 'Warp Keyframe' : 'Distort Keyframe', (m) => ops.updateContent(m, c.id, (cc) => keyOps.setKeys(laneOf(cc, this.kind) ? cc : ensureLane(cc, this.kind, local, m.addKeyAtStart, ease), this.kind, local, vals)));
   }
 
   private toggleBilinear(): void {

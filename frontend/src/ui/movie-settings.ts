@@ -3,6 +3,7 @@ import * as ops from '../engine/ops';
 import { FPS_PRESETS, durationLabel, parseTime } from '../engine/time';
 import type { PlaybackMode } from '../engine/types';
 import { el, q, setChecked, setClass, setHidden, setText } from './dom';
+import { followLanguage, fpsText } from './fps-label';
 import { toggleOf } from './panels/controls';
 import { confirmAction } from './dialogs';
 import { loadPrefs, updatePrefs } from './prefs';
@@ -51,7 +52,7 @@ export class MovieSettings {
   private readonly name = input('text');
   private readonly width = input('number');
   private readonly height = input('number');
-  private readonly fps = select([...FPS_PRESETS.map((p): [string, string] => [String(p.fps), `${p.fps} · ${p.label}`]), ['custom', 'Custom']]);
+  private readonly fps = select([...FPS_PRESETS.map((p): [string, string] => [String(p.fps), fpsText(p)]), ['custom', 'Custom']]);
   private readonly fpsCustom = input('number');
   private readonly fpsCustomRow: HTMLElement;
   private readonly duration = input('text');
@@ -85,6 +86,7 @@ export class MovieSettings {
   constructor(private readonly engine: Engine, picker: BackgroundPicker, private readonly poster: () => Promise<Blob | null> = () => Promise.resolve(null)) {
     this.stage = new StageOptionsBody(engine, picker);
     this.pop = new Popover('fm-ms', 380);
+    followLanguage(this.fps);
     const strip = el<HTMLElement>('<div class="fm-ms-tabs" role="tablist"></div>');
     TABS.forEach((label, i) => {
       const b = el<HTMLButtonElement>('<button class="fm-ms-tab" type="button" role="tab"></button>');

@@ -3,10 +3,11 @@
 // the panel, or picked with Import, land in the Imported set.
 import { el, patchList, q, setClass, setHidden, setText } from './dom';
 import { t, tn } from './i18n';
-import { brushStore, IMPORTED_ID, LIB_IMPORTED, type BrushLib, type BrushSet } from './brush-store';
+import { brushStore, IMPORTED_ID, type BrushLib, type BrushSet } from './brush-store';
 import { renderBrushPreview } from '../paint/preview';
 import { importBrushFile } from '../io/brush-import';
 import { exportBrush, exportBrushLib, exportBrushSet, fileNameFor } from '../io/brush-export';
+import { brushThumb, brushThumbs } from './brush-thumb';
 import { downloadBlob } from '../io/api';
 import type { Brush } from '../paint/types';
 
@@ -58,6 +59,7 @@ export class BrushPanel {
   private readonly cardName: HTMLElement;
   private readonly cardPrev: HTMLCanvasElement;
   private readonly sliders: Record<string, { input: HTMLInputElement; out: HTMLElement }> = {};
+  private readonly pixEl: HTMLInputElement;
   private readonly previews = new Map<string, Prev>();
   private recent: string[] = [];
   private activeSet = RECENT;
@@ -121,9 +123,11 @@ export class BrushPanel {
         <div class="fm-bp-flds">
           ${['pressureSize|Pressure to size', 'pressureFlow|Pressure to opacity', 'pressureGamma|Pressure curve', 'stabilization|Stabilization', 'motionFilter|Motion filtering', 'expression|Expression']
             .map((s) => { const [k, l] = s.split('|'); return `<label class="fm-bp-fld"><span class="fm-bp-fld-name">${l}</span><input type="range" min="0" max="100" step="1" data-k="${k}"><output></output></label>`; }).join('')}
+          <label class="fm-bp-pix"><input type="checkbox" data-pix><span>Pixel perfect</span></label>
         </div>
       </div>
     </div>`);
+    this.pixEl = q<HTMLInputElement>(this.root, 'input[data-pix]');
     this.setsEl = q(this.root, '.fm-bp-sets');
     this.listEl = q(this.root, '.fm-bp-list');
     this.emptyEl = q(this.root, '.fm-bp-empty');
@@ -231,6 +235,10 @@ export class BrushPanel {
     this.cardEl.addEventListener('input', (e) => {
       const inp = e.target as HTMLInputElement;
       if (inp.dataset.k) this.applySlider(inp.dataset.k, Number(inp.value));
+      else if (inp.dataset.pix !== undefined) {
+        brushStore.edit(this.cardId, { pixelPerfect: inp.checked || undefined });
+        if (!this.cardRaf) this.cardRaf = requestAnimationFrame(() => { this.cardRaf = 0; this.drawCard(); });
+      }
     });
     this.wireDrag();
   }
@@ -474,7 +482,7 @@ export class BrushPanel {
       if (act === 'pressure') this.openCard(t.id);
       else if (act === 'rename') this.beginRename('brush', t.id);
       else if (act === 'duplicate') brushStore.duplicate(t.id);
-      else if (act === 'export') { const b = brushStore.brush(t.id); if (b) this.saveFile(fileNameFor(b.name, 'brush'), exportBrush(b)); }
+      else if (act === 'export') { const b = brushStore.brush(t.id); if (b) void brushThumb(b).then((th) => this.saveFile(fileNameFor(b.name, 'brush'), exportBrush(b, th))); }
       else if (act === 'delete') brushStore.remove(t.id);
       else if (act === 'up') brushStore.step(t.id, -1);
       else if (act === 'down') brushStore.step(t.id, 1);
@@ -482,7 +490,7 @@ export class BrushPanel {
     }
     if (act === 'export') {
       const s = brushStore.set(t.id), list = brushStore.brushesOf(t.id);
-      if (s && list.length) this.saveFile(fileNameFor(s.name, 'brushset'), exportBrushSet(s.name, list)); else this.note('No brushes in this set');
+      if (s && list.length) void brushThumbs(list).then((th) => this.saveFile(fileNameFor(s.name, 'brushset'), exportBrushSet(s.name, list, th))); else this.note('No brushes in this set');
     } else if (act === 'rename') this.beginRename('set', t.id);
     else if (act === 'duplicate') { const id = brushStore.duplicateSet(t.id); if (id) this.activeSet = id; this.sync(); }
     else if (act === 'delete') brushStore.removeSet(t.id);
@@ -495,7 +503,9 @@ export class BrushPanel {
     if (!lib) return;
     const sets = brushStore.setsOf(id).map((s) => ({ name: s.name, brushes: brushStore.brushesOf(s.id) })).filter((s) => s.brushes.length);
     if (!sets.length) { this.note(t('No brushes found')); return; }
-    this.saveFile(fileNameFor(lib.name, 'brushlib'), exportBrushLib(lib.name, sets));
+    void Promise.all(sets.map((s) => brushThumbs(s.brushes))).then((th) => {
+      this.saveFile(fileNameFor(lib.name, 'brushlib'), exportBrushLib(lib.name, sets.map((s, i) => ({ ...s, thumbs: th[i] }))));
+    });
   }
 
   private saveFile(name: string, bytes: Uint8Array): void {
@@ -546,12 +556,12 @@ export class BrushPanel {
           this.activeSet = brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT;
         } else if (r.brushes.length && r.setName) {
           const sid = brushStore.addImportedSet(r.setName, r.brushes);
-          brushStore.setActiveLib(LIB_IMPORTED); this.activeSet = sid; added += r.brushes.length;
+          this.activeSet = sid; added += r.brushes.length;
         } else if (r.brushes.length) {
           plain = true; brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
       } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
     }
-    if (added) { if (plain) { brushStore.setActiveLib(LIB_IMPORTED); this.activeSet = IMPORTED_ID; } this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }
+    if (added) { if (plain) { brushStore.setActiveLib(brushStore.libOf(IMPORTED_ID)); this.activeSet = IMPORTED_ID; } this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }
     this.note(added ? tn(added, 'Imported {n} brush', 'Imported {n} brushes') : (last || t('No brushes found in that file')));
     if (added && failed) this.note(`${tn(added, 'Imported {n} brush', 'Imported {n} brushes')}, ${tn(failed, '{n} skipped', '{n} skipped')}`);
   }
@@ -632,6 +642,7 @@ export class BrushPanel {
     set('stabilization', b.stabilization ?? 0);
     set('motionFilter', b.motionFilter ?? 0);
     set('expression', b.expression ?? 0);
+    this.pixEl.checked = !!b.pixelPerfect;
   }
 
   private applySlider(k: string, v: number): void {

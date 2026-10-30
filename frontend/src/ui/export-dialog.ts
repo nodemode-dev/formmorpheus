@@ -237,8 +237,9 @@ export class ExportDialog {
       const ok = info?.available === true;
       const reason = ok ? '' : caps ? info?.reason ?? 'Not available' : 'The engine is not running';
       opt.disabled = !ok;
-      opt.title = reason;
-      const text = ok ? base : `${base} (${reason.replace(/\.$/, '')})`;
+      opt.title = t(reason);
+      // composed text escapes the page translator, so each part is translated here
+      const text = ok ? t(base) : `${t(base)} (${t(reason).replace(/\.$/, '')})`;
       if (opt.textContent !== text) opt.textContent = text;
     }
     const target = need[this.state.codec];
