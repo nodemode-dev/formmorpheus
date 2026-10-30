@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.7.0
-Last updated: 2026-10-30 · phases 13 to 15 (paint and Flipbook carries, Warp and Distort, the GPU compositor, stability debt)
+Current build version: v0.8.0
+Last updated: 2026-10-30 · phases 16 to 19 (curves, paths, pivots, rigging, camera, lip-sync, boil, round trips, reference parity wave one)
 
 ---
 
@@ -114,6 +114,7 @@ frontend/
 - [src/styles](#src-styles)
 - [Phases 10 to 12 (v0.6.0)](#p1012)
 - [Phases 13 to 15 (v0.7.0)](#p1315)
+- [Phases 16 to 19 (v0.8.0)](#p1619)
 
 ---
 
@@ -600,3 +601,55 @@ A row can mask the row below it (alpha or luminance, invert); onion skins can bl
 - logged: v0.7.0 · 2026-10-30
 
 Lanes held by an exact() waiter are never evicted, and a waiter whose lane goes asks again (6 blocks of one clip exported: 180 of 180 exact tiles, was 73). Animated WebP, APNG and AVIF stream under the GIF budget. Recovery snapshots carry a heartbeat; only one silent for over 60 s is offered as a crash. A restore renamed to "name 2" says so; the open movie cannot be deleted from Home.
+
+---
+
+## Phases 16 to 19 (v0.8.0) {#p1619}
+
+### src/ui/graph-editor.ts, src/engine/graph-ops.ts · custom eases
+- refers-to: src/engine/keys.ts :: bezierSeg, evalChannel 'custom'; src/engine/key-ops.ts :: withEase, mirrorSpan
+- kind: explainer
+- logged: v0.8.0 · 2026-10-30
+
+A key may carry `ease: 'custom'` w/ `out` / `in` handles (x clamped to 0..1, y may overshoot); presets map onto handles, so switching to Custom starts from the preset's shape. Reverse mirrors and swaps handles. The Graph view shows value and speed curves of one active channel (others as ghosts); each drag is one undo step.
+
+### src/engine/path.ts · motion paths and pivots
+- refers-to: src/engine/path.ts; src/engine/types.ts :: Key.sp, Content.pivot; px / py channels
+- kind: rationale
+- logged: v0.8.0 · 2026-10-30
+
+Spatial tangents live on the x key (`sp`); a span is curved only when an end has `sp` or the lane's Smooth path is on, so older movies render as before. The x key's ease gives the fraction, mapped through a 64-step arc-length table. Pivot: stage = P + pos + R·S·(p − P), the same in render.ts, the GPU path and warp-draw. Known gap: reverseKeys drops `sp`.
+
+### src/engine/transform.ts, camera.ts, parenting.ts · parents and the camera
+- refers-to: src/engine/transform.ts :: worldMatrix, topMatrix, memberMatrix; camera.ts; parenting.ts :: setParent, unparent
+- kind: rationale
+- logged: v0.8.0 · 2026-10-30
+
+One source for a content's world matrix: own transform and pivot, then each parent's, then the camera unless the track is fixed to the screen. Movies w/o camera or parents take the old path. Loops and cross-group parents are refused w/ a message; unparent bakes the world pose. The camera is keyed through a stand-in content so key-ops are reused.
+
+### src/engine/bones.ts · bones
+- refers-to: src/engine/bones.ts :: skinOf, boneMatrices, boneQuads; warp-draw.ts :: drawTriangles
+- kind: rationale
+- logged: v0.8.0 · 2026-10-30
+
+Weights are inverse-square distance to each bone segment, softened near the bone, faded to zero at 0.4 x its length, top 2 bones, normalised, so far parts stay exactly put. Bones draw first, then Warp / Distort; both through the CPU raster. The Bones card is a Stage panel because the Action menu popover closes on any outside press.
+
+### lip-sync, boil, round trips
+- refers-to: src/media/lipsync.ts; src/engine/lipsync-ops.ts; src/paint/boil.ts; src/ui/boil-make.ts; src/io/formvis-doc.ts, formvfx-doc.ts, round-trip.ts
+- kind: explainer
+- logged: v0.8.0 · 2026-10-30
+
+Lip-sync classifies 8 mouth shapes per frame from RMS, zero crossings and the two strongest spectral peaks (radix-2 FFT, Hann windows), smoothed to 2-frame holds, written as a new Lip-sync row (the chart row survives). Boil displaces w/ hash-lattice value noise whose seed cycles every `rate` frames; CPU and GPU share the maths (max 2 levels apart). Pool surfaces now use `willReadFrequently`, which made every CPU filter readback faster under software GL. formvis `.fvd` (zip manifest + PNGs) and formvfx `.fvxproj` (JSON, footage beside it, so the export is a zip w/ Footage/) round-trip as far as each format carries; a toast lists what was left out.
+
+### process exceptions (v0.8.0)
+- kind: warning-context
+- logged: v0.8.0 · 2026-10-30
+
+Two builders appended to existing files w/ a shell heredoc instead of the Edit tool: one CSS rule at the end of `styles/flip-strip.css` (lip-sync) and the FS_BOIL shader const at the end of `engine/gpu/shaders.ts` (boil). Both are pure appends, reviewed and kept; logged here as SEDO breaches. Phase 19 added more: the brush builder rewrote `paint/brushes.ts` and `ui/brush-panel.ts` whole and copied formvis's `engine/abr.ts` to `io/abr.ts` w/ `cp`; three builders appended CSS to their own new stylesheets w/ a heredoc (`paint-feel.css`, `timeline-extras.css`). Reviewed and kept; the skill pack's laws already say SEDO covers a builder's own new files.
+
+### Phase 19 · reference parity, first wave
+- refers-to: src/ui/stage-nav.ts, stage-options.ts; src/engine/transform-ops.ts; src/ui/stage-snap.ts, stage-box-menu.ts, shortcuts-dialog.ts, recovery-dialog.ts; src/ui/flip-select.ts, flip-mini.ts, flip-canvas.ts, flip-convert.ts; src/paint/feel.ts; src/ui/paint-feel.ts, paint-clip.ts, paint-keys.ts; src/io/brush-import.ts, abr.ts; src/ui/brush-store.ts; src/engine/blend.ts, track-ops.ts, key-sel-ops.ts; src/ui/timeline-extras.ts, home-theater.ts
+- kind: explainer
+- logged: v0.8.0 · 2026-10-30
+
+Measured against the reference inventory and audit in the planning sidecar. The Stage has one view transform (stage-nav.ts); overlays read the pointer through `stageLocal`, and a rotated view turns the `.fm-stage-space` wrapper w/ CSS. Backstage visibility is a movie field (default 20%, `BACKSTAGE_DEFAULT`). Snapping uses Shift as the reference's second finger; Alt turns snapping off. Key combos are canonical (`canonCombo`), so duplicates are caught. Undo depth defaults to 250 w/ a Recent share kept one by one. Luminance masks use 0.299 / 0.587 / 0.114 on the CPU and GPU alike. The nine extra blend modes are pixel maths on the CPU (engine/blend.ts) and shader ids 17 to 25 on the GPU; pass-through groups really pass through. A mouse paints at full pressure. Brushes live in the engine data folder (`/api/brushes`), w/ an IndexedDB copy as fallback. A plain drag on the Timeline ruler now scales time (the reference's behaviour); scrub w/ the Playhead handle or Shift.

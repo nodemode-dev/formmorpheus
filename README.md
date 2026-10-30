@@ -7,7 +7,7 @@
 <p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.7.0-f97316" alt="version v0.7.0" />
+  <img src="https://img.shields.io/badge/version-v0.8.0-f97316" alt="version v0.8.0" />
   <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
@@ -17,7 +17,7 @@
 
 formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.7.0, phases 1 to 15 of 15
+**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.8.0, phases 1 to 19 of 22
 
 ## Highlights
 
@@ -37,6 +37,9 @@ formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in 
 - **Engine export** ProRes 422 HQ, ProRes 4444 w/ transparency & HEVC through the ffmpeg you have installed, run by the engine as a separate program, w/ progress & cancel
 - **Safe by default** Recently Deleted keeps deleted movies & exports for 30 days w/ restore; crash recovery snapshots unsaved work every minute & offers it back after a crash
 - **In your language** the interface in 30 languages, right to left included; an in-app manual (F1) w/ search
+- **Stage you can move around** zoom toward the pointer, pan, fit, rotate the view & a full-screen preview; Stage Options for the background colour, transparency, backstage & timecode
+- **Rigging & motion** a Graph editor for custom eases, curved motion paths, pivots, parenting, a keyed camera & bones, plus lip-sync from sound & a Boil effect
+- **Brushes** 165 original brushes in 19 sets, `.abr` & `.brushset` import, per-brush pressure & smoothing
 - **Desktop apps** `./build_app` makes the macOS app & dmg, Windows msi & installer, Linux deb & AppImage; `.fmo` files open in the running app & join the OS recent list
 - **Keyframes** Move & Scale plus live filters (opacity, Gaussian blur, sharpen, noise, hue saturation brightness, lens blur) keyed on lanes under each block, easing (linear, ease in, ease out, ease in & out, hold), expanded per-channel rows, copy, paste & reverse
 - **The form family shell** the same splash & reveal, title bar, menus (in the window or the macOS menu bar), Home screen, Preferences & status bar as formvis, w/ 28 shared themes & zero flash on load
@@ -114,7 +117,7 @@ formmorpheus/
 
 ## Status
 
-All 15 phases of the plan have landed: the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work (performance budgets, memory caps, crash recovery, CI), the documentation, & the items earlier phases carried (layer groups & masks, Warp & Distort keys, the GPU compositor, the paint & Flipbook extras, the stability debt). The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
+Phases 1 to 19 of 22 have landed: the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work, the documentation, the carried items (layer groups & masks, Warp & Distort keys, the GPU compositor), the extras beyond the reference (graph editor, motion paths, pivots, parenting, camera, bones, lip-sync, boil, round trips w/ formvis & formvfx), & the first wave of reference parity (Stage navigation & options, the Compose box, keyboard shortcuts, the Flipbook workflow & Mini Flipbook, paint feel & clipboard, the brush library, Timeline ergonomics, all blend modes, Theater management). Phases 20 to 22 close the remaining parity gaps found by a full audit against the reference. The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
 
 ## Development
 

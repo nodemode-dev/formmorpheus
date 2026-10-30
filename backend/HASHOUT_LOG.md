@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.7.0
-Last updated: 2026-10-30 · job sweep while running, rational frame rates, HEVC in MOV, recovery heartbeats
+Current build version: v0.8.0
+Last updated: 2026-10-30 · brush library storage, Theater stacks
 
 ---
 
@@ -136,3 +136,10 @@ The desktop app hands the engine absolute paths the OS gave it (double-click, se
 - logged: v0.7.0 · 2026-10-30
 
 A job w/ no upload or poll for 10 min is cancelled and removed, checked every minute while the engine runs (the loop starts in main.py). Frame rates go to ffmpeg as exact rationals (24000/1001, 30000/1001, 60000/1001). HEVC can be written as MOV. Recovery sidecars carry `alive`, refreshed by `POST /api/recovery/{session}/alive` every 20 s from the window that owns the snapshot; the list reports `idle` so a live window's snapshot is never offered as a crash.
+
+### v0.8.0 · brushes and stacks
+- refers-to: app/routers/brushes.py; app/routers/library.py :: _stacks routes
+- kind: explainer
+- logged: v0.8.0 · 2026-10-30
+
+`GET` / `PUT /api/brushes` keeps the person's brush library (imported and edited brushes, tips as data) in `brushes.json` in the data folder, so it survives a cleared browser profile and the desktop app shares it. Theater stacks (non-nested folders, as the reference) live under `/api/library/_stacks`; rename and delete follow a movie's stack entry.

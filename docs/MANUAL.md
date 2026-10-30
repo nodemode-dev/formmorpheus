@@ -245,7 +245,23 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 ## Crash recovery
 
-formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos.
+formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
+
+## New in 0.8.0
+
+**The Stage.** Ctrl or Cmd with the wheel (or a trackpad pinch) zooms toward the pointer; the wheel pans, Space-drag or the middle button pans too; Ctrl or Cmd+0 or a double-click on the empty Stage fits; Alt+Ctrl with Left or Right turns the view in 15 degree steps; Shift+Ctrl+F shows the Stage alone and plays it (Esc leaves). The zoom cluster sits at the bottom right. Stage Options (View menu, Shift+Ctrl+J, or right-click the Stage) holds the background colour, transparency, Backstage visibility, the timecode and the movie's onion skins; Movie settings · Stage shows the same.
+
+**The Compose box.** Side nodes stretch one way; drag a side past the other to flip; the box's ··· menu and the content menu have Flip horizontal, Flip vertical and Reset. Alt with the arrow keys nudges 1 px (Shift 10 px). Hold Shift while moving or turning to snap to the movie's edges, centre and other contents (15 degree steps in Compose, 30 in Keyframe and Perform); Alt turns snapping off. Undo and Redo buttons sit beside the timecode; the undo depth is 250 steps.
+
+**Keyboard Shortcuts.** Edit · Keyboard Shortcuts... (also in Preferences) lists every command: search, add or remove keys, and set them back. A key taken from another command says so.
+
+**Flipbooks.** Creating a Flipbook opens it. In the frame strip, click, Shift-click or lasso frames; the frame menu has Split content, Fill duration and Flip frames; drag a frame's edge to change its hold; drag frames to another row. Each row has Highlight, Blend mode, Clipping mask, Cut, Copy, Paste and Duplicate. The Mini Flipbook (double-click the strip head) floats, docks to an edge, scrubs w/ its wheel and has Scrub Lock. Settings · Crop and resize scales and crops a drawing.
+
+**Draw and Paint.** A mouse paints at full pressure. I picks a colour, G fills, right-click or Ctrl or Cmd with X, C, V opens the clipboard (Cut, Copy, Duplicate, Cut & Paste, Paste, Clear). The brush library has 19 sets; right-click a brush to rename, duplicate, delete or edit its Pressure & Smoothing; Import brushes reads .abr, .brush and .brushset files.
+
+**Animation tools.** The Graph Editor (Alt+Ctrl+G, or Graph on an expanded lane) edits ease curves w/ handles. In Keyframe mode a Move lane shows its motion path; drag keys and handles to curve it; the crosshair is the pivot that rotation and scale turn around. Content · Parent makes one block follow another. Camera mode (the camera button in the Timeline bar) keys a pan, zoom and turn of the whole movie; a track set Fixed to screen ignores it. Bones (Action menu) rig a picture or drawing. Lip-sync from Sound... (a sound block's menu) fills a mouth Flipbook. Boil makes lines wobble; Make Boil Frames... bakes it into a Flipbook. File · Round Trips sends a drawing to formvis or the movie to formvfx and brings them back.
+
+**Timeline and Theater.** Drag the ruler to change the time scale (drag the Playhead or hold Shift to scrub); Ctrl+Shift with the wheel sets track height; hold a trim edge until it turns red for Free Trim. Multi-select draws a lasso; hold its button to bring back the last selection. Twenty-five blend modes, and groups can pass through. On the Home Movies page, Select picks several movies; right-click for Open, Rename, Duplicate, Share and Delete; drop one movie on another to make a stack.
 
 ## Keyboard shortcuts
 
