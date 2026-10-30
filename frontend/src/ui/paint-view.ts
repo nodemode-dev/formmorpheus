@@ -26,6 +26,7 @@ import { t as tr } from './i18n';
 import { FlipStrip, type StripHost } from './flip-strip';
 import { CropResizeDialog, bakeCanvas } from './paint-crop';
 import { canvasOf, hasCanvas } from '../engine/canvas';
+import { animate } from '../engine/keys';
 import { FlipMini } from './flip-mini';
 import { icon } from './icons';
 import { LayersPanel } from './layers-panel';
@@ -33,12 +34,14 @@ import { PaintSettings, loadPaintPrefs, savePaintPrefs, type PaintPrefs } from '
 import { gesturePrefsNow } from './gestures';
 import { PaintTools, type Interaction, type ToolHost } from './paint-tools';
 import { ColourDrop } from './paint-drop';
-import { HoldRepeat, SpinDrag, resetRotation } from './paint-gestures';
+import { HoldRepeat, SpinDrag, TriSwipe, resetRotation } from './paint-gestures';
 import { Loupe } from './paint-loupe';
 import { PredictTail } from './paint-predict';
 import { anchorOffset, canvasToScreen, isQuickPinchIn, panDelta, pinchView, rotBounds, screenToCanvas, unrotate, wrapAngle } from '../paint/viewmath';
 import { toast } from './toast';
 import { BrushSlots } from './brush-slots';
+import { wireSlider, type SliderKind } from './paint-sliders';
+import { wireBrushDrop } from './brush-drop';
 import { PaintClip } from './paint-clip';
 import { FeelPopover, FeelStore, drawBrushCursor } from './paint-feel';
 import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys';
@@ -46,7 +49,7 @@ import { ROLL_NAME, brushScale, penButton } from '../paint/feel';
 import { setPressureGamma } from '../paint/dynamics';
 import type { Command, Commands } from './commands';
 
-interface BrushState { size: number; opacity: number }
+interface BrushState { size: number; opacity: number; /** Smudge only: how far the smear carries (the brush's pickup is 1 minus this). */ strength?: number }
 
 const STATE_KEY = 'formmorpheus.paint.brushes';
 const TOOL_KEY = 'formmorpheus.paint.tools';
@@ -82,14 +85,18 @@ const TEMPLATE = `<div class="fm-paint" hidden>
 <div class="fm-paint-side">
   <div class="fm-paint-slider" data-s="size" title="Brush size ([ and ])"><div class="fm-paint-slider-fill"></div><div class="fm-paint-slider-thumb"></div></div>
   <div class="fm-paint-slider" data-s="opacity" title="Brush opacity"><div class="fm-paint-slider-fill"></div><div class="fm-paint-slider-thumb"></div></div>
+  <div class="fm-paint-slider fm-paint-slider-short" data-s="strength" title="Smudge strength" hidden><div class="fm-paint-slider-fill"></div><div class="fm-paint-slider-thumb"></div></div>
   <button class="fm-paint-side-btn" type="button" data-a="undo" title="Undo (Ctrl or Cmd+Z, two-finger tap)">${icon('undo', 18)}</button>
   <button class="fm-paint-side-btn" type="button" data-a="redo" title="Redo (Shift+Ctrl or Cmd+Z, three-finger tap)">${icon('redo', 18)}</button>
 </div>
-<div class="fm-paint-hud" hidden><div class="fm-paint-hud-title"></div><canvas class="fm-paint-hud-dot" width="120" height="120"></canvas></div>
+<div class="fm-paint-hud" hidden><div class="fm-paint-hud-title"></div><canvas class="fm-paint-hud-dot" width="120" height="120"></canvas>
+  <div class="fm-paint-hud-mem"><button type="button" class="fm-paint-hud-btn" data-h="minus" title="Reset the marker at this value" aria-label="Reset marker"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8"/></svg></button><span class="fm-paint-hud-hint">Markers</span><button type="button" class="fm-paint-hud-btn" data-h="plus" title="Store this value in the next marker" aria-label="Store in a marker"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8M7 3v8"/></svg></button></div>
+  <div class="fm-paint-hud-tip">Tap + to store this value, tap a marker to recall it, hold a marker to store here. Drag sideways, or hold Alt, for fine control.</div></div>
 <div class="fm-paint-toast" hidden></div>
 <div class="fm-paint-menu fm-pop" hidden>
   <button class="fm-pop-row" type="button" data-m="done">Finish</button>
   <button class="fm-pop-row" type="button" data-m="cancel">Discard changes</button>
+  <button class="fm-pop-row" type="button" data-m="help">Help</button>
 </div>
 </div>`;
 
@@ -112,6 +119,8 @@ export class PaintView {
   private index = 0;
   private doc: PaintDoc | null = null;
   private busy = false;
+  /** A stroke that began while a frame was switching: replayed when the frame is ready. */
+  private queuedDown: { e: PointerEvent; released: boolean } | null = null;
 
   private tool: PaintTool = 'paint';
   private brushIds: Record<PaintTool, string>;
@@ -178,6 +187,7 @@ export class PaintView {
   private readonly discarded = new WeakSet<PaintDoc>();
   private saving: Promise<void> = Promise.resolve();
   private readonly thumbs = new Map<string, { key: string; canvas: OffscreenCanvas }>();
+  private thumbTmp: OffscreenCanvas | null = null;
 
   private readonly colour: ColourPanel;
   private readonly brushPanel: BrushPanel;
@@ -198,6 +208,9 @@ export class PaintView {
   private readonly colourBtn: HTMLButtonElement;
   private readonly sizeSlider: HTMLElement;
   private readonly opacitySlider: HTMLElement;
+  private readonly strengthSlider: HTMLElement;
+  private hudKind: SliderKind = 'size';
+  private hudTimer = 0;
   private readonly undoBtn: HTMLButtonElement;
   private readonly redoBtn: HTMLButtonElement;
   private readonly hud: HTMLElement;
@@ -223,6 +236,7 @@ export class PaintView {
     this.colourBtn = q<HTMLButtonElement>(this.root, '.fm-paint-colour');
     this.sizeSlider = q(this.root, '.fm-paint-slider[data-s="size"]');
     this.opacitySlider = q(this.root, '.fm-paint-slider[data-s="opacity"]');
+    this.strengthSlider = q(this.root, '.fm-paint-slider[data-s="strength"]');
     this.undoBtn = q<HTMLButtonElement>(this.root, '[data-a="undo"]');
     this.redoBtn = q<HTMLButtonElement>(this.root, '[data-a="redo"]');
     this.hud = q(this.root, '.fm-paint-hud');
@@ -324,6 +338,7 @@ export class PaintView {
       e.preventDefault();
       void this.clip.pasteEvent(e.clipboardData).then((done) => { if (!done) void this.clip.paste(); });
     });
+    wireBrushDrop();
     this.wire();
     this.setColourChip(this.colour.get());
     new ResizeObserver(() => this.resize()).observe(this.root);
@@ -415,6 +430,8 @@ export class PaintView {
     this.loupe.hide();
     this.clearPickHold();
     this.holdTouch.stop();
+    this.previewSaved = null;
+    setClass(this.root, 'is-preview', false);
     this.dropDoc(this.doc);
     this.doc = null;
     this.contentId = null;
@@ -546,7 +563,7 @@ export class PaintView {
     this.redraw();
     const next = this.pendingNav;
     this.pendingNav = null;
-    if (next) void this.gotoFrame(next.row, next.index);
+    if (next) void this.gotoFrame(next.row, next.index); else this.flushQueued();
   }
 
   /** The frame the next step is relative to: a queued move, else the open frame. */
@@ -559,7 +576,14 @@ export class PaintView {
       content: () => { const c = this.content(); return c?.kind === 'flipbook' ? c : null; },
       row: () => this.row,
       index: () => (this.playTimer ? this.playIndex() : this.index),
-      select: (row, index) => { this.stopPlay(); void this.gotoFrame(row, index); },
+      select: (row, index) => {
+        this.stopPlay();
+        // the Timeline moves (and sound is scrubbed) at once; the frame itself loads when the save before it lands
+        const c = this.content();
+        const t = c?.flip[row];
+        if (c && t && t.frames[index]) this.engine.seek(c.start - c.offset + flipStartOf(t, index));
+        void this.gotoFrame(row, index);
+      },
       run: (label, fn, merge) => { void this.runFlip(label, fn, merge); },
       playing: () => this.playTimer !== 0,
       togglePlay: () => { if (this.playTimer) this.stopPlay(); else void this.startPlay(); },
@@ -601,7 +625,8 @@ export class PaintView {
     this.busy = true;
     this.cancelStroke();
     this.tools.finish();
-    await this.commitDoc();
+    // edits that never read pixels (a blank frame, retimes, track settings) park the open frame and save it behind
+    await this.commitDoc(/^(Add frame|Add track|Frame duration|Track |Row mask|Invert row mask|Show track|Hide track|Move track|Rename track)/.test(label));
     const before = this.content();
     const openId = before?.flip[this.row]?.frames[this.index]?.id;
     const rowId = before?.flip[this.row]?.id;
@@ -623,7 +648,7 @@ export class PaintView {
     // the strip selects right after an edit (a new frame, a new track): that move waited for this edit
     const next = this.pendingNav;
     this.pendingNav = null;
-    if (next) void this.gotoFrame(next.row, next.index);
+    if (next) void this.gotoFrame(next.row, next.index); else this.flushQueued();
   }
 
   private playIndex(): number {
@@ -635,13 +660,26 @@ export class PaintView {
   private async startPlay(): Promise<void> {
     const c = this.content();
     if (!c || c.kind !== 'flipbook') return;
-    await this.done(true);
+    if (this.busy) return;
+    // rows with masks or blends draw from saved pixels, so those wait for the save; the rest play at once from the parked frame
+    if (flipHasRowMix(c)) await this.done(true);
+    else { this.cancelStroke(); this.tools.finish(); await this.commitDoc(true); }
     const t = this.content()?.flip[this.row];
     if (!t) return;
     this.playAt = flipStartOf(t, this.index);
     const fps = this.engine.movie?.fps ?? 24;
+    const mode = this.engine.movie?.playback ?? 'loop';
+    const len = Math.max(1, flipLength(t));
+    let dir = 1;
+    if (mode === 'oneshot' && this.playAt + 1 >= len) this.playAt = 0;
     this.playTimer = window.setInterval(() => {
-      this.playAt = (this.playAt + 1) % Math.max(1, flipLength(t));
+      if (mode === 'pingpong' && len > 1) {
+        if (this.playAt + dir >= len || this.playAt + dir < 0) dir = -dir;
+        this.playAt += dir;
+      } else if (mode === 'oneshot') {
+        if (this.playAt + 1 >= len) { this.stopPlay(); return; }
+        this.playAt += 1;
+      } else this.playAt = (this.playAt + 1) % len;
       this.full = true;
       this.redraw();
       this.strip.refresh();
@@ -680,9 +718,23 @@ export class PaintView {
     x.fillRect(0, 0, w, h);
     const kv = canvasOf(c, m);
     const s = Math.min(w / kv.w, h / kv.h);
-    x.setTransform(s, 0, 0, s, (w - kv.w * s) / 2, (h - kv.h * s) / 2);
-    if (live && liveDoc) liveDoc.composite(x);
-    else this.renderer.layersInto(x, f.layers, m, { w: kv.w, h: kv.h });
+    // a big canvas shrinks a thin stroke to nothing: the picture is drawn apart and laid down several times, a pixel apart, to keep strokes visible
+    const boost = s < 0.3;
+    let g = x;
+    if (boost) {
+      const tmp = this.thumbTmp && this.thumbTmp.width === w && this.thumbTmp.height === h ? this.thumbTmp : (this.thumbTmp = new OffscreenCanvas(w, h));
+      g = tmp.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, w, h);
+      g.imageSmoothingQuality = 'high';
+    }
+    g.setTransform(s, 0, 0, s, (w - kv.w * s) / 2, (h - kv.h * s) / 2);
+    if (live && liveDoc) liveDoc.composite(g);
+    else this.renderer.layersInto(g, f.layers, m, { w: kv.w, h: kv.h });
+    if (boost && this.thumbTmp) {
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      for (const [dx, dy] of [[0, 0], [0, 0], [0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]]) x.drawImage(this.thumbTmp, dx, dy);
+    }
     this.thumbs.set(id, { key, canvas: cv });
     return cv;
   }
@@ -786,10 +838,10 @@ export class PaintView {
     this.redraw();
   }
 
-  private fit(): void {
+  private fit(bare = false): void {
     const m = this.engine.movie;
     if (!m || !this.cssW) return;
-    const padX = 72, padTop = 64, padBottom = this.content()?.kind === 'flipbook' ? 200 : 32;
+    const padX = bare ? 16 : 72, padTop = bare ? 16 : 64, padBottom = bare ? 16 : this.content()?.kind === 'flipbook' ? 200 : 32;
     // fit the canvas and the Stage together (view pixels are canvas pixels; the Stage sits at -canvas.x, -canvas.y)
     const kv = canvasOf(this.content(), m);
     const ux0 = Math.min(0, -kv.x), uy0 = Math.min(0, -kv.y), ux1 = Math.max(kv.w, m.width - kv.x), uy1 = Math.max(kv.h, m.height - kv.y);
@@ -876,6 +928,7 @@ export class PaintView {
       if (!over) this.drawOnions(ctx, c, m);
       if (c.kind === 'flipbook' && !mixed) this.drawRows(ctx, c, m, 'below');
       if (mixed) this.drawMixed(ctx, c, m, true);
+      else if (this.prefs.keyframeEffects) this.compositeEffects(ctx, c, m);
       else this.doc.composite(ctx, this.live ?? undefined, this.canvasRegion(ctx, m));
       if (over) this.drawOnions(ctx, c, m);
       if (c.kind === 'flipbook' && !mixed) this.drawRows(ctx, c, m, 'above');
@@ -902,9 +955,14 @@ export class PaintView {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(v.ox, v.oy, w, h);
     } else {
+      // the canvas edge is always drawn: a light line with a dark hairline inside so it reads on a white or a black picture
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.lineWidth = 1.5;
       roundRect(ctx, v.ox, v.oy, w, h, 12);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, v.ox + 1.5, v.oy + 1.5, Math.max(0, w - 3), Math.max(0, h - 3), 11);
       ctx.stroke();
     }
     this.drawCursor(ctx);
@@ -914,6 +972,20 @@ export class PaintView {
   }
 
   private cursorBox: Rect | null = null;
+
+  /** Settings > Canvas > Keyframe effects: the picture shows the opacity, blur and color keys at the Playhead. */
+  private compositeEffects(ctx: CanvasRenderingContext2D, c: Content, m: Movie): void {
+    const doc = this.doc as PaintDoc;
+    const a = animate(c, Math.max(0, this.engine.frame - c.start + c.offset));
+    const parts: string[] = [];
+    if (a.blur > 0) parts.push(`blur(${((a.blur * Math.max(m.width, m.height) * 0.05 * this.view.scale) / 2) * this.dpr}px)`);
+    if (a.hsb) parts.push(`hue-rotate(${a.hsb.hue}deg) saturate(${Math.max(0, 1 + a.hsb.saturation)}) brightness(${Math.max(0, 1 + a.hsb.brightness)})`);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
+    if (parts.length) ctx.filter = parts.join(' ');
+    doc.composite(ctx, this.live ?? undefined);
+    ctx.restore();
+  }
 
   private drawCursor(ctx: CanvasRenderingContext2D): void {
     const p = this.cursor;
@@ -995,7 +1067,8 @@ export class PaintView {
       ctx.save();
       ctx.globalAlpha = t.opacity;
       const kv = canvasOf(c, m);
-      this.renderer.layersInto(g, t.frames[fi].layers, m, { w: kv.w, h: kv.h });
+      const pk = this.playTimer ? this.parked.get(t.frames[fi].id) : undefined;
+      if (pk) pk.composite(ctx); else this.renderer.layersInto(g, t.frames[fi].layers, m, { w: kv.w, h: kv.h });
       ctx.restore();
     }
   }
@@ -1057,6 +1130,12 @@ export class PaintView {
     setStyleVar(this.opacitySlider, '--v', String(st.opacity));
     setTitle(this.sizeSlider, tr('Brush size {p}%').replace('{p}', String(Math.round(st.size * 100))));
     setTitle(this.opacitySlider, `Brush opacity ${Math.round(st.opacity * 100)}%`);
+    const smudging = this.tool === 'smudge';
+    setHidden(this.strengthSlider, !smudging);
+    if (smudging) {
+      setStyleVar(this.strengthSlider, '--v', String(st.strength ?? 0.5));
+      setTitle(this.strengthSlider, tr('Smudge strength {p}%').replace('{p}', String(Math.round((st.strength ?? 0.5) * 100))));
+    }
     this.slots?.sync();
     setClass(this.root, 'is-side-right', this.prefs.sidebarRight);
     this.syncUndo();
@@ -1079,7 +1158,9 @@ export class PaintView {
   }
 
   private state(b: Brush): BrushState {
-    return this.brushStates[`${this.tool}:${b.id}`] ?? { size: b.presets[0]?.size ?? 0.3, opacity: b.presets[0]?.opacity ?? 1 };
+    const have = this.brushStates[`${this.tool}:${b.id}`];
+    const base = have ?? { size: b.presets[0]?.size ?? 0.3, opacity: b.presets[0]?.opacity ?? 1 };
+    return this.tool === 'smudge' ? { ...base, strength: have?.strength ?? Math.max(0, Math.min(1, 1 - b.pickup)) } : base;
   }
 
   private setState(p: Partial<BrushState>): void {
@@ -1109,6 +1190,22 @@ export class PaintView {
       this.brushPanel.close();
     }
     this.syncChrome();
+  }
+
+  /** Switches to `to` using the brush (and its size and opacity) of the tool that is active now. */
+  private carryBrush(to: PaintTool): void {
+    const from = this.tool;
+    const b = this.brush(from);
+    const st = this.state(b);
+    this.brushIds[to] = b.id;
+    writeJson(TOOL_KEY, this.brushIds);
+    this.brushStates[`${to}:${b.id}`] = { size: st.size, opacity: st.opacity };
+    writeJson(STATE_KEY, this.brushStates);
+    this.lastTool = from;
+    this.tool = to;
+    this.brushPanel.close();
+    this.syncChrome();
+    this.say(tr('{brush} carried to {tool}').replace('{brush}', b.name).replace('{tool}', tr(to === 'paint' ? 'Paint' : to === 'smudge' ? 'Smudge' : 'Erase')));
   }
 
   private closePanels(except?: { close(): void }): void {
@@ -1142,9 +1239,19 @@ export class PaintView {
     this.toastTimer = window.setTimeout(() => setHidden(this.toastEl, true), 1400);
   }
 
-  private showHud(kind: 'size' | 'opacity'): void {
+  private holdHud(ms = 2600): void {
+    clearTimeout(this.hudTimer);
+    this.hudTimer = window.setTimeout(() => setHidden(this.hud, true), ms);
+  }
+
+  private showHud(kind: SliderKind, fine = false): void {
     const st = this.state(this.brush());
-    setText(this.hudTitle, kind === 'size' ? `Size ${Math.round(st.size * 100)}%` : `Opacity ${Math.round(st.opacity * 100)}%`);
+    clearTimeout(this.hudTimer);
+    this.hudKind = kind;
+    const val = kind === 'size' ? st.size : kind === 'opacity' ? st.opacity : st.strength ?? 0;
+    const name = kind === 'size' ? tr('Size') : kind === 'opacity' ? tr('Opacity') : tr('Smudge strength');
+    setText(this.hudTitle, `${name} ${Math.round(val * 100)}%${fine ? ` · ${tr('Fine control')}` : ''}`);
+    setClass(this.hud, 'is-plain', kind === 'strength');
     setHidden(this.hud, false);
     const x = this.hudDot.getContext('2d') as CanvasRenderingContext2D;
     x.clearRect(0, 0, 120, 120);
@@ -1207,12 +1314,14 @@ export class PaintView {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = true;
     input.addEventListener('change', () => {
-      const f = input.files?.[0];
+      // each picked picture becomes its own layer, in the order picked
+      const files = Array.from(input.files ?? []);
       const doc = this.doc;
       const m = this.engine.movie;
-      if (!f || !doc || !m) return;
-      void createImageBitmap(f).then((bmp) => {
+      if (!files.length || !doc || !m) return;
+      for (const f of files) void createImageBitmap(f).then((bmp) => {
         const layer = doc.addLayer(undefined, f.name.replace(/\.[^.]+$/, '') || 'Photo');
         const m = doc; // the photo fits the canvas, not the movie
         const cv = new OffscreenCanvas(m.width, m.height);
@@ -1292,9 +1401,28 @@ export class PaintView {
       this.menu.hidden = true;
       if (m === 'done') void this.done();
       if (m === 'cancel') this.discard();
+      if (m === 'help') this.commands?.run('help');
     });
     this.root.addEventListener('pointerdown', (e) => { if (!this.menu.contains(e.target as Node) && !mode.contains(e.target as Node)) this.menu.hidden = true; }, true);
 
+    // press and hold an unselected Paint, Smudge or Erase button: switch to it and carry the current brush across
+    for (const b of this.root.querySelectorAll<HTMLButtonElement>('.fm-paint-tool[data-tool="paint"], .fm-paint-tool[data-tool="smudge"], .fm-paint-tool[data-tool="erase"]')) {
+      let timer = 0;
+      const clear = (): void => { if (timer) { clearTimeout(timer); timer = 0; } };
+      b.addEventListener('pointerdown', (e) => {
+        clear();
+        const t = b.dataset.tool as PaintTool;
+        if (e.button !== 0 || t === this.tool || this.tools.mode() !== 'paint') return;
+        timer = window.setTimeout(() => {
+          timer = 0;
+          this.carryBrush(t);
+          b.dataset.carried = '1';
+        }, 520);
+      });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, clear);
+      // the click that ends a carry hold must not also open the brush panel
+      b.addEventListener('click', (e) => { if (b.dataset.carried) { delete b.dataset.carried; e.stopImmediatePropagation(); } }, true);
+    }
     for (const b of this.root.querySelectorAll<HTMLButtonElement>('.fm-paint-tool')) {
       b.addEventListener('click', () => {
         const t = b.dataset.tool;
@@ -1379,22 +1507,24 @@ export class PaintView {
       else { this.closePanels(this.colour); this.colour.open(this.colourBtn); }
     });
 
-    const slider = (node: HTMLElement, kind: 'size' | 'opacity'): void => {
-      let id = -1;
-      const set = (e: PointerEvent): void => {
-        const r = node.getBoundingClientRect();
-        const v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
-        this.setState(kind === 'size' ? { size: v } : { opacity: Math.max(0.01, v) });
-        this.showHud(kind);
-      };
-      node.addEventListener('pointerdown', (e) => { id = e.pointerId; node.setPointerCapture(id); set(e); });
-      node.addEventListener('pointermove', (e) => { if (e.pointerId === id) set(e); });
-      const end = (e: PointerEvent): void => { if (e.pointerId !== id) return; id = -1; setHidden(this.hud, true); };
-      node.addEventListener('pointerup', end);
-      node.addEventListener('pointercancel', end);
+    const sliderHost = {
+      apply: (kind: SliderKind, v: number, fine: boolean): void => {
+        this.setState(kind === 'size' ? { size: v } : kind === 'opacity' ? { opacity: Math.max(0.01, v) } : { strength: v });
+        this.showHud(kind, fine);
+      },
+      end: (): void => this.holdHud(),
     };
-    slider(this.sizeSlider, 'size');
-    slider(this.opacitySlider, 'opacity');
+    const nodes: Record<SliderKind, HTMLElement> = { size: this.sizeSlider, opacity: this.opacitySlider, strength: this.strengthSlider };
+    for (const k of ['size', 'opacity', 'strength'] as SliderKind[]) wireSlider(nodes[k], k, () => this.state(this.brush())[k] ?? 0, sliderHost);
+    // the preview bubble stays up a moment after the slider lets go so its marker buttons can be pressed
+    this.hud.addEventListener('pointerenter', () => clearTimeout(this.hudTimer));
+    this.hud.addEventListener('pointerleave', () => this.holdHud(700));
+    this.hud.addEventListener('click', (e) => {
+      const act = (e.target as HTMLElement).closest<HTMLElement>('[data-h]')?.dataset.h;
+      if (this.hudKind === 'strength' || !act) return;
+      if (act === 'plus') this.slots?.storeNext(this.hudKind); else this.slots?.clearAt(this.hudKind);
+      this.holdHud();
+    });
     this.holdUndoBtn.bind(this.undoBtn, () => this.undo());
     this.holdRedoBtn.bind(this.redoBtn, () => this.redo());
 
@@ -1596,17 +1726,20 @@ export class PaintView {
     }
     if (mod && e.key.toLowerCase() === 'z') { if (e.shiftKey) this.redo(); else this.undo(); }
     else if (mod && e.key.toLowerCase() === 'y') this.redo();
+    else if (mod && e.key === '0') this.fit();
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'd') this.reloadSelection();
     else if (mod && e.key.toLowerCase() === 'd') this.setSelection(null);
     else if (mod && e.key.toLowerCase() === 's') { void this.done(true); handled = false; }
     else if (mod) handled = false;
     else if (e.code === 'Space') { this.space = true; }
+    else if (e.key === 'Escape' && this.previewSaved) this.togglePreview();
     else if (e.key === 'Escape') {
-      const open = [this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
+      if (this.strip.closeMenus()) { e.preventDefault(); e.stopPropagation(); return; }
+      const open =[this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
       if (open) { this.closePanels(); this.clip.hide(); this.menu.hidden = true; this.syncChrome(); }
       else if (this.pickArmed || this.dropper.continuing) { this.pickArmed = false; this.dropper.stopContinue(); this.syncChrome(); }
       else if (this.tools.mode() !== 'paint') this.tools.cancel();
-      else void this.done();
+      else if (this.content()?.kind !== 'flipbook') void this.done(); // a Flipbook is left by Finish, never by Escape
     }
     else if (e.key === 'Enter') { if (this.tools.mode() !== 'paint') this.tools.finish(); else void this.done(); }
     else if (e.key === '0') this.fit();
@@ -1626,7 +1759,9 @@ export class PaintView {
       const n = t2?.frames.length ?? 1;
       const dir = e.key === ',' || e.key === 'ArrowLeft' ? -1 : 1;
       const base = this.navBase();
-      void this.gotoFrame(base.row, (base.index + dir + n) % n);
+      // the arrows stop at the first and last drawing; they wrap only when the movie loops and Shift is held
+      const wrap = this.engine.movie?.playback === 'loop' && e.shiftKey;
+      void this.gotoFrame(base.row, wrap ? (base.index + dir + n) % n : Math.max(0, Math.min(n - 1, base.index + dir)));
     } else handled = false;
     if (handled) { e.preventDefault(); e.stopPropagation(); }
   }
@@ -1658,7 +1793,23 @@ export class PaintView {
     this.view.oy = o.y;
   }
 
+  /** Replays a stroke that began while the frame was busy, once it is ready. */
+  private flushQueued(): void {
+    const q = this.queuedDown;
+    if (!q) return;
+    this.queuedDown = null;
+    setClass(this.root, 'is-waiting', false);
+    if (!this.doc || this.busy) return;
+    try { this.down(q.e); } catch { /* the pointer already ended */ }
+    if (q.released) this.up(q.e);
+  }
+
   private down(e: PointerEvent): void {
+    if (this.busy && this.doc && e.button === 0) {
+      this.queuedDown = { e, released: false };
+      setClass(this.root, 'is-waiting', true);
+      return;
+    }
     if (!this.doc || this.busy) return;
     this.closePanels();
     const cv = this.canvas;
@@ -1741,7 +1892,7 @@ export class PaintView {
     }
     this.strokeId = target.id;
     this.stroke = new Stroke(target.raster, target.id, {
-      tool, brush: b, color, size: st.size, opacity: st.opacity,
+      tool, brush: this.tool === 'smudge' ? { ...b, pickup: Math.max(0.02, Math.min(1, 1 - (st.strength ?? 0.5))) } : b, color, size: st.size, opacity: st.opacity,
       alphaLock: target.alphaLock, selection: this.selection, zoom: sc.zoom, dynamicScaling: sc.dynamic,
       seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b),
     });
@@ -1889,6 +2040,7 @@ export class PaintView {
   }
 
   private up(e: PointerEvent, cancelled = false): void {
+    if (this.queuedDown && this.queuedDown.e.pointerId === e.pointerId) { if (cancelled) { this.queuedDown = null; setClass(this.root, 'is-waiting', false); } else this.queuedDown.released = true; return; }
     if (e.pointerType === 'touch') {
       const info = this.touches.get(e.pointerId);
       this.touches.delete(e.pointerId);
@@ -1902,6 +2054,7 @@ export class PaintView {
           this.gesture = null;
           if (quick && g.count === 2 && gesturePrefsNow().undoGestures) this.undo();
           if (quick && g.count === 3 && gesturePrefsNow().undoGestures) this.redo();
+          if (quick && g.count === 4 && gesturePrefsNow().undoGestures) this.togglePreview();
           if (g.moved && g.count === 2 && this.dLast && isQuickPinchIn(g.d0, this.dLast, ms)) { this.fit(); this.say('Fit'); }
           this.dLast = 0;
         }
@@ -1958,6 +2111,9 @@ export class PaintView {
     const ang = pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : 0;
     const prev = this.gesture;
     const r = this.canvas.getBoundingClientRect();
+    if (!prev) this.view0 = { ...this.view };
+    // a third finger landing: the two-finger pinch so far is undone, three fingers never move the canvas
+    if (pts.length >= 3) { if (this.view0) Object.assign(this.view, this.view0); this.tri.begin(cx, cy); this.full = true; this.redraw(); }
     const anchor = screenToCanvas(this.view, cx - r.left, cy - r.top);
     this.gesture = { d, ang, cx, cy, scale: this.view.scale, rot: this.view.rot, anchor, d0: prev?.d0 ?? d, count: Math.max(prev?.count ?? 0, pts.length), t: prev?.t ?? performance.now(), moved: prev?.moved ?? false };
     // holding still keeps undoing (two fingers) or redoing (three)
@@ -1972,6 +2128,16 @@ export class PaintView {
     if (!g) return;
     const pts = [...this.touches.values()];
     if (pts.length < 2) return;
+    if (pts.length >= 3 || g.count >= 3) {
+      // three fingers: swipe down for the Copy & Paste menu, scrub to clear; they never pan or zoom
+      const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      if (Math.hypot(mx - g.cx, my - g.cy) > 12) { g.moved = true; this.holdTouch.stop(); }
+      if (pts.length < 3 || !gesturePrefsNow().undoGestures) return;
+      const hit = this.tri.update(mx, my);
+      if (hit === 'swipe-down') this.clip.openMenu(mx, g.cy + 24);
+      else if (hit === 'scrub') this.clip.clear();
+      return;
+    }
     const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
     const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
@@ -1989,6 +2155,27 @@ export class PaintView {
   }
 
   private dLast = 0;
+  private readonly tri = new TriSwipe();
+  private view0: { scale: number; ox: number; oy: number; rot: number } | null = null;
+  private previewSaved: { scale: number; ox: number; oy: number; rot: number } | null = null;
+
+  /** Four-finger tap: the picture alone, full screen; tap again (or Escape) to bring the tools back. */
+  private togglePreview(): void {
+    const on = !this.previewSaved;
+    if (on) {
+      this.closePanels();
+      this.clip.hide();
+      this.previewSaved = { ...this.view };
+      setClass(this.root, 'is-preview', true);
+      this.fit(true);
+    } else {
+      setClass(this.root, 'is-preview', false);
+      Object.assign(this.view, this.previewSaved);
+      this.previewSaved = null;
+      this.full = true;
+      this.redraw();
+    }
+  }
 }
 
 function unite(a: Rect, b: Rect): Rect {

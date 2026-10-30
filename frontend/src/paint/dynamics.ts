@@ -156,6 +156,44 @@ export function baseAngle(brush: Brush): number {
   return brush.tip === 'chisel' && !brush.followStroke ? (-40 * Math.PI) / 180 : 0;
 }
 
+// ---- colour --------------------------------------------------------------
+
+/** r g b 0..255 to h s v, each 0..1. */
+export function rgbToHsv(r: number, g: number, b: number, out: number[]): void {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d > 0) {
+    if (mx === r) h = ((g - b) / d + 6) % 6;
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  out[0] = h; out[1] = mx === 0 ? 0 : d / mx; out[2] = mx / 255;
+}
+
+/** h wraps, s and v are clamped; fills out with r g b 0..255. */
+export function hsvToRgb(h: number, s: number, v: number, out: number[]): void {
+  h = h - Math.floor(h);
+  s = s < 0 ? 0 : s > 1 ? 1 : s;
+  v = v < 0 ? 0 : v > 1 ? 1 : v;
+  const i = Math.floor(h * 6), f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  let r = v, g = t, b = p;
+  switch (i % 6) {
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  out[0] = r * 255; out[1] = g * 255; out[2] = b * 255;
+}
+
+/** True when a brush needs the per-pixel stroke colour path (colour, wet mix, build-up modes, pooled edges, relief). */
+export function needsColourPath(b: Brush): boolean {
+  return !!(b.colorDyn || b.wet || b.render || (b.wetEdges ?? 0) > 0 || (b.bump ?? 0) > 0);
+}
+
 // ---- seeded PRNG -----------------------------------------------------------
 
 export function mulberry32(seed: number): () => number {

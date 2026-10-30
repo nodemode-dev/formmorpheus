@@ -47,6 +47,13 @@ export class CropResizeDialog extends Dialog {
   private ox = 0;
   private oy = 0;
   private drag: { h: Handle; px: number; py: number; from: CanvasRect } | null = null;
+  /** Preview zoom (1 = whole extent) and pan in view css px; a wheel, a pinch, or a drag on empty space moves them. */
+  private zoom = 1;
+  private panX = 0;
+  private panY = 0;
+  private panning: { id: number; x: number; y: number; px: number; py: number } | null = null;
+  private readonly fingers = new Map<number, { x: number; y: number }>();
+  private pinch: { d: number; zoom: number; mx: number; my: number } | null = null;
   private readonly view = el<HTMLElement>('<div class="fm-crop-view"><canvas></canvas></div>');
   private readonly cv = q<HTMLCanvasElement>(this.view, 'canvas');
   private readonly modeBtns = (['crop', 'resample'] as const).map((m) => {
@@ -116,6 +123,7 @@ export class CropResizeDialog extends Dialog {
     this.box = { ...this.base() };
     this.pct = 100;
     this.scaleIn.value = '100';
+    this.zoom = 1; this.panX = 0; this.panY = 0;
     this.sync();
   }
 
@@ -158,7 +166,9 @@ export class CropResizeDialog extends Dialog {
     if (writeFields) this.fields.forEach((f, i) => { f.value = String([this.box.x, this.box.y, this.box.w, this.box.h][i]); });
     const b = this.target();
     const mp = Math.round((b.w * b.h) / 1e5) / 10;
-    setText(this.readout, `${this.base().w} × ${this.base().h}  →  ${b.w} × ${b.h} px · ${mp} MP`);
+    // Quality: how much of the original resolution the pictures keep once scaled (100% or more loses nothing)
+    const quality = crop ? '' : ` · ${t('Quality')} ${Math.round(Math.min(b.w / this.base().w, b.h / this.base().h) * 100)}%`;
+    setText(this.readout, `${this.base().w} × ${this.base().h}  →  ${b.w} × ${b.h} px · ${mp} MP${quality}`);
     this.draw();
   }
 
@@ -178,10 +188,11 @@ export class CropResizeDialog extends Dialog {
     this.pct = 100;
     this.scaleIn.value = '100';
     this.lock = false;
+    this.zoom = 1; this.panX = 0; this.panY = 0;
     this.linkBox.checked = false;
     this.interp = 'bilinear';
     this.interpSel.value = 'bilinear';
-    setText(this.note, `${t('Canvas')} ${a.canvas.w} × ${a.canvas.h} · ${t('Stage')} ${a.stage.w} × ${a.stage.h}. ${a.flipbook ? t('Every frame of the Flipbook shares the canvas.') : t('Pixels outside the new edges are cleared; new area is transparent.')}`);
+    setText(this.note, `${t('Canvas')} ${a.canvas.w} × ${a.canvas.h} · ${t('Stage')} ${a.stage.w} × ${a.stage.h}. ${a.flipbook ? t('Every frame of the Flipbook shares the canvas.') : t('Pixels outside the new edges are cleared; new area is transparent.')} ${t('Scroll or pinch to zoom the preview; middle-drag, Alt-drag or two fingers to pan.')}`);
     this.resolve?.(null);
     const p = new Promise<CropResult | null>((res) => { this.resolve = res; });
     this.open(this.doneBtn);
@@ -203,10 +214,25 @@ export class CropResizeDialog extends Dialog {
     const r = this.cv.getBoundingClientRect();
     const w = Math.max(1, r.width), h = Math.max(1, r.height);
     const e = this.extent();
-    this.k = Math.min(w / e.w, h / e.h);
-    this.ox = (w - e.w * this.k) / 2 - e.x * this.k;
-    this.oy = (h - e.h * this.k) / 2 - e.y * this.k;
+    const kb = Math.min(w / e.w, h / e.h);
+    const ox0 = (w - e.w * kb) / 2 - e.x * kb, oy0 = (h - e.h * kb) / 2 - e.y * kb;
+    // zoom about the middle of the view, then pan
+    this.k = kb * this.zoom;
+    this.ox = w / 2 + (ox0 - w / 2) * this.zoom + this.panX;
+    this.oy = h / 2 + (oy0 - h / 2) * this.zoom + this.panY;
     return { w, h };
+  }
+
+  /** Zooms the preview about a point (view css px). */
+  private zoomAt(px: number, py: number, z: number): void {
+    const r = this.cv.getBoundingClientRect();
+    const nz = Math.min(24, Math.max(1, z));
+    const f = nz / this.zoom;
+    this.panX = (px - r.width / 2) - (px - r.width / 2 - this.panX) * f;
+    this.panY = (py - r.height / 2) - (py - r.height / 2 - this.panY) * f;
+    this.zoom = nz;
+    if (nz === 1) { this.panX = 0; this.panY = 0; }
+    this.draw();
   }
 
   private draw(): void {
@@ -281,16 +307,57 @@ export class CropResizeDialog extends Dialog {
 
   private bindDrag(): void {
     const local = (e: PointerEvent): [number, number] => { const r = this.cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    this.cv.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const [px, py] = local(e as unknown as PointerEvent);
+      this.zoomAt(px, py, this.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018)));
+    }, { passive: false });
+    this.cv.addEventListener('dblclick', (e) => { if (e.altKey) this.zoomAt(0, 0, 1); });
+    this.cv.addEventListener('contextmenu', (e) => e.preventDefault());
     this.cv.addEventListener('pointerdown', (e) => {
       const [px, py] = local(e);
-      const h = this.hit(px, py);
-      if (!h) return;
-      this.drag = { h, px, py, from: { ...this.box } };
       this.cv.setPointerCapture(e.pointerId);
+      if (e.pointerType === 'touch') {
+        this.fingers.set(e.pointerId, { x: px, y: py });
+        if (this.fingers.size === 2) {
+          // a second finger: pinch and pan, and drop any box drag
+          this.drag = null;
+          const [a, b] = [...this.fingers.values()];
+          this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+          return;
+        }
+      }
+      const h = e.button === 1 || e.button === 2 || e.altKey ? null : this.hit(px, py);
+      if (!h) {
+        // empty space, the middle or right button, or Alt: the picture pans
+        this.panning = { id: e.pointerId, x: px, y: py, px: this.panX, py: this.panY };
+        e.preventDefault();
+        return;
+      }
+      this.drag = { h, px, py, from: { ...this.box } };
       e.preventDefault();
     });
     this.cv.addEventListener('pointermove', (e) => {
       const [px, py] = local(e);
+      if (this.fingers.has(e.pointerId)) {
+        this.fingers.set(e.pointerId, { x: px, y: py });
+        if (this.pinch && this.fingers.size >= 2) {
+          const [a, b] = [...this.fingers.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+          const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          // the two fingers moving together pan; moving apart or together zoom
+          this.panX += mx - this.pinch.mx; this.panY += my - this.pinch.my;
+          this.pinch.mx = mx; this.pinch.my = my;
+          this.zoomAt(mx, my, this.pinch.zoom * (d / this.pinch.d));
+          return;
+        }
+      }
+      if (this.panning && this.panning.id === e.pointerId) {
+        this.panX = this.panning.px + (px - this.panning.x);
+        this.panY = this.panning.py + (py - this.panning.y);
+        this.draw();
+        return;
+      }
       if (!this.drag) {
         const h = this.hit(px, py);
         this.cv.style.cursor = !h ? '' : h === 'move' ? 'move' : `${h === 'n' || h === 's' ? 'ns' : h === 'e' || h === 'w' ? 'ew' : h === 'nw' || h === 'se' ? 'nwse' : 'nesw'}-resize`;
@@ -300,7 +367,12 @@ export class CropResizeDialog extends Dialog {
       this.box = this.limit(this.dragged(d.h, d.from, Math.round((px - d.px) / this.k), Math.round((py - d.py) / this.k)));
       this.sync();
     });
-    const end = (): void => { this.drag = null; };
+    const end = (e: PointerEvent): void => {
+      this.fingers.delete(e.pointerId);
+      if (this.fingers.size < 2) this.pinch = null;
+      if (this.panning?.id === e.pointerId) this.panning = null;
+      this.drag = null;
+    };
     this.cv.addEventListener('pointerup', end);
     this.cv.addEventListener('pointercancel', end);
   }

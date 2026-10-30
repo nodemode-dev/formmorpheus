@@ -3,6 +3,7 @@
 // the brush store (ui/brush-store.ts) keeps current with renames, edits and imports.
 
 import type { Brush, TipShape } from './types';
+import { ANIMATION_BRUSHES } from './brushes-animation';
 
 const BASE: Omit<Brush, 'id' | 'name' | 'set' | 'presets'> = {
   tip: 'round',
@@ -312,7 +313,11 @@ export const DEFAULT_PAINT = 'studio-ink';
 export const DEFAULT_SMUDGE = 'wet-blend';
 export const DEFAULT_ERASE = 'round-paint';
 
-const registry = new Map<string, Brush>(BRUSHES.map((b) => [b.id, b]));
+/** Every starter brush: the Classic library, then the Animation library. */
+export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES];
+const starterMap = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
+
+const registry = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
 
 export function brushById(id: string): Brush | undefined {
   return registry.get(id);
@@ -326,4 +331,4 @@ export function unregisterBrush(id: string): void { registry.delete(id); }
 export function allBrushes(): Brush[] { return Array.from(registry.values()); }
 
 /** The untouched starter brush of an id. */
-export function starterBrush(id: string): Brush | undefined { return BRUSHES.find((b) => b.id === id); }
+export function starterBrush(id: string): Brush | undefined { return starterMap.get(id); }

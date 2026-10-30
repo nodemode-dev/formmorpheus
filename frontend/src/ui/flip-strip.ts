@@ -9,6 +9,7 @@ import { isMaskRow } from '../engine/flip-draw';
 import { flipDuration } from '../engine/flip-ops';
 import { FlipPreview } from './flip-preview';
 import { FlipSelect, Lasso } from './flip-select';
+import { ScrubWheel } from './flip-wheel';
 import { loadPrefs } from './prefs';
 import { BLEND_MODES, HIGHLIGHTS, type BlendMode, type Content, type FlipTrack, type FlipbookFrame, type Highlight } from '../engine/types';
 import { el, patchList, q, setClass, setHidden, setStyleVar, setText } from './dom';
@@ -57,6 +58,8 @@ const ICO = {
   multi: svg('<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8" stroke-dasharray="2.4 2.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8" stroke-dasharray="2.4 2.4"/><path d="M14.5 17l2.2 2.2 4-4.4"/>'),
   chev: svg('<path d="M7 10l5 5 5-5"/>'),
   mini: svg('<rect x="3" y="14" width="18" height="6" rx="2"/><path d="M12 11V4m-3 3 3-3 3 3"/>'),
+  prev: svg('<path d="M15 6l-6 6 6 6"/>'),
+  next: svg('<path d="M9 6l6 6-6 6"/>'),
 };
 const glyph = (s: string, size = 16): string => `<span class="icon" style="width:${size}px;height:${size}px" aria-hidden="true">${s}</span>`;
 
@@ -120,17 +123,23 @@ export class FlipStrip {
   /** Called after every paint; `true` when the thumbnails were thrown away (the Mini Flipbook redraws its own). */
   onPaint: ((invalid: boolean) => void) | null = null;
   private miniBtn: HTMLElement | null = null;
+  private stepHeld = false;
+  /** The scrub wheel with Scrub Lock in the strip's header. */
+  readonly wheel: ScrubWheel;
 
   constructor(private readonly host: StripHost) {
     this.root = el<HTMLElement>(
       `<div class="fm-fs" tabindex="0" role="group" aria-label="Flipbook frames">` +
         `<div class="fm-fs-head"><button class="fm-fs-play" type="button"><span class="fm-fs-play-ico"></span><span class="fm-fs-play-lab">Play</span></button>` +
-        `<span class="fm-fs-grip" aria-hidden="true"></span>` +
-        `<button class="fm-fs-ib" data-act="mini" type="button" title="Mini Flipbook" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="preview" type="button" title="Mini preview" aria-label="Mini preview">${glyph(ICO.preview, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="frame" type="button" title="Add frame" aria-label="Add frame">${icon('plus', 18)}</button></div>` +
+        `<button class="fm-fs-ib fm-fs-step" data-act="prev" type="button" title="Previous drawing (hold for the first)" aria-label="Previous drawing">${glyph(ICO.prev, 16)}</button>` +
+        `<button class="fm-fs-ib fm-fs-step" data-act="next" type="button" title="Next drawing (hold for the last)" aria-label="Next drawing">${glyph(ICO.next, 16)}</button>` +
+        `<span class="fm-fs-grip" aria-hidden="true"></span><span class="fm-fs-wheelslot"></span>` +
+        `<button class="fm-fs-ib has-lab" data-act="mini" type="button" title="Mini Flipbook: a small floating strip with a scrub wheel" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}<span class="fm-fs-iblab">Mini</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="preview" type="button" title="Mini preview: watch the loop while you draw" aria-label="Mini preview">${glyph(ICO.preview, 18)}<span class="fm-fs-iblab">Preview</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}<span class="fm-fs-iblab">Select</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}<span class="fm-fs-iblab">Track</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="frame" type="button" title="Add frame" aria-label="Add frame">${icon('plus', 18)}<span class="fm-fs-iblab">Frame</span></button>` +
+        `<button class="fm-fs-ib" data-act="hide" type="button" title="Hide or show the frames" aria-label="Hide frames">${glyph(ICO.chev, 16)}</button></div>` +
         `<div class="fm-fs-body"><div class="fm-fs-rulerrow"><div class="fm-fs-corner"></div><div class="fm-fs-ruler"><div class="fm-fs-ruler-in"></div></div></div>` +
         `<div class="fm-fs-rows"></div><div class="fm-fs-drop" hidden></div></div></div>`);
     this.body = q(this.root, '.fm-fs-body');
@@ -139,6 +148,9 @@ export class FlipStrip {
     this.multiBtn = q(this.root, '[data-act="multi"]');
     this.miniBtn = q(this.root, '[data-act="mini"]');
     this.head = q(this.root, '.fm-fs-head');
+    this.wheel = new ScrubWheel(this.host);
+    this.wheel.onScrub = () => { this.scrubbing = this.wheel.scrubbing; this.onScrub?.(); };
+    q(this.root, '.fm-fs-wheelslot').appendChild(this.wheel.root);
     this.playBtn = q(this.root, '.fm-fs-play');
     this.playIco = q(this.root, '.fm-fs-play-ico');
     this.playLab = q(this.root, '.fm-fs-play-lab');
@@ -193,8 +205,10 @@ export class FlipStrip {
   }
 
   private clampScroll(): void {
-    const max = Math.max(0, this.cols * COL - this.laneW + COL);
-    this.sx = Math.max(0, Math.min(max, this.sx));
+    // the ends can reach the centre mark so the first and last frames can be centred too
+    const half = Math.floor(this.laneW / 2);
+    const max = Math.max(0, this.cols * COL - this.laneW + COL) + half;
+    this.sx = Math.max(-half, Math.min(max, this.sx));
   }
 
   private paint(): void {
@@ -217,13 +231,13 @@ export class FlipStrip {
     setText(this.playLab, playing ? 'Pause' : 'Play');
 
     this.measure();
-    const sel = `${active?.id ?? ''}:${ai}`;
+    const sel = `${active?.id ?? ''}:${ai}:${this.laneW}`;
     if (sel !== this.lastSel) {
       this.lastSel = sel;
+      // centre-locked: the open frame sits mid-strip and the frames scroll under it
       const from = aStart * COL;
       const to = (aStart + aHold) * COL;
-      if (from < this.sx) this.sx = from;
-      else if (to > this.sx + this.laneW) this.sx = Math.min(from, to - this.laneW);
+      this.sx = Math.round((from + to) / 2 - this.laneW / 2);
     }
     this.clampScroll();
     setStyleVar(this.root, '--sx', `${-this.sx}px`);
@@ -986,6 +1000,8 @@ export class FlipStrip {
       else if (act === 'frame') this.addFrame(e.altKey);
       else if (act === 'track') this.addTrack();
       else if (act === 'mini') this.onMini?.();
+      else if (act === 'hide') setClass(this.root, 'is-collapsed', !this.root.classList.contains('is-collapsed'));
+      else if (act === 'prev' || act === 'next') { if (this.stepHeld) { this.stepHeld = false; return; } this.step(act === 'next' ? 1 : -1); }
       else if (act === 'multi') {
         if (this.reloaded) { this.reloaded = false; return; }
         this.sel.multi = !this.sel.multi;
@@ -993,6 +1009,23 @@ export class FlipStrip {
         this.paint();
       }
     });
+    // Previous / Next Drawing: a long press jumps to the first or last drawing
+    for (const act of ['prev', 'next'] as const) {
+      const b = q(this.root, `[data-act="${act}"]`);
+      let timer = 0;
+      b.addEventListener('pointerdown', () => {
+        this.stepHeld = false;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          this.stepHeld = true;
+          const t = this.host.content()?.flip[this.host.row()];
+          if (t) this.host.select(this.host.row(), act === 'next' ? t.frames.length - 1 : 0);
+        }, LONG_PRESS);
+      });
+      const stop = (): void => window.clearTimeout(timer);
+      b.addEventListener('pointerup', stop);
+      b.addEventListener('pointerleave', stop);
+    }
     // press and hold Multi-select brings the previous selection back
     this.multiBtn.addEventListener('pointerdown', () => {
       window.clearTimeout(this.reloadTimer);
@@ -1174,6 +1207,14 @@ export class FlipStrip {
         return false;
       default: return false;
     }
+  }
+
+  /** Closes the frame and track menus; true when one was open (Escape then stops there). */
+  closeMenus(): boolean {
+    const was = this.cellMenu.isOpen || this.rowMenu.isOpen;
+    this.cellMenu.hide();
+    this.rowMenu.hide();
+    return was;
   }
 
   /** Cells into the open frame's hold the playhead sits at. */

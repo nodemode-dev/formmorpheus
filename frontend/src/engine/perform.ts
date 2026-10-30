@@ -2,7 +2,8 @@
 // The capture and reduce steps follow the owner's formvfx Motion Sketch (one sample per frame, then
 // Ramer-Douglas-Peucker with a tolerance); smoothing here is a zero-phase Gaussian so the take does not trail the hand.
 // Pure, no DOM.
-import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
+import type { Content, Ease, Key, KeyKind, KeyLane, Movie } from './types';
+import { end, locate, sourceFrames } from './model';
 import { KEY_KINDS, channelSpec, kindSpec, laneOf } from './keys';
 
 export interface Take {
@@ -177,7 +178,21 @@ export function reduceKeys(keys: Key[], tolerance: number): Key[] {
 
 const KIND_ORDER = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
-export function applyTake(c: Content, take: Take, ease: Ease = 'linear'): Content {
+/**
+ * Longest duration content `id` may grow to when a take outruns it: up to the next block on its track, the
+ * movie's end and the end of its source media. Never below its current duration.
+ */
+export function roomFor(movie: Movie, id: string): number {
+  const at = locate(movie, id);
+  if (!at) return Number.POSITIVE_INFINITY;
+  const c = at.content;
+  let stop = Math.max(movie.duration, end(c));
+  for (const o of at.track.content) if (o.id !== id && o.start >= end(c)) stop = Math.min(stop, o.start);
+  const src = sourceFrames(movie, c) - c.offset;
+  return Math.max(c.duration, Math.min(stop - c.start, c.kind === 'video' || c.kind === 'audio' ? src : Number.POSITIVE_INFINITY));
+}
+
+export function applyTake(c: Content, take: Take, ease: Ease = 'linear', room = Number.POSITIVE_INFINITY): Content {
   const spec = kindSpec(take.kind);
   const existing = laneOf(c, take.kind);
   const options: Record<string, string | number | boolean> = {};
@@ -196,10 +211,11 @@ export function applyTake(c: Content, take: Take, ease: Ease = 'linear'): Conten
     changed = true;
   }
   if (!changed) return c;
-  const lane: KeyLane = existing ? { ...existing, channels } : { kind: take.kind, expanded: true, channels, options };
+  const lane: KeyLane = existing ? { ...existing, channels } : { kind: take.kind, expanded: false, channels, options };
   const rest = c.keys.filter((l) => l.kind !== take.kind);
   rest.push(lane);
   rest.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0));
-  const duration = take.to >= c.duration ? Math.floor(take.to) + 1 : c.duration;
+  // content the take outruns grows to meet it, as far as the neighbours and the movie allow
+  const duration = take.to >= c.duration ? Math.max(c.duration, Math.min(room, Math.floor(take.to) + 1)) : c.duration;
   return { ...c, keys: rest, duration };
 }

@@ -46,6 +46,8 @@ export class TextCard {
   private readonly wrapW: HTMLInputElement;
   private readonly wrapAuto: HTMLButtonElement;
   private weightKey = '';
+  /** Called when Import font is pressed (the app opens its file picker). */
+  onImportFont: (() => void) | null = null;
 
   constructor(private readonly engine: Engine) {
     const root = el<HTMLElement>(`<div class="fm-tc-body">
@@ -53,6 +55,7 @@ export class TextCard {
       <div class="fm-tc-tabs" role="tablist"></div>
       <div class="fm-tc-pane" data-pane="fonts">
         <div class="fm-tc-fonts" role="listbox" aria-label="Typeface"></div>
+        <div class="fm-tc-row"><span>Add</span><button class="fm-tc-mini" type="button" data-f="importFont" title="Bring in a font file: otf, ttf, woff or woff2">Import font...</button></div>
         <label class="fm-tc-row"><span>Font</span><select class="fm-tc-select" data-f="weight" aria-label="Font variant"></select></label>
         <div class="fm-tc-row"><span>Color</span><label class="fm-tc-swatch"><input type="color" data-f="color" aria-label="Color"></label><span class="fm-tc-hex"></span></div>
         <div class="fm-tc-row"><span>Style</span><div class="fm-tc-seg" data-g="flags"></div></div>
@@ -77,6 +80,7 @@ export class TextCard {
     this.strokeW = q<HTMLInputElement>(root, '[data-f="strokeW"]');
     this.wrapW = q<HTMLInputElement>(root, '[data-f="wrapW"]');
     this.wrapAuto = q<HTMLButtonElement>(root, '[data-f="wrapAuto"]');
+    q<HTMLButtonElement>(root, '[data-f="importFont"]').addEventListener('click', () => this.onImportFont?.());
 
     const tabBar = q(root, '.fm-tc-tabs');
     for (const [id, label] of [['fonts', 'Fonts'], ['format', 'Format']] as const) {

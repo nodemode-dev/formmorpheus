@@ -21,7 +21,9 @@ export interface HomeFilesDeps {
 }
 
 type Tab = 'recent' | 'projects' | 'outputs';
-type Sort = 'opened' | 'name' | 'size' | 'kind';
+type Sort = 'opened' | 'name' | 'size' | 'kind' | 'manual';
+const ORDER = 'formmorpheus.theater-order';
+const readOrder = (): string[] => { try { const v = JSON.parse(localStorage.getItem(ORDER) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []; } catch { return []; } };
 type View = 'grid' | 'list';
 type Thumb = { name: string } | { path: string; project: boolean } | null;
 
@@ -37,7 +39,7 @@ function readPrefs(): { tab: Tab; sort: Sort; view: View } {
   try {
     const v = JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<typeof out>;
     if (v.tab === 'recent' || v.tab === 'projects' || v.tab === 'outputs') out.tab = v.tab;
-    if (v.sort === 'opened' || v.sort === 'name' || v.sort === 'size' || v.sort === 'kind') out.sort = v.sort;
+    if (v.sort === 'opened' || v.sort === 'name' || v.sort === 'size' || v.sort === 'kind' || v.sort === 'manual') out.sort = v.sort;
     if (v.view === 'grid' || v.view === 'list') out.view = v.view;
   } catch { /* defaults */ }
   return out;
@@ -73,7 +75,7 @@ export class HomeFiles {
         <button class="cv-hf-tab" type="button" role="tab" data-tab="outputs">Outputs</button>
       </div>
       <label class="cv-hf-filter">${icon('search', 14)}<input class="cv-hf-input" type="search" placeholder="Filter files" aria-label="Filter files" spellcheck="false"></label>
-      <label class="cv-hf-sortbox"><span>Sort</span><select class="cv-hf-sort" aria-label="Sort by"><option value="opened">Most recent</option><option value="name">Name</option><option value="size">Size</option><option value="kind">Kind</option></select></label>
+      <label class="cv-hf-sortbox"><span>Sort</span><select class="cv-hf-sort" aria-label="Sort by"><option value="opened">Most recent</option><option value="name">Name</option><option value="size">Size</option><option value="kind">Kind</option><option value="manual">Manual</option></select></label>
       <div class="cv-hf-views" role="group" aria-label="View">
         <button class="cv-hf-view" type="button" data-view="grid" title="Thumbnails" aria-label="Thumbnails">${icon('viewGrid', 16)}</button>
         <button class="cv-hf-view" type="button" data-view="list" title="List" aria-label="List">${icon('viewList', 16)}</button>
@@ -189,7 +191,12 @@ export class HomeFiles {
     if (sort === 'name') shown.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     else if (sort === 'size') shown.sort((a, b) => b.size - a.size);
     else if (sort === 'kind') shown.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
-    else if (this.prefs.tab !== 'recent') shown.sort((a, b) => b.when - a.when);
+    else if (sort === 'manual') {
+      // the person's own order; anything new sits first, newest first
+      const order = readOrder();
+      const at = (k: string): number => { const i = order.indexOf(k); return i < 0 ? -1 : i; };
+      shown.sort((a, b) => at(a.key) - at(b.key) || b.when - a.when);
+    } else if (this.prefs.tab !== 'recent') shown.sort((a, b) => b.when - a.when);
     if (this.opts.limit) shown.splice(this.opts.limit);
     patchList(this.items, shown, { key: (i) => i.key, create: (i) => this.row(i), update: (n, i) => this.fillRow(n, i) });
     const none = this.all.length === 0 ? (this.prefs.tab === 'recent' ? 'Movies you open or save appear here.' : this.prefs.tab === 'projects' ? 'No movies in the library yet. Save a movie to add it.' : 'Exports appear here once you export a movie.') : 'No files match the filter.';
@@ -233,17 +240,38 @@ export class HomeFiles {
       const hit = itemOf(e.target);
       if (!hit || hit.row.classList.contains('is-dragging')) return;
       e.preventDefault();
-      for (const n of Array.from(this.items.querySelectorAll('.is-drop'))) if (n !== hit.row) n.classList.remove('is-drop');
-      setClass(hit.row, 'is-drop', true);
+      for (const n of Array.from(this.items.querySelectorAll('.is-drop, .is-before, .is-after'))) if (n !== hit.row) n.classList.remove('is-drop', 'is-before', 'is-after');
+      // the edges of a movie reorder, its middle stacks
+      const r = hit.row.getBoundingClientRect(), f = (e.clientX - r.left) / Math.max(1, r.width);
+      const side = f < 0.25 ? 'before' : f > 0.75 ? 'after' : null;
+      setClass(hit.row, 'is-before', side === 'before');
+      setClass(hit.row, 'is-after', side === 'after');
+      setClass(hit.row, 'is-drop', side === null);
     });
     this.items.addEventListener('drop', (e) => {
       const hit = itemOf(e.target);
       if (!hit?.item.target) return;
       e.preventDefault();
       const key = e.dataTransfer?.getData('text/plain') ?? '';
-      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop'))) { n.classList.remove('is-dragging'); n.classList.remove('is-drop'); }
+      const side = hit.row.classList.contains('is-before') ? 'before' : hit.row.classList.contains('is-after') ? 'after' : null;
+      for (const n of Array.from(this.items.querySelectorAll('.is-dragging, .is-drop, .is-before, .is-after'))) n.classList.remove('is-dragging', 'is-drop', 'is-before', 'is-after');
+      if (side && key && key !== hit.item.key) { this.moveTo(key, hit.item.key, side); return; }
       void th.dropOn(key, hit.item.target);
     });
+  }
+
+  /** Manual ordering: the dragged movie goes before or after another; the sort turns to Manual. */
+  private moveTo(key: string, over: string, side: 'before' | 'after'): void {
+    const shown = Array.from(this.items.querySelectorAll<HTMLElement>('.cv-hf-item')).map((n) => n.dataset.key ?? '').filter(Boolean);
+    const order = shown.filter((k) => k !== key);
+    const at = order.indexOf(over);
+    if (at < 0) return;
+    order.splice(side === 'before' ? at : at + 1, 0, key);
+    try { localStorage.setItem(ORDER, JSON.stringify(order)); } catch { /* lasts this session only */ }
+    this.prefs.sort = 'manual';
+    this.sort.value = 'manual';
+    this.save();
+    this.render();
   }
 
   private row(i: Item): HTMLElement {

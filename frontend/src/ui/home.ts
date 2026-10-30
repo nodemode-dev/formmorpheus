@@ -4,6 +4,7 @@ import { HomeFiles } from './home-files';
 import { HomeTrash } from './home-trash';
 import { icon } from './icons';
 import { ExamplesRow } from './examples-row';
+import { Popover, popRow } from './popover';
 
 export interface HomeDeps {
   engine: ShellModel;
@@ -21,7 +22,7 @@ export class HomeScreen {
   readonly root = el('<section class="cv-home" aria-label="Home" hidden></section>');
   /** Each page's file browser: Start's short Recent grid and the Recent, Projects and Outputs pages. */
   private readonly pages = new Map<Page, HomeFiles>();
-  private page: Page = 'start';
+  private page: Page = 'projects';
   private forced = false;
   private lastCount = 0;
   private lastId: string | null = null;
@@ -41,15 +42,15 @@ export class HomeScreen {
     const formats = ['FMO', 'PNG', 'JPEG', 'GIF', 'WEBP', 'MP4', 'MOV', 'WAV', 'MP3'].map((f) => `<span class="cv-home-format">${f}</span>`).join('');
     const sizes = PRESETS.map((p, i) => `<button class="cv-home-size" type="button" data-size="${i}"><span class="cv-home-size-box"><span style="aspect-ratio: ${p.w} / ${p.h}"></span></span><span class="cv-home-size-name">${p.name}</span><span class="cv-home-size-meta">${p.w} x ${p.h} px · ${p.fps} fps</span></button>`).join('');
     this.root.innerHTML = `<nav class="cv-home-nav" aria-label="Home">
-      <div class="cv-home-brand">formmorpheus <span>by NodeMode</span></div>
-      ${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
+      <button class="cv-home-brand" type="button" data-brand aria-haspopup="menu" title="About, What's New, Help">formmorpheus <span>by NodeMode</span>${icon('chevronDown', 12)}</button>
+      ${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
       <div class="cv-home-nav-sep"></div>
       <div class="cv-home-nav-title">Create</div>
       ${cmdItem('new', 'newFile', 'New movie')}${cmdItem('new-flipbook', 'flipbook', 'New flipbook')}${cmdItem('open', 'folderOpen', 'Open')}
       <div class="cv-home-nav-foot"><button class="cv-home-nav-item cv-home-back" type="button" data-back hidden>${icon('chevronLeft', 16)}<span>Back to Movie</span></button>${cmdItem('settings', 'settings', 'Preferences')}${cmdItem('help', 'info', 'Help')}</div>
     </nav>
     <div class="cv-home-main">
-      <div class="cv-home-narrow">${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}</div>
+      <div class="cv-home-narrow">${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}</div>
       <div class="cv-home-page" data-page="start">
         <div class="cv-home-head"><div><h1 class="cv-home-title"></h1><p class="cv-home-sub">Open a movie, or start a new movie or flipbook.</p></div></div>
         <div class="cv-home-hero">
@@ -74,7 +75,7 @@ export class HomeScreen {
     </div>`;
     this.back = this.root.querySelector('[data-back]') as HTMLElement;
     const deps = { recent: d.recent, openRecent: d.openRecent, openPath: d.openPath, removeRecent: d.removeRecent, openName: d.openName };
-    const count = (v: Page | 'trash') => (n: number): void => { for (const c of Array.from(this.root.querySelectorAll(`[data-v="${v}"] .cv-home-count`))) setText(c, String(n)); };
+    const count = (v: Page | 'trash') => (n: number): void => { for (const c of Array.from(this.root.querySelectorAll(`[data-v="${v}"] .cv-home-count`))) { setText(c, String(n)); setHidden(c as HTMLElement, n === 0); } };
     const mount = (slot: Page, files: HomeFiles): void => { (this.root.querySelector(`[data-slot="${slot}"]`) as HTMLElement).appendChild(files.root); this.pages.set(slot, files); };
     mount('start', new HomeFiles(deps, { fixed: 'recent', limit: 8, compact: true, onCount: count('recent') }));
     mount('recent', new HomeFiles(deps, { fixed: 'recent', onCount: count('recent') }));
@@ -95,6 +96,15 @@ export class HomeScreen {
       const p = size !== undefined ? PRESETS[Number(size)] : undefined;
       if (p) this.d.engine.newDocument(p.w, p.h, 'Untitled Movie', p.fps, false);
     });
+    const brandPop = new Popover('fm-brand-menu', 220);
+    const brandRows: Array<[string, string]> = [['about', 'About formmorpheus'], ['whats-new', "What's New"], ['help', 'Help Center'], ['reset-examples', 'Reset Examples']];
+    for (const [cmd, label] of brandRows) {
+      const r = popRow(null, label);
+      r.el.addEventListener('click', () => { brandPop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: cmd })); });
+      brandPop.body.appendChild(r.el);
+    }
+    const brandBtn = this.root.querySelector('[data-brand]') as HTMLElement;
+    brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.forced && d.engine.projects.length) { this.forced = false; this.sync(); } });
@@ -125,6 +135,8 @@ export class HomeScreen {
 
   /** The Home button: shows the Home screen over whatever is open, at `page` when given. */
   show(page?: Page): void {
+    // the Theater opens on the Movies grid unless a page is asked for
+    if (!page && this.root.hidden) page = 'projects';
     if (page && page !== this.page) { this.page = page; this.paint(); if (!this.root.hidden) this.fill(); }
     this.forced = true;
     this.sync();

@@ -4,7 +4,7 @@ import { baseValues, easeCurve, evalLane, kindSpec, KEY_KINDS, laneOf, type Chan
 import * as keyOps from '../engine/key-ops';
 import type { KeyClip } from '../engine/key-ops';
 import * as ops from '../engine/ops';
-import { applyTake, Recorder } from '../engine/perform';
+import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { perform } from './perform-ui';
 import { EASES, type Content, type Ease, type KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
@@ -84,6 +84,8 @@ export class ActionMenu {
   private readonly moveBtn: HTMLButtonElement;
   private readonly filterBtn: HTMLButtonElement;
   private readonly levelBtn: HTMLButtonElement;
+  private readonly moveGrp: HTMLElement;
+  private readonly filterGrp: HTMLElement;
   private readonly cards = new Map<KeyKind, Card>();
   private readonly cardHost = el('<div class="fm-kc-host"></div>');
   private view: View = 'action';
@@ -123,6 +125,18 @@ export class ActionMenu {
     const flist = q(filter, '.fm-ka-list');
     for (const k of KEY_KINDS) if (k.group === 'filter') flist.appendChild(this.kindRow(k.kind));
 
+    // one step: the Move and Live Filters lists sit in the Action menu itself, grouped
+    const group = (title: string, list: HTMLElement): HTMLElement => {
+      const g = el('<div class="fm-ka-grp"><div class="fm-ka-ghead"></div></div>');
+      setText(q(g, '.fm-ka-ghead'), title);
+      g.appendChild(list);
+      action.appendChild(g);
+      return g;
+    };
+    this.moveGrp = group('Move', mlist);
+    this.filterGrp = group('Live Filters', flist);
+    setHidden(this.moveBtn, true);
+    setHidden(this.filterBtn, true);
     this.views = { action, motion, filter };
     this.pop.body.append(action, motion, filter, this.cardHost);
     setHidden(this.cardHost, true);
@@ -144,13 +158,24 @@ export class ActionMenu {
     if (this.pop.isOpen) { this.pop.hide(); return; }
     this.anchor = anchor;
     const audio = t.c.kind === 'audio';
-    setHidden(this.moveBtn, audio);
-    setHidden(this.filterBtn, audio);
+    setHidden(this.moveGrp, audio);
+    setHidden(this.filterGrp, audio);
     setHidden(this.levelBtn, !audio);
     this.show('action');
     this.paintKeyed();
     this.pop.showFor(anchor, 'above');
     this.reposition();
+  }
+
+  /** The red Playhead icon: key `kind` at the Playhead and open its card. */
+  openFor(anchor: HTMLElement, kind: KeyKind): void {
+    const t = targetOf(this.engine);
+    if (!t) return;
+    this.anchor = anchor;
+    this.show('action');
+    this.paintKeyed();
+    this.pop.showFor(anchor, 'above');
+    this.choose(kind);
   }
 
   /** Keep the open menu attached to the pill as the Playhead moves. */
@@ -357,7 +382,7 @@ export class ActionMenu {
     if (!take) return;
     const ease = this.state.lastEase;
     const at = Math.max(0, Math.round(take.from));
-    this.engine.run(`${kindSpec(r.kind).label} performance`, (m) => ops.updateContent(m, r.id, (c) => applyTake(laneOf(c, r.kind) ? c : ensureLane(c, r.kind, at, m.addKeyAtStart, ease), take, 'linear')), r.tag);
+    this.engine.run(`${kindSpec(r.kind).label} performance`, (m) => ops.updateContent(m, r.id, (c) => applyTake(laneOf(c, r.kind) ? c : ensureLane(c, r.kind, at, m.addKeyAtStart, ease), take, 'linear', roomFor(m, r.id))), r.tag);
   }
 
   private endRec(): void {
@@ -535,7 +560,8 @@ export class LaneMenu {
     setClass(this.sepA, 'is-gone', false);
     setClass(this.reverse.el, 'is-gone', onKey);
     this.expand.setLabel(`${ctx.expanded ? 'Collapse' : 'Expand'} ${label}`);
-    setClass(this.setEase.el, 'is-gone', onKey);
+    // on a key it eases the stretch that starts at that key
+    setClass(this.setEase.el, 'is-gone', false);
     this.setEase.setDisabled(ctx.prev === null);
     this.del.setLabel(onKey ? 'Delete keyframe' : `Delete ${label}`);
     this.pop.showAt(px, py);

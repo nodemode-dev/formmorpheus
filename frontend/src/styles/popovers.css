@@ -132,7 +132,13 @@
 .fm-tm-list { display: grid; }
 
 .fm-ms { padding: var(--space-2); max-height: calc(100vh - 48px); overflow-y: auto; overscroll-behavior: contain; }
-.fm-ms-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); margin-bottom: var(--space-2); border-radius: var(--radius-pill); background: var(--surface-field); }
+.fm-ms-head { padding: var(--space-3) var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-ms-art { display: grid; justify-items: center; gap: var(--space-1); padding: var(--space-2); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.fm-ms-art img { width: 100%; max-height: 150px; object-fit: contain; border-radius: var(--radius-md); background: var(--surface-field); }
+.fm-ms-art img:not([src]) { visibility: hidden; height: 80px; }
+.fm-ms-art-cap { color: var(--text-muted); font-size: var(--fs-11); }
+.fm-ms-input.fm-ms-wide { width: 150px; }
+.fm-ms-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); margin-bottom: var(--space-2); border-radius: var(--radius-pill); background: var(--surface-field); }
 .fm-ms-tab { height: 30px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-13); cursor: default; }
 .fm-ms-tab:hover { color: var(--text-primary); }
 .fm-ms-tab.is-active { background: var(--accent-color); color: var(--text-on-accent); }

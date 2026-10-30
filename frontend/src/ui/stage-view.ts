@@ -11,7 +11,7 @@ import type { Content, Movie } from '../engine/types';
 import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setText } from './dom';
 import { PerformBanner, perform } from './perform-ui';
-import { applyTake, Recorder } from '../engine/perform';
+import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { WarpOverlay, warpMode } from './warp-view';
 import { BonesOverlay, bonesMode } from './bones-view';
 import { PathView } from './path-view';
@@ -21,6 +21,7 @@ import type { Mat } from '../engine/transform';
 import * as tops from '../engine/transform-ops';
 import { icon } from './icons';
 import { StageBoxMenu } from './stage-box-menu';
+import { anchorMode } from './anchor-mode';
 import { boxOf, frameLines, snapAngle, snapBox, type Box } from './stage-snap';
 import { layoutText } from '../engine/text-layout';
 import { TextStage } from './text-stage';
@@ -117,6 +118,16 @@ export class StageView {
     this.root.appendChild(this.banner.root);
     this.warp = new WarpOverlay(this.space, engine);
     this.paths = new PathView(this.space, engine);
+    this.paths.sectors = (c) => {
+      const m = this.engine.movie;
+      if (!m) return null;
+      const s = this.extent(m, c);
+      const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : canvasCentreOffset(c, m);
+      const out: Array<[number, number]> = [];
+      for (const j of [-1, 0, 1]) for (const i of [-1, 0, 1]) out.push([dc.x + (i * s.w) / 2, dc.y + (j * s.h) / 2]);
+      return out;
+    };
+    anchorMode.onChange(() => this.schedule());
     this.camera = new CameraOverlay(this.space, engine);
     cameraMode.onChange(() => this.schedule());
     warpMode.onChange(() => this.schedule());
@@ -131,7 +142,7 @@ export class StageView {
     window.addEventListener('fm:fonts', () => this.schedule());
     const dbl = (e: MouseEvent): void => {
       const m = this.engine.movie;
-      if (!m || !this.view || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
+      if (!m || !this.view || this.nav.preview || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
       const id = this.pick(m, ...this.nav.local(e));
       const c = id ? locate(m, id)?.content : null;
       if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); }
@@ -354,7 +365,7 @@ export class StageView {
     const m = this.engine.movie;
     const v = this.view;
     // one gesture at a time: a second finger or pen must not orphan the first grab (or its Perform take)
-    if (!m || !v || e.button !== 0 || this.grab) return;
+    if (!m || !v || e.button !== 0 || this.grab || this.nav.preview) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
     const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
@@ -467,7 +478,7 @@ export class StageView {
     if (!take) return;
     const ease = newKeyState().lastEase;
     const at = Math.max(0, Math.round(take.from));
-    this.engine.run('Perform Move and Scale', (mv) => ops.updateContent(mv, r.id, (c) => applyTake(laneOf(c, 'move') ? c : ensureLane(c, 'move', at, mv.addKeyAtStart, ease), take, 'linear')), g.tag);
+    this.engine.run('Perform Move and Scale', (mv) => ops.updateContent(mv, r.id, (c) => applyTake(laneOf(c, 'move') ? c : ensureLane(c, 'move', at, mv.addKeyAtStart, ease), take, 'linear', roomFor(mv, r.id))), g.tag);
   }
 
   /** A held pen still records: every Playhead step repeats the last position. */
@@ -639,7 +650,7 @@ export class StageView {
 
   /** Arrow keys on the focused Stage move the selected content: 1 px, Shift 10 px, Ctrl or Cmd with Shift 100 px. */
   private arrowKey(e: KeyboardEvent): void {
-    if (e.target !== this.root || e.altKey) return;
+    if (e.target !== this.root || e.altKey || this.nav.preview) return;
     const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const d = dir[e.key];
     if (!d || !this.engine.selected.some((c) => this.engine.isOver(c))) return;

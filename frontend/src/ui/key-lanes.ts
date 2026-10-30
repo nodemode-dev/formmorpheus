@@ -82,8 +82,17 @@ function drawGlyph(c: CanvasRenderingContext2D, kind: KeyKind, color: string, cx
   c.fill();
 }
 
-/** Draw every lane of `c`; `top` is the y of the first lane. */
-export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number, chosen?: (kind: KeyKind, frame: number) => boolean): void {
+const CHEV_W = 18;
+/** Centre x of the expand / collapse chevron at the right end of a lane's first row. */
+function chevX(slot: LaneSlot, g: LaneGeom): number {
+  return Math.min(g.x1, g.width) - 14 - (slot.lane.expanded && Math.min(g.x1, g.width) - Math.max(g.x0, 0) > 150 ? GRAPH_PILL_W + 6 : 0);
+}
+function hasChev(slot: LaneSlot, row: LaneRow, g: LaneGeom): boolean {
+  return row === slot.rows[0] && Math.min(g.x1, g.width) - Math.max(g.x0, 0) > 60;
+}
+
+/** Draw every lane of `c`; `top` is the y of the first lane. `thumb` gives a small picture of the content with its effects at a local frame. */
+export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number, chosen?: (kind: KeyKind, frame: number) => boolean, thumb?: (item: Content, local: number) => CanvasImageSource | null): void {
   const w = Math.max(3, g.x1 - g.x0);
   c.save();
   c.font = '600 9px Inter, system-ui, sans-serif';
@@ -103,6 +112,35 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
       c.beginPath();
       c.rect(0, ry, g.width, row.h);
       c.clip();
+      if (!row.channel && w > 120) {
+        // a collapsed lane: a picture of the effect at the Playhead, then the lane's name
+        const lx0 = Math.max(g.x0, 0) + 6;
+        const tp = thumb && local !== undefined ? thumb(item, local) : null;
+        let tx = lx0;
+        if (tp) {
+          const th = row.h - 6, tw = Math.round(th * 1.6);
+          c.drawImage(tp, tx, ry + 3, tw, th);
+          c.strokeStyle = p.accent;
+          c.globalAlpha = 0.5;
+          c.strokeRect(tx + 0.5, ry + 3.5, tw - 1, th - 1);
+          c.globalAlpha = 1;
+          tx += tw + 6;
+        }
+        c.fillStyle = p.text;
+        c.textAlign = 'left';
+        c.fillText(row.label, tx, cy);
+      }
+      if (hasChev(slot, row, g)) {
+        const cx = chevX(slot, g);
+        c.strokeStyle = p.text;
+        c.globalAlpha = 0.7;
+        c.lineWidth = 1.6;
+        c.beginPath();
+        if (slot.lane.expanded) { c.moveTo(cx - 4, cy + 2); c.lineTo(cx, cy - 2); c.lineTo(cx + 4, cy + 2); } else { c.moveTo(cx - 4, cy - 2); c.lineTo(cx, cy + 2); c.lineTo(cx + 4, cy - 2); }
+        c.stroke();
+        c.lineWidth = 1;
+        c.globalAlpha = 1;
+      }
       if (row.channel) {
         for (let i = 0; i + 1 < frames.length; i++) {
           const xa = g.x(frames[i]), xb = g.x(frames[i + 1]);
@@ -182,6 +220,8 @@ export interface LaneHit {
   at: number;
   /** The pointer is on the row's Graph button. */
   graph?: boolean;
+  /** The pointer is on the row's expand / collapse chevron. */
+  toggle?: boolean;
 }
 
 const GRAPH_PILL_W = 38;
@@ -207,6 +247,7 @@ export function hitLanes(item: Content, top: number, x: number, y: number, g: La
         const d = Math.abs(g.x(f) - x);
         if (d < best) { best = d; key = f; }
       }
+      if (key === null && hasChev(slot, row, g) && Math.abs(x - chevX(slot, g)) <= CHEV_W / 2) return { slot, row, key: null, at: Math.round(local(x)), toggle: true };
       return { slot, row, key, at: Math.round(local(x)) };
     }
   }

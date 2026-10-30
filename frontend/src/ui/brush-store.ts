@@ -4,10 +4,15 @@
 // cleared browser profile cannot lose it. IndexedDB holds a copy so the library still loads when the engine
 // is not answering. paint/brushes.ts keeps the live lookup that strokes read.
 
-import { BRUSHES, BRUSH_SETS, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
+import { ALL_STARTERS, BRUSH_SETS, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
+import { ANIMATION_SETS } from '../paint/brushes-animation';
 import type { Brush } from '../paint/types';
 
-export interface BrushSet { id: string; name: string; ids: string[] }
+/** `lib` names the library a set sits in; absent means Classic. */
+export interface BrushSet { id: string; name: string; ids: string[]; lib?: string }
+export interface BrushLib { id: string; name: string }
+
+export const LIB_ANIMATION = 'animation', LIB_CLASSIC = 'classic', LIB_IMPORTED = 'imported-lib';
 
 interface SavedBrush extends Omit<Brush, 'tipImage' | 'grainImage'> {
   tipImage?: { w: number; h: number; key: string; data: string };
@@ -21,7 +26,12 @@ interface Saved {
   names: Record<string, string>;
   tweaks: Record<string, Partial<Brush>>;
   deleted: string[];
+  /** Added with libraries; a file without them opens with every set in Classic. */
+  libs?: BrushLib[];
+  active?: string;
 }
+
+const animId = (n: string): string => `anim-${slug(n)}`;
 
 export const IMPORTED_ID = 'imported';
 const IDB_NAME = 'formmorpheus-brushes', IDB_STORE = 'library', IDB_KEY = 'main';
@@ -63,9 +73,11 @@ function unpack(s: SavedBrush): Brush | null {
 }
 
 function defaults(): Saved {
-  const sets: BrushSet[] = BRUSH_SETS.map((n) => ({ id: slug(n), name: n, ids: BRUSHES.filter((b) => b.set === n).map((b) => b.id) }));
-  sets.push({ id: IMPORTED_ID, name: 'Imported', ids: [] });
-  return { v: 1, sets, custom: {}, names: {}, tweaks: {}, deleted: [] };
+  const sets: BrushSet[] = ANIMATION_SETS.map((n) => ({ id: animId(n), name: n, lib: LIB_ANIMATION, ids: ALL_STARTERS.filter((b) => b.lib === 'animation' && b.set === n).map((b) => b.id) }));
+  for (const n of BRUSH_SETS) sets.push({ id: slug(n), name: n, lib: LIB_CLASSIC, ids: ALL_STARTERS.filter((b) => !b.lib && b.set === n).map((b) => b.id) });
+  sets.push({ id: IMPORTED_ID, name: 'Imported', lib: LIB_IMPORTED, ids: [] });
+  const libs: BrushLib[] = [{ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }, { id: LIB_IMPORTED, name: 'Imported' }];
+  return { v: 1, sets, custom: {}, names: {}, tweaks: {}, deleted: [], libs, active: LIB_ANIMATION };
 }
 
 function idbOpen(): Promise<IDBDatabase | null> {
@@ -112,6 +124,74 @@ class BrushStore {
   subscribe(fn: () => void): () => void { this.subs.add(fn); return () => { this.subs.delete(fn); }; }
 
   sets(): readonly BrushSet[] { return this.st.sets; }
+
+  // ---- libraries ---------------------------------------------------------------
+
+  libs(): readonly BrushLib[] { return this.st.libs!; }
+  lib(id: string): BrushLib | undefined { return this.st.libs!.find((l) => l.id === id); }
+  activeLib(): string { return this.st.active!; }
+  setsOf(lib: string): BrushSet[] { return this.st.sets.filter((s) => (s.lib ?? LIB_CLASSIC) === lib); }
+  libOf(setId: string): string { return this.set(setId)?.lib ?? LIB_CLASSIC; }
+
+  setActiveLib(id: string): void {
+    if (!this.lib(id) || this.st.active === id) return;
+    this.st.active = id;
+    this.refresh();
+  }
+
+  /** Steps to the next (1) or previous (-1) library, wrapping round. */
+  stepLib(by: -1 | 1): string {
+    const l = this.st.libs!, i = l.findIndex((x) => x.id === this.st.active);
+    const id = l[(i + by + l.length) % l.length].id;
+    this.setActiveLib(id);
+    return id;
+  }
+
+  addLib(name: string): string {
+    const id = uid('lib');
+    const base = name.trim().slice(0, 40) || 'New library';
+    const names = new Set(this.st.libs!.map((l) => l.name));
+    let n = base;
+    for (let i = 2; names.has(n); i++) n = `${base} ${i}`;
+    this.st.libs!.push({ id, name: n });
+    this.st.active = id;
+    this.refresh();
+    return id;
+  }
+
+  renameLib(id: string, name: string): boolean {
+    const l = this.lib(id), n = name.trim().slice(0, 40);
+    if (!l || !n) return false;
+    l.name = n;
+    this.refresh();
+    return true;
+  }
+
+  /** The Imported library cannot go: imported brushes need somewhere to land. */
+  canDeleteLib(id: string): boolean { return id !== LIB_IMPORTED && this.st.libs!.length > 1 && !!this.lib(id); }
+
+  removeLib(id: string): void {
+    if (!this.canDeleteLib(id)) return;
+    for (const s of this.setsOf(id)) this.removeSet(s.id);
+    const libs = this.st.libs!;
+    libs.splice(libs.findIndex((l) => l.id === id), 1);
+    if (this.st.active === id) this.st.active = libs[0].id;
+    this.refresh();
+  }
+
+  /** Puts the sets of an imported library file in a new library of their own. */
+  addImportedLibrary(name: string, sets: { name: string; brushes: Brush[] }[]): string {
+    const id = this.addLib(name);
+    const lib = this.lib(id)!;
+    for (const s of sets) {
+      const sid = uid('set');
+      const rec: BrushSet = { id: sid, name: s.name.slice(0, 40) || 'Set', lib: id, ids: [] };
+      this.st.sets.push(rec);
+      for (const b of s.brushes) { this.custom.set(b.id, { ...b, set: rec.name, custom: true }); rec.ids.push(b.id); }
+    }
+    this.refresh(...this.setsOf(id).flatMap((s) => s.ids));
+    return lib.id;
+  }
   set(id: string): BrushSet | undefined { return this.st.sets.find((s) => s.id === id); }
   setOf(brushId: string): BrushSet | undefined { return this.st.sets.find((s) => s.ids.includes(brushId)); }
   rev(id: string): number { return this.revs.get(id) ?? 0; }
@@ -191,9 +271,12 @@ class BrushStore {
 
   addSet(name: string): string {
     const id = uid('set');
-    const imp = this.st.sets.findIndex((s) => s.id === IMPORTED_ID);
-    const rec: BrushSet = { id, name: this.uniqueSetName(name.trim().slice(0, 40) || 'New set'), ids: [] };
-    if (imp >= 0) this.st.sets.splice(imp, 0, rec); else this.st.sets.push(rec);
+    const lib = this.st.active!;
+    const rec: BrushSet = { id, name: this.uniqueSetName(name.trim().slice(0, 40) || 'New set'), ids: [], lib };
+    // After the last set of the active library.
+    let at = -1;
+    this.st.sets.forEach((s, i) => { if ((s.lib ?? LIB_CLASSIC) === lib) at = i; });
+    if (at >= 0) this.st.sets.splice(at + 1, 0, rec); else this.st.sets.push(rec);
     this.refresh();
     return id;
   }
@@ -210,7 +293,7 @@ class BrushStore {
     const s = this.set(id);
     if (!s) return null;
     const nid = uid('set');
-    const rec: BrushSet = { id: nid, name: this.uniqueSetName(`${s.name} copy`), ids: [] };
+    const rec: BrushSet = { id: nid, name: this.uniqueSetName(`${s.name} copy`), ids: [], lib: s.lib };
     this.st.sets.splice(this.st.sets.indexOf(s) + 1, 0, rec);
     for (const bid of s.ids) {
       const src = brushById(bid);
@@ -236,14 +319,19 @@ class BrushStore {
     if (!s || id === before) return;
     this.st.sets.splice(this.st.sets.indexOf(s), 1);
     const at = before ? this.st.sets.findIndex((x) => x.id === before) : -1;
+    if (at >= 0) s.lib = this.st.sets[at].lib;
     if (at < 0) this.st.sets.push(s); else this.st.sets.splice(at, 0, s);
     this.refresh();
   }
 
   stepSet(id: string, by: -1 | 1): void {
-    const i = this.st.sets.findIndex((s) => s.id === id), j = i + by;
-    if (i < 0 || j < 0 || j >= this.st.sets.length) return;
-    [this.st.sets[i], this.st.sets[j]] = [this.st.sets[j], this.st.sets[i]];
+    const all = this.st.sets, i = all.findIndex((s) => s.id === id);
+    if (i < 0) return;
+    const lib = all[i].lib ?? LIB_CLASSIC;
+    let j = i + by;
+    while (j >= 0 && j < all.length && (all[j].lib ?? LIB_CLASSIC) !== lib) j += by;
+    if (j < 0 || j >= all.length) return;
+    [all[i], all[j]] = [all[j], all[i]];
     this.refresh();
   }
 
@@ -362,17 +450,36 @@ class BrushStore {
       if (!rec || typeof rec.id !== 'string' || typeof rec.name !== 'string' || !Array.isArray(rec.ids)) continue;
       const ids = rec.ids.filter((id) => typeof id === 'string' && !placed.has(id) && (this.custom.has(id) || (starterBrush(id) && !st.deleted.includes(id))));
       ids.forEach((id) => placed.add(id));
-      sets.push({ id: rec.id, name: rec.name, ids });
+      const lib = typeof rec.lib === 'string' ? rec.lib : rec.id === IMPORTED_ID ? LIB_IMPORTED : LIB_CLASSIC;
+      sets.push({ id: rec.id, name: rec.name, ids, lib });
     }
+    // Libraries: a file from before libraries has none, so its sets stay in Classic and Animation is added.
+    const savedLibs = Array.isArray(s.libs) ? s.libs.filter((l) => l && typeof l.id === 'string' && typeof l.name === 'string') : [];
+    const libs: BrushLib[] = savedLibs.length ? savedLibs.map((l) => ({ id: l.id, name: l.name.slice(0, 40) })) : [];
+    if (!savedLibs.length) libs.push({ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }, { id: LIB_IMPORTED, name: 'Imported' });
+    for (const set of sets) if (!libs.some((l) => l.id === set.lib)) set.lib = LIB_CLASSIC;
+    if (!libs.some((l) => l.id === LIB_CLASSIC)) libs.push({ id: LIB_CLASSIC, name: 'Classic' });
+    if (!libs.some((l) => l.id === LIB_IMPORTED)) libs.push({ id: LIB_IMPORTED, name: 'Imported' });
     // Starter brushes the saved library does not know yet (added by an update) join their own set.
-    for (const b of BRUSHES) {
+    // Animation sets come back only for a file that never had libraries; a deleted Animation library stays deleted.
+    const animHidden = savedLibs.length > 0 && !libs.some((l) => l.id === LIB_ANIMATION);
+    for (const b of ALL_STARTERS) {
       if (placed.has(b.id) || st.deleted.includes(b.id)) continue;
-      let home = sets.find((x) => x.id === slug(b.set));
-      if (!home) { home = { id: slug(b.set), name: b.set, ids: [] }; sets.splice(Math.max(0, sets.findIndex((x) => x.id === IMPORTED_ID)), 0, home); }
+      const anim = b.lib === 'animation';
+      if (anim && animHidden) continue;
+      const sid = anim ? animId(b.set) : slug(b.set);
+      let home = sets.find((x) => x.id === sid);
+      if (!home) {
+        home = { id: sid, name: b.set, ids: [], lib: anim ? LIB_ANIMATION : LIB_CLASSIC };
+        if (anim) sets.splice(sets.filter((x) => x.lib === LIB_ANIMATION).length, 0, home);
+        else sets.splice(Math.max(0, sets.findIndex((x) => x.id === IMPORTED_ID)), 0, home);
+      }
       home.ids.push(b.id);
     }
-    if (!sets.some((x) => x.id === IMPORTED_ID)) sets.push({ id: IMPORTED_ID, name: 'Imported', ids: [] });
+    if (!sets.some((x) => x.id === IMPORTED_ID)) sets.push({ id: IMPORTED_ID, name: 'Imported', ids: [], lib: LIB_IMPORTED });
     st.sets = sets;
+    st.libs = libs;
+    st.active = typeof s.active === 'string' && libs.some((l) => l.id === s.active) ? s.active : libs[0].id;
     this.st = st;
     for (const id of st.deleted) unregisterBrush(id);
     this.rebuildAll();

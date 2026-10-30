@@ -11,6 +11,11 @@
 .fm-path-h:hover { fill: var(--text-primary); }
 .fm-pivot-ring { fill: none; stroke: var(--accent-color); stroke-width: 1.5; }
 .fm-pivot-cross { fill: none; stroke: var(--accent-color); stroke-width: 1.25; }
+.fm-pivot.is-editing .fm-pivot-ring { stroke-width: 2.5; }
+.fm-pivot-sector { fill: var(--bg-secondary); stroke: var(--accent-color); stroke-width: 1.5; pointer-events: none; }
+.fm-pivot-sectors[hidden] { display: none; }
+.fm-anchor-bar { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); z-index: var(--z-raised); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: var(--radius-pill); background: var(--fm-glass); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--line-1, var(--border-color)); color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
+.fm-anchor-bar[hidden] { display: none; }
 .fm-pivot-hit { fill: transparent; pointer-events: all; cursor: crosshair; }
 .fm-path-bar {
   position: absolute;

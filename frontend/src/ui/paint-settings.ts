@@ -1,5 +1,6 @@
 import type { OnionSettings } from '../engine/types';
 import type { CursorMode, OutlineStyle, PenButton, ScalingMode } from '../paint/feel';
+import { loadPrefs, updatePrefs } from './prefs';
 import { el, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 
 export interface PaintPrefs {
@@ -22,6 +23,8 @@ export interface PaintPrefs {
   maskVisibility: number;
   /** Rapid undo delay: ms a held undo or redo waits before it repeats. */
   undoDelay: number;
+  /** Show the picture with its keyframed opacity and filters at the Playhead while drawing. */
+  keyframeEffects: boolean;
 }
 
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
@@ -40,6 +43,7 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   smoothing: 0,
   maskVisibility: 0.25,
   undoDelay: 420,
+  keyframeEffects: false,
 };
 
 const KEY = 'formmorpheus.paint';
@@ -63,7 +67,7 @@ export function loadPaintPrefs(): PaintPrefs {
     const raw = localStorage.getItem(KEY);
     if (!raw) return out;
     const o = JSON.parse(raw) as Partial<PaintPrefs>;
-    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
+    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd', 'keyframeEffects'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
     // older files only had the two booleans: they decide the new choices
     out.cursorMode = o.cursorMode && ['hover', 'painting', 'both', 'off'].includes(o.cursorMode) ? o.cursorMode : out.cursor ? 'both' : 'off';
     out.scaling = o.scaling && ['off', 'canvas', 'screen'].includes(o.scaling) ? o.scaling : out.dynamicScaling ? 'screen' : 'off';
@@ -198,6 +202,8 @@ export class PaintSettings {
   private anchor: HTMLElement | null = null;
 
   private readonly mask: SliderRow;
+  private readonly keyEffects: ToggleRow;
+  private readonly scrubSpeed: Seg;
   private readonly onEnabled: ToggleRow;
   private readonly sideSeg: Seg;
   private readonly frames: SliderRow;
@@ -259,7 +265,7 @@ export class PaintSettings {
 
     // Add
     const add = this.panes.get('add')!;
-    add.appendChild(actionRow(ROW_ICONS.photo, 'Insert a photo', () => { this.close(); o.onInsertPhoto(); }).el);
+    add.appendChild(actionRow(ROW_ICONS.photo, 'Insert photos', () => { this.close(); o.onInsertPhoto(); }).el);
 
     // Canvas
     const canvasPane = this.panes.get('canvas')!;
@@ -268,6 +274,8 @@ export class PaintSettings {
     canvasPane.appendChild(crop.el);
     this.mask = sliderRow('Selection mask visibility', 0, 1, 0.01, (v) => o.setPrefs({ maskVisibility: v }));
     canvasPane.appendChild(this.mask.el);
+    this.keyEffects = toggleRow('Keyframe effects', (v) => o.setPrefs({ keyframeEffects: v }));
+    canvasPane.appendChild(this.keyEffects.el);
 
     // Onions
     const on = this.panes.get('onions')!;
@@ -331,7 +339,10 @@ export class PaintSettings {
       this.pts = DEFAULT_PAINT_PREFS.pressure.map((p) => [...p] as [number, number]);
       this.commitCurve();
     });
-    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.curveRow, this.curveWrap);
+    const SPD = ['precise', 'medium', 'fast'] as const;
+    const spd = seg('Scrub speed', ['Precise', 'Medium', 'Fast'], (i) => { updatePrefs({ scrubSpeed: SPD[i] }); this.refresh(); });
+    this.scrubSpeed = spd.seg;
+    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, spd.row, this.curveRow, this.curveWrap);
 
     this.showTab(this.tab, true);
   }
@@ -373,6 +384,8 @@ export class PaintSettings {
     const p = this.o.prefs(), on = this.o.onion(), scope = this.o.onionScope();
     const pct = (v: number): string => `${Math.round(v * 100)}%`;
     this.mask.set(p.maskVisibility, pct(p.maskVisibility));
+    this.keyEffects.set(p.keyframeEffects);
+    this.scrubSpeed.set(['precise', 'medium', 'fast'].indexOf(loadPrefs().scrubSpeed));
     this.cursor.set(['hover', 'painting', 'both', 'off'].indexOf(p.cursorMode));
     this.outline.set(['contrast', 'colour', 'brush'].indexOf(p.outline));
     this.dyn.set(['off', 'canvas', 'screen'].indexOf(p.scaling));

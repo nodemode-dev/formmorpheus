@@ -115,7 +115,53 @@ export interface Brush {
   expression?: number;
   /** Made or imported by the person, not part of the starter library. */
   custom?: boolean;
+  /** Library a starter brush belongs to; absent means Classic. */
+  lib?: 'animation';
+  /** Colour dynamics: jitter per stamp and per stroke (0 to 1), signed pressure and tilt shifts (-1 to 1). */
+  colorDyn?: ColorDyn;
+  /** Wet mix: the brush carries paint, dilutes it, and picks up what is already on the layer. */
+  wet?: WetMix;
+  /** How dabs build up inside one stroke; absent is the plain build-up. */
+  render?: RenderMode;
+  /** 0 to 1: paint pools at the edge of the stroke. */
+  wetEdges?: number;
+  /** 0 to 1: the paint runs out along the stroke (opacity fades with distance). */
+  burnout?: number;
+  /** 0 to 1: the stroke shrinks along its path. */
+  fallOff?: number;
+  /** -1 to 1: stamp size follows pen speed (negative: faster is smaller). */
+  speedSize?: number;
+  /** -1 to 1: stamp opacity follows pen speed. */
+  speedOpacity?: number;
+  /** 0 to 1: random size and opacity per stamp. */
+  jitterSize?: number;
+  jitterOpacity?: number;
+  /** Stamps laid per dab (1 to 16), spread around the dab. */
+  shapeCount?: number;
+  /** The stamp turns with the direction the pen leans. */
+  azimuth?: boolean;
+  /** Fixed stamp rotation in radians. */
+  baseRot?: number;
+  /** 0 to 1: the line wanders sideways as it is drawn (boiling line). */
+  wiggle?: number;
+  /** Grain sticks to the stamp (moving) or to the canvas (texturized, the default). */
+  grainMode?: 'moving' | 'texturized';
+  /** 0 to 1: random grain depth per stamp. */
+  grainJitter?: number;
+  /** 0 to 1: grain is lit as relief (light and dark flecks). */
+  bump?: number;
 }
+
+export interface ColorDyn {
+  stampHue?: number; stampSat?: number; stampBri?: number;
+  strokeHue?: number; strokeSat?: number; strokeBri?: number;
+  pressureHue?: number; pressureSat?: number; pressureBri?: number;
+  tiltHue?: number; tiltSat?: number; tiltBri?: number;
+}
+
+export interface WetMix { dilution: number; charge: number; attack: number; pull: number; grade: number }
+
+export type RenderMode = 'light-glaze' | 'uniform-glaze' | 'intense-glaze' | 'heavy-glaze' | 'uniform-blending' | 'intense-blending';
 
 export interface StrokeSettings {
   tool: PaintTool;

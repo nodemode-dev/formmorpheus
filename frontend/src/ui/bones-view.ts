@@ -8,7 +8,7 @@ import type { View } from '../engine/render';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { animate, kindSpec, laneOf, type Animated } from '../engine/keys';
-import { applyTake, Recorder } from '../engine/perform';
+import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { addBone, boneMatrices, boneTip, deleteBone, nextBoneId, posedBones, rotationToward, skinOf, skinPoints, weightAt } from '../engine/bones';
 import { contentRect, localToStage, stageToLocal, warpActive, warpPoint, type Rect } from '../engine/warp-draw';
 import type { Content, Ease } from '../engine/types';
@@ -350,7 +350,7 @@ export class BonesOverlay {
     if (!r) return;
     const take = r.rec.finish(filtering);
     if (!take) return;
-    this.engine.run('Perform Bone', (mv) => ops.updateContent(mv, d.id, (c) => applyTake(c, take, 'linear')), d.tag);
+    this.engine.run('Perform Bone', (mv) => ops.updateContent(mv, d.id, (c) => applyTake(c, take, 'linear', roomFor(mv, d.id))), d.tag);
   }
 
   private up(e: PointerEvent): void {

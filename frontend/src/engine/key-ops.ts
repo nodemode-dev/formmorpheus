@@ -63,7 +63,8 @@ function easeBefore(list: Key[], frame: number): Ease | null {
 }
 
 function newLane(kind: KeyKind): KeyLane {
-  return { kind, expanded: true, channels: {}, options: defaultOptions(kind) };
+  // lanes start collapsed to one bar (Expand opens the per-parameter rows)
+  return { kind, expanded: false, channels: {}, options: defaultOptions(kind) };
 }
 
 export function setKeys(c: Content, kind: KeyKind, at: number, values: Record<string, number>, ease?: Ease): Content {

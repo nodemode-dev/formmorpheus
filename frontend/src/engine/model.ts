@@ -65,7 +65,16 @@ export function kindName(kind: ContentKind): string {
 }
 
 export function defaultText(): TextStyle {
-  return { text: 'Text', font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' };
+  return { text: 'Text', font: 'Inter', size: 160, weight: 600, color: '#111111', align: 'center' };
+}
+
+/** Text colour that reads on a Stage background: dark on light, light on dark. */
+export function textColorFor(background: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((background || '').trim());
+  if (!m) return '#111111';
+  const n = parseInt(m[1], 16);
+  const luma = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return luma > 0.5 ? '#111111' : '#ffffff';
 }
 
 export function content(kind: ContentKind, start: number, duration: number, extra: Partial<Content> = {}): Content {

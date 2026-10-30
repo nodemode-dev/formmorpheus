@@ -58,7 +58,7 @@
 .fm-ps-slider .fm-cm-range::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -5.5px; }
 .fm-ps-slider .fm-cm-range::-moz-range-track, .fm-ps-slider .fm-cm-range::-moz-range-progress { height: 3px; }
 
-.fm-ps-seg { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: var(--radius-pill); background: var(--surface-field); }
+.fm-ps-seg { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(max-content, 1fr)); gap: 2px; padding: 3px; border-radius: var(--radius-pill); background: var(--surface-field); }
 .fm-ps-segbtn { height: 26px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); white-space: nowrap; cursor: default; }
 .fm-ps-segbtn:hover { color: var(--text-primary); }
 .fm-ps-segbtn.is-active { background: var(--accent-color); color: var(--text-on-accent); }

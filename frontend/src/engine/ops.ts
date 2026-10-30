@@ -304,6 +304,7 @@ export function patchContent(movie: Movie, ids: string[], patch: ContentPatch): 
 
 export interface MoviePatch {
   name?: string;
+  author?: string;
   width?: number;
   height?: number;
   fps?: number;
@@ -320,6 +321,7 @@ export interface MoviePatch {
 export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
   const next: Movie = { ...movie };
   if (patch.name !== undefined) next.name = patch.name.trim().slice(0, 120) || movie.name;
+  if (patch.author !== undefined) { const a = patch.author.trim().slice(0, 120); if (a) next.author = a; else delete next.author; }
   if (patch.width !== undefined) next.width = clampSide(patch.width);
   if (patch.height !== undefined) next.height = clampSide(patch.height);
   if (patch.fps !== undefined) {

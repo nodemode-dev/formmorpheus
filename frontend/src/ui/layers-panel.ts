@@ -155,8 +155,16 @@ export class LayersPanel {
       setText(this.pct, `${v}%`);
       setStyleVar(this.range, '--fm-pct', `${v}%`);
     });
+    // moving down the list shows each mode on the picture; leaving the list (or closing the card) puts the layer back
+    this.blendList.addEventListener('pointerover', (e) => {
+      if ((e as PointerEvent).pointerType === 'touch') return;
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-blend]');
+      if (b) this.previewBlend(b.dataset.blend as BlendMode);
+    });
+    this.blendList.addEventListener('pointerleave', () => this.endPreview());
     this.blendList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-blend]');
+      this.endPreview();
       const d = this.doc(); const id = this.side?.id;
       if (!b || !d || !id) return;
       d.setProps(id, { blend: b.dataset.blend as BlendMode });
@@ -375,8 +383,34 @@ export class LayersPanel {
     this.placeSide(row);
   }
 
+  private blendPreview: { id: string; blend: BlendMode } | null = null;
+
+  /** Shows `mode` on the side card's layer without recording it. */
+  private previewBlend(mode: BlendMode): void {
+    const d = this.doc();
+    const id = this.side?.kind === 'blend' ? this.side.id : '';
+    const l = id && d ? d.layer(id) : null;
+    if (!d || !l) return;
+    if (!this.blendPreview) this.blendPreview = { id, blend: l.blend };
+    if (l.blend === mode) return;
+    l.blend = mode;
+    d.markDirty(id, { x: 0, y: 0, w: d.width, h: d.height });
+  }
+
+  private endPreview(): void {
+    const p = this.blendPreview;
+    this.blendPreview = null;
+    const d = this.doc();
+    const l = p && d ? d.layer(p.id) : null;
+    if (!p || !d || !l || l.blend === p.blend) return;
+    l.blend = p.blend;
+    d.markDirty(p.id, { x: 0, y: 0, w: d.width, h: d.height });
+    d.settle();
+  }
+
   private closeSide(): void {
     if (!this.side) return;
+    this.endPreview();
     this.side = null;
     setHidden(this.menu, true);
     setHidden(this.blendCard, true);

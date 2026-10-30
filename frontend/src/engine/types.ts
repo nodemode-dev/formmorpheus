@@ -296,6 +296,8 @@ export interface Movie {
   backstage?: number;
   /** The Stage shows its Timecode. Absent: it does. */
   timecode?: boolean;
+  /** Who made the movie (Movie settings, About this artwork). Absent: not set. */
+  author?: string;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
   camera?: { keys: KeyLane[] };
   onion: OnionSettings;

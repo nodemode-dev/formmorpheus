@@ -89,6 +89,10 @@
 .fm-tl-empty[hidden] { display: none; }
 
 .fm-modes { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); display: flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-xl); background: var(--fm-glass); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); box-shadow: var(--shadow-lg), inset 0 0 0 1px var(--line-1, var(--border-color)); z-index: var(--z-chrome); }
+.fm-tl-zoom { position: absolute; left: var(--space-3); bottom: var(--space-3); display: flex; gap: var(--space-2); z-index: var(--z-chrome); }
+.fm-zoom-grp { display: flex; align-items: center; gap: 2px; padding: 3px var(--space-2); border-radius: var(--radius-pill); background: var(--fm-glass); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); box-shadow: inset 0 0 0 1px var(--line-1, var(--border-color)); color: var(--text-muted); }
+.fm-zoom-grp button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); cursor: pointer; }
+.fm-zoom-grp button:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
 .fm-mode { display: grid; justify-items: center; gap: 2px; min-width: 76px; padding: 6px var(--space-2) 5px; border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text-muted); font-size: var(--fs-10); font-weight: 500; cursor: pointer; }
 .fm-mode:hover { color: var(--text-primary); }
 .fm-mode.is-active { color: var(--accent-color); background: color-mix(in srgb, var(--accent-color) 14%, transparent); }

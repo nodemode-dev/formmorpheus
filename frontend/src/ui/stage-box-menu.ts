@@ -3,6 +3,7 @@ import { locate } from '../engine/model';
 import * as tops from '../engine/transform-ops';
 import { Popover, popRow, type PopRow } from './popover';
 import { setClass } from './dom';
+import { anchorMode } from './anchor-mode';
 
 /** Flip horizontal, Flip vertical and Reset rows, shared by the Stage box's ellipsis menu and the content menu. */
 export class TransformRows {
@@ -41,16 +42,19 @@ export class StageBoxMenu {
   private readonly pop = new Popover('fm-box-menu', 200);
   private ids: string[] = [];
   private readonly rows: TransformRows;
+  private readonly anchor: PopRow = popRow(null, 'Edit anchor');
 
-  constructor(engine: Engine, onHide: () => void = () => undefined) {
+  constructor(private readonly engine: Engine, onHide: () => void = () => undefined) {
     this.rows = new TransformRows(engine, () => this.ids, () => this.pop.hide());
-    this.pop.body.append(...this.rows.rows);
+    this.anchor.el.addEventListener('click', () => { if (this.ids[0]) anchorMode.start(this.ids[0]); this.pop.hide(); });
+    this.pop.body.append(this.anchor.el, ...this.rows.rows);
     this.pop.onHide(onHide);
   }
 
   open(x: number, y: number, ids: string[]): void {
     this.ids = ids;
     this.rows.patch();
+    this.anchor.setDisabled(this.engine.mode === 'perform');
     this.pop.showAt(x, y);
   }
 }

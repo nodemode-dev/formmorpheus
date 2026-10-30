@@ -23,6 +23,8 @@
   will-change: transform;
 }
 .fm-key-pill[hidden] { display: none; }
+.fm-key-pill.is-pending { background: var(--danger-fill); }
+.fm-key-pill.is-pending:hover { background: var(--danger-fill-hover); }
 .fm-key-pill:hover { background: var(--accent-color-hover); }
 .fm-key-pill:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .fm-key-glyph { display: inline-flex; pointer-events: none; }
@@ -55,6 +57,7 @@
 .fm-ka-bico { display: inline-flex; color: var(--accent-color); }
 .fm-ka-bico svg { width: 18px; height: 18px; }
 .fm-ka-list { display: grid; }
+.fm-ka-ghead { padding: var(--space-2) var(--space-2) var(--space-1); color: var(--text-secondary); font-size: var(--fs-11); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .fm-ka-view[hidden], .fm-kc-host[hidden], .fm-kc[hidden] { display: none; }
 .fm-ka-list .fm-pop-ico { color: var(--accent-color); }
 .fm-ka-list .fm-pop-ico svg { width: 16px; height: 16px; }

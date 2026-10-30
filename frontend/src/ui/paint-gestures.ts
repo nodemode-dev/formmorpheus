@@ -44,6 +44,46 @@ export class HoldRepeat {
   }
 }
 
+/**
+ * Reads a three-finger travel: a firm downward swipe, or a scrub (sideways back and forth at least three
+ * times). Feed it the fingers' centre; it answers once per gesture.
+ */
+export class TriSwipe {
+  private x0 = 0;
+  private y0 = 0;
+  private lastX = 0;
+  private dir = 0;
+  private turnX = 0;
+  private turns = 0;
+  private done = false;
+
+  begin(x: number, y: number): void {
+    this.x0 = this.lastX = this.turnX = x;
+    this.y0 = y;
+    this.dir = 0;
+    this.turns = 0;
+    this.done = false;
+  }
+
+  get fired(): boolean { return this.done; }
+
+  update(x: number, y: number): 'swipe-down' | 'scrub' | null {
+    if (this.done) return null;
+    const dx = x - this.lastX;
+    if (Math.abs(dx) > 2) {
+      const d = dx > 0 ? 1 : -1;
+      if (this.dir && d !== this.dir && Math.abs(this.lastX - this.turnX) > 22) { this.turns++; this.turnX = this.lastX; }
+      else if (!this.dir) this.turnX = this.lastX;
+      this.dir = d;
+      this.lastX = x;
+    }
+    if (this.turns >= 3) { this.done = true; return 'scrub'; }
+    const down = y - this.y0;
+    if (down > 70 && Math.abs(x - this.x0) < down * 0.8 && this.turns < 2) { this.done = true; return 'swipe-down'; }
+    return null;
+  }
+}
+
 /** Turn the canvas around its middle with one pointer. */
 export class SpinDrag {
   private s: { rot0: number; ang0: number; cx: number; cy: number; ax: number; ay: number; id: number } | null = null;

@@ -6,10 +6,11 @@ import { el, q, setChecked, setClass, setHidden, setText } from './dom';
 import { toggleOf } from './panels/controls';
 import { confirmAction } from './dialogs';
 import { loadPrefs, updatePrefs } from './prefs';
+import { loadPaintPrefs, savePaintPrefs } from './paint-settings';
 import { Popover } from './popover';
 import { StageOptionsBody, type BackgroundPicker } from './stage-options';
 
-const TABS = ['Project', 'Stage', 'Timeline', 'Share'] as const;
+const TABS = ['Project', 'Stage', 'Timeline', 'Prefs', 'Share'] as const;
 const UNDO_STEPS: Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
 
 function runCommand(id: string): void {
@@ -61,6 +62,11 @@ export class MovieSettings {
   private readonly loopVisible = input('checkbox');
   private forceCustom = false;
   private readonly undoSteps = select(UNDO_STEPS);
+  private readonly recentUndo = select([['100', '100%'], ['75', '75%'], ['50', '50%'], ['25', '25%'], ['10', '10%']]);
+  private readonly rapid = select([['150', '150 ms'], ['300', '300 ms'], ['420', '420 ms'], ['600', '600 ms'], ['800', '800 ms'], ['1000', '1000 ms']]);
+  private readonly author = input('text', 'fm-ms-wide');
+  private art!: HTMLImageElement;
+  private artUrl = '';
   private readonly hh = input('number', 'fm-ms-hms');
   private readonly mm = input('number', 'fm-ms-hms');
   private readonly ss = input('number', 'fm-ms-hms');
@@ -76,7 +82,7 @@ export class MovieSettings {
     else this.patch(true);
   }
 
-  constructor(private readonly engine: Engine, picker: BackgroundPicker) {
+  constructor(private readonly engine: Engine, picker: BackgroundPicker, private readonly poster: () => Promise<Blob | null> = () => Promise.resolve(null)) {
     this.stage = new StageOptionsBody(engine, picker);
     this.pop = new Popover('fm-ms', 380);
     const strip = el<HTMLElement>('<div class="fm-ms-tabs" role="tablist"></div>');
@@ -112,12 +118,33 @@ export class MovieSettings {
       const p = updatePrefs({ undoDepth: Number(this.undoSteps.value) });
       this.engine.setUndoDepth(p.undoDepth, p.recentUndo);
     });
+    this.recentUndo.value = String(loadPrefs().recentUndo);
+    this.recentUndo.addEventListener('change', () => {
+      const p = updatePrefs({ recentUndo: Number(this.recentUndo.value) });
+      this.engine.setUndoDepth(p.undoDepth, p.recentUndo);
+    });
+    this.author.setAttribute('aria-label', 'Author');
+    this.author.placeholder = 'Your name';
+    enter(this.author);
+    this.author.addEventListener('change', () => this.run('Author', { author: this.author.value }));
+    const art = el<HTMLElement>('<div class="fm-ms-art"><img alt="Artwork" draggable="false"><span class="fm-ms-art-cap">The picture shown in the Theater</span></div>');
+    this.art = q<HTMLImageElement>(art, 'img');
+    this.panes[0].append(
+      el<HTMLElement>('<div class="fm-ms-head">About this artwork</div>'), art, row('Author', this.author),
+      el<HTMLElement>('<div class="fm-ms-head">History</div>'),
+      row('Undo steps', this.undoSteps), row('Recent undo steps', this.recentUndo), row('Recovery points', actionBtn('Recovery Points...', 'recovery-points')),
+    );
+    this.rapid.value = String(Math.round(loadPaintPrefs().undoDelay / 10) * 10);
+    this.rapid.addEventListener('change', () => savePaintPrefs({ ...loadPaintPrefs(), undoDelay: Number(this.rapid.value) }));
     this.panes[3].append(
+      row('Rapid undo delay', this.rapid),
+      row('Keyboard shortcuts', actionBtn('Keyboard Shortcuts...', 'shortcuts')),
+      row('More settings', actionBtn('Preferences...', 'settings')),
+    );
+    this.panes[4].append(
       row('Export', actionBtn('Export...', 'export')),
       row('Movie file', actionBtn('Share Movie File', 'export-fmo')),
       row('With undo history', actionBtn('Share Movie File with History', 'export-fmo-history')),
-      row('Undo steps', this.undoSteps),
-      row('Recovery points', actionBtn('Recovery Points...', 'recovery-points')),
     );
 
     const hms = el<HTMLElement>('<div class="fm-ms-pair"></div>');
@@ -127,7 +154,7 @@ export class MovieSettings {
       n.addEventListener('change', () => this.applyHms());
       hms.append(n, el<HTMLElement>(`<span class="fm-ms-x">${tag}</span>`));
     }
-    this.panes[0].insertBefore(row('Hours, minutes, seconds', hms), this.panes[0].lastElementChild);
+    this.panes[0].insertBefore(row('Hours, minutes, seconds', hms), this.panes[0].children[5]);
 
     this.pop.body.append(strip, ...this.panes);
     this.wire();
@@ -142,6 +169,17 @@ export class MovieSettings {
     this.patch(true);
     this.anchor = anchor;
     this.place();
+    void this.refreshArt();
+  }
+
+  /** The artwork picture is the current Stage frame, swapped in when it is ready. */
+  private async refreshArt(): Promise<void> {
+    const blob = await this.poster();
+    if (!blob || !this.pop.isOpen) return;
+    const url = URL.createObjectURL(blob);
+    this.art.src = url;
+    if (this.artUrl) URL.revokeObjectURL(this.artUrl);
+    this.artUrl = url;
   }
 
   private anchor: HTMLElement | null = null;
@@ -225,6 +263,8 @@ export class MovieSettings {
     this.put(this.mm, String(Math.floor((whole % 3600) / 60)), force);
     this.put(this.ss, String(whole % 60), force);
     this.put(this.undoSteps, String(loadPrefs().undoDepth), true);
+    this.put(this.recentUndo, String(Math.round(loadPrefs().recentUndo / 25) * 25 || 10), true);
+    this.put(this.author, m.author ?? '', force);
     this.stage.sync();
     this.put(this.playback, m.playback, true);
     setChecked(this.addKey, m.addKeyAtStart);

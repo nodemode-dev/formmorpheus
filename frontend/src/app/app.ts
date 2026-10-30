@@ -1,5 +1,5 @@
 import { Engine } from '../engine/engine';
-import { content as makeContent, uid } from '../engine/model';
+import { content as makeContent, flipTrack, textColorFor, uid } from '../engine/model';
 import * as ops from '../engine/ops';
 import { Renderer } from '../engine/render';
 import { convertToFlipbook } from '../ui/flip-convert';
@@ -73,7 +73,12 @@ const SHELL = `<div class="cv-app fm-app">
 <footer class="cv-status"></footer>
 </div>`;
 
-const CUSTOM_TITLE_KEY = 'formmorpheus.customTitleBar';
+/** Create > Flipbook frame rates: the submenu under Flipbook. */
+const FLIP_RATES = [6, 8, 12, 15, 24, 30];
+const FLIP_FPS_MENU = { label: 'Flipbook at frame rate', items: FLIP_RATES.map((n) => `add-flipbook-${n}`) };
+/** The Create menu: what to make, then what to bring in. */
+const CREATE_ITEMS = ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', '-', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'];
+const CUSTOM_TITLE_KEY ='formmorpheus.customTitleBar';
 const stored = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const store = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
 
@@ -125,7 +130,7 @@ export function startApp(): void {
   contentMenu.onEditInFormvis = (id) => { void roundTripOut('drawing', id); };
   const trackMenu = new TrackMenu(engine);
   const stageOptions = new StageOptions(engine);
-  const movieSettings = new MovieSettings(engine, stageOptions.picker);
+  const movieSettings = new MovieSettings(engine, stageOptions.picker, () => stage?.snapshot(360) ?? Promise.resolve(null));
   const stageAt = (): { x: number; y: number } => { const r = q(root, '.fm-stage').getBoundingClientRect(); return { x: r.right - 360, y: r.top + 24 }; };
   const stageMenu = new PopupMenu(commands, null, true);
   stage.nav.onContext = (x, y) => { stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
@@ -136,7 +141,7 @@ export function startApp(): void {
     trackMenu: (x, y, id) => trackMenu.open(x, y, id),
     movieSettings: (a) => movieSettings.toggle(a),
     home: () => home.show(),
-    create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(r.right, r.top - 6); },
+    create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(CREATE_ITEMS); createMenu.openAt(r.right, r.top - 6); },
     edit: (c) => editContent(c),
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
     graph: (id, kind, channel) => graphEditor.open(id, kind, channel),
@@ -147,6 +152,7 @@ export function startApp(): void {
   engine.setRegion(() => timeline?.visibleRange() ?? null);
   const textCard = new TextCard(engine);
   stage.onEditTextStyle = (id, x, y) => textCard.open({ x, y }, id, 'format');
+  textCard.onImportFont = () => { commands.run('import-font'); };
   const exportDialog = new ExportDialog({
     engine,
     renderer,
@@ -402,6 +408,11 @@ export function startApp(): void {
     { id: 'import-fvd', label: 'Import formvis document...', enabled: has, run: () => pickFor('.fvd,application/zip') },
     { id: 'import-fvfx', label: 'Import formvfx composition...', enabled: has, run: () => pickFor('.fvxproj,.zip,application/zip') },
     { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },
+    { id: 'import-photo', label: 'Photo...', icon: 'image', enabled: has, run: () => pickFor('image/*,.tif,.tiff,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn') },
+    { id: 'import-video', label: 'Video...', icon: 'video', enabled: has, run: () => pickFor('video/*') },
+    { id: 'import-audio', label: 'Audio...', icon: 'audio', enabled: has, run: () => pickFor('audio/*,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2') },
+    { id: 'import-file', label: 'File...', icon: 'upload', enabled: has, run: () => pickFor(MEDIA_ACCEPT) },
+    { id: 'import-font', label: 'Import font...', enabled: has, run: () => pickFor('.otf,.ttf,.woff,.woff2') },
     { id: 'export', label: 'Export...', keys: ['Mod+E'], enabled: has, run: () => exportDialog.open('share') },
     { id: 'close', label: 'Close Movie', keys: ['Mod+W'], enabled: has, run: () => { void askToKeep().then((ok) => { if (ok) engine.close(); }); } },
     { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
@@ -423,7 +434,17 @@ export function startApp(): void {
     { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
     { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { const id = engine.insert('drawing'); if (id) void paint.open(id); } },
     { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { const id = engine.insert('flipbook'); if (id) void paint.open(id); } },
-    { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { const id = engine.insert('text', { name: 'Text', text: { text: 'Text', font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' } }); if (id) stage.editText(id); } },
+    // a Flipbook that plays its drawings at its own rate: each drawing is held for movie fps / rate frames
+    ...FLIP_RATES.map((n): Command => ({ id: `add-flipbook-${n}`, label: `${n} fps`, enabled: has, run: () => {
+      const m = engine.movie;
+      if (!m) return;
+      const hold = Math.max(1, Math.round(m.fps / n));
+      const track = flipTrack('Track 1', n);
+      track.frames = track.frames.map((f) => ({ ...f, hold }));
+      const id = engine.insert('flipbook', { flip: [track], duration: n * hold });
+      if (id) void paint.open(id);
+    } })),
+    { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { const id = engine.insert('text', { name: 'Text', text: { text: 'Text', font: 'Inter', size: 160, weight: 600, color: textColorFor(engine.movie?.background ?? '#ffffff'), align: 'center' } }); if (id) stage.editText(id); } },
     { id: 'add-track', label: 'Track', icon: 'track', keys: ['Shift+Mod+T'], enabled: has, run: () => { const m = engine.movie; if (!m) return; const at = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0; engine.run('Add Track', (mv) => ops.addTrack(mv, at).movie); } },
     { id: 'play', label: () => (engine.playing ? 'Pause' : 'Play'), keys: ['Space'], enabled: has, run: () => engine.togglePlay() },
     { id: 'prev-frame', label: 'Previous Frame', keys: ['Left', ','], enabled: has, run: () => engine.step(-1) },
@@ -437,6 +458,10 @@ export function startApp(): void {
     // Ctrl/Cmd + = - 0 go to whichever of the Stage and the Timeline the pointer rests over
     { id: 'timeline-in', label: 'Zoom Timeline In', keys: ['Mod+='], enabled: has, run: () => { if (stageHovered()) stage?.nav.zoomBy(1.25); else timeline?.zoomBy(1.4); } },
     { id: 'timeline-out', label: 'Zoom Timeline Out', keys: ['Mod+-'], enabled: has, run: () => { if (stageHovered()) stage?.nav.zoomBy(0.8); else timeline?.zoomBy(1 / 1.4); } },
+    { id: 'timeline-in-h', label: 'Zoom Timeline In (Time Only)', keys: ['Shift+Mod+='], enabled: has, run: () => timeline?.zoomBy(1.4) },
+    { id: 'timeline-out-h', label: 'Zoom Timeline Out (Time Only)', keys: ['Shift+Mod+-'], enabled: has, run: () => timeline?.zoomBy(1 / 1.4) },
+    { id: 'timeline-in-v', label: 'Taller Tracks', keys: ['Alt+Shift+='], enabled: has, run: () => timeline?.zoomRows(1.25) },
+    { id: 'timeline-out-v', label: 'Shorter Tracks', keys: ['Alt+Shift+-'], enabled: has, run: () => timeline?.zoomRows(0.8) },
     { id: 'timeline-fit', label: 'Fit Timeline', keys: ['Mod+0'], enabled: has, run: () => { if (stageHovered()) stage?.nav.fit(); else timeline?.fit(); } },
     { id: 'stage-zoom-in', label: 'Zoom Stage In', keys: ['Alt+Mod+='], enabled: has, run: () => stage?.nav.zoomBy(1.25) },
     { id: 'stage-zoom-out', label: 'Zoom Stage Out', keys: ['Alt+Mod+-'], enabled: has, run: () => stage?.nav.zoomBy(0.8) },
@@ -486,7 +511,7 @@ export function startApp(): void {
       nudge: (dx, dy) => stage?.nudge(dx, dy),
       centerPlayhead: () => timeline?.centerOnPlayhead(),
       openOptions: () => { const p = mid(); contentMenu.open(p.x, p.y); },
-      openCreate: () => { const p = mid(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(p.x, p.y); },
+      openCreate: () => { const p = mid(); createMenu.setItems(CREATE_ITEMS); createMenu.openAt(p.x, p.y); },
       edit: (c) => { void editContent(c); },
     }),
     { id: 'shortcuts', label: 'Keyboard Shortcuts...', run: () => shortcutsDialog.show() },
@@ -500,8 +525,8 @@ export function startApp(): void {
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', '-', 'shortcuts', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
-    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
@@ -611,6 +636,8 @@ export function startApp(): void {
   window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) drop.hidden = true; });
   window.addEventListener('drop', (e) => {
     if (!hasFiles(e)) return;
+    // a brush file was already taken by ui/brush-drop
+    if (e.defaultPrevented) { depth = 0; drop.hidden = true; return; }
     e.preventDefault();
     depth = 0;
     drop.hidden = true;

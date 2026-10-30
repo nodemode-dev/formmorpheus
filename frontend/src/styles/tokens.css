@@ -251,7 +251,7 @@ body.theme-light { color-scheme: light; }
 /* ── Liquid glass (the owner's walkthrough): one look for every menu, dropdown and flyout, from the theme's own surface,
    so it holds in light themes too. ── */
 :root {
-  --glass-bg: color-mix(in srgb, var(--surface-2) 82%, transparent);   /* dense enough that nothing behind reads through */
+  --glass-bg: color-mix(in srgb, var(--surface-2) 99%, transparent);   /* dense enough that a white canvas behind does not show a seam */
   --glass-border: color-mix(in srgb, var(--text-primary) 16%, transparent);
   --glass-highlight: color-mix(in srgb, var(--text-primary) 12%, transparent);
   --glass-filter: blur(40px) saturate(1.8);

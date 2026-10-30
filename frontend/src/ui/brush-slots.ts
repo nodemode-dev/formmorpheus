@@ -36,6 +36,7 @@ function write(v: Record<string, Slot[]>): void {
 
 export class BrushSlots {
   private saved: Record<string, Slot[]> = read();
+  private readonly cursor = new Map<string, number>();
   private readonly markers: Record<SlotKind, HTMLButtonElement[]> = { size: [], opacity: [] };
 
   constructor(private readonly sliders: Record<SlotKind, HTMLElement>, private readonly host: SlotHost) {
@@ -68,6 +69,33 @@ export class BrushSlots {
     write(this.saved);
     this.sync();
     this.host.say(t(kind === 'size' ? 'Size {p}% stored in slot {n}' : 'Opacity {p}% stored in slot {n}').replace('{p}', String(Math.round(next[i][kind] * 100))).replace('{n}', String(i + 1)));
+  }
+
+  /** The preview bubble's "+": stores the current value in the next marker, round and round (a marker that already holds it is kept). */
+  storeNext(kind: SlotKind): void {
+    const slots = this.slots();
+    const cur = this.host.current()[kind];
+    const same = slots.findIndex((s) => Math.abs(s[kind] - cur) < 0.012);
+    if (same >= 0) { this.host.say(t('Already stored in slot {n}').replace('{n}', String(same + 1))); return; }
+    const key = `${this.host.key()}:${kind}`;
+    const i = (this.cursor.get(key) ?? -1) + 1;
+    this.cursor.set(key, i % 4);
+    this.store(kind, i % 4);
+  }
+
+  /** The preview bubble's "-": puts the marker that holds the current value back to the brush's own preset. */
+  clearAt(kind: SlotKind): void {
+    const slots = this.slots();
+    const cur = this.host.current()[kind];
+    const at = slots.findIndex((s) => Math.abs(s[kind] - cur) < 0.012);
+    if (at < 0) { this.host.say(t('No marker at this value')); return; }
+    const base = this.host.defaults()[at] ?? { size: 0.3, opacity: 1 };
+    const next = slots.map((s) => ({ ...s }));
+    next[at] = { ...next[at], [kind]: base[kind] };
+    this.saved[this.host.key()] = next;
+    write(this.saved);
+    this.sync();
+    this.host.say(t('Marker {n} reset').replace('{n}', String(at + 1)));
   }
 
   /** Jump to the next (dir 1) or previous (dir -1) remembered value, wrapping round the ends. */

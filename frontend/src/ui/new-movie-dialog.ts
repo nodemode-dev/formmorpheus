@@ -58,7 +58,7 @@ export class NewMovieDialog extends Dialog {
       setText(q(card, '.fm-nm-label'), p.label);
       setText(q(card, '.fm-nm-ratio'), `${p.aspect[0]}:${p.aspect[1]}`);
       const sel = el<HTMLSelectElement>(`<select class="cv-input fm-nm-size" aria-label="${p.label} size">${p.sizes.map(([w, h], k) => `<option value="${k}">${w} x ${h}</option>`).join('')}</select>`);
-      sel.value = '0';
+      sel.value = i === 0 ? '2' : '0'; // Wide screen opens at HD: 4K frames make frame-by-frame drawing heavy
       sel.addEventListener('change', () => this.pick(i));
       this.sizes.push(sel);
       card.appendChild(sel);
@@ -165,7 +165,7 @@ export class NewMovieDialog extends Dialog {
 
   /** Back to the first card at its largest size, 24 fps, 10 seconds, an empty start. */
   private reset(): void {
-    this.sizes.forEach((s) => { s.value = '0'; });
+    this.sizes.forEach((s, i) => { s.value = i === 0 ? '2' : '0'; });
     this.width.value = '1920';
     this.height.value = '1080';
     this.fps.value = '24';

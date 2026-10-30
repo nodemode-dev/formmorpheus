@@ -16,6 +16,7 @@ import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setDisabled } from './dom';
 import '../styles/path.css';
 import { stageLocal } from './stage-nav';
+import { anchorMode } from './anchor-mode';
 
 const NS = 'http://www.w3.org/2000/svg';
 const MAX_DOTS = 3000;
@@ -57,6 +58,7 @@ export class PathView {
     <g class="fm-path-keys"></g>
   </svg>`) as unknown as SVGSVGElement;
   readonly pivotRoot = el(`<svg class="fm-pivot-ov" hidden aria-label="Pivot">
+    <g class="fm-pivot-sectors"></g>
     <g class="fm-pivot"><circle class="fm-pivot-ring" r="8"/><path class="fm-pivot-cross" d="M-13 0H13M0 -13V13"/><circle class="fm-pivot-hit" r="14"/></g>
   </svg>`) as unknown as SVGSVGElement;
   readonly bar = el(`<div class="fm-path-bar" hidden>
@@ -65,6 +67,10 @@ export class PathView {
     <button type="button" class="fm-path-btn" data-a="linear" title="Straight on both sides of the key">Linear path</button>
   </div>`);
 
+  readonly anchorBar = el(`<div class="fm-anchor-bar" hidden><span>Edit anchor</span><button type="button" class="fm-path-btn is-on" data-a="done">Done</button></div>`);
+  /** Set by the Stage: the nine sector points (pivot units) of a content's box. */
+  sectors: ((c: Content) => Array<[number, number]> | null) | null = null;
+  private readonly sectorDots = q(this.pivotRoot as unknown as HTMLElement, '.fm-pivot-sectors') as unknown as SVGGElement;
   private readonly curve = q(this.root as unknown as HTMLElement, '.fm-path-curve') as unknown as SVGPathElement;
   private readonly dots = q(this.root as unknown as HTMLElement, '.fm-path-dots') as unknown as SVGPathElement;
   private readonly keys = q(this.root as unknown as HTMLElement, '.fm-path-keys') as unknown as SVGGElement;
@@ -82,7 +88,9 @@ export class PathView {
   constructor(host: HTMLElement, private readonly engine: Engine) {
     host.append(this.root, this.pivotRoot);
     // the bar sits on the Stage itself, not in the space that turns with a rotated view
-    (host.parentElement ?? host).appendChild(this.bar);
+    (host.parentElement ?? host).append(this.bar, this.anchorBar);
+    this.anchorBar.addEventListener('click', () => anchorMode.stop());
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && anchorMode.on) { anchorMode.stop(); e.stopPropagation(); } }, true);
     for (const r of [this.root, this.pivotRoot]) {
       r.addEventListener('pointerdown', (e) => {
         // the Stage keeps keyboard focus (arrow nudges) when the press lands on the pivot or a path node
@@ -98,7 +106,7 @@ export class PathView {
       const b = (e.target as Element).closest('button');
       if (b) this.action(b.dataset.a ?? '');
     });
-    engine.on('selection', () => { this.selFrame = null; });
+    engine.on('selection', () => { this.selFrame = null; if (anchorMode.on && this.engine.selection.content[0] !== anchorMode.id) anchorMode.stop(); });
   }
 
   get dragging(): boolean { return !!this.drag; }
@@ -130,6 +138,7 @@ export class PathView {
     const sx = view.ox + (m.width / 2 + b.px + b.x) * view.scale, sy = view.oy + (m.height / 2 + b.py + b.y) * view.scale;
     setHiddenAttr(this.pivotRoot, false);
     setAttr(this.pv, 'transform', `translate(${sx.toFixed(1)} ${sy.toFixed(1)})`);
+    this.syncAnchor(m, c, view, b.x, b.y);
     const lane = keyed ? laneOf(c, 'move') : null;
     const ls = lane ? laneSegments(lane) : null;
     if (!lane || !ls) {
@@ -221,6 +230,31 @@ export class PathView {
     setDisabled(btn('linear'), mode2 === null);
   }
 
+  /** Edit anchor: nine sector dots around the box, the Done bar, a bolder crosshair. Dots are grown once and patched. */
+  private syncAnchor(m: Movie, c: Content, view: View, bx: number, by: number): void {
+    const on = anchorMode.on && anchorMode.id === c.id;
+    setClass(this.pv as unknown as HTMLElement, 'is-editing', on);
+    setHiddenAttr(this.anchorBar, !on);
+    setHiddenAttr(this.sectorDots, !on);
+    if (!on) return;
+    const pts = this.sectors?.(c) ?? [];
+    while (this.sectorDotEls.length < 9) {
+      const d = document.createElementNS(NS, 'circle');
+      d.setAttribute('r', '4');
+      d.setAttribute('class', 'fm-pivot-sector');
+      this.sectorDots.appendChild(d);
+      this.sectorDotEls.push(d);
+    }
+    this.sectorDotEls.forEach((d, i) => {
+      const p = pts[i];
+      if (!p) { setHiddenAttr(d, true); return; }
+      setHiddenAttr(d, false);
+      setAttr(d, 'cx', (view.ox + (m.width / 2 + p[0] + bx) * view.scale).toFixed(1));
+      setAttr(d, 'cy', (view.oy + (m.height / 2 + p[1] + by) * view.scale).toFixed(1));
+    });
+  }
+
+  private readonly sectorDotEls: SVGCircleElement[] = [];
   private lastX: unknown = null;
   private lastY: unknown = null;
 
@@ -234,6 +268,7 @@ export class PathView {
     setHiddenAttr(this.root, true);
     setHiddenAttr(this.pivotRoot, true);
     setHiddenAttr(this.bar, true);
+    setHiddenAttr(this.anchorBar, true);
   }
 
   private local(e: PointerEvent): [number, number] {
@@ -311,7 +346,13 @@ export class PathView {
       const dx = (x - d.x0) / v.scale, dy = (y - d.y0) / v.scale;
       const b = d.base;
       const alt = d.alt || e.altKey;
-      const npx = Math.round(b.px + dx), npy = Math.round(b.py + dy);
+      let npx = Math.round(b.px + dx), npy = Math.round(b.py + dy);
+      if (anchorMode.on && anchorMode.id === d.id && !e.shiftKey) {
+        // snap to the nearest of the nine sectors when within reach
+        let best: [number, number] | null = null, bd = 18 / v.scale;
+        for (const p of this.sectors?.(c) ?? []) { const dd = Math.hypot(p[0] - (b.px + dx), p[1] - (b.py + dy)); if (dd < bd) { bd = dd; best = p; } }
+        if (best) { npx = Math.round(best[0]); npy = Math.round(best[1]); }
+      }
       let nx = b.x, ny = b.y;
       if (alt) {
         // keep the picture still: pos' = pos + (I - M)(P - P'), M = rotation * scale

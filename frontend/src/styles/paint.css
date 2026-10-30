@@ -14,6 +14,8 @@
   -webkit-user-select: none;
 }
 .fm-paint[hidden] { display: none; }
+/* four-finger tap: the picture alone (opacity only, so nothing reflows) */
+.fm-paint.is-preview .fm-paint-bar, .fm-paint.is-preview .fm-paint-side, .fm-paint.is-preview .fm-fs, .fm-paint.is-preview .fm-fm, .fm-paint.is-preview .fm-fp { opacity: 0; pointer-events: none; }
 
 .fm-paint-canvas {
   position: absolute;
@@ -185,10 +187,10 @@
   position: absolute;
   left: 1px;
   top: 5px;
-  width: 6px;
+  width: 8px;
   height: 4px;
   border-radius: 2px;
-  background: var(--text-muted);
+  background: var(--text-secondary);
   transition: background 0.12s var(--ease-glass), transform 0.12s var(--ease-glass);
 }
 .fm-paint-slot:hover::after { background: var(--text-primary); transform: scaleX(1.4); }
@@ -220,12 +222,30 @@
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
-  pointer-events: none;
   z-index: var(--z-menu);
 }
 .fm-paint.is-side-right .fm-paint-hud { left: auto; right: 64px; }
 .fm-paint-hud-title { font-size: 11px; color: var(--text-secondary); margin-bottom: var(--space-1); }
 .fm-paint-hud-dot { display: block; width: 120px; height: 120px; margin: 0 auto; }
+.fm-paint-hud-mem { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-1); }
+.fm-paint-hud-hint { font-size: 11px; color: var(--text-muted); }
+.fm-paint-hud-btn {
+  width: 28px;
+  height: 24px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.fm-paint-hud-btn:hover { background: color-mix(in srgb, var(--accent-color) 28%, var(--surface-1)); }
+.fm-paint-hud-tip { margin-top: var(--space-1); font-size: 10px; line-height: 1.35; color: var(--text-secondary); }
+.fm-paint-hud.is-plain .fm-paint-hud-mem, .fm-paint-hud.is-plain .fm-paint-hud-tip { display: none; }
+.fm-paint-slider.is-fine .fm-paint-slider-thumb { background: var(--accent-color); }
+.fm-paint-slider-short { height: 84px; }
 
 .fm-paint-toast {
   position: absolute;
@@ -269,6 +289,8 @@
 }
 .fm-ptools[hidden], .fm-ptools [hidden] { display: none; }
 .fm-paint.has-strip .fm-ptools { bottom: 152px; }
+/* a stroke waiting for its frame to load */
+.fm-paint.is-waiting canvas { cursor: progress; }
 .fm-ptools-modes, .fm-ptools-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1); }
 .fm-ptools-mode, .fm-ptools-act {
   height: 30px;

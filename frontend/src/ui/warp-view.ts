@@ -6,7 +6,7 @@ import type { View } from '../engine/render';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { animate, evalLane, laneOf, warpSize, type Animated } from '../engine/keys';
-import { applyTake, Recorder } from '../engine/perform';
+import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { DISTORT_IDS, contentRect, localToStage, setStagePost, stageToLocal, warpId, warpPoint, type Rect } from '../engine/warp-draw';
 import { postMatrix } from '../engine/transform';
 import type { Content } from '../engine/types';
@@ -255,7 +255,7 @@ export class WarpOverlay {
     if (!take) return;
     const ease = newKeyState().lastEase;
     const at = Math.max(0, Math.round(take.from));
-    this.engine.run(d.kind === 'warp' ? 'Perform Warp' : 'Perform Distort', (mv) => ops.updateContent(mv, d.id, (c) => applyTake(laneOf(c, d.kind) ? c : ensureLane(c, d.kind, at, mv.addKeyAtStart, ease), take, 'linear')), d.tag);
+    this.engine.run(d.kind === 'warp' ? 'Perform Warp' : 'Perform Distort', (mv) => ops.updateContent(mv, d.id, (c) => applyTake(laneOf(c, d.kind) ? c : ensureLane(c, d.kind, at, mv.addKeyAtStart, ease), take, 'linear', roomFor(mv, d.id))), d.tag);
   }
 
   private up(e: PointerEvent): void {

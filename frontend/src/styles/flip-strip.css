@@ -46,6 +46,16 @@
   background: transparent; color: var(--text-secondary); cursor: default;
 }
 .fm-fs-ib:hover, .fm-fs-ib:focus-visible { background: var(--surface-raised); color: var(--text-primary); outline: none; }
+.fm-fs-ib.has-lab { width: auto; gap: 4px; padding: 0 var(--space-2); }
+.fm-fs-iblab { font-size: var(--fs-11); font-weight: 600; }
+.fm-fs-step { width: 26px; }
+/* the hide handle turns over once the frames are tucked away */
+[data-act="hide"] .icon { transition: transform var(--dur-fast, 120ms) ease; }
+.fm-fs.is-collapsed [data-act="hide"] .icon { transform: rotate(180deg); }
+.fm-fs.is-collapsed .fm-fs-body { display: none; }
+.fm-fs.is-collapsed { padding-bottom: var(--space-2); }
+/* a fixed mark where the open frame sits */
+.fm-fs-ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent-color); opacity: 0.6; pointer-events: none; border-radius: 1px; }
 
 .fm-fs-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fm-fs-rulerrow { display: flex; height: 20px; }
@@ -197,6 +207,22 @@
   background-position: 0 var(--wo);
 }
 .fm-fm[data-o="v"] .fm-fm-mid { left: 3px; right: 3px; top: 50%; bottom: auto; width: auto; height: 10px; margin: -5px 0 0; }
+
+/* The strip's own scrub wheel (same notched look as the Mini Flipbook's). */
+.fm-fs-wheelslot { display: inline-flex; align-items: center; flex: none; }
+.fm-sw {
+  --wo: 0px;
+  position: relative; width: 150px; height: 24px; border-radius: var(--radius-pill); overflow: hidden; touch-action: none; cursor: ew-resize;
+  background-color: var(--surface-field);
+  background-image: repeating-linear-gradient(90deg, var(--text-muted) 0 1.5px, transparent 1.5px var(--notch, 18px));
+  background-position: var(--wo) 0;
+}
+.fm-sw-mid {
+  position: absolute; left: 50%; top: 3px; bottom: 3px; width: 10px; margin-left: -5px; padding: 0; border: 0; border-radius: 5px;
+  background: var(--text-primary); opacity: 0.85; cursor: pointer;
+}
+.fm-sw-mid.is-locked { background: var(--fm-hl-pink); opacity: 1; box-shadow: 0 0 8px var(--fm-hl-pink); }
+.fm-sw.is-scrub { box-shadow: inset 0 0 0 1.5px var(--accent-color); }
 
 /* A frame's name (a mouth shape) shows at its top left. */
 .fm-fs-cell[data-name]::before { content: attr(data-name); position: absolute; left: 3px; top: 2px; max-width: calc(100% - 6px); overflow: hidden; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-9); font-weight: 600; line-height: 1; pointer-events: none; text-shadow: 0 0 3px var(--bg-primary), 0 0 2px var(--bg-primary); }

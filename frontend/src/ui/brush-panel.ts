@@ -3,7 +3,7 @@
 // the panel, or picked with Import, land in the Imported set.
 import { el, patchList, q, setClass, setHidden, setText } from './dom';
 import { t, tn } from './i18n';
-import { brushStore, IMPORTED_ID, type BrushSet } from './brush-store';
+import { brushStore, IMPORTED_ID, LIB_IMPORTED, type BrushLib, type BrushSet } from './brush-store';
 import { renderBrushPreview } from '../paint/preview';
 import { importBrushFile } from '../io/brush-import';
 import type { Brush } from '../paint/types';
@@ -23,12 +23,17 @@ const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>';
 
 type Tool = 'paint' | 'smudge' | 'erase';
-type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore';
+type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib';
 
 const LABEL: Record<Act, string> = {
   rename: 'Rename', duplicate: 'Duplicate', delete: 'Delete', up: 'Move up', down: 'Move down',
   pressure: 'Pressure & Smoothing', import: 'Import brushes', newset: 'New set', restore: 'Restore starter brushes',
+  newlib: 'New library', renamelib: 'Rename library', deletelib: 'Delete library',
 };
+
+const ICON_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const ICON_PREV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>';
+const ICON_NEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>';
 
 interface Prev { canvas: HTMLCanvasElement; rev: number; set: string }
 
@@ -41,6 +46,8 @@ export class BrushPanel {
   private readonly searchEl: HTMLInputElement;
   private readonly clearEl: HTMLElement;
   private readonly fileEl: HTMLInputElement;
+  private readonly libNameEl: HTMLElement;
+  private readonly libMenuEl: HTMLElement;
   private readonly menuEl: HTMLElement;
   private readonly menuItems: HTMLButtonElement[];
   private readonly renameEl: HTMLInputElement;
@@ -56,7 +63,7 @@ export class BrushPanel {
   private opened = false;
   private freezeRecent = false;
   private menuTarget: { kind: 'brush' | 'set' | 'panel'; id: string } | null = null;
-  private renaming: { kind: 'brush' | 'set'; id: string } | null = null;
+  private renaming: { kind: 'brush' | 'set' | 'lib'; id: string } | null = null;
   private cardId = '';
   private cardRaf = 0;
   private noteTimer = 0;
@@ -66,6 +73,7 @@ export class BrushPanel {
     const t = e.target as Node | null;
     if (!t || this.root.contains(t) || this.anchor?.contains(t)) {
       if (t && !this.menuEl.hidden && !this.menuEl.contains(t)) this.closeMenu();
+      if (t && !this.libMenuEl.hidden && !this.libMenuEl.contains(t) && !(t as HTMLElement).closest?.('.fm-bp-libname')) this.closeLibMenu();
       return;
     }
     this.close();
@@ -75,6 +83,7 @@ export class BrushPanel {
     e.stopPropagation();
     if (this.renaming) { this.endRename(false); return; }
     if (!this.menuEl.hidden) { this.closeMenu(); return; }
+    if (!this.libMenuEl.hidden) { this.closeLibMenu(); return; }
     if (!this.cardEl.hidden) { this.closeCard(); return; }
     if (this.searchEl.value) { this.searchEl.value = ''; this.onSearch(); return; }
     this.close();
@@ -87,14 +96,20 @@ export class BrushPanel {
         <button type="button" class="fm-bp-tool" data-act="newset" title="New set" aria-label="New set">${ICON_ADD}</button>
         <button type="button" class="fm-bp-tool" data-act="more" title="More" aria-label="More">${ICON_MORE}</button>
       </div>
+      <div class="fm-bp-lib">
+        <button type="button" class="fm-bp-tool" data-lib="prev" title="Previous library" aria-label="Previous library">${ICON_PREV}</button>
+        <button type="button" class="fm-bp-libname" data-lib="menu" title="Libraries" aria-label="Libraries"><span></span>${ICON_CHEV}</button>
+        <button type="button" class="fm-bp-tool" data-lib="next" title="Next library" aria-label="Next library">${ICON_NEXT}</button>
+      </div>
       <label class="fm-bp-search"><span class="fm-bp-glass">${ICON_SEARCH}</span><input type="text" placeholder="Search" spellcheck="false" autocomplete="off"><button type="button" class="fm-bp-clear" hidden aria-label="Clear">${ICON_CLEAR}</button></label>
       <div class="fm-bp-cols">
         <div class="fm-bp-sets"></div>
         <div class="fm-bp-lists"><div class="fm-bp-list"></div><div class="fm-bp-empty" hidden></div></div>
       </div>
       <div class="fm-bp-note" hidden></div>
-      <input class="fm-bp-file" type="file" accept=".abr,.brush,.brushset,image/*" multiple hidden>
+      <input class="fm-bp-file" type="file" accept=".abr,.brush,.brushset,.brushlib,image/*" multiple hidden>
       <input class="fm-bp-rename" type="text" maxlength="60" hidden spellcheck="false" autocomplete="off">
+      <div class="fm-bp-libmenu fm-pp-glass" hidden></div>
       <div class="fm-bp-menu fm-pp-glass" hidden>${(Array.from({ length: 7 }, () => '<button type="button" class="fm-bp-mi" hidden></button>')).join('')}</div>
       <div class="fm-bp-card" hidden>
         <div class="fm-bp-card-head"><div class="fm-bp-card-title">Pressure &amp; Smoothing</div><button type="button" class="fm-bp-card-done">Done</button></div>
@@ -113,6 +128,8 @@ export class BrushPanel {
     this.searchEl = q<HTMLInputElement>(this.root, '.fm-bp-search input');
     this.clearEl = q(this.root, '.fm-bp-clear');
     this.fileEl = q<HTMLInputElement>(this.root, '.fm-bp-file');
+    this.libNameEl = q(this.root, '.fm-bp-libname span');
+    this.libMenuEl = q(this.root, '.fm-bp-libmenu');
     this.menuEl = q(this.root, '.fm-bp-menu');
     this.menuItems = Array.from(this.menuEl.querySelectorAll<HTMLButtonElement>('.fm-bp-mi'));
     this.renameEl = q<HTMLInputElement>(this.root, '.fm-bp-rename');
@@ -127,6 +144,24 @@ export class BrushPanel {
     brushStore.subscribe(() => { if (this.opened) this.sync(); else this.dirty = true; });
     void brushStore.load();
 
+    this.root.querySelector('.fm-bp-lib')!.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-lib]');
+      if (!b) return;
+      e.stopPropagation();
+      this.closeMenu();
+      if (b.dataset.lib === 'menu') { this.toggleLibMenu(b); return; }
+      this.closeLibMenu();
+      this.searchEl.value = '';
+      brushStore.stepLib(b.dataset.lib === 'next' ? 1 : -1);
+      this.pickFirstSet();
+    });
+    this.libMenuEl.addEventListener('click', (e) => {
+      const r = (e.target as HTMLElement).closest<HTMLElement>('.fm-bp-li');
+      if (!r) return;
+      this.closeLibMenu();
+      if (r.dataset.new) { this.newLib(); return; }
+      if (r.dataset.lib) { this.searchEl.value = ''; brushStore.setActiveLib(r.dataset.lib); this.pickFirstSet(); }
+    });
     this.setsEl.addEventListener('click', (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>('.fm-bp-set');
       if (!row) return;
@@ -157,6 +192,7 @@ export class BrushPanel {
       if (b?.dataset.act) this.runAct(b.dataset.act as Act);
     });
     for (const btn of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-bp-tool'))) {
+      if (btn.dataset.lib) continue;
       btn.addEventListener('click', (e) => {
         const act = btn.dataset.act;
         if (act === 'import') this.fileEl.click();
@@ -203,7 +239,9 @@ export class BrushPanel {
     this.root.dataset.tool = tool;
     this.searchEl.value = '';
     const home = brushStore.setOf(currentId);
-    this.activeSet = home ? home.id : (this.recent.length ? RECENT : (brushStore.sets()[0]?.id ?? RECENT));
+    if (home) brushStore.setActiveLib(brushStore.libOf(home.id));
+    this.activeSet = home ? home.id : (this.recent.length ? RECENT : (brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT));
+    this.closeLibMenu();
     this.freezeRecent = false;
     if (!this.root.parentElement) (document.getElementById('overlay-root') ?? document.body).appendChild(this.root);
     this.root.hidden = false;
@@ -271,10 +309,13 @@ export class BrushPanel {
   /** Patches the set rows, the brush rows and the empty note in place. */
   private sync(): void {
     const searching = this.searching();
-    if (!searching && this.activeSet !== RECENT && !brushStore.set(this.activeSet)) this.activeSet = brushStore.sets()[0]?.id ?? RECENT;
+    const lib = brushStore.activeLib();
+    setText(this.libNameEl, brushStore.lib(lib)?.name ?? '');
+    const inLib = brushStore.setsOf(lib);
+    if (!searching && this.activeSet !== RECENT && !inLib.some((s) => s.id === this.activeSet)) this.activeSet = inLib[0]?.id ?? RECENT;
     setHidden(this.clearEl, !searching);
     setClass(this.setsEl, 'is-dim', searching);
-    const sets: { id: string; name: string; recent: boolean }[] = [{ id: RECENT, name: 'Recent', recent: true }, ...brushStore.sets().map((s: BrushSet) => ({ id: s.id, name: s.id === IMPORTED_ID ? 'Imported' : s.name, recent: false }))];
+    const sets: { id: string; name: string; recent: boolean }[] = [{ id: RECENT, name: 'Recent', recent: true }, ...inLib.map((s: BrushSet) => ({ id: s.id, name: s.id === IMPORTED_ID ? 'Imported' : s.name, recent: false }))];
     patchList(this.setsEl, sets, {
       key: (s) => s.id,
       create: (s) => {
@@ -350,7 +391,7 @@ export class BrushPanel {
     let acts: Act[];
     if (target.kind === 'brush') acts = ['pressure', 'rename', 'duplicate', 'up', 'down', 'delete'];
     else if (target.kind === 'set') acts = ['rename', 'duplicate', 'up', 'down', 'delete'];
-    else acts = ['import', 'newset', 'restore'];
+    else acts = ['import', 'newset', 'newlib', 'renamelib', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
     if (target.kind === 'set' && target.id === IMPORTED_ID) acts = ['up', 'down'];
     this.menuItems.forEach((b, i) => {
       const a = acts[i];
@@ -371,6 +412,45 @@ export class BrushPanel {
 
   private closeMenu(): void { setHidden(this.menuEl, true); }
 
+  private closeLibMenu(): void { setHidden(this.libMenuEl, true); }
+
+  private pickFirstSet(): void {
+    this.activeSet = brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT;
+    this.freezeRecent = false;
+    this.sync();
+    this.listEl.scrollTop = 0;
+  }
+
+  /** Library list under the name: rows are patched in place, "New library" last. */
+  private toggleLibMenu(anchor: HTMLElement): void {
+    if (!this.libMenuEl.hidden) { this.closeLibMenu(); return; }
+    const active = brushStore.activeLib();
+    const rows: { id: string; name: string; add: boolean }[] = [...brushStore.libs().map((l: BrushLib) => ({ id: l.id, name: l.name, add: false })), { id: 'new', name: 'New library', add: true }];
+    patchList(this.libMenuEl, rows, {
+      key: (r) => r.id,
+      create: (r) => {
+        const row = el<HTMLElement>(r.add ? '<button type="button" class="fm-bp-li" data-new="1"></button>' : `<button type="button" class="fm-bp-li" data-lib="${r.id}"></button>`);
+        setText(row, r.name);
+        setClass(row, 'is-active', r.id === active);
+        return row;
+      },
+      update: (row, r) => { setText(row, r.name); setClass(row, 'is-active', r.id === active); },
+    });
+    const host = this.root.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+    this.libMenuEl.hidden = false;
+    const mw = this.libMenuEl.offsetWidth;
+    this.libMenuEl.style.left = `${Math.round(Math.max(4, Math.min(ar.left - host.left, host.width - mw - 4)))}px`;
+    this.libMenuEl.style.top = `${Math.round(ar.bottom - host.top + 4)}px`;
+  }
+
+  private newLib(): void {
+    const id = brushStore.addLib('New library');
+    this.searchEl.value = '';
+    this.activeSet = RECENT;
+    this.sync();
+    this.beginRename('lib', id);
+  }
+
   private runAct(act: Act): void {
     const t = this.menuTarget;
     this.closeMenu();
@@ -378,6 +458,9 @@ export class BrushPanel {
     if (t.kind === 'panel') {
       if (act === 'import') this.fileEl.click();
       else if (act === 'newset') this.newSet();
+      else if (act === 'newlib') this.newLib();
+      else if (act === 'renamelib') this.beginRename('lib', brushStore.activeLib());
+      else if (act === 'deletelib') { brushStore.removeLib(brushStore.activeLib()); this.pickFirstSet(); }
       else if (act === 'restore') { brushStore.resetAll(); this.activeSet = brushStore.sets()[0]?.id ?? RECENT; this.sync(); this.note('Starter brushes restored'); }
       return;
     }
@@ -405,12 +488,12 @@ export class BrushPanel {
     this.beginRename('set', id);
   }
 
-  private beginRename(kind: 'brush' | 'set', id: string): void {
-    const host = kind === 'brush' ? this.listEl.querySelector<HTMLElement>(`.fm-bp-row[data-key="${id}"]`) : this.setsEl.querySelector<HTMLElement>(`.fm-bp-set[data-set="${id}"]`);
+  private beginRename(kind: 'brush' | 'set' | 'lib', id: string): void {
+    const host = kind === 'lib' ? q(this.root, '.fm-bp-libname') : kind === 'brush' ? this.listEl.querySelector<HTMLElement>(`.fm-bp-row[data-key="${id}"]`) : this.setsEl.querySelector<HTMLElement>(`.fm-bp-set[data-set="${id}"]`);
     if (!host) return;
     const r = host.getBoundingClientRect(), pr = this.root.getBoundingClientRect();
     this.renaming = { kind, id };
-    this.renameEl.value = kind === 'brush' ? (brushStore.brush(id)?.name ?? '') : (brushStore.set(id)?.name ?? '');
+    this.renameEl.value = kind === 'lib' ? (brushStore.lib(id)?.name ?? '') : kind === 'brush' ? (brushStore.brush(id)?.name ?? '') : (brushStore.set(id)?.name ?? '');
     this.renameEl.style.left = `${Math.round(r.left - pr.left)}px`;
     this.renameEl.style.top = `${Math.round(r.top - pr.top + (kind === 'brush' ? 2 : 0))}px`;
     this.renameEl.style.width = `${Math.round(kind === 'brush' ? Math.min(r.width, 180) : r.width)}px`;
@@ -426,18 +509,23 @@ export class BrushPanel {
     const v = this.renameEl.value;
     this.renameEl.hidden = true;
     if (!commit) return;
-    if (r.kind === 'brush') brushStore.rename(r.id, v); else brushStore.renameSet(r.id, v);
+    if (r.kind === 'brush') brushStore.rename(r.id, v); else if (r.kind === 'lib') brushStore.renameLib(r.id, v); else brushStore.renameSet(r.id, v);
   }
 
   private async importFiles(files: File[]): Promise<void> {
-    let added = 0, failed = 0, last = '';
+    let added = 0, failed = 0, last = '', plain = false;
     for (const f of files) {
       try {
         const r = await importBrushFile(f);
-        if (r.brushes.length) { brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
+        if (r.sets && r.sets.length) {
+          brushStore.addImportedLibrary(r.libName ?? f.name.replace(/\.[^.]+$/, ''), r.sets);
+          added += r.brushes.length;
+          this.activeSet = brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT;
+        } else if (r.brushes.length) {
+          plain = true; brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
       } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
     }
-    if (added) { this.activeSet = IMPORTED_ID; this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }
+    if (added) { if (plain) { brushStore.setActiveLib(LIB_IMPORTED); this.activeSet = IMPORTED_ID; } this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }
     this.note(added ? tn(added, 'Imported {n} brush', 'Imported {n} brushes') : (last || t('No brushes found in that file')));
     if (added && failed) this.note(`${tn(added, 'Imported {n} brush', 'Imported {n} brushes')}, ${tn(failed, '{n} skipped', '{n} skipped')}`);
   }
@@ -555,7 +643,9 @@ export class BrushPanel {
 
 function paintPreview(c: HTMLCanvasElement, b: Brush, w = PW, h = PH): void {
   try {
-    const r = renderBrushPreview(b, w * SCALE, h * SCALE, { r: 255, g: 255, b: 255 });
+    // Colour dynamics need a colour with hue to show.
+    const col = b.colorDyn ? { r: 240, g: 140, b: 70 } : { r: 255, g: 255, b: 255 };
+    const r = renderBrushPreview(b, w * SCALE, h * SCALE, col);
     c.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(r.data), r.width, r.height), 0, 0);
   } catch { /* an empty preview is acceptable */ }
 }

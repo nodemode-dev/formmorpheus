@@ -10,7 +10,13 @@ import type { Brush } from '../paint/types';
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const MAX_TIP_SIDE = 512;
 
-export interface ImportResult { brushes: Brush[]; skipped: number }
+export interface ImportResult {
+  brushes: Brush[];
+  skipped: number;
+  /** A library file: its sets (folder or inner set file names) and the library's name. */
+  sets?: { name: string; brushes: Brush[] }[];
+  libName?: string;
+}
 
 // ---- property lists ----------------------------------------------------------
 
@@ -217,6 +223,75 @@ function num(m: Map<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
+/** First finite number whose (lower-case) key matches; keys are searched in map order. */
+function rx(m: Map<string, unknown>, re: RegExp): number | null {
+  for (const [k, v] of m) if (typeof v === 'number' && Number.isFinite(v) && re.test(k)) return v;
+  return null;
+}
+
+const unit = (v: number): number => clamp(Math.abs(v) > 1 ? v / 100 : v, -1, 1);
+
+/**
+ * Engine parameters beyond the basics. Key names seen in public write-ups of the format: plotSpacing, plotJitter,
+ * shapeScatter, shapeRandomise, shapeInverted, shapeRotation, shapeAzimuth, textureScale, textureMovement,
+ * dynamicsPressure*, dynamicsTilt*, dynamicsSpeed*, dynamicsJitter*, dynamicsWetAccumulation, dynamicsMix,
+ * dynamicsLoad, maxOpacity. Everything else below (colour dynamics, dilution, rendering mode, wet edges, burnout,
+ * fall off, shape count, grain depth jitter, bump) is matched by loose key patterns and is an assumption.
+ */
+function mapEngine(m: Map<string, unknown>, b: Brush): void {
+  const sSize = rx(m, /^dynamicsspeed.*size|^speedsize/), sOp = rx(m, /^dynamicsspeed.*(opacity|flow)|^speedopacity/);
+  if (sSize !== null && sSize !== 0) b.speedSize = unit(sSize);
+  if (sOp !== null && sOp !== 0) b.speedOpacity = unit(sOp);
+  const jSize = rx(m, /^dynamicsjitter.*size|^jittersize/), jOp = rx(m, /^dynamicsjitter.*(opacity|flow)|^jitteropacity/);
+  if (jSize !== null && jSize > 0) b.jitterSize = clamp(jSize, 0, 1);
+  if (jOp !== null && jOp > 0) b.jitterOpacity = clamp(jOp, 0, 1);
+  const cnt = rx(m, /shapecount|stampcount/);
+  if (cnt !== null && cnt > 1) b.shapeCount = clamp(Math.round(cnt), 1, 16);
+  const az = m.get('shapeazimuth');
+  if (az === true || (typeof az === 'number' && az > 0)) b.azimuth = true;
+  const rot = num(m, 'shapeRotation');
+  if (rot !== null && rot !== 0) b.baseRot = (rot <= 1 ? rot * Math.PI * 2 : rot) % (Math.PI * 2);
+  const mov = num(m, 'textureMovement');
+  if (mov !== null) b.grainMode = mov < 0.5 ? 'moving' : 'texturized';
+  const gj = rx(m, /(texture|grain)depthjitter|dynamicsjitterdepth|dynamicsjitter.*(texture|grain)/);
+  if (gj !== null && gj > 0) b.grainJitter = clamp(gj, 0, 1);
+  const bump = rx(m, /bump|materialdepth|emboss/);
+  if (bump !== null && bump > 0) b.bump = clamp(bump, 0, 1);
+  const we = rx(m, /wetedge/), bo = rx(m, /burnout/), fo = rx(m, /falloff/);
+  if (we !== null && we > 0) b.wetEdges = clamp(we, 0, 1);
+  if (bo !== null && bo > 0) b.burnout = clamp(bo, 0, 1);
+  if (fo !== null && fo > 0) b.fallOff = clamp(fo, 0, 1);
+  const wig = rx(m, /wiggle|wobble/);
+  if (wig !== null && wig > 0) b.wiggle = clamp(wig, 0, 1);
+
+  const mode = m.get('renderingmode') ?? m.get('rendermode') ?? m.get('blendmode');
+  const modes: NonNullable<Brush['render']>[] = ['light-glaze', 'uniform-glaze', 'intense-glaze', 'heavy-glaze', 'uniform-blending', 'intense-blending'];
+  if (typeof mode === 'number' && mode >= 0 && mode < modes.length) b.render = modes[Math.floor(mode)];
+  else if (typeof mode === 'string') {
+    const s = mode.toLowerCase().replace(/[^a-z]/g, '');
+    const hit = modes.find((x) => s.includes(x.replace('-', '')));
+    if (hit) b.render = hit;
+  }
+
+  // Wet mix. dynamicsLoad, dynamicsMix and dynamicsWetAccumulation are real keys whose meaning is inferred (charge, attack, pull).
+  const dil = rx(m, /dilution|dynamicswetdilution/), chg = rx(m, /charge|^dynamicsload$/), atk = rx(m, /attack|^dynamicsmix$/);
+  const pul = rx(m, /pull|wetaccumulation/), grd = rx(m, /wetgrade|^grade$|blur|bleed/);
+  if (dil !== null || chg !== null || atk !== null || pul !== null || grd !== null) {
+    b.wet = { dilution: clamp(dil ?? 0, 0, 1), charge: clamp(chg ?? 0.7, 0, 1), attack: clamp(atk ?? 0, 0, 1), pull: clamp(pul ?? 0, 0, 1), grade: clamp(grd ?? 0.5, 0, 1) };
+    if ((dil ?? 0) <= 0 && (atk ?? 0) <= 0 && (pul ?? 0) <= 0 && (chg ?? 1) >= 1) delete b.wet;
+  }
+
+  // Colour dynamics.
+  const cd: NonNullable<Brush['colorDyn']> = {};
+  const pick = (re: RegExp): number | null => { const v = rx(m, re); return v === null || v === 0 ? null : clamp(v, -1, 1); };
+  const set = (k: keyof typeof cd, re: RegExp): void => { const v = pick(re); if (v !== null) cd[k] = v; };
+  set('stampHue', /(stamp|shape).*hue|hue.*(stamp|shape)jitter/); set('stampSat', /(stamp|shape).*sat|sat.*(stamp|shape)jitter/); set('stampBri', /(stamp|shape).*(bright|lightness)|(bright).*(stamp|shape)jitter/);
+  set('strokeHue', /stroke.*hue|hue.*strokejitter/); set('strokeSat', /stroke.*sat|sat.*strokejitter/); set('strokeBri', /stroke.*(bright|lightness)/);
+  set('pressureHue', /pressure.*hue/); set('pressureSat', /pressure.*sat/); set('pressureBri', /pressure.*(bright|lightness)/);
+  set('tiltHue', /tilt.*hue/); set('tiltSat', /tilt.*sat/); set('tiltBri', /tilt.*(bright|lightness)/);
+  if (Object.keys(cd).length) b.colorDyn = cd;
+}
+
 /** The parameters we can use, from the archive's key names; absent ones keep the plain defaults. */
 export function brushFromParams(plist: unknown, name: string, tip: { w: number; h: number; data: Uint8Array } | null, grain: Uint8Array | null): Brush {
   const m = new Map<string, unknown>();
@@ -248,8 +323,10 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
     followStroke: orient === false, roundness: 1, grain: grain ? clamp(tDepth ?? 0.8, 0, 1) : 0, smoothing: 0.2, pickup: 0.5,
     presets: makePresets(opac === null ? 1 : clamp(opac, 0.1, 1)), custom: true,
   };
+  if (tip && m.get('shapeinverted') === true) tip = { w: tip.w, h: tip.h, data: tip.data.map((v) => 255 - v) };
   if (tip) { const s = shrink(tip.w, tip.h, tip.data); b.tipImage = { w: s.w, h: s.h, data: s.data, key: id }; }
   if (grain) { b.grainImage = grain; if (tScale !== null) b.grainScale = clamp(tScale, 0.25, 4); }
+  mapEngine(m, b);
   if (taper > 0) b.taper = clamp(taper, 0, 1);
   if (stab !== null) b.stabilization = clamp(stab <= 1 ? stab * 100 : stab, 0, 100);
   if (motion !== null) b.motionFilter = clamp(motion <= 1 ? motion * 100 : motion, 0, 100);
@@ -284,11 +361,44 @@ export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<Im
   return { brushes: out, skipped };
 }
 
+/**
+ * A library file is read as an archive of sets: nested .brushset / .brush archives, or folders holding Brush.archive
+ * files (the folder above a brush folder names its set). The container layout is an assumption; both shapes are accepted.
+ */
+export async function brushesFromLib(buf: ArrayBuffer, base: string): Promise<ImportResult> {
+  let files: Record<string, Uint8Array>;
+  try { files = unzipSync(new Uint8Array(buf), { filter: (f) => f.originalSize < 128 * 1024 * 1024 }); } catch { throw new Error('This file is not a brush library.'); }
+  const groups = new Map<string, Brush[]>();
+  const add = (name: string, list: Brush[]): void => { if (list.length) groups.set(name, [...(groups.get(name) ?? []), ...list]); };
+  let skipped = 0;
+  for (const k of Object.keys(files).sort()) {
+    const d = files[k];
+    if (!/\.(brushset|brush)$/i.test(k) || d.length < 4 || d[0] !== 0x50 || d[1] !== 0x4b) continue;
+    const nm = (k.split('/').pop() ?? k).replace(/\.[^.]+$/, '') || base;
+    try {
+      const r = await brushesFromZip(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) as ArrayBuffer, nm);
+      add(/\.brush$/i.test(k) ? (k.split('/').slice(-2, -1)[0] ?? base) : nm, r.brushes);
+      skipped += r.skipped;
+    } catch { skipped++; }
+  }
+  const dirs = new Set<string>();
+  for (const k of Object.keys(files)) if (/(^|\/)Brush\.archive$/i.test(k)) dirs.add(k.slice(0, k.length - 'Brush.archive'.length));
+  let n = 0;
+  for (const dir of Array.from(dirs).sort()) {
+    const parts = dir.split('/').filter(Boolean);
+    const b = await brushFromFolder(files, dir, `${parts[parts.length - 1] ?? base} ${++n}`);
+    if (b) add(parts.length >= 2 ? parts[parts.length - 2] : base, [b]); else skipped++;
+  }
+  const sets = Array.from(groups, ([name, brushes]) => ({ name, brushes }));
+  return { brushes: sets.flatMap((s) => s.brushes), skipped, sets, libName: base };
+}
+
 /** Reads a brush file the person picked or dropped. */
 export async function importBrushFile(file: File): Promise<ImportResult> {
   const base = file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'Brush';
   const buf = await file.arrayBuffer();
   if (/\.abr$/i.test(file.name)) return brushesFromAbr(buf, base);
+  if (/\.brushlib$/i.test(file.name)) return brushesFromLib(buf, base);
   if (/\.(brush|brushset)$/i.test(file.name)) return brushesFromZip(buf, base);
   if (file.type.startsWith('image/')) {
     const tip = await decodeGrey(new Uint8Array(buf), null);
@@ -296,5 +406,5 @@ export async function importBrushFile(file: File): Promise<ImportResult> {
     const b = brushFromParams({}, base, tip, null);
     return { brushes: [b], skipped: 0 };
   }
-  throw new Error('Brush files are .abr, .brush and .brushset.');
+  throw new Error('Brush files are .abr, .brush, .brushset and .brushlib.');
 }
