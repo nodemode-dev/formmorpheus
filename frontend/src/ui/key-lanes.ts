@@ -1,5 +1,5 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
-import { easeAt, kindSpec, laneFrames } from '../engine/keys';
+import { easeAt, evalLane, kindSpec, laneFrames } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
 
 export const LANE_H = 28;
@@ -83,7 +83,7 @@ function drawGlyph(c: CanvasRenderingContext2D, kind: KeyKind, color: string, cx
 }
 
 /** Draw every lane of `c`; `top` is the y of the first lane. */
-export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number): void {
+export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number): void {
   const w = Math.max(3, g.x1 - g.x0);
   c.save();
   c.font = '600 9px Inter, system-ui, sans-serif';
@@ -131,6 +131,20 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         c.fillStyle = overBar ? p.onAccent : p.accent;
         c.textAlign = 'left';
         c.fillText(row.label, lx, cy);
+        if (local !== undefined) {
+          // the channel's value at the Playhead, at the row's right end
+          const ch = kindSpec(kind).channels.find((x) => x.id === row.channel);
+          const v = evalLane(item, slot.lane, local)[row.channel];
+          if (ch && Number.isFinite(v)) {
+            const shown = Math.round(v * ch.display * 10) / 10;
+            const text = `${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ch.unit === 'x' ? 'x' : ''}`;
+            const rx = Math.min(g.x1, g.width) - 10;
+            const lastX = frames.length ? g.x(frames[frames.length - 1]) : g.x0;
+            c.fillStyle = rx - lastX > 40 || frames.length < 2 ? p.text : p.onAccent;
+            c.textAlign = 'right';
+            c.fillText(text, rx, cy);
+          }
+        }
       }
       c.restore();
     }

@@ -134,6 +134,13 @@ export class TimelineView {
     this.laneMenu = new LaneMenu(engine, this.keyState);
     setGlyphLoadHandler(() => this.schedule());
     this.keyPill.addEventListener('click', () => this.actionMenu.open(this.keyPill));
+    // the pill sits on the key at the Playhead: a right-click on it opens that key's menu
+    this.keyPill.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const r = this.tracksCanvas.getBoundingClientRect(), p = this.keyPill.getBoundingClientRect();
+      const y = Math.min(r.bottom - 1, Math.max(r.top, p.top + p.height / 2));
+      this.contextMenu(new MouseEvent('contextmenu', { clientX: p.left + p.width / 2, clientY: y, bubbles: false, cancelable: true }));
+    });
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(this.lanes);
     ro.observe(this.ruler);
@@ -396,7 +403,7 @@ export class TimelineView {
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
-      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height);
+      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)));
     }
     if (endX < this.width) {
       c.fillStyle = p.end;
