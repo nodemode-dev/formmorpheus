@@ -33,8 +33,19 @@ export function updateContent(movie: Movie, id: string, fn: (c: Content) => Cont
 
 function cloneContent(c: Content, start: number): Content {
   const copy = JSON.parse(JSON.stringify(c)) as Content;
-  const fresh = (x: Content): Content => ({ ...x, id: uid('c'), tracks: x.tracks.map((t) => ({ ...t, id: uid('t'), content: t.content.map(fresh) })) });
-  return { ...fresh(copy), start };
+  const ids = new Map<string, string>();
+  const fresh = (x: Content): Content => {
+    const id = uid('c');
+    ids.set(x.id, id);
+    return { ...x, id, tracks: x.tracks.map((t) => ({ ...t, id: uid('t'), content: t.content.map(fresh) })) };
+  };
+  // a parent inside the copied group follows the copy; one outside stays
+  const relink = (x: Content): Content => {
+    const next: Content = x.tracks.length ? { ...x, tracks: x.tracks.map((t) => ({ ...t, content: t.content.map(relink) })) } : x;
+    if (next.parent && ids.has(next.parent)) return { ...next, parent: ids.get(next.parent) };
+    return next;
+  };
+  return { ...relink(fresh(copy)), start };
 }
 
 export function addTrack(movie: Movie, at = 0, name?: string): { movie: Movie; track: Track } {

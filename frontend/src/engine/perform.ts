@@ -3,7 +3,7 @@
 // Ramer-Douglas-Peucker with a tolerance); smoothing here is a zero-phase Gaussian so the take does not trail the hand.
 // Pure, no DOM.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
-import { KEY_KINDS, kindSpec, laneOf } from './keys';
+import { KEY_KINDS, channelSpec, kindSpec, laneOf } from './keys';
 
 export interface Take {
   kind: KeyKind;
@@ -54,7 +54,7 @@ export class Recorder {
       if (!row.size) continue;
       const dense = fill(row);
       const smooth = filterMotion(dense, amount);
-      const cs = spec.channels.find((c) => c.id === id);
+      const cs = channelSpec(this.kind, id);
       const tol = cs ? toleranceFor(cs.min, cs.max, cs.step, amount, observedRange(dense)) : 0;
       const keys = reduceKeys(smooth, tol);
       channels[id] = keys;

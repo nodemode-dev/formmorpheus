@@ -1,5 +1,6 @@
 import type { Engine } from '../engine/engine';
 import * as ops from '../engine/ops';
+import { setTrackScreen } from '../engine/camera';
 import { el } from './dom';
 import { Popover, popField, popRow, popSep } from './popover';
 
@@ -13,6 +14,7 @@ export class TrackMenu {
   private readonly clearGap = popRow('removeGap', 'Remove empty section');
   private readonly up = popRow('chevronUp', 'Move up');
   private readonly down = popRow('chevronDown', 'Move down');
+  private readonly screen = popRow(null, 'Fixed to screen', { check: true });
 
   constructor(private readonly engine: Engine) {
     this.pop = new Popover('fm-tm', 232);
@@ -31,7 +33,11 @@ export class TrackMenu {
     this.up.el.addEventListener('click', () => this.act('Move Track', (m, id) => ops.moveTrack(m, id, m.tracks.findIndex((t) => t.id === id) - 1)));
     this.down.el.addEventListener('click', () => this.act('Move Track', (m, id) => ops.moveTrack(m, id, m.tracks.findIndex((t) => t.id === id) + 1)));
     del.el.addEventListener('click', () => this.act('Delete Track', (m, id) => ops.deleteTrack(m, id)));
-    this.list.append(this.name.el, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
+    this.screen.el.addEventListener('click', () => {
+      const on = !this.screen.el.classList.contains('is-checked');
+      this.act('Fix Track to Screen', (m, id) => setTrackScreen(m, id, on));
+    });
+    this.list.append(this.name.el, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), this.screen.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
     this.pop.body.appendChild(this.list);
   }
 
@@ -56,6 +62,8 @@ export class TrackMenu {
     this.name.setDisabled(at < 0);
     this.paste.setDisabled(at < 0 || !this.engine.hasClipboard);
     this.clearGap.setDisabled(at < 0 || !m || m.tracks[at].content.some((c) => this.engine.isOver(c)));
+    this.screen.setChecked(at >= 0 && !!m?.tracks[at].screen);
+    this.screen.setDisabled(at < 0);
     this.up.setDisabled(at <= 0);
     this.down.setDisabled(!m || at < 0 || at >= m.tracks.length - 1);
   }

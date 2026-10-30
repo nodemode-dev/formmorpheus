@@ -12,6 +12,7 @@ import { icon } from './icons';
 import { Popover, popRow, popSep, type PopRow } from './popover';
 import { WarpCard } from './warp-card';
 import { warpMode } from './warp-view';
+import { bonesMode } from './bones-view';
 
 export const CLAPPER = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 6.4l16.8-3.3.8 3.9-16.8 3.3z"/><path d="M4 11h16v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8.4 4.6l1.6 3.2M13.6 3.6l1.6 3.2"/></svg>';
 const SPARKLE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4l1.8 4.6L16.4 10.4 11.8 12.2 10 16.8 8.2 12.2 3.6 10.4 8.2 8.6z"/><path d="M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg>';
@@ -115,6 +116,7 @@ export class ActionMenu {
     mlist.appendChild(this.kindRow('move'));
     mlist.appendChild(this.kindRow('warp'));
     mlist.appendChild(this.kindRow('distort'));
+    mlist.appendChild(this.kindRow('bones'));
 
     const filter = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Live Filters</span></div><div class="fm-ka-list"></div></div>');
     q(filter, '.fm-ka-tico').innerHTML = SPARKLE;
@@ -175,6 +177,8 @@ export class ActionMenu {
     if (!t) { this.pop.hide(); return; }
     const { c, local } = t;
     const ease = this.state.lastEase;
+    // Bones keeps its card on the Stage (it must outlive this menu, which closes on any outside press); the lane appears with the first pose
+    if (kind === 'bones') { warpMode.set(null); bonesMode.open(c.id); this.pop.hide(); return; }
     // in Perform the lane and the take that follows are one undo step: they share a merge tag
     this.cardTag = this.engine.mode === 'perform' ? `kc-card-${Date.now()}` : null;
     this.engine.run(`Add ${kindSpec(kind).label} keyframe`, (m) => ops.updateContent(m, c.id, (cc) => ensureLane(cc, kind, local, m.addKeyAtStart, ease)), this.cardTag);
@@ -189,6 +193,7 @@ export class ActionMenu {
     const target = targetOf(this.engine);
     warpMode.set(kind === 'warp' || kind === 'distort' ? kind : null, target?.c.id ?? null);
     warpMode.tag = this.cardTag;
+    bonesMode.open(null);
     this.view = 'card';
     for (const k of ['action', 'motion', 'filter'] as const) setHidden(this.views[k], true);
     setHidden(this.cardHost, false);
