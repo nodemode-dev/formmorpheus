@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+source "$(dirname "$0")/lib.sh"
+fail=0
+ok() { printf '  ok     %s\n' "$1"; }
+bad() { printf '  FAIL   %s · %s\n' "$1" "$2"; fail=1; }
+warn() { printf '  warn   %s · %s\n' "$1" "$2"; }
+fm_say "doctor · $(fm_os) · $(fm_version)"
+if command -v node >/dev/null 2>&1 && node -e 'const [m,n]=process.versions.node.split(".").map(Number);process.exit((m===20&&n>=19)||(m===22&&n>=12)||m>=23?0:1)'; then ok "node $(node -v)"; else bad "node" "Node 20.19+ or 22.12+ is required"; fi
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then ok "python $(python3 -V | awk '{print $2}')"; else bad "python" "Python 3.12+ is required"; fi
+if [ -f "$FM_ROOT/backend/venv/bin/activate" ]; then ok "backend venv"; else warn "backend venv" "run ./formmorpheus install"; fi
+if [ -d "$FM_ROOT/frontend/node_modules" ]; then ok "frontend node_modules"; else warn "frontend deps" "run ./formmorpheus install"; fi
+if command -v cargo >/dev/null 2>&1; then ok "rust $(rustc --version | awk '{print $2}') for desktop builds"; else warn "rust" "desktop builds need https://rustup.rs"; fi
+for port in 5194 "${FORMMORPHEUS_PORT:-9494}"; do
+  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then warn "port $port" "already in use"; else ok "port $port free"; fi
+done
+if [ "$fail" = 0 ]; then fm_say "ready"; else fm_say "fix the FAIL lines above"; fi
+exit "$fail"

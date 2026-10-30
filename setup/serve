@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+source "$(dirname "$0")/lib.sh"
+[ -f "$FM_ROOT/frontend/dist/index.html" ] || "$FM_ROOT/setup/build_frontend"
+fm_venv
+cd "$FM_ROOT/backend"
+fm_say "serving the built interface on http://127.0.0.1:${FORMMORPHEUS_PORT:-9494}"
+exec uvicorn app.main:app --host 127.0.0.1 --port "${FORMMORPHEUS_PORT:-9494}"
