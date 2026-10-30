@@ -2,6 +2,7 @@ import { end, flipIndexAt } from './model';
 import { drawMaskedRows, hasRowMask } from './flip-draw';
 import { animate, type Animated } from './keys';
 import { contentRect, drawTriangles, drawWarped, setStagePost } from './warp-draw';
+import { canvasOf, MAX_CANVAS_SIDE } from './canvas';
 import { memberMatrix, mul, ownMatrix, postMatrix, topMatrix, viewMat, type Mat } from './transform';
 import { boneQuads } from './bones';
 import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
@@ -11,14 +12,16 @@ import { hasTree } from '../paint/layer-tree';
 import { drawLayerTree } from './layer-draw';
 import { blendCanvasOnto, isPixelBlend } from './blend';
 import type { VideoSource } from '../media/types';
-import type { BlendMode, Content, Movie, Track } from './types';
+import type { BlendMode, CanvasRect, Content, Movie, Track } from './types';
 import { GpuCompositor, type GpuHost } from './gpu/compositor';
 import { probeGpu, type ProbeResult } from './gpu/probe';
+import { liveSet } from './gpu/live';
+import { layoutText, paintText } from './text-layout';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type Surface = OffscreenCanvas;
 
-const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
+export const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   normal: 'source-over', multiply: 'multiply', screen: 'screen', overlay: 'overlay', darken: 'darken', lighten: 'lighten',
   'color-dodge': 'color-dodge', 'color-burn': 'color-burn', 'hard-light': 'hard-light', 'soft-light': 'soft-light',
   difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
@@ -66,6 +69,9 @@ export class Renderer {
   private gpu: GpuCompositor | null = null;
   private gpuOn = false;
   private gpuHostObj: GpuHost | null = null;
+  private prunedFor: Movie | null = null;
+  /** While an export runs the GPU switch holds still: what was asked for meanwhile lands afterwards. */
+  private gpuPin: { want: boolean | null; shared?: GpuCompositor } | null = null;
   /** What the last probe measured; null before the first probe. */
   gpuProbe: ProbeResult | null = null;
 
@@ -78,6 +84,7 @@ export class Renderer {
 
   /** Switches GPU compositing; false when WebGL2 is missing. The CPU path stays the reference and the fallback. `shared`: a compositor owned elsewhere (the probe). */
   useGpu(on: boolean, shared?: GpuCompositor): boolean {
+    if (this.gpuPin) { this.gpuPin.want = on; this.gpuPin.shared = shared; return this.gpuOn; }
     if (!on) {
       if (this.gpuOn) { this.gpuOn = false; this.onReady(); }
       return false;
@@ -90,6 +97,18 @@ export class Renderer {
     if (!this.gpu) return false;
     if (!this.gpuOn) { this.gpuOn = true; if (!shared) this.onReady(); }
     return true;
+  }
+
+  /** Holds the GPU state as it is until the returned function is called, so an export never mixes GPU and CPU frames. */
+  pinGpu(): () => void {
+    if (this.gpuPin) return () => undefined;
+    const pin: { want: boolean | null; shared?: GpuCompositor } = { want: null };
+    this.gpuPin = pin;
+    return () => {
+      if (this.gpuPin !== pin) return;
+      this.gpuPin = null;
+      if (pin.want !== null) this.useGpu(pin.want, pin.shared);
+    };
   }
 
   /** Turns the GPU on when WebGL2 is available, a probe frame matches the CPU path and a heavy frame is not slower (software GL is); `force` skips the speed test. Resolves to whether it is on. */
@@ -125,30 +144,23 @@ export class Renderer {
     const s = c.text;
     if (!s || !s.text) return null;
     const mc = into.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    mc.setTransform(1, 0, 0, 1, 0, 0);
-    mc.font = `${s.weight} ${s.size}px ${JSON.stringify(s.font)}, Inter, sans-serif`;
-    const lines = s.text.split('\n');
-    let tw = 0;
-    for (const line of lines) tw = Math.max(tw, mc.measureText(line).width);
-    const pad = s.size * 0.4;
-    const th = lines.length * s.size * 1.2;
-    const ax = s.align === 'left' ? movie.width * 0.1 : s.align === 'right' ? movie.width * 0.9 : movie.width / 2;
-    const x = (s.align === 'left' ? ax : s.align === 'right' ? ax - tw : ax - tw / 2) - pad;
-    const y = movie.height / 2 - th / 2 - pad;
-    const w = tw + pad * 2, h = th + pad * 2;
+    const lay = layoutText(s, movie);
+    const { x, y, w, h } = lay.box;
     const pw = Math.min(4096, Math.max(1, Math.ceil(w * density))), ph = Math.min(4096, Math.max(1, Math.ceil(h * density)));
     if (into.width !== pw || into.height !== ph) { into.width = pw; into.height = ph; }
     mc.setTransform(1, 0, 0, 1, 0, 0);
     mc.clearRect(0, 0, pw, ph);
     const k = pw / w, kv = ph / h;
     mc.setTransform(k, 0, 0, kv, -x * k, -y * kv);
-    this.drawText(mc, c, movie);
+    paintText(mc, s, lay);
     return { x, y, w, h };
   }
 
   /** Content the GPU compositor does not draw itself: Warp and Distort, layer groups and masks, row masks (a group that holds any). */
   private needsCpu(c: Content, a: Animated, local: number): boolean {
     if (a.warp || a.distort || a.bones) return true;
+    // a canvas wider than a GPU texture can be goes through the CPU
+    if (c.canvas && Math.max(c.canvas.w, c.canvas.h) > MAX_CANVAS_SIDE / 2) return true;
     switch (c.kind) {
       case 'drawing': return hasTree(c.layers);
       case 'flipbook': {
@@ -171,6 +183,8 @@ export class Renderer {
   /** The GPU's result for this frame as a canvas, or null (off, lost, failed): the caller composes on the CPU. */
   private gpuCompose(movie: Movie, frame: number, view: View): OffscreenCanvas | null {
     if (!this.gpuOn || !this.gpu || !this.gpu.ready) return null;
+    // a new movie object: textures of deleted contents and pictures go (the live set is cheap next to a frame)
+    if (movie !== this.prunedFor) { this.prunedFor = movie; this.gpu.prune(liveSet(movie)); }
     return this.gpu.compose(this.gpuHost(), movie.tracks, frame, view, movie);
   }
 
@@ -465,7 +479,7 @@ export class Renderer {
     switch (c.kind) {
       case 'image': this.drawImageContent(ctx, c, movie); break;
       case 'video': this.drawVideoContent(ctx, c, local, movie); break;
-      case 'drawing': this.drawLayers(ctx, c.layers, movie); break;
+      case 'drawing': this.drawLayers(ctx, c.layers, movie, canvasOf(c, movie)); break;
       case 'flipbook': this.drawFlipbook(ctx, c, local + c.offset, movie); break;
       case 'text': this.drawText(ctx, c, movie); break;
       case 'group': this.drawGroup(ctx, c, local + c.offset, movie); break;
@@ -553,13 +567,19 @@ export class Renderer {
   }
 
   /** Draws a set of drawing layers in canvas pixels (the Draw & Paint view uses it for onion skins). */
-  layersInto(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
-    this.drawLayers(ctx, layers, movie);
+  layersInto(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie, size?: { w: number; h: number }): void {
+    this.drawLayers(ctx, layers, movie, size ? { x: 0, y: 0, w: size.w, h: size.h } : undefined);
   }
 
   /** Layer opacity multiplies the caller's alpha (a Flipbook row, a group member); a normal layer keeps the caller's blend. */
-  private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
-    if (hasTree(layers)) { drawLayerTree(ctx, layers, movie.width, movie.height, (id) => this.bitmap(id)); return; }
+  private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie, rect: CanvasRect = { x: 0, y: 0, w: movie.width, h: movie.height }): void {
+    if (hasTree(layers)) {
+      ctx.save();
+      ctx.translate(rect.x, rect.y);
+      drawLayerTree(ctx, layers, rect.w, rect.h, (id) => this.bitmap(id));
+      ctx.restore();
+      return;
+    }
     const baseAlpha = ctx.globalAlpha, baseOp = ctx.globalCompositeOperation;
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
@@ -570,23 +590,24 @@ export class Renderer {
         const s = this.surface();
         const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
         sc.setTransform(ctx.getTransform());
-        sc.drawImage(bmp, 0, 0, movie.width, movie.height);
+        sc.drawImage(bmp, rect.x, rect.y, rect.w, rect.h);
         blendCanvasOnto(ctx, s, l.blend, baseAlpha * l.opacity);
         this.release(s);
         continue;
       }
       ctx.globalAlpha = baseAlpha * l.opacity;
       ctx.globalCompositeOperation = l.blend === 'normal' ? baseOp : BLEND_OP[l.blend];
-      ctx.drawImage(bmp, 0, 0, movie.width, movie.height);
+      ctx.drawImage(bmp, rect.x, rect.y, rect.w, rect.h);
     }
     ctx.globalAlpha = baseAlpha;
     ctx.globalCompositeOperation = baseOp;
   }
 
   private drawFlipbook(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
+    const rect = canvasOf(c, movie);
     if (hasRowMask(c)) {
       drawMaskedRows({
-        surface: () => this.surface(), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie),
+        surface: () => this.surface(), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie, rect),
         mask: (a, b, m, inv) => this.applyMask(a, b, m, inv), blendOp: (b) => BLEND_OP[b],
         blendInto: (g, s, b, alpha) => { if (!isPixelBlend(b)) return false; blendCanvasOnto(g, s, b, alpha); return true; },
       }, ctx, c, local);
@@ -601,7 +622,7 @@ export class Renderer {
         const s = this.surface();
         const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
         sc.setTransform(ctx.getTransform());
-        this.drawLayers(sc, t.frames[index].layers, movie);
+        this.drawLayers(sc, t.frames[index].layers, movie, rect);
         blendCanvasOnto(ctx, s, t.blend, ctx.globalAlpha * t.opacity);
         this.release(s);
         continue;
@@ -609,7 +630,7 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha *= t.opacity;
       ctx.globalCompositeOperation = BLEND_OP[t.blend];
-      this.drawLayers(ctx, t.frames[index].layers, movie);
+      this.drawLayers(ctx, t.frames[index].layers, movie, rect);
       ctx.restore();
     }
   }
@@ -653,14 +674,7 @@ export class Renderer {
   private drawText(ctx: OffscreenCanvasRenderingContext2D, c: Content, movie: Movie): void {
     const s = c.text;
     if (!s) return;
-    ctx.fillStyle = s.color;
-    ctx.font = `${s.weight} ${s.size}px ${JSON.stringify(s.font)}, Inter, sans-serif`;
-    ctx.textAlign = s.align;
-    ctx.textBaseline = 'middle';
-    const lines = s.text.split('\n');
-    const lh = s.size * 1.2;
-    const x = s.align === 'left' ? movie.width * 0.1 : s.align === 'right' ? movie.width * 0.9 : movie.width / 2;
-    lines.forEach((line, i) => ctx.fillText(line, x, movie.height / 2 + (i - (lines.length - 1) / 2) * lh));
+    paintText(ctx, s, layoutText(s, movie));
   }
 
   private drawGroup(ctx: OffscreenCanvasRenderingContext2D, g: Content, local: number, movie: Movie): void {
@@ -692,12 +706,17 @@ export class Renderer {
     }
   }
 
-  thumb(ctx: CanvasRenderingContext2D, movie: Movie, c: Content, local: number, w: number, h: number): void {
+  thumb(ctx: CanvasRenderingContext2D, movie: Movie, c: Content, local: number, w: number, h: number, toCanvas = false): void {
     this.pw = Math.max(1, Math.round(w));
     this.ph = Math.max(1, Math.round(h));
     const s = this.surface();
     const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    const view = fitView(movie, w, h, 0);
+    let view = fitView(movie, w, h, 0);
+    if (toCanvas && c.canvas) {
+      // frame the Drawing's own canvas instead of the Stage
+      const k = canvasOf(c, movie), sk = Math.min(w / k.w, h / k.h);
+      view = { scale: sk, ox: (w - k.w * sk) / 2 - k.x * sk, oy: (h - k.h * sk) / 2 - k.y * sk, width: w, height: h };
+    }
     this.drawContent(sc, c, local, view, movie);
     ctx.drawImage(s, 0, 0);
     this.release(s);

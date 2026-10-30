@@ -62,6 +62,8 @@ export class Stroke implements StrokeLike {
   private readonly tooth: Float32Array | null;
   private readonly taperLen: number;
   private travel = 0;
+  private readonly endLen: number;
+  private endScale = 1;
   private readonly sel: Uint8Array | null;
   private readonly useCoverage: boolean;
 
@@ -123,6 +125,29 @@ export class Stroke implements StrokeLike {
       this.tooth = t;
     } else this.tooth = null;
     this.taperLen = (s.brush.taper ?? 0) > 0 ? (s.brush.taper ?? 0) * Math.max(24, this.baseDia * 5) : 0;
+    const te = s.brush.taperEnd ?? s.brush.taper ?? 0;
+    this.endLen = te > 0 ? te * Math.max(24, this.baseDia * 5) * 0.6 : 0;
+  }
+
+  /** The thinning tail past the last point: dabs continue along the last direction, shrinking to a point. */
+  private tailOut(): void {
+    const a = this.start, b = this.prev;
+    if (this.endLen <= 0 || !a || !b || this.travel < 4) return;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+    const ux = dx / len, uy = dy / len, dir = Math.atan2(dy, dx);
+    // short strokes get a short tail
+    const L = Math.min(this.endLen, this.travel * 0.6);
+    let pos = 0;
+    for (let guard = 0; guard < 4000; guard++) {
+      pos += Math.max(0.05, this.lastStep - this.acc);
+      this.acc = 0;
+      if (pos >= L) break;
+      const k = 1 - pos / L;
+      this.endScale = Math.max(0.1, k * k * (3 - 2 * k));
+      this.dab(b.x + ux * pos, b.y + uy * pos, b.p, b.tx, b.ty, dir);
+    }
+    this.endScale = 1;
   }
 
   // ---- StrokeLike ----------------------------------------------------------
@@ -169,6 +194,7 @@ export class Stroke implements StrokeLike {
       this.dab(f.x, f.y, f.p, f.tx, f.ty, null);
     } else if (this.count > 1) {
       this.walk(this.start!, this.prev!);
+      if (this.s.tool !== 'smudge') this.tailOut();
     }
     this.done = true;
     let patch: PixelPatch | null = null;
@@ -247,6 +273,7 @@ export class Stroke implements StrokeLike {
     const tilt = tiltShape(brush, tiltX, tiltY);
     let dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pressure) * tilt.sizeMul);
     if (this.taperLen > 0) dia = Math.max(0.6, dia * (0.12 + 0.88 * Math.min(1, this.travel / this.taperLen)));
+    if (this.endScale < 1) dia = Math.max(0.6, dia * this.endScale);
     this.lastStep = Math.max(0.5, brush.spacing * dia);
     this.travel += this.lastStep;
     const flow = Math.min(1, Math.max(0, brush.flow * pressureFlow(brush, pressure)));

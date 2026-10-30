@@ -105,6 +105,7 @@ body.theme-light .fm-bp-card-prev { filter: invert(1); }
 .fm-lp-list.is-dragging .fm-lp-row, .fm-lp-list.is-settling .fm-lp-row { }
 .fm-lp-list.is-settling .fm-lp-row { transition: none; }
 .fm-lp-row:hover { background: var(--bg-hover); }
+.fm-lp-row.is-multi { background: color-mix(in srgb, var(--accent-color) 45%, transparent); color: var(--text-on-accent); }
 .fm-lp-row.is-active { background: var(--accent-color); color: var(--text-on-accent); }
 .fm-lp-row.is-lifted { z-index: 2; transition: none; background: var(--accent-color); color: var(--text-on-accent); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
 .fm-lp-row.is-clip { padding-left: var(--space-5); background: color-mix(in srgb, var(--bg-primary) 30%, transparent); }

@@ -126,6 +126,7 @@ export function newMovie(opts: NewMovieOptions = {}): Movie {
     transparent: false,
     playback: 'loop',
     addKeyAtStart: true,
+    loopVisible: true,
     onion: defaultOnion(),
     tracks: [],
     assets: {},

@@ -6,10 +6,11 @@
 
 import type { Engine } from '../engine/engine';
 import * as flipOps from '../engine/flip-ops';
-import { hasRowMask as flipHasRowMask } from '../engine/flip-draw';
+import { hasRowMask as flipHasRowMask, hasRowMix as flipHasRowMix, RowPreview } from '../engine/flip-draw';
+import { blendCanvasOnto, isPixelBlend } from '../engine/blend';
 import { flipIndexAt, flipLength, flipStartOf, locate, uid } from '../engine/model';
 import * as ops from '../engine/ops';
-import type { Renderer } from '../engine/render';
+import { BLEND_OP, type Renderer } from '../engine/render';
 import type { Content, DrawingLayer, Movie, OnionSettings } from '../engine/types';
 import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById } from '../paint/brushes';
 import { PaintDoc } from '../paint/doc';
@@ -23,11 +24,13 @@ import { ColourPanel } from './colour-panel';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { t as tr } from './i18n';
 import { FlipStrip, type StripHost } from './flip-strip';
-import { CropResizeDialog, bakeCropResize } from './flip-canvas';
+import { CropResizeDialog, bakeCanvas } from './paint-crop';
+import { canvasOf, hasCanvas } from '../engine/canvas';
 import { FlipMini } from './flip-mini';
 import { icon } from './icons';
 import { LayersPanel } from './layers-panel';
 import { PaintSettings, loadPaintPrefs, savePaintPrefs, type PaintPrefs } from './paint-settings';
+import { gesturePrefsNow } from './gestures';
 import { PaintTools, type Interaction, type ToolHost } from './paint-tools';
 import { ColourDrop } from './paint-drop';
 import { HoldRepeat, SpinDrag, resetRotation } from './paint-gestures';
@@ -230,6 +233,7 @@ export class PaintView {
     this.menu = q(this.root, '.fm-paint-menu');
 
     this.prefs = loadPaintPrefs();
+    this.holdUndoBtn.delay = this.holdRedoBtn.delay = this.prefs.undoDelay;
     setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y })));
     this.brushIds = readJson<Record<PaintTool, string>>(TOOL_KEY, { paint: DEFAULT_PAINT, smudge: DEFAULT_SMUDGE, erase: DEFAULT_ERASE });
     this.brushStates = readJson<Record<string, BrushState>>(STATE_KEY, {});
@@ -242,6 +246,8 @@ export class PaintView {
     });
 
     this.input = new PenInput({ toCanvas: (x, y) => this.toCanvas(x, y), smoothing: 0, fingerPaints: this.prefs.fingerPaints });
+    // Preferences > Gestures can change finger painting while this view exists
+    document.addEventListener('fm:gesture-prefs', () => { this.prefs = { ...this.prefs, fingerPaints: loadPaintPrefs().fingerPaints }; this.input.fingerPaints = this.prefs.fingerPaints; });
 
     this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb), onSwatchDrag: (e) => this.swatchDrag(e) });
     this.brushPanel = new BrushPanel({ onPick: (b) => this.pickBrush(b) });
@@ -257,6 +263,7 @@ export class PaintView {
       onCropResize: () => { void this.cropResize(); },
     });
     this.strip = new FlipStrip(this.stripHost());
+    this.strip.onScrub = () => { if (this.onion().showWhileScrubbing === false) { this.full = true; this.redraw(); } };
     this.mini = new FlipMini(this.strip, this.stripHost(), this.root);
     // an Undo or Redo from the status bar changes the frames under the open strip
     this.engine.on('movie', () => {
@@ -443,12 +450,15 @@ export class PaintView {
     const c = this.content();
     if (!c) return;
     const old = this.doc;
-    const parked = this.parked.get(this.frameKey(c));
+    const k = canvasOf(c, m);
+    let parked = this.parked.get(this.frameKey(c));
+    // a parked frame from before a Crop and resize (or its Undo) has the old canvas size
+    if (parked && (parked.width !== k.w || parked.height !== k.h)) parked = undefined;
     let doc: PaintDoc;
     if (parked) doc = parked;
     else {
       const layers = this.frameLayers(c);
-      doc = layers.length ? await PaintDoc.load(m.width, m.height, layers, (id) => this.engine.assets.get(id)) : PaintDoc.blank(m.width, m.height);
+      doc = layers.length ? await PaintDoc.load(k.w, k.h, layers, (id) => this.engine.assets.get(id)) : PaintDoc.blank(k.w, k.h);
     }
     if (old !== doc) this.dropDoc(old);
     doc.onChange = (what, rect) => this.docChanged(what, rect);
@@ -555,7 +565,7 @@ export class PaintView {
       togglePlay: () => { if (this.playTimer) this.stopPlay(); else void this.startPlay(); },
       thumb: (row, index, w, h) => this.frameThumb(row, index, w, h),
       fps: () => this.engine.movie?.fps ?? 24,
-      movieSize: () => { const m = this.engine.movie; return m ? { w: m.width, h: m.height } : null; },
+      movieSize: () => { const m = this.engine.movie; if (!m) return null; const k = canvasOf(this.content(), m); return { w: k.w, h: k.h }; },
       drawPreview: (ctx, w, h, local) => this.drawPreview(ctx, w, h, local),
     };
   }
@@ -567,9 +577,10 @@ export class PaintView {
     if (!c || !m || c.kind !== 'flipbook') return;
     ctx.imageSmoothingQuality = 'high';
     if (!m.transparent) { ctx.fillStyle = m.background; ctx.fillRect(0, 0, w, h); }
-    if (flipHasRowMask(c)) { this.renderer.thumb(ctx, m, { ...c, offset: 0 }, local + c.offset, w, h); return; }
+    if (flipHasRowMask(c)) { this.renderer.thumb(ctx, m, { ...c, offset: 0 }, local + c.offset, w, h, true); return; }
     const g = ctx as unknown as OffscreenCanvasRenderingContext2D;
-    ctx.scale(w / m.width, h / m.height);
+    const kv = canvasOf(c, m);
+    ctx.scale(w / kv.w, h / kv.h);
     for (let i = c.flip.length - 1; i >= 0; i--) {
       const t = c.flip[i];
       if (t.hidden || t.opacity <= 0) continue;
@@ -579,7 +590,7 @@ export class PaintView {
       ctx.save();
       ctx.globalAlpha = t.opacity;
       const live = i === this.row && fi === this.index && !this.playTimer ? this.doc : this.parked.get(f.id);
-      if (live) live.composite(ctx); else this.renderer.layersInto(g, f.layers, m);
+      if (live) live.composite(ctx); else this.renderer.layersInto(g, f.layers, m, { w: kv.w, h: kv.h });
       ctx.restore();
     }
   }
@@ -667,10 +678,11 @@ export class PaintView {
     x.clearRect(0, 0, w, h);
     x.fillStyle = m.background;
     x.fillRect(0, 0, w, h);
-    const s = Math.min(w / m.width, h / m.height);
-    x.setTransform(s, 0, 0, s, (w - m.width * s) / 2, (h - m.height * s) / 2);
+    const kv = canvasOf(c, m);
+    const s = Math.min(w / kv.w, h / kv.h);
+    x.setTransform(s, 0, 0, s, (w - kv.w * s) / 2, (h - kv.h * s) / 2);
     if (live && liveDoc) liveDoc.composite(x);
-    else this.renderer.layersInto(x, f.layers, m);
+    else this.renderer.layersInto(x, f.layers, m, { w: kv.w, h: kv.h });
     this.thumbs.set(id, { key, canvas: cv });
     return cv;
   }
@@ -705,42 +717,46 @@ export class PaintView {
   private drawOnions(ctx: CanvasRenderingContext2D, c: Content, m: Movie): void {
     const o = this.onion();
     if (!o.enabled || c.kind !== 'flipbook' || this.playTimer) return;
+    if (o.showWhileScrubbing === false && this.strip.scrubbing) return;
     const t = c.flip[this.row];
     if (!t) return;
+    const kv = canvasOf(c, m), cw = kv.w, ch = kv.h;
     const side = (count: number, dir: -1 | 1, colour: string): void => {
+      const opacity = (dir < 0 ? o.backOpacity : o.foreOpacity) ?? o.opacity;
+      const tint = (dir < 0 ? o.backTint : o.foreTint) ?? o.tint;
       for (let k = count; k >= 1; k--) {
         const i = this.index + dir * k;
         if (i < 0 || i >= t.frames.length) continue;
         const f = t.frames[i];
         const parked = this.parked.get(f.id);
         if (!parked && f.layers.every((l) => !l.pixels || !l.visible)) continue;
-        const key = `${parked ? `live:${parked.layers.map((l) => l.version).join('.')}` : f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|')}:${o.tint ? colour : ''}:${m.width}x${m.height}`;
+        const key = `${parked ? `live:${parked.layers.map((l) => l.version).join('.')}` : f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|')}:${tint ? colour : ''}:${cw}x${ch}`;
         const have = this.ghosts.get(f.id);
         if (have && have.key === key) {
-          ctx.globalAlpha = o.opacity * (1 - (k - 1) / (count + 1));
+          ctx.globalAlpha = opacity * (1 - (k - 1) / (count + 1));
           ctx.drawImage(have.canvas, 0, 0);
           continue;
         }
-        const canvas = have && have.canvas.width === m.width && have.canvas.height === m.height ? have.canvas : new OffscreenCanvas(m.width, m.height);
+        const canvas = have && have.canvas.width === cw && have.canvas.height === ch ? have.canvas : new OffscreenCanvas(cw, ch);
         const g = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
         let ready = true;
         if (!parked) for (const l of f.layers) if (l.pixels && l.visible && !this.renderer.bitmap(l.pixels)) ready = false;
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalCompositeOperation = 'source-over';
         g.globalAlpha = 1;
-        g.clearRect(0, 0, m.width, m.height);
-        if (parked) parked.composite(g); else this.renderer.layersInto(g, f.layers, m);
-        if (o.tint) {
+        g.clearRect(0, 0, cw, ch);
+        if (parked) parked.composite(g); else this.renderer.layersInto(g, f.layers, m, { w: cw, h: ch });
+        if (tint) {
           g.globalCompositeOperation = 'source-atop';
           g.globalAlpha = 0.8;
           g.fillStyle = colour;
-          g.fillRect(0, 0, m.width, m.height);
+          g.fillRect(0, 0, cw, ch);
           g.globalAlpha = 1;
           g.globalCompositeOperation = 'source-over';
         }
         if (ready) this.ghosts.set(f.id, { key, canvas });
         if (this.ghosts.size > 24) this.ghosts.delete(this.ghosts.keys().next().value as string);
-        ctx.globalAlpha = o.opacity * (1 - (k - 1) / (count + 1));
+        ctx.globalAlpha = opacity * (1 - (k - 1) / (count + 1));
         ctx.drawImage(canvas, 0, 0);
       }
       ctx.globalAlpha = 1;
@@ -774,11 +790,15 @@ export class PaintView {
     const m = this.engine.movie;
     if (!m || !this.cssW) return;
     const padX = 72, padTop = 64, padBottom = this.content()?.kind === 'flipbook' ? 200 : 32;
-    const s = Math.min((this.cssW - padX * 2) / m.width, (this.cssH - padTop - padBottom) / m.height);
+    // fit the canvas and the Stage together (view pixels are canvas pixels; the Stage sits at -canvas.x, -canvas.y)
+    const kv = canvasOf(this.content(), m);
+    const ux0 = Math.min(0, -kv.x), uy0 = Math.min(0, -kv.y), ux1 = Math.max(kv.w, m.width - kv.x), uy1 = Math.max(kv.h, m.height - kv.y);
+    const uw = ux1 - ux0, uh = uy1 - uy0;
+    const s = Math.min((this.cssW - padX * 2) / uw, (this.cssH - padTop - padBottom) / uh);
     this.view.scale = Math.max(0.02, s);
     this.view.rot = 0;
-    this.view.ox = (this.cssW - m.width * this.view.scale) / 2;
-    this.view.oy = padTop + (this.cssH - padTop - padBottom - m.height * this.view.scale) / 2;
+    this.view.ox = (this.cssW - uw * this.view.scale) / 2 - ux0 * this.view.scale;
+    this.view.oy = padTop + (this.cssH - padTop - padBottom - uh * this.view.scale) / 2 - uy0 * this.view.scale;
     this.full = true;
     this.redraw();
   }
@@ -826,26 +846,39 @@ export class PaintView {
     ctx.clearRect(0, 0, this.cssW, this.cssH);
     ctx.fillStyle = getComputedStyle(this.root).getPropertyValue('--fm-paint-backdrop') || '#1b1b1d';
     ctx.fillRect(0, 0, this.cssW, this.cssH);
-    const w = m.width * v.scale, h = m.height * v.scale;
+    const kv = canvasOf(c, m);
+    const own = hasCanvas(c);
+    const w = kv.w * v.scale, h = kv.h * v.scale;
     ctx.setTransform(this.rotM());
     ctx.save();
-    roundRect(ctx, v.ox, v.oy, w, h, 12);
+    roundRect(ctx, v.ox, v.oy, w, h, own ? 0 : 12);
     ctx.clip();
     if (m.transparent) { ctx.fillStyle = this.checker(ctx); ctx.fillRect(v.ox, v.oy, w, h); }
     else { ctx.fillStyle = m.background; ctx.fillRect(v.ox, v.oy, w, h); }
+    if (own) {
+      // the backstage part of the canvas (outside the Stage) reads darker
+      ctx.beginPath();
+      ctx.rect(v.ox, v.oy, w, h);
+      ctx.rect(v.ox - kv.x * v.scale, v.oy - kv.y * v.scale, m.width * v.scale, m.height * v.scale);
+      ctx.fillStyle = 'rgba(12,12,16,0.5)';
+      ctx.fill('evenodd');
+    }
     ctx.setTransform(this.rotM());
     ctx.transform(v.scale, 0, 0, v.scale, v.ox, v.oy);
     ctx.imageSmoothingQuality = 'high';
+    // rows with a blend, clipping or mask draw through surfaces, as the Stage does
+    const mixed = c.kind === 'flipbook' && flipHasRowMix(c);
     if (this.playTimer && c.kind === 'flipbook') {
-      this.drawRows(ctx, c, m, 'all');
+      if (mixed) this.drawMixed(ctx, c, m, false); else this.drawRows(ctx, c, m, 'all');
     } else {
       // blend primary frame: the ghosts are drawn over the current frame so they read through it
       const over = this.onion().blendPrimary;
       if (!over) this.drawOnions(ctx, c, m);
-      if (c.kind === 'flipbook') this.drawRows(ctx, c, m, 'below');
-      this.doc.composite(ctx, this.live ?? undefined, this.canvasRegion(ctx, m));
+      if (c.kind === 'flipbook' && !mixed) this.drawRows(ctx, c, m, 'below');
+      if (mixed) this.drawMixed(ctx, c, m, true);
+      else this.doc.composite(ctx, this.live ?? undefined, this.canvasRegion(ctx, m));
       if (over) this.drawOnions(ctx, c, m);
-      if (c.kind === 'flipbook') this.drawRows(ctx, c, m, 'above');
+      if (c.kind === 'flipbook' && !mixed) this.drawRows(ctx, c, m, 'above');
     }
     this.tail.draw(ctx);
     if (this.maskOverlay && this.prefs.maskVisibility > 0) {
@@ -857,10 +890,23 @@ export class PaintView {
     ctx.setTransform(this.rotM());
     this.drawOutline(ctx);
     this.tools.drawOverlay(ctx, v);
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, v.ox, v.oy, w, h, 12);
-    ctx.stroke();
+    if (own) {
+      // the Stage as a dashed line, the canvas bounds in yellow
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.strokeRect(v.ox - kv.x * v.scale, v.oy - kv.y * v.scale, m.width * v.scale, m.height * v.scale);
+      ctx.restore();
+      ctx.strokeStyle = '#e8c53a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(v.ox, v.oy, w, h);
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, v.ox, v.oy, w, h, 12);
+      ctx.stroke();
+    }
     this.drawCursor(ctx);
     ctx.restore();
     this.full = false;
@@ -909,7 +955,8 @@ export class PaintView {
       }
     }
     x0 = Math.max(0, Math.floor(x0) - 2); y0 = Math.max(0, Math.floor(y0) - 2);
-    x1 = Math.min(m.width, Math.ceil(x1) + 2); y1 = Math.min(m.height, Math.ceil(y1) + 2);
+    const kv = canvasOf(this.content(), m);
+    x1 = Math.min(kv.w, Math.ceil(x1) + 2); y1 = Math.min(kv.h, Math.ceil(y1) + 2);
     return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 1, h: 1 };
   }
 
@@ -926,6 +973,15 @@ export class PaintView {
     return Math.max(2, (sc.screenFixed ? dia : dia * sc.k * this.view.scale) / 2);
   }
 
+  private readonly rowPreview = new RowPreview();
+
+  private drawMixed(ctx: CanvasRenderingContext2D, c: Content, m: Movie, editing: boolean): void {
+    const local = this.playTimer ? this.playAt : flipStartOf(c.flip[this.row], this.index);
+    const live = editing ? { row: this.row, draw: (g: OffscreenCanvasRenderingContext2D) => this.doc?.composite(g, this.live ?? undefined) } : { row: -1, draw: () => undefined };
+    this.rowPreview.draw(ctx, c, local, live, (g, l) => { const kv = canvasOf(c, m); this.renderer.layersInto(g, l, m, { w: kv.w, h: kv.h }); }, (b) => BLEND_OP[b],
+      (g, s, b, alpha) => { if (!isPixelBlend(b)) return false; blendCanvasOnto(g, s, b, alpha); return true; });
+  }
+
   private drawRows(ctx: CanvasRenderingContext2D, c: Content, m: Movie, which: 'below' | 'above' | 'all'): void {
     const g = ctx as unknown as OffscreenCanvasRenderingContext2D;
     for (let i = c.flip.length - 1; i >= 0; i--) {
@@ -938,7 +994,8 @@ export class PaintView {
       if (fi < 0) continue;
       ctx.save();
       ctx.globalAlpha = t.opacity;
-      this.renderer.layersInto(g, t.frames[fi].layers, m);
+      const kv = canvasOf(c, m);
+      this.renderer.layersInto(g, t.frames[fi].layers, m, { w: kv.w, h: kv.h });
       ctx.restore();
     }
   }
@@ -1063,6 +1120,7 @@ export class PaintView {
     savePaintPrefs(this.prefs);
     if (p.pressure) setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y })));
     this.input.fingerPaints = this.prefs.fingerPaints;
+    this.holdUndoBtn.delay = this.holdRedoBtn.delay = this.prefs.undoDelay;
     this.syncChrome();
     this.full = true;
     this.redraw();
@@ -1107,15 +1165,26 @@ export class PaintView {
     const m = this.engine.movie;
     if (!c || !m || this.busy || !this.contentId) return;
     this.cropDialog ??= new CropResizeDialog();
-    const p = await this.cropDialog.ask({ w: m.width, h: m.height }, c.kind === 'flipbook');
+    const k = canvasOf(c, m);
+    // a small flat picture of the open frame for the dialog's preview
+    let picture: OffscreenCanvas | null = null;
+    if (this.doc) {
+      const sc = Math.min(1, 1024 / Math.max(k.w, k.h));
+      picture = new OffscreenCanvas(Math.max(1, Math.round(k.w * sc)), Math.max(1, Math.round(k.h * sc)));
+      const g = picture.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      g.scale(sc, sc);
+      this.doc.composite(g);
+    }
+    const p = await this.cropDialog.open2({ stage: { w: m.width, h: m.height, background: m.background, transparent: m.transparent }, canvas: k, picture, flipbook: c.kind === 'flipbook' });
     if (!p || !this.contentId) return;
+    if (p.rect.x === k.x && p.rect.y === k.y && p.rect.w === k.w && p.rect.h === k.h) return;
     this.busy = true;
     this.cancelStroke();
     this.tools.finish();
     await this.commitDoc();
     const now = this.content();
     if (!now) { this.busy = false; return; }
-    const baked = await bakeCropResize(this.engine, now, p, { row: this.row, index: this.index });
+    const baked = await bakeCanvas(this.engine, now, p);
     const blobs = new Map<string, Blob>();
     for (const { asset, blob } of baked.assets) { this.engine.assets.set(asset.id, blob); blobs.set(asset.id, blob); }
     await this.renderer.preload(blobs);
@@ -1127,6 +1196,7 @@ export class PaintView {
     });
     await this.loadDoc();
     this.busy = false;
+    this.fit();
     this.syncChrome();
     this.strip.invalidate();
     this.full = true;
@@ -1144,6 +1214,7 @@ export class PaintView {
       if (!f || !doc || !m) return;
       void createImageBitmap(f).then((bmp) => {
         const layer = doc.addLayer(undefined, f.name.replace(/\.[^.]+$/, '') || 'Photo');
+        const m = doc; // the photo fits the canvas, not the movie
         const cv = new OffscreenCanvas(m.width, m.height);
         const x = cv.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
         const s = Math.min(1, m.width / bmp.width, m.height / bmp.height);
@@ -1200,6 +1271,7 @@ export class PaintView {
       modeChanged: () => { this.dropper.stopContinue(); this.closePanels(); this.syncChrome(); },
       clipMenu: (x, y) => this.clip.openMenu(x, y),
       reloadSelection: () => this.reloadSelection(),
+      layerSelection: () => this.layersPanel.selectedLeaves(),
     };
   }
 
@@ -1828,8 +1900,8 @@ export class PaintView {
           const ms = performance.now() - g.t;
           const quick = ms < 300 && !g.moved && !(info?.moved);
           this.gesture = null;
-          if (quick && g.count === 2) this.undo();
-          if (quick && g.count === 3) this.redo();
+          if (quick && g.count === 2 && gesturePrefsNow().undoGestures) this.undo();
+          if (quick && g.count === 3 && gesturePrefsNow().undoGestures) this.redo();
           if (g.moved && g.count === 2 && this.dLast && isQuickPinchIn(g.d0, this.dLast, ms)) { this.fit(); this.say('Fit'); }
           this.dLast = 0;
         }
@@ -1890,6 +1962,7 @@ export class PaintView {
     this.gesture = { d, ang, cx, cy, scale: this.view.scale, rot: this.view.rot, anchor, d0: prev?.d0 ?? d, count: Math.max(prev?.count ?? 0, pts.length), t: prev?.t ?? performance.now(), moved: prev?.moved ?? false };
     // holding still keeps undoing (two fingers) or redoing (three)
     this.holdTouch.stop();
+    if (!gesturePrefsNow().undoGestures) return;
     if (pts.length === 2) this.holdTouch.start(() => this.undo(), false);
     else if (pts.length === 3) this.holdTouch.start(() => this.redo(), false);
   }
@@ -1905,7 +1978,7 @@ export class PaintView {
     if (Math.abs(d - g.d) > 12 || Math.hypot(cx - g.cx, cy - g.cy) > 12 || (pts.length === 2 && Math.abs(wrapAngle(ang - g.ang)) > 0.14)) { g.moved = true; this.holdTouch.stop(); }
     if (!g.moved) return;
     const r = this.canvas.getBoundingClientRect();
-    const next = pinchView({ d: g.d, ang: g.ang, scale: g.scale, rot: g.rot, anchor: g.anchor }, { d, ang, cx: cx - r.left, cy: cy - r.top }, pts.length === 2);
+    const next = pinchView({ d: g.d, ang: g.ang, scale: g.scale, rot: g.rot, anchor: g.anchor }, { d, ang, cx: cx - r.left, cy: cy - r.top }, pts.length === 2 && gesturePrefsNow().rotatePinch);
     this.view.scale = next.scale;
     this.view.rot = next.rot;
     this.view.ox = next.ox;

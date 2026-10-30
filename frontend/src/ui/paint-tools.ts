@@ -8,7 +8,7 @@ import { FILTER_DEFAULTS, gaussianBlur, hsb, lensBlur, noise, sharpen } from '..
 import { readRect } from '../paint/history';
 import { autoMask, combine, ellipseMask, extract, invertMask, isEmpty, maskBounds, maskOutline, polygonMask, rectMask } from '../paint/select';
 import { MESH_MAX, MESH_MIN, bendFor, bendHandles, makeGrid, nudgePoints, refineGridBent, resampleGrid, transformMesh, transformQuad, zeroBends, type Bend } from '../paint/transform';
-import type { CombineMode, Interpolation, Mask, Point, Raster, Rect, RGB, SelectMode, TransformMode } from '../paint/types';
+import type { CombineMode, Interpolation, Mask, PaintLayer, Point, Raster, Rect, RGB, SelectMode, TransformMode } from '../paint/types';
 import { el, q, setHidden, setText } from './dom';
 import { t as tr } from './i18n';
 import { HoldRepeat } from './paint-gestures';
@@ -40,6 +40,8 @@ export interface ToolHost {
   clipMenu?(x: number, y: number): void;
   /** Bring back the selection that was active before the current one. */
   reloadSelection?(): void;
+  /** Ids of the layers picked together in the Layers panel (empty or one: just the active layer). */
+  layerSelection?(): string[];
 }
 
 export type ToolMode = 'paint' | 'select' | 'transform' | 'filters';
@@ -92,7 +94,11 @@ const TEMPLATE = `<div class="fm-ptools" hidden>
 <div class="fm-ptools-params" hidden></div>
 </div>`;
 
+/** A further layer lifted with the first when several are selected: it moves with the same box. */
+interface Part { layer: string; orig: Uint8ClampedArray; src: Raster; canvas: OffscreenCanvas; preview: { canvas: OffscreenCanvas; rect: Rect } | null }
+
 interface Float {
+  more?: Part[];
   layer: string;
   orig: Uint8ClampedArray;
   src: Raster;
@@ -584,6 +590,8 @@ export class PaintTools {
   private lift(): boolean {
     const doc = this.host.doc();
     if (!doc) return false;
+    const picked = (this.host.layerSelection?.() ?? []).map((id) => doc.layer(id)).filter((l): l is PaintLayer => !!l && !l.group && l.visible);
+    if (picked.length > 1 && this.liftMany(doc, picked)) return true;
     const layer = doc.activeLayer();
     const sel = this.host.selection();
     const mask = sel ?? alphaMask(layer.raster);
@@ -601,6 +609,31 @@ export class PaintTools {
     return true;
   }
 
+  /** Lifts the same area of several layers at once; one box, one undo step. False when none has content there. */
+  private liftMany(doc: PaintDoc, layers: PaintLayer[]): boolean {
+    const sel = this.host.selection();
+    const items = layers.map((layer) => ({ layer, mask: sel ?? alphaMask(layer.raster) })).filter((x) => x.mask && maskBounds(x.mask));
+    if (!items.length) return false;
+    let box: Rect | null = null;
+    for (const it of items) { const b = maskBounds(it.mask as Mask) as Rect; box = box ? unite(box, b) : b; }
+    const rect = this.fit === 'canvas' ? { x: 0, y: 0, w: doc.width, h: doc.height } : (box as Rect);
+    const parts: Part[] = items.map((it) => {
+      const mask = it.mask as Mask;
+      const orig = new Uint8ClampedArray(it.layer.raster.data);
+      const piece = extractIn(it.layer.raster, mask, rect);
+      clearMask(it.layer.raster, mask, it.layer.id);
+      doc.markDirty(it.layer.id, maskBounds(mask) as Rect);
+      const canvas = new OffscreenCanvas(Math.max(1, piece.raster.width), Math.max(1, piece.raster.height));
+      (canvas.getContext('2d') as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(piece.raster.data), piece.raster.width, piece.raster.height), 0, 0);
+      return { layer: it.layer.id, orig, src: piece.raster, canvas, preview: null };
+    });
+    const first = parts[0];
+    this.float = { layer: first.layer, orig: first.orig, src: first.src, srcRect: rect, canvas: first.canvas, quad: rectQuad(rect), grid: null, bend: null, preview: null, more: parts.slice(1) };
+    this.transformMode = this.transformMode === 'warp' ? 'freeform' : this.transformMode;
+    this.host.setLive((ctx) => this.drawFloat(ctx));
+    return true;
+  }
+
   /** The amber node: the box hugs the content, or spans the whole layer. */
   private toggleFit(): void {
     const f = this.float;
@@ -609,6 +642,7 @@ export class PaintTools {
     if (!f || !doc || !layer) return;
     layer.raster.data.set(f.orig);
     doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    this.restoreMore(f, doc);
     this.fit = this.fit === 'tight' ? 'canvas' : 'tight';
     this.float = null;
     if (!this.lift()) this.fit = 'tight';
@@ -617,16 +651,31 @@ export class PaintTools {
     this.refreshPreview();
   }
 
+  /** Puts the other lifted layers back as they were. */
+  private restoreMore(f: Float, doc: PaintDoc): void {
+    for (const p of f.more ?? []) {
+      const l = doc.layer(p.layer);
+      if (!l) continue;
+      l.raster.data.set(p.orig);
+      doc.markDirty(l.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    }
+  }
+
   private drawFloat(ctx: Ctx): void {
     const f = this.float;
     if (!f) return;
-    if (f.preview && (this.transformMode === 'distort' || this.transformMode === 'warp' || f.grid)) { ctx.drawImage(f.preview.canvas, f.preview.rect.x, f.preview.rect.y); return; }
+    if (f.preview && (this.transformMode === 'distort' || this.transformMode === 'warp' || f.grid)) {
+      ctx.drawImage(f.preview.canvas, f.preview.rect.x, f.preview.rect.y);
+      for (const p of f.more ?? []) if (p.preview) ctx.drawImage(p.preview.canvas, p.preview.rect.x, p.preview.rect.y);
+      return;
+    }
     const [a, b, , d] = f.quad;
     const r = f.srcRect;
     ctx.save();
     ctx.transform((b.x - a.x) / r.w, (b.y - a.y) / r.w, (d.x - a.x) / r.h, (d.y - a.y) / r.h, a.x, a.y);
     ctx.imageSmoothingEnabled = this.interp !== 'nearest';
     ctx.drawImage(f.canvas, 0, 0);
+    for (const p of f.more ?? []) ctx.drawImage(p.canvas, 0, 0);
     ctx.restore();
   }
 
@@ -635,13 +684,18 @@ export class PaintTools {
     const f = this.float;
     const doc = this.host.doc();
     if (!f || !doc) { this.host.redraw(); return; }
-    if (!(this.transformMode === 'distort' || this.transformMode === 'warp')) { f.preview = null; this.host.redraw(); return; }
-    const dst: Raster = { width: doc.width, height: doc.height, data: new Uint8ClampedArray(doc.width * doc.height * 4) };
-    const rect = f.grid ? transformMesh(f.src, refineGridBent(f.grid, f.bend, 4), dst, this.interp) : transformQuad(f.src, quad4(f.quad), dst, this.interp);
-    if (!rect) { f.preview = null; this.host.redraw(); return; }
-    const cv = new OffscreenCanvas(rect.w, rect.h);
-    (cv.getContext('2d') as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(readRect(dst, rect)), rect.w, rect.h), 0, 0);
-    f.preview = { canvas: cv, rect };
+    if (!(this.transformMode === 'distort' || this.transformMode === 'warp')) { f.preview = null; for (const p of f.more ?? []) p.preview = null; this.host.redraw(); return; }
+    const one = (src: Raster): { canvas: OffscreenCanvas; rect: Rect } | null => {
+      const dst: Raster = { width: doc.width, height: doc.height, data: new Uint8ClampedArray(doc.width * doc.height * 4) };
+      const rect = f.grid ? transformMesh(src, refineGridBent(f.grid, f.bend, 4), dst, this.interp) : transformQuad(src, quad4(f.quad), dst, this.interp);
+      if (!rect) return null;
+      const cv = new OffscreenCanvas(rect.w, rect.h);
+      (cv.getContext('2d') as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(readRect(dst, rect)), rect.w, rect.h), 0, 0);
+      return { canvas: cv, rect };
+    };
+    f.preview = one(f.src);
+    for (const p of f.more ?? []) p.preview = one(p.src);
+    if (!f.preview) { this.host.redraw(); return; }
     this.host.setLive((ctx) => this.drawFloat(ctx));
   }
 
@@ -752,7 +806,15 @@ export class PaintTools {
     if (!rect) return;
     const before = readRect({ width: doc.width, height: doc.height, data: f.orig }, rect);
     doc.markDirty(layer.id, rect);
-    doc.commitPatch({ layer: layer.id, rect, before, after: readRect(layer.raster, rect) }, 'Transform');
+    const patches = [{ layer: layer.id, rect, before, after: readRect(layer.raster, rect) }];
+    for (const p of f.more ?? []) {
+      const l = doc.layer(p.layer);
+      if (!l) continue;
+      f.grid ? transformMesh(p.src, refineGridBent(f.grid, f.bend, 4), l.raster, this.interp) : transformQuad(p.src, quad4(f.quad), l.raster, this.interp);
+      doc.markDirty(l.id, rect);
+      patches.push({ layer: l.id, rect, before: readRect({ width: doc.width, height: doc.height, data: p.orig }, rect), after: readRect(l.raster, rect) });
+    }
+    doc.commitPatches(patches, 'Transform');
     if (this.host.selection()) this.host.setSelection(null);
   }
 
@@ -766,6 +828,7 @@ export class PaintTools {
     if (!layer) return;
     layer.raster.data.set(f.orig);
     doc.markDirty(layer.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+    this.restoreMore(f, doc);
     doc.settle();
   }
 

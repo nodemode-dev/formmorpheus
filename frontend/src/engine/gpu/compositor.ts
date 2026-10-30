@@ -4,12 +4,14 @@
 import { end, flipIndexAt } from '../model';
 import { animate, type Animated } from '../keys';
 import { memberMatrix, topMatrix } from '../transform';
-import type { BlendMode, Content, DrawingLayer, Movie, Track } from '../types';
+import { canvasOf } from '../canvas';
+import type { BlendMode, CanvasRect, Content, DrawingLayer, Movie, Track } from '../types';
 import {
   FS_BOIL, FS_BOOST, FS_BOX, FS_COPY, FS_DOWN, FS_GAUSS, FS_HSB, FS_MASK, FS_NOISE_APPLY, FS_NOISE_GRID, FS_PRESENT, FS_SHARPEN,
   FS_SRC_BLEND, FS_SRC_PLAIN, FS_UP, VS_BOX, VS_SRC,
 } from './shaders';
 import { TextureCache, type TexSource } from './textures';
+import { fontEpoch } from '../text-layout';
 
 export interface ViewLike {
   scale: number;
@@ -165,6 +167,18 @@ export class GpuCompositor {
     if (!this.ready) return;
     this.cache.forget(keep ? (k) => k.startsWith('b:') && keep.has(k.slice(2)) : undefined);
     this.textSig.clear();
+  }
+
+  /** Releases the textures of pictures and contents the movie no longer holds (called when the movie changes). */
+  prune(live: { contents: Set<string>; assets: Set<string> }): void {
+    if (!this.ready) return;
+    this.cache.forget((k) => {
+      const id = k.slice(2);
+      if (k.startsWith('b:')) return live.assets.has(id);
+      if (k.startsWith('v:') || k.startsWith('t:') || k.startsWith('r:')) return live.contents.has(id);
+      return true;
+    });
+    for (const key of [...this.textSig.keys()]) if (!live.contents.has(key.slice(2))) this.textSig.delete(key);
   }
 
   forgetOne(id: string): void {
@@ -413,7 +427,7 @@ export class GpuCompositor {
         if (tex) this.quad(target, tex, m, (mw - asset.width) / 2, (mh - asset.height) / 2, asset.width, asset.height, alpha, mode);
         return;
       }
-      case 'drawing': this.layers(host, target, c.layers, m, movie, alpha, mode); return;
+      case 'drawing': this.layers(host, target, c.layers, m, canvasOf(c, movie), alpha, mode); return;
       case 'flipbook': {
         const f = local + c.offset;
         for (let i = c.flip.length - 1; i >= 0; i--) {
@@ -421,7 +435,7 @@ export class GpuCompositor {
           if (t.hidden || t.opacity <= 0) continue;
           const index = flipIndexAt(t, f);
           if (index < 0) continue;
-          this.layers(host, target, t.frames[index].layers, m, movie, alpha * t.opacity, MODE[t.blend]);
+          this.layers(host, target, t.frames[index].layers, m, canvasOf(c, movie), alpha * t.opacity, MODE[t.blend]);
         }
         return;
       }
@@ -462,7 +476,7 @@ export class GpuCompositor {
     if (!c.text) return;
     const d = Math.min(8, Math.max(0.05, Math.max(Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3]))));
     const key = 't:' + c.id;
-    const sig = `${JSON.stringify(c.text)}|${d.toFixed(3)}|${movie.width}x${movie.height}`;
+    const sig = `${JSON.stringify(c.text)}|${d.toFixed(3)}|${movie.width}x${movie.height}|${fontEpoch()}`;
     let tex = this.textSig.get(key)?.sig === sig ? this.cache.peek(key) : null;
     let box = this.textSig.get(key)?.box;
     if (!tex) {
@@ -474,14 +488,14 @@ export class GpuCompositor {
     if (tex && box) this.quad(target, tex, m, box.x, box.y, box.w, box.h, alpha, mode);
   }
 
-  private layers(host: GpuHost, target: Surf, layers: DrawingLayer[], m: Mat, movie: Movie, alpha: number, mode: number): void {
+  private layers(host: GpuHost, target: Surf, layers: DrawingLayer[], m: Mat, rect: CanvasRect, alpha: number, mode: number): void {
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
       if (!l.visible || l.opacity <= 0) continue;
       const bmp = host.bitmap(l.pixels);
       if (!bmp) continue;
       const tex = this.cache.get('b:' + l.pixels, bmp);
-      if (tex) this.quad(target, tex, m, 0, 0, movie.width, movie.height, alpha * l.opacity, l.blend === 'normal' ? mode : MODE[l.blend]);
+      if (tex) this.quad(target, tex, m, rect.x, rect.y, rect.w, rect.h, alpha * l.opacity, l.blend === 'normal' ? mode : MODE[l.blend]);
     }
   }
 

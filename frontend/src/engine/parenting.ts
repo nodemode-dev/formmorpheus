@@ -17,10 +17,12 @@ function update(movie: Movie, id: string, fn: (c: Content) => Content): Movie {
 }
 
 /** Makes `parentId` the parent of `childId`. Refuses (OpError, with a message) a loop, itself, or its own subtree. */
-export function setParent(movie: Movie, childId: string, parentId: string): Movie {
+export function setParent(movie: Movie, childId: string, parentId: string, frame?: number): Movie {
   const why = parentProblem(movie, childId, parentId);
   if (why) throw new OpError(why);
-  return update(movie, childId, (c) => ({ ...c, parent: parentId }));
+  const linked = update(movie, childId, (c) => ({ ...c, parent: parentId }));
+  // w/ a frame the child keeps the pose it shows there (its world position), as users expect
+  return frame === undefined ? linked : keepPose(movie, linked, childId, frame);
 }
 
 /**
@@ -31,25 +33,36 @@ export function unparent(movie: Movie, childId: string, frame: number): Movie {
   const child = findContent(movie, childId);
   if (!child) throw new OpError('That content no longer exists.');
   if (!child.parent) return movie;
-  const local = Math.round(frame) - child.start;
-  const a = animate(child, local);
   const free = update(movie, childId, (c) => {
     const { parent: _drop, ...rest } = c;
     return rest as Content;
   });
-  // the pose it shows now, as the free content's own matrix inside the camera and groups only
+  return keepPose(movie, free, childId, frame);
+}
+
+/** Rewrites the child's Move / Scale in `next` (its parent already changed) so it shows where it did in `movie` at `frame`. */
+function keepPose(movie: Movie, next: Movie, childId: string, frame: number): Movie {
+  const child = findContent(movie, childId) as Content;
+  const local = Math.round(frame) - child.start;
+  const a = animate(child, local);
+  const free = next;
+  // the pose it shows now, then expressed inside what it will sit in (camera, parents, groups)
   const world = worldMatrix(movie, child, frame, a);
   const above = parentWorld(free, findContent(free, childId) as Content, frame);
   const inv = invert(above);
   if (!inv) return free;
   const d = decompose(mul(inv, world), movie, a.px ?? 0, a.py ?? 0);
   const round = (n: number, k: number): number => Math.round(n * k) / k;
-  const t = { x: round(d.x, 100), y: round(d.y, 100), scale: round((d.scaleX + d.scaleY) / 2, 10000), rotation: round(d.rotation, 100) };
+  // one scale plus a Y stretch carries a non-uniform parent (a stretched parent), so the pose stays exact
+  const t = { x: round(d.x, 100), y: round(d.y, 100), scale: round(d.scaleX, 10000), rotation: round(d.rotation, 100) };
+  const stretchY = d.scaleX > 1e-9 ? round(d.scaleY / d.scaleX, 10000) : 1;
   return update(free, childId, (c) => {
-    let out: Content = { ...c, transform: { ...c.transform, x: t.x, y: t.y, scale: t.scale, rotation: t.rotation, flipH: d.flipH, flipV: false } };
+    const { stretchX: _sx, stretchY: _sy, ...rest } = c.transform;
+    const tr = { ...rest, x: t.x, y: t.y, scale: t.scale, rotation: t.rotation, flipH: d.flipH, flipV: false, ...(Math.abs(stretchY - 1) > 1e-6 ? { stretchY } : {}) };
+    let out: Content = { ...c, transform: tr };
     if (c.keys.some((l) => l.kind === 'move')) {
       const at = Math.max(0, Math.min(c.duration - 1, local));
-      out = keyOps.setKeys(out, 'move', at, { x: t.x, y: t.y, scaleX: round(d.scaleX, 10000), scaleY: round(d.scaleY, 10000), rotation: t.rotation });
+      out = keyOps.setKeys(out, 'move', at, { x: t.x, y: t.y, scaleX: t.scale, scaleY: t.scale, rotation: t.rotation });
     }
     return out;
   });

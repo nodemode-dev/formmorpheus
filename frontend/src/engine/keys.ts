@@ -444,6 +444,8 @@ export interface Animated {
   warp: { n: number; dx: number[]; dy: number[] } | null;
   /** Distort corner offsets tl, tr, br, bl as x, y pairs (content-space px) or null. */
   distort: number[] | null;
+  /** Warp / Distort lane option: straight (bilinear) interpolation between the nodes or corners instead of the smooth surface / perspective. */
+  bilinear?: boolean;
   /** Bone rotations by bone id (degrees from rest) when the content has a rig and any bone is turned, else null. */
   bones: Record<string, number> | null;
 }
@@ -460,7 +462,15 @@ function noiseStyle(v: string | number | boolean | undefined): 'clouds' | 'billo
   return v === 'billows' || v === 'ridges' ? v : 'clouds';
 }
 
+/** The content's values at a local frame. A malformed (NaN, missing) scale counts as 1 for every drawer, CPU and GPU alike. */
 export function animate(c: Content, local: number): Animated {
+  const a = animateRaw(c, local);
+  if (!Number.isFinite(a.scaleX)) a.scaleX = 1;
+  if (!Number.isFinite(a.scaleY)) a.scaleY = 1;
+  return a;
+}
+
+function animateRaw(c: Content, local: number): Animated {
   const t = c.transform;
   const a: Animated = {
     x: t.x,
@@ -515,12 +525,12 @@ export function animate(c: Content, local: number): Animated {
             if (dx[r * n + k] || dy[r * n + k]) moved = true;
           }
         }
-        if (moved) a.warp = { n, dx, dy };
+        if (moved) { a.warp = { n, dx, dy }; if (lane.options.bilinear === true) a.bilinear = true; }
         break;
       }
       case 'distort': {
         const o = DISTORT_IDS.map((id) => chv(lane, id, local, 0));
-        if (o.some((v) => v !== 0)) a.distort = o;
+        if (o.some((v) => v !== 0)) { a.distort = o; if (lane.options.bilinear === true) a.bilinear = true; }
         break;
       }
       case 'bones': {

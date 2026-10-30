@@ -9,10 +9,10 @@ import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { AudioEngine } from '../media/audio';
-import { registerFonts } from '../media/fonts';
-import { importMedia } from '../media/import';
+import { loadTextFonts, registerFonts } from '../media/fonts';
+import { createImporter, type ImportOptions } from './import-flow';
 import { VideoPool } from '../media/video';
-import { firstFrames, firstPictures, planPrefetch } from '../media/plan';
+import { firstFrames, planPrefetch } from '../media/plan';
 import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
@@ -24,6 +24,9 @@ import { anyDialogOpen, confirmAction, promptName } from '../ui/dialogs';
 import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../ui/dom';
 import { enhanceAllSelects } from '../ui/dropdown';
 import { HelpView } from '../ui/help-view';
+import { AboutDialog } from '../ui/about-dialog';
+import { setupOnboarding } from '../ui/onboarding';
+import { previewFor } from '../ui/preview-strip';
 import { HomeScreen } from '../ui/home';
 import { t } from '../ui/i18n';
 import { icon } from '../ui/icons';
@@ -48,6 +51,7 @@ import { ShortcutsDialog } from '../ui/shortcuts-dialog';
 import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
 import { toast } from '../ui/toast';
+import { gestures } from '../ui/gestures';
 import { TrackMenu } from '../ui/track-menu';
 import { VERSION } from '../version';
 
@@ -142,6 +146,7 @@ export function startApp(): void {
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);
   const textCard = new TextCard(engine);
+  stage.onEditTextStyle = (id, x, y) => textCard.open({ x, y }, id, 'format');
   const exportDialog = new ExportDialog({
     engine,
     renderer,
@@ -201,6 +206,7 @@ export function startApp(): void {
   async function prepareOpen(data: Awaited<ReturnType<typeof unpackMovie>>): Promise<void> {
     engine.stop();
     await registerFonts(data.movie, (id) => data.assets.get(id));
+    await loadTextFonts(data.movie);
     await renderer.preload(data.assets);
     video.stage(data.assets);
     try {
@@ -274,7 +280,8 @@ export function startApp(): void {
     try {
       engine.nameMovie(name);
       const poster = stage ? await stage.snapshot(480) : null;
-      const blob = await packMovie(engine.movie ?? m, engine.history.past, engine.history.recovery, engine.assets, poster, true);
+      const preview = await previewFor(name, renderer, engine.movie ?? m);
+      const blob = await packMovie(engine.movie ?? m, engine.history.past, engine.history.recovery, engine.assets, poster, true, preview);
       const saved = await api.writeMovie(name, blob);
       engine.markSaved(saved.name);
       remember(saved.name);
@@ -324,55 +331,9 @@ export function startApp(): void {
   });
   void recovery.offer();
 
-  async function importFiles(files: File[]): Promise<void> {
-    const m = engine.movie;
-    if (!m) { toast('Open or create a movie first.'); return; }
-    for (const f of files) {
-      if (/\.fmo$/i.test(f.name)) { await openFile(f); return; }
-      await importOne(f);
-    }
-  }
-
-  /** Pictures, animated pictures, video, sound and fonts: decoded and probed in media/import, placed here as one undo step. */
-  async function importOne(f: File): Promise<void> {
-    const m = engine.movie;
-    if (!m) return;
-    const job = engine.startJob(`Import ${f.name}`, 1);
-    try {
-      const r = await importMedia(f, m, engine.frame);
-      const blobs = new Map<string, Blob>();
-      for (const { asset, blob } of r.assets) { engine.assets.set(asset.id, blob); if (asset.kind === 'image' || asset.kind === 'pixels') blobs.set(asset.id, blob); }
-      await renderer.preload(blobs);
-      // a video block and its box appear together with their first picture, never before it
-      await firstPictures(video, m, r.contents);
-      if (r.assets.some((a) => a.asset.kind === 'font')) await registerFonts({ ...m, assets: { ...m.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, (id) => engine.assets.get(id));
-      const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
-      if (r.replaces) {
-        // a formvis document that left from this Drawing: its layers are swapped in as one undo step
-        const target = r.replaces, layers = r.contents[0].layers;
-        engine.run('Update Drawing from formvis', (mv) => ({ movie: ops.updateContent({ ...mv, assets: { ...mv.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, target, (c) => ({ ...c, layers })), select: [target] }));
-        if (r.notice) toast(r.notice);
-        return;
-      }
-      engine.run(`Add ${f.name.replace(/\.[^.]+$/, '')}`, (mv) => {
-        let next: typeof mv = { ...mv, assets: { ...mv.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } };
-        const ids: string[] = [];
-        r.contents.forEach((c, i) => {
-          if (r.ownTrack[i]) {
-            const added = ops.addTrack(next, Math.min(next.tracks.length, ti + 1), c.name);
-            next = ops.placeContent(added.movie, added.track.id, c).movie;
-          } else next = ops.placeContent(next, null, c, ti).movie;
-          ids.push(c.id);
-        });
-        return { movie: next, select: ids };
-      });
-      if (r.notice) toast(r.notice);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : `${f.name} could not be imported.`, 'error');
-    } finally {
-      engine.endJob(job);
-    }
-  }
+  /** Pictures, layered artwork, video, sound and fonts: decoded in media/import, placed by app/import-flow as one undo step. */
+  const importer = createImporter({ engine, renderer, video, openMovie: (f) => openFile(f) });
+  const importFiles = (files: File[], opts?: ImportOptions): Promise<void> => importer.importFiles(files, opts);
 
   /** Round trips with formvis and formvfx (io/round-trip): a file goes out as a download, and comes back through Import or a drop. */
   async function roundTripOut(what: 'drawing' | 'frame' | 'movie', contentId?: string): Promise<void> {
@@ -403,7 +364,7 @@ export function startApp(): void {
   }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.woff,.woff2,.flac,.ogg,.opus,.m4a,.fvd,.fvxproj,.zip';
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.fvd,.fvxproj,.zip';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
@@ -412,7 +373,7 @@ export function startApp(): void {
     picker.value = '';
     if (!files.length) return;
     if (pickMode === 'open') void openFile(files[0]);
-    else void importFiles(files);
+    else void importFiles(files, { preview: true });
   });
 
   async function editContent(c: Content): Promise<void> {
@@ -424,6 +385,7 @@ export function startApp(): void {
     if (c.kind === 'drawing' || c.kind === 'flipbook') await paint.open(c.id);
   }
 
+  const aboutDialog = new AboutDialog();
   const has = (): boolean => !!engine.movie;
   const sel = (): boolean => engine.selection.content.length > 0;
   const add: Command[] = [
@@ -461,7 +423,7 @@ export function startApp(): void {
     { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
     { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { const id = engine.insert('drawing'); if (id) void paint.open(id); } },
     { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { const id = engine.insert('flipbook'); if (id) void paint.open(id); } },
-    { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { void (async () => { const value = await promptName('New Text', 'Text', 'Add'); if (!value) return; engine.insert('text', { name: value.split('\n')[0].slice(0, 40), text: { text: value, font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' } }); })(); } },
+    { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { const id = engine.insert('text', { name: 'Text', text: { text: 'Text', font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' } }); if (id) stage.editText(id); } },
     { id: 'add-track', label: 'Track', icon: 'track', keys: ['Shift+Mod+T'], enabled: has, run: () => { const m = engine.movie; if (!m) return; const at = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0; engine.run('Add Track', (mv) => ops.addTrack(mv, at).movie); } },
     { id: 'play', label: () => (engine.playing ? 'Pause' : 'Play'), keys: ['Space'], enabled: has, run: () => engine.togglePlay() },
     { id: 'prev-frame', label: 'Previous Frame', keys: ['Left', ','], enabled: has, run: () => engine.step(-1) },
@@ -493,8 +455,8 @@ export function startApp(): void {
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
     { id: 'menus-in-window', label: 'Menus in Window', enabled: () => '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.platform), checked: menusInWindow, run: () => { const on = !menusInWindow(); store(MENUS_IN_WINDOW_KEY, on ? '1' : '0'); toast(on ? 'The menus stay in the window from the next start.' : 'The menus go to the menu bar from the next start.'); } },
     { id: 'custom-title-bar', label: 'Custom Title Bar', enabled: wantsCustomTitleBar, checked: () => stored(CUSTOM_TITLE_KEY) === '1', run: () => { store(CUSTOM_TITLE_KEY, stored(CUSTOM_TITLE_KEY) === '1' ? '0' : '1'); captions.sync(); } },
-    { id: 'help', label: 'formmorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView(); helpView.show(); } },
-    { id: 'about', label: 'About formmorpheus', run: () => toast(`formmorpheus ${VERSION} by NodeMode · Apache-2.0`) },
+    { id: 'help', label: 'formmorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView((c) => { commands.run(c); }); helpView.show(); } },
+    { id: 'about', label: 'About formmorpheus', run: () => aboutDialog.show() },
   ];
   const groupOfCommand = (id: string): string => {
     const find = (items: ReadonlyArray<unknown>, path: string): string => {
@@ -514,6 +476,7 @@ export function startApp(): void {
   const shortcutsDialog = new ShortcutsDialog(commands, groupOfCommand, () => { prefs = updatePrefs({ shortcuts: commands.overrides() }); });
   const recoveryDialog = new RecoveryDialog(engine);
   document.addEventListener('fm:open-shortcuts', () => shortcutsDialog.show());
+  document.addEventListener('fm:command', (e) => { const id = (e as CustomEvent<string>).detail; if (typeof id === 'string') commands.run(id); });
   const mid = (): { x: number; y: number } => { const r = q(root, '.fm-stage-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
   commands.add(
     ...add,
@@ -532,13 +495,14 @@ export function startApp(): void {
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
   paint.useCommands(commands);
 
+  setupOnboarding({ commands, engine, openMovie: openFromLibrary, closeHome: () => home.hide() });
   menus.push(
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', '-', 'shortcuts', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
     { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
-    { label: 'Help', items: ['help', 'about'] },
+    { label: 'Help', items: ['help', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
     for (const r of prefs.recent.slice(0, 10)) if (!commands.get(`recent:${r}`)) commands.add({ id: `recent:${r}`, label: r, run: () => { void openFromLibrary(r); } });
@@ -602,7 +566,6 @@ export function startApp(): void {
   });
 
   installNumberFields();
-  let twoFinger = 0;
   window.addEventListener('keydown', (e) => {
     if (anyDialogOpen() || e.defaultPrevented || paint.isOpen()) return;
     if (menubar.isOpen || createMenu.isOpen) {
@@ -617,13 +580,9 @@ export function startApp(): void {
     e.preventDefault();
     if (!e.repeat || /^(undo|redo|prev-frame|next-frame)$/.test(cmd.id)) commands.run(cmd.id);
   });
-  root.addEventListener('touchstart', (e) => { twoFinger = e.touches.length; }, { passive: true });
-  root.addEventListener('touchend', (e) => {
-    if (!prefs.undoGestures || e.touches.length || paint.isOpen()) return;
-    if (twoFinger === 2) engine.undo();
-    else if (twoFinger === 3) engine.redo();
-    twoFinger = 0;
-  }, { passive: true });
+  // two-finger tap undoes, three-finger tap redoes (held: repeats); pinch, hold and the rest live in ui/gestures.ts
+  gestures.actions = { undo: () => { engine.undo(); }, redo: () => { engine.redo(); } };
+  gestures.install();
 
   const split = q(root, '.fm-split');
   const main = q(root, '.fm-main');
@@ -655,7 +614,10 @@ export function startApp(): void {
     e.preventDefault();
     depth = 0;
     drop.hidden = true;
-    void importFiles(Array.from(e.dataTransfer?.files ?? []));
+    // dropped on the Timeline: at the track and time under the pointer; on the Stage: at the Playhead on the top track
+    const tl = timeline?.dropTarget(e.clientX, e.clientY);
+    const onStage = !tl && !!(e.target instanceof Element && e.target.closest('.fm-stage-wrap'));
+    void importFiles(Array.from(e.dataTransfer?.files ?? []), tl ? { drop: { where: 'timeline', frame: tl.frame, index: tl.index } } : onStage ? { drop: { where: 'stage' } } : {});
   });
   window.addEventListener('beforeunload', (e) => { if (engine.movie && engine.modified && !('__TAURI_INTERNALS__' in window)) e.preventDefault(); });
 

@@ -6,7 +6,14 @@ import { formvfxToTracks, formvisToDrawing, sniffRoundTrip } from '../io/round-t
 import { registerFont } from './fonts';
 import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
+import { decodeTga, isTga } from './tga-decode';
+import { transcodeViaEngine } from './transcode';
 import { UndecodableVideo, VideoPool } from './video';
+import { layeredToDrawing } from '../io/layered-import';
+import { isKra, readKra } from '../io/kra-import';
+import { isOra, readOra } from '../io/ora-import';
+import { isPdn, readPdn } from '../io/pdn-import';
+import { isPsd, readPsd } from '../io/psd-import';
 
 export interface ImportResult {
   assets: { asset: Asset; blob: Blob }[];
@@ -17,14 +24,19 @@ export interface ImportResult {
   replaces?: string;
 }
 
-type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'font' | 'media' | 'unknown';
+type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'font' | 'media' | 'unknown';
 
 const EXT: Record<string, Sniff> = {
   png: 'png', apng: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', avif: 'avif', bmp: 'bmp', tif: 'tiff', tiff: 'tiff',
+  tga: 'tga', targa: 'tga', heic: 'heic', heif: 'heic', hif: 'heic', psd: 'psd', psb: 'psd', ora: 'ora', kra: 'kra', krz: 'kra', pdn: 'pdn',
   ttf: 'font', otf: 'font', woff: 'font', woff2: 'font', ttc: 'font',
   mp4: 'media', m4v: 'media', mov: 'media', webm: 'media', mkv: 'media', ogv: 'media', ogg: 'media', oga: 'media', opus: 'media',
   wav: 'media', mp3: 'media', aac: 'media', m4a: 'media', flac: 'media', mpg: 'media', mpeg: 'media', ts: 'media',
+  aif: 'media', aiff: 'media', aifc: 'media', caf: 'media', ac3: 'media', eac3: 'media', mp2: 'media', mxf: 'media', avi: 'media', wmv: 'media',
 };
+
+/** Brands of an ISO file that mark a HEIC or HEIF picture rather than a video. */
+const HEIF_BRANDS = ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'];
 
 function ascii(b: Uint8Array, at: number, s: string): boolean {
   for (let i = 0; i < s.length; i++) if (b[at + i] !== s.charCodeAt(i)) return false;
@@ -40,6 +52,14 @@ function sniff(file: File, b: Uint8Array): Sniff {
   if (ascii(b, 4, 'ftyp') && (ascii(b, 8, 'avif') || ascii(b, 8, 'avis'))) return 'avif';
   if (b[0] === 0x42 && b[1] === 0x4d) return 'bmp';
   if (isTiff(b)) return 'tiff';
+  if (isPsd(b)) return 'psd';
+  if (ascii(b, 4, 'ftyp') && HEIF_BRANDS.some((x) => ascii(b, 8, x))) return 'heic';
+  if (ascii(b, 0, 'FORM') && (ascii(b, 8, 'AIFF') || ascii(b, 8, 'AIFC'))) return 'media';
+  if (ascii(b, 0, 'caff') || (b[0] === 0x0b && b[1] === 0x77)) return 'media';
+  if (isTga(b, file.name)) return 'tga';
+  if (isOra(file.name, b)) return 'ora';
+  if (isKra(file.name, b)) return 'kra';
+  if (isPdn(file.name, b)) return 'pdn';
   if (ascii(b, 0, 'OTTO') || ascii(b, 0, 'true') || ascii(b, 0, 'wOFF') || ascii(b, 0, 'wOF2') || ascii(b, 0, 'ttcf') || (b[0] === 0 && b[1] === 1 && b[2] === 0 && b[3] === 0)) return 'font';
   if (ascii(b, 4, 'ftyp') || (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) || ascii(b, 0, 'OggS') || ascii(b, 0, 'fLaC') || ascii(b, 0, 'ID3')) return 'media';
   if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return 'media';
@@ -60,6 +80,38 @@ function place(m: Movie, w: number, h: number): Content['transform'] {
 
 // ---- pictures
 
+/** HEIC / HEIF as PNG: the browser's ImageDecoder where it has the codec, else the engine when it can (pillow-heif), else a refusal. */
+async function heicToPng(file: File): Promise<Blob> {
+  const ID = (globalThis as unknown as { ImageDecoder?: ImageDecoderCtor }).ImageDecoder;
+  if (ID) {
+    for (const type of ['image/heic', 'image/heif']) {
+      try {
+        if (!(await ID.isTypeSupported(type))) continue;
+        const dec = new ID({ data: await file.arrayBuffer(), type });
+        try {
+          const { image } = await dec.decode({ frameIndex: 0 });
+          const cv = new OffscreenCanvas(image.displayWidth, image.displayHeight);
+          cv.getContext('2d')!.drawImage(image, 0, 0);
+          image.close();
+          return await cv.convertToBlob({ type: 'image/png' });
+        } finally { dec.close(); }
+      } catch { /* try the next route */ }
+    }
+  }
+  try {
+    const bmp = await createImageBitmap(file);   // some browsers decode HEIC natively
+    const cv = new OffscreenCanvas(bmp.width, bmp.height);
+    cv.getContext('2d')!.drawImage(bmp, 0, 0);
+    bmp.close();
+    return await cv.convertToBlob({ type: 'image/png' });
+  } catch { /* not in this browser */ }
+  try {
+    return (await transcodeViaEngine(file, 'image')).blob;
+  } catch (e) {
+    throw new Error(`${file.name} is a HEIC picture this browser cannot open. ${e instanceof Error ? e.message : ''}`.trim());
+  }
+}
+
 async function importPicture(file: File, m: Movie, at: number, kind: Sniff): Promise<ImportResult> {
   let blob: Blob = file;
   let bmp: ImageBitmap;
@@ -72,6 +124,20 @@ async function importPicture(file: File, m: Movie, at: number, kind: Sniff): Pro
     const cv = new OffscreenCanvas(dec.width, dec.height);
     cv.getContext('2d')!.putImageData(new ImageData(dec.rgba as Uint8ClampedArray<ArrayBuffer>, dec.width, dec.height), 0, 0);
     blob = await cv.convertToBlob({ type: 'image/png' });
+    mime = 'image/png';
+    bmp = await createImageBitmap(blob);
+  } else if (kind === 'tga') {
+    let dec: ReturnType<typeof decodeTga>;
+    try { dec = decodeTga(new Uint8Array(await file.arrayBuffer())); } catch (e) {
+      throw new Error(`${file.name} is a TGA this version cannot read (${e instanceof Error ? e.message : 'unsupported'}).`);
+    }
+    const cv = new OffscreenCanvas(dec.width, dec.height);
+    cv.getContext('2d')!.putImageData(new ImageData(dec.rgba as Uint8ClampedArray<ArrayBuffer>, dec.width, dec.height), 0, 0);
+    blob = await cv.convertToBlob({ type: 'image/png' });
+    mime = 'image/png';
+    bmp = await createImageBitmap(blob);
+  } else if (kind === 'heic') {
+    blob = await heicToPng(file);
     mime = 'image/png';
     bmp = await createImageBitmap(blob);
   } else {
@@ -252,10 +318,38 @@ async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Pr
 
 // ---- video and sound
 
-async function importTimed(file: File, m: Movie, at: number): Promise<ImportResult> {
+const RISKY_SOUND = /\.(aif|aiff|aifc|caf|ac3|eac3|mp2)$/i;
+
+async function browserDecodes(file: Blob): Promise<number | null> {
+  try {
+    const ctx = new AudioContext();
+    try { return (await ctx.decodeAudioData(await file.arrayBuffer())).duration; } finally { void ctx.close(); }
+  } catch { return null; }
+}
+
+async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: number, what: string) => void): Promise<ImportResult> {
+  let file = source;
   let info: Awaited<ReturnType<typeof VideoPool.probe>> | null = null;
-  try { info = await VideoPool.probe(file); } catch (e) { if (e instanceof UndecodableVideo) throw new Error(`${file.name}: ${e.message}`); info = null; }
-  const name = baseName(file.name);
+  const name = baseName(source.name);
+  try { info = await VideoPool.probe(file); } catch (e) {
+    if (!(e instanceof UndecodableVideo)) info = null;
+    else {
+      // ProRes, some HEVC and alpha video: the engine converts it to a file the browser decodes
+      const out = await transcodeViaEngine(source, 'video', (p) => onProgress?.(p, `Converting ${source.name}`)).catch((er: unknown) => {
+        throw new Error(`${source.name}: ${e.message} ${er instanceof Error ? er.message : ''}`.trim());
+      });
+      file = new File([out.blob], `${name}.${out.mime === 'video/webm' ? 'webm' : 'mp4'}`, { type: out.mime });
+      try { info = await VideoPool.probe(file); } catch { throw new Error(`${source.name} was converted but this browser still cannot play it.`); }
+    }
+  }
+  if (info && !info.hasVideo && RISKY_SOUND.test(source.name) && (await browserDecodes(file)) === null) info = null;
+  if (!info && RISKY_SOUND.test(source.name) && (await browserDecodes(file)) === null) {
+    const out = await transcodeViaEngine(source, 'audio', (p) => onProgress?.(p, `Converting ${source.name}`)).catch((er: unknown) => {
+      throw new Error(`${source.name} is a sound this browser cannot decode. ${er instanceof Error ? er.message : ''}`.trim());
+    });
+    file = new File([out.blob], `${name}.wav`, { type: 'audio/wav' });
+    info = null;
+  }
   if (info && info.hasVideo) {
     const seconds = Math.max(info.duration, 1 / m.fps);
     const frames = Math.max(1, Math.round(seconds * m.fps));
@@ -337,16 +431,22 @@ async function importFont(file: File): Promise<ImportResult> {
   return { assets: [{ asset, blob: file }], contents: [], ownTrack: [], notice: `${family} is ready for Text.` };
 }
 
-export async function importMedia(file: File, movie: Movie, at: number): Promise<ImportResult> {
+export async function importMedia(file: File, movie: Movie, at: number, onProgress?: (p: number, what: string) => void): Promise<ImportResult> {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+  const kind0 = sniff(file, head);
+  // layered artwork: each reader gives a neutral document that becomes a Drawing with its layers
+  if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn') {
+    const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : readPdn(file));
+    return layeredToDrawing(doc, file.name, movie, at);
+  }
   const trip = await sniffRoundTrip(file, head);
   if (trip === 'formvis') return formvisToDrawing(file, movie, at);
   if (trip === 'formvfx') return formvfxToTracks(file, movie);
-  const kind = sniff(file, head);
+  const kind = kind0;
   switch (kind) {
     case 'font': return importFont(file);
-    case 'media': return importTimed(file, movie, at);
-    case 'png': case 'jpeg': case 'gif': case 'webp': case 'avif': case 'bmp': case 'tiff': {
+    case 'media': return importTimed(file, movie, at, onProgress);
+    case 'png': case 'jpeg': case 'gif': case 'webp': case 'avif': case 'bmp': case 'tiff': case 'tga': case 'heic': {
       const anim = await importAnimated(file, movie, at, kind);
       return anim ?? importPicture(file, movie, at, kind);
     }

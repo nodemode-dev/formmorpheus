@@ -36,6 +36,14 @@ export interface Prefs {
   stageShare: number;
   scrubSpeed: ScrubSpeed;
   undoGestures: boolean;
+  /** Turning the fingers while pinching turns the Stage. */
+  rotatePinch: boolean;
+  /** A second finger held while dragging acts as Shift (snapping) and Alt (Free Trim). */
+  secondFinger: boolean;
+  /** A touch held still opens the context menu. */
+  touchHold: boolean;
+  /** A pen hovering over the Timeline scrubs the Playhead. */
+  penHover: boolean;
   confirmDelete: boolean;
   /** Compose the Stage and exports on the GPU (WebGL2) when it matches the CPU path. */
   gpu: boolean;
@@ -45,7 +53,7 @@ export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
   shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 250, recentUndo: 100, stageUndoButtons: true, autosaveSeconds: 30,
-  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, confirmDelete: false, gpu: true,
+  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, confirmDelete: false, gpu: true,
 };
 
 const KEY = 'formmorpheus.prefs';
@@ -126,6 +134,10 @@ export function loadPrefs(): Prefs {
       stageShare: num(r.stageShare, 0.25, 0.8, d.stageShare),
       scrubSpeed: scrub === 'precise' || scrub === 'fast' ? scrub : 'medium',
       undoGestures: flag(r.undoGestures, d.undoGestures),
+      rotatePinch: flag(r.rotatePinch, d.rotatePinch),
+      secondFinger: flag(r.secondFinger, d.secondFinger),
+      touchHold: flag(r.touchHold, d.touchHold),
+      penHover: flag(r.penHover, d.penHover),
       confirmDelete: flag(r.confirmDelete, d.confirmDelete),
       gpu: flag(r.gpu, d.gpu),
     };

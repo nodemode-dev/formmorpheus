@@ -3,6 +3,7 @@
 // round handle to rotate. Each drag writes camera keys at the Playhead (one undo step per drag).
 import type { Engine } from '../engine/engine';
 import { poseAt, setCameraKeys } from '../engine/camera';
+import { snapMod } from './gestures';
 import { apply, cameraMat, invert } from '../engine/transform';
 import type { View } from '../engine/render';
 import { el } from './dom';
@@ -154,7 +155,7 @@ export class CameraOverlay {
       this.write({ zoom: Math.round(Math.min(20, Math.max(0.05, (d.zoom * d.d0) / dist)) * 1000) / 1000 }, d.tag);
     } else {
       let deg = d.rot + ((Math.atan2(y - d.cy, x - d.cx) - d.a0) * 180) / Math.PI;
-      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      if (snapMod(e)) deg = Math.round(deg / 15) * 15;
       this.write({ rotation: Math.round(deg * 10) / 10 }, d.tag);
     }
   }

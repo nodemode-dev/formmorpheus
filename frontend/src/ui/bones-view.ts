@@ -91,6 +91,7 @@ export class BonesOverlay {
   private ch = 0;
   private readonly pt = [0, 0];
   private readonly card: BonesCard;
+  private readonly panel: HTMLElement;
 
   constructor(host: HTMLElement, private readonly engine: Engine) {
     this.root = el('<div class="fm-bones-ov" hidden><canvas class="fm-bones-wt" aria-hidden="true"></canvas><svg class="fm-bones-svg" aria-label="Bones"></svg></div>');
@@ -105,7 +106,9 @@ export class BonesOverlay {
     setText(panel.querySelector('.fm-ka-title span:last-child'), 'Bones');
     this.card = new BonesCard(engine, () => bonesMode.open(null));
     panel.appendChild(this.card.root);
-    this.root.appendChild(panel);
+    // the card sits on the Stage itself, not in the space that turns with a rotated view
+    (host.parentElement ?? host).appendChild(panel);
+    this.panel = panel;
     host.appendChild(this.root);
     this.svg.addEventListener('pointerdown', (e) => this.down(e));
     this.svg.addEventListener('pointermove', (e) => this.move(e));
@@ -157,11 +160,13 @@ export class BonesOverlay {
     const c = sel.length === 1 ? sel[0] : null;
     if (!m || !view || !c || bonesMode.id !== c.id || this.engine.mode === 'compose') {
       setHide(this.root, true);
+      setHide(this.panel, true);
       this.view = null;
       return false;
     }
     this.view = view;
     setHide(this.root, false);
+    setHide(this.panel, false);
     const box = `0 0 ${view.width} ${view.height}`;
     if (box !== this.box) {
       this.svg.setAttribute('viewBox', box);

@@ -15,7 +15,7 @@
 .fm-path-bar {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  bottom: calc(var(--space-3) + 48px); /* above the zoom cluster, which grows a Rotate button while the view is turned */
   z-index: var(--z-raised);
   display: flex;
   gap: var(--space-1);

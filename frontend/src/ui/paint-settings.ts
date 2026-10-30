@@ -20,6 +20,8 @@ export interface PaintPrefs {
   pressure: [number, number][];
   smoothing: number;
   maskVisibility: number;
+  /** Rapid undo delay: ms a held undo or redo waits before it repeats. */
+  undoDelay: number;
 }
 
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
@@ -37,6 +39,7 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   pressure: [[0, 0], [1, 1]],
   smoothing: 0,
   maskVisibility: 0.25,
+  undoDelay: 420,
 };
 
 const KEY = 'formmorpheus.paint';
@@ -69,6 +72,7 @@ export function loadPaintPrefs(): PaintPrefs {
     out.cursor = out.cursorMode !== 'off';
     out.dynamicScaling = out.scaling !== 'off';
     for (const k of ['smoothing', 'maskVisibility', 'expression'] as const) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clamp01(o[k]);
+    if (typeof o.undoDelay === 'number' && Number.isFinite(o.undoDelay)) out.undoDelay = Math.min(1000, Math.max(150, o.undoDelay));
     if (validCurve(o.pressure)) out.pressure = o.pressure.map((p) => [p[0], p[1]] as [number, number]);
   } catch { /* storage unavailable or corrupt: defaults */ }
   return out;
@@ -202,6 +206,7 @@ export class PaintSettings {
   private readonly colorBar: HTMLElement;
   private readonly colorInput: HTMLInputElement;
   private readonly blend: ToggleRow;
+  private readonly scrubShow: ToggleRow;
   private readonly scopeSeg: Seg | null = null;
   private readonly scopeWrap: HTMLElement;
   private readonly crop: { setDisabled(on: boolean): void };
@@ -215,6 +220,7 @@ export class PaintSettings {
   private readonly finger: ToggleRow;
   private readonly sideBar: Seg;
   private readonly smooth: SliderRow;
+  private readonly undoDelay: SliderRow;
   private readonly curveRow: HTMLElement;
   private readonly curveWrap: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -259,7 +265,7 @@ export class PaintSettings {
     const canvasPane = this.panes.get('canvas')!;
     const crop = actionRow(ROW_ICONS.crop, 'Crop and resize', () => { this.close(); o.onCropResize?.(); });
     this.crop = crop;
-    add.appendChild(crop.el);
+    canvasPane.appendChild(crop.el);
     this.mask = sliderRow('Selection mask visibility', 0, 1, 0.01, (v) => o.setPrefs({ maskVisibility: v }));
     canvasPane.appendChild(this.mask.el);
 
@@ -268,19 +274,20 @@ export class PaintSettings {
     this.onEnabled = toggleRow('Onion skin visibility', (v) => o.setOnion({ enabled: v }));
     this.sideSeg = segmented(['Backwards', 'Forwards'], (i) => { this.side = i === 0 ? 'back' : 'fore'; this.refresh(); });
     this.frames = sliderRow('Frames', 0, 12, 1, (v) => o.setOnion(this.side === 'back' ? { backFrames: v } : { foreFrames: v }, `onion-frames-${this.side}`));
-    this.opacity = sliderRow('Opacity', 0, 1, 0.01, (v) => o.setOnion({ opacity: v }, 'onion-opacity'));
-    this.tint = toggleRow('Color tint', (v) => o.setOnion({ tint: v }));
+    this.opacity = sliderRow('Opacity', 0, 1, 0.01, (v) => o.setOnion(this.side === 'back' ? { backOpacity: v } : { foreOpacity: v }, `onion-opacity-${this.side}`));
+    this.tint = toggleRow('Color tint', (v) => o.setOnion(this.side === 'back' ? { backTint: v } : { foreTint: v }));
     this.colorBar = el('<div class="fm-ps-colorbar"><input type="color" aria-label="Onion tint color"></div>');
     this.colorInput = q<HTMLInputElement>(this.colorBar, 'input');
     this.colorInput.addEventListener('input', () => o.setOnion(this.side === 'back' ? { backColor: this.colorInput.value } : { foreColor: this.colorInput.value }, `onion-color-${this.side}`));
     this.blend = toggleRow('Blend primary frame', (v) => o.setOnion({ blendPrimary: v }));
+    this.scrubShow = toggleRow('Show while scrubbing', (v) => o.setOnion({ showWhileScrubbing: v }));
     this.scopeWrap = el('<div class="fm-ps-scope"></div>');
     if (o.setOnionScope) {
       const seg = segmented(['This flipbook', 'Whole movie'], (i) => o.setOnionScope?.(i === 0 ? 'flipbook' : 'movie'));
       this.scopeSeg = seg;
       this.scopeWrap.appendChild(seg.el);
     }
-    on.append(this.onEnabled.el, this.sideSeg.el, this.frames.el, this.opacity.el, this.tint.el, this.colorBar, this.blend.el, this.scopeWrap);
+    on.append(this.onEnabled.el, this.sideSeg.el, this.frames.el, this.opacity.el, this.tint.el, this.colorBar, this.blend.el, this.scrubShow.el, this.scopeWrap);
     setHidden(this.scopeWrap, !o.setOnionScope);
 
     // Prefs
@@ -310,6 +317,7 @@ export class PaintSettings {
     this.sideBar = segmented(['Left', 'Right'], (i) => o.setPrefs({ sidebarRight: i === 1 }));
     sideRow.appendChild(this.sideBar.el);
     this.smooth = sliderRow('Stabilization', 0, 1, 0.01, (v) => o.setPrefs({ smoothing: v }));
+    this.undoDelay = sliderRow('Rapid undo delay', 150, 1000, 10, (v) => o.setPrefs({ undoDelay: v }));
     const pressure = actionRow('', 'Pressure', () => this.toggleCurve(), true);
     this.curveRow = pressure.el;
     q(this.curveRow, '.fm-ps-ico').remove();
@@ -323,7 +331,7 @@ export class PaintSettings {
       this.pts = DEFAULT_PAINT_PREFS.pressure.map((p) => [...p] as [number, number]);
       this.commitCurve();
     });
-    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.curveRow, this.curveWrap);
+    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.curveRow, this.curveWrap);
 
     this.showTab(this.tab, true);
   }
@@ -376,6 +384,7 @@ export class PaintSettings {
     this.finger.set(p.fingerPaints);
     this.sideBar.set(p.sidebarRight ? 1 : 0);
     this.smooth.set(p.smoothing, pct(p.smoothing));
+    this.undoDelay.set(p.undoDelay, `${Math.round(p.undoDelay)} ms`);
     if (this.dragIdx < 0) this.pts = p.pressure.map((pt) => [pt[0], pt[1]] as [number, number]);
     setClass(this.curveRow, 'is-open', this.curveOpen);
     setHidden(this.curveWrap, !this.curveOpen);
@@ -389,13 +398,16 @@ export class PaintSettings {
     this.sideSeg.set(this.side === 'back' ? 0 : 1);
     const n = this.side === 'back' ? on.backFrames : on.foreFrames;
     this.frames.set(n, String(n));
-    this.opacity.set(on.opacity, pct(on.opacity));
-    this.tint.set(on.tint);
+    const op = (this.side === 'back' ? on.backOpacity : on.foreOpacity) ?? on.opacity;
+    const tn = (this.side === 'back' ? on.backTint : on.foreTint) ?? on.tint;
+    this.opacity.set(op, pct(op));
+    this.tint.set(tn);
     const col = this.side === 'back' ? on.backColor : on.foreColor;
     setStyleVar(this.colorBar, '--c', col);
     if (/^#[0-9a-f]{6}$/i.test(col) && this.colorInput.value.toLowerCase() !== col.toLowerCase()) this.colorInput.value = col;
-    setClass(this.colorBar, 'is-disabled', !on.tint);
+    setClass(this.colorBar, 'is-disabled', !tn);
     this.blend.set(on.blendPrimary);
+    this.scrubShow.set(on.showWhileScrubbing !== false);
     this.scopeSeg?.set(scope === 'movie' ? 1 : 0);
     this.crop.setDisabled(!this.o.onCropResize);
     if (this.opened) this.drawCurve();

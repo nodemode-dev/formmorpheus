@@ -58,7 +58,7 @@ export class ParentPicker {
     const id = this.childId;
     if (!id) return;
     const frame = this.engine.frame;
-    if (parentId) this.engine.run('Set Parent', (m) => setParent(m, id, parentId));
+    if (parentId) this.engine.run('Set Parent', (m) => setParent(m, id, parentId, frame));
     else this.engine.run('Unparent', (m) => unparent(m, id, frame));
     this.host.hide();
   }

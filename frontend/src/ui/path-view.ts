@@ -80,7 +80,9 @@ export class PathView {
   private nodes: PathNode[] = [];
 
   constructor(host: HTMLElement, private readonly engine: Engine) {
-    host.append(this.root, this.pivotRoot, this.bar);
+    host.append(this.root, this.pivotRoot);
+    // the bar sits on the Stage itself, not in the space that turns with a rotated view
+    (host.parentElement ?? host).appendChild(this.bar);
     for (const r of [this.root, this.pivotRoot]) {
       r.addEventListener('pointerdown', (e) => {
         // the Stage keeps keyboard focus (arrow nudges) when the press lands on the pivot or a path node

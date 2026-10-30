@@ -1,6 +1,7 @@
 import type { Engine } from '../engine/engine';
 import { end, fits, kindName, locate } from '../engine/model';
 import * as ops from '../engine/ops';
+import * as groupInner from '../engine/group-inner-ops';
 import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import type { VideoPool } from '../media/video';
@@ -16,6 +17,7 @@ import { cameraMode } from './camera-view';
 import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
 import { EndBarMenu, KeySelMenu, KeySelection, inPoly, lassoTouches, nearTrail, type Pt } from './timeline-extras';
 import type { KeyRef } from '../engine/key-sel-ops';
+import { gestureRegion, penHover, touchModifier } from './gestures';
 
 const RULER_H = 28;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
@@ -50,6 +52,7 @@ type Drag =
   | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number; moved?: boolean }
   | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
+  | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; applied: number; moved: boolean; tag: string }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'lasso'; pts: Pt[]; base: string[] }
   | { kind: 'keylasso'; pts: Pt[]; base: Map<string, KeyRef[]> }
@@ -151,6 +154,8 @@ export class TimelineView {
   private reloadHeld = false;
   /** Group blocks opened in place (their tracks show under the block in Compose mode). */
   private readonly opened = new Set<string>();
+  /** The content picked inside an opened group (the group itself stays the engine's selection). */
+  private innerSel: string | null = null;
   private pal: Palette | null = null;
   private thumbs = new WeakMap<Content, HTMLCanvasElement>();
   private thumbGen = 0;
@@ -206,6 +211,7 @@ export class TimelineView {
     this.tracksCanvas.addEventListener('dblclick', (e) => this.doubleClick(e));
     this.lanes.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     this.ruler.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    this.bindGestures();
     this.editPill.addEventListener('click', () => { const c = this.engine.selected[0]; if (c) this.hooks.edit(c); });
     engine.on('movie', () => { this.thumbGen++; this.schedule(); });
     engine.on('selection', () => {
@@ -470,6 +476,15 @@ export class TimelineView {
     return { x: (f) => this.fx(f), frame: (x) => this.xf(x), width: this.width, left: LEFT };
   }
 
+  /** Where a drop at the pointer lands: the frame under it and the track row (null below the last track), or null off the tracks. */
+  dropTarget(clientX: number, clientY: number): { frame: number; index: number; track: Track | null } | null {
+    const m = this.engine.movie;
+    const r = this.tracksCanvas.getBoundingClientRect();
+    if (!m || clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
+    const index = Math.max(0, this.laneAt(clientY - r.top));
+    return { frame: Math.max(0, Math.floor(this.xf(clientX - r.left))), index: Math.min(index, m.tracks.length), track: m.tracks[index] ?? null };
+  }
+
   private clear(): void {
     setHidden(this.keyPill, true);
     for (const c of [this.ruler, this.tracksCanvas]) (c.getContext('2d') as CanvasRenderingContext2D).clearRect(0, 0, c.width, c.height);
@@ -716,6 +731,19 @@ export class TimelineView {
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
     }
+    if (item.kind === 'video' && w > 24) {
+      // film sprocket holes along the top and bottom edges
+      c.save();
+      c.beginPath();
+      c.rect(x0 + 1, y + 1, w - 2, BLOCK_H - 2);
+      c.clip();
+      c.fillStyle = p.blockLine;
+      for (let sx = x0 + 6; sx < x1 - 6; sx += 12) {
+        c.fillRect(sx, y + 2, 5, 3);
+        c.fillRect(sx, y + BLOCK_H - 5, 5, 3);
+      }
+      c.restore();
+    }
     if (item.kind === 'group' && w > 70) {
       const open = this.opened.has(item.id), ax = x1 - 18, ay = y + 6;
       c.fillStyle = p.chip;
@@ -759,8 +787,11 @@ export class TimelineView {
         this.round(c, a, y, Math.max(3, b - a), MINI_H, 4);
         c.fillStyle = it.highlight === 'none' ? p.block : p.hl[it.highlight];
         c.fill();
-        c.strokeStyle = p.blockLine;
+        const picked = this.innerSel === it.id;
+        c.strokeStyle = picked ? p.accent : p.blockLine;
+        c.lineWidth = picked ? 2 : 1;
         c.stroke();
+        c.lineWidth = 1;
         if (b - a > 34) { c.fillStyle = p.text; c.fillText(it.name, a + 5, y + MINI_H / 2 + 0.5, b - a - 8); }
       }
     });
@@ -891,6 +922,8 @@ export class TimelineView {
   private hit(e: PointerEvent | MouseEvent): { track: Track; index: number; item: Content | null; edge: 'start' | 'end' | null; x: number; y: number } | null {
     const m = this.engine.movie;
     if (!m) return null;
+    // a finger needs a wider grip on the edges than a pointer
+    const EDGE = (e as PointerEvent).pointerType === 'touch' ? 18 : 7;
     const r = this.tracksCanvas.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
     const index = this.laneAt(y);
@@ -906,6 +939,33 @@ export class TimelineView {
       if (x >= x0 || edge) return { track: t, index, item, edge, x, y };
     }
     return { track: t, index, item: null, edge: null, x, y };
+  }
+
+  /** A bar of an opened group under the pointer (its edges count when the bar is wide enough). */
+  private innerHit(e: { clientX: number; clientY: number }): { group: Content; item: Content; edge: 'start' | 'end' | null } | null {
+    const m = this.engine.movie;
+    if (!m) return null;
+    const r = this.tracksCanvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const t = m.tracks[this.laneAt(y)];
+    if (!t) return null;
+    const top = this.laneTop(this.laneAt(y)) + BLOCK_H + 4;
+    for (const g of t.content) {
+      if (g.kind !== 'group' || !this.opened.has(g.id)) continue;
+      const gx0 = this.fx(g.start), gx1 = this.fx(end(g));
+      if (x < gx0 || x > gx1) continue;
+      const row = Math.floor((y - top) / (MINI_H + 2));
+      const tr = g.tracks[row];
+      if (!tr || y - top - row * (MINI_H + 2) > MINI_H) continue;
+      for (const it of tr.content) {
+        const a = gx0 + (it.start - g.offset) * this.ppf, b = gx0 + (end(it) - g.offset) * this.ppf;
+        if (x < a - 2 || x > b + 2) continue;
+        const wide = b - a > 20;
+        const edge = wide && x - a <= 5 ? 'start' : wide && b - x <= 5 ? 'end' : null;
+        return { group: g, item: it, edge };
+      }
+    }
+    return null;
   }
 
   private hover(e: PointerEvent): void {
@@ -924,7 +984,8 @@ export class TimelineView {
     const rx = e.clientX - r.left;
     // a plain slide on the Ruler changes the time scale (the frame under the pen stays put); the Playhead
     // handle, or Shift, scrubs; a click without a slide still moves the Playhead there
-    if (e.altKey || (!e.shiftKey && Math.abs(rx - this.fx(this.engine.frame)) >= 10)) {
+    // (a finger always scrubs: its pinch and two-finger slide change the scale)
+    if (e.pointerType !== 'touch' && (e.altKey || (!e.shiftKey && Math.abs(rx - this.fx(this.engine.frame)) >= 10))) {
       this.drag = { kind: 'zoom', x0: e.clientX, ppf0: this.ppf, anchorFrame: this.xf(rx) };
       if (!e.altKey) this.scrubTo(e);
       return;
@@ -960,6 +1021,17 @@ export class TimelineView {
     if (lh && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) { this.keySel.clear(); this.laneDown(e, lh); return; }
     const additive = this.multi || e.shiftKey || e.metaKey || e.ctrlKey;
     if (lh) { this.keyDown(e, lh, x, e.clientY - r.top); return; }
+    const inner = this.engine.mode === 'compose' ? this.innerHit(e) : null;
+    if (inner) {
+      this.tracksCanvas.setPointerCapture(e.pointerId);
+      this.innerSel = inner.item.id;
+      this.engine.select([inner.group.id]);
+      this.engine.seek(Math.max(inner.group.start, Math.min(end(inner.group) - 1, Math.floor(this.xf(x)))));
+      this.drag = { kind: 'inner', id: inner.item.id, mode: inner.edge ?? 'move', x0: e.clientX, applied: 0, moved: false, tag: `inner-${Date.now()}` };
+      this.schedule();
+      return;
+    }
+    if (this.innerSel) { this.innerSel = null; this.schedule(); }
     if (h?.item) {
       this.tracksCanvas.setPointerCapture(e.pointerId);
       if (h.item.kind === 'group' && this.engine.mode === 'compose' && end(h.item) > h.item.start && h.y - this.laneTop(h.index) < 24) {
@@ -1107,6 +1179,8 @@ export class TimelineView {
     const m = this.engine.movie;
     if (!d || !m) return;
     if (this.longPress && Math.hypot(e.clientX - this.pressAt[0], e.clientY - this.pressAt[1]) > 6) this.cancelLongPress();
+    // a second finger held on a trim is Free Trim, as Alt is
+    if (d.kind === 'trim' && !d.ripple && touchModifier()) { d.ripple = true; this.syncFreeTrim(); }
     const speed = this.hooks.scrubSpeed();
     if (d.kind === 'key') {
       const c = this.engine.selected.find((it) => it.id === d.id);
@@ -1143,6 +1217,16 @@ export class TimelineView {
       if (!step && !laneStep) return;
       const ids = this.engine.selection.content;
       if (this.tryRun('Move Content', (mv) => ops.moveContent(mv, ids, step, laneStep), d.tag)) { d.applied = total; d.appliedTrack = lanes; }
+    } else if (d.kind === 'inner') {
+      const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 3) return;
+      d.moved = true;
+      const step = total - d.applied;
+      if (!step) return;
+      const ok = d.mode === 'move'
+        ? this.tryRun('Move Content', (mv) => groupInner.moveInner(mv, [d.id], step), d.tag)
+        : this.tryRun('Trim', (mv) => groupInner.trimInner(mv, d.id, d.mode as 'start' | 'end', step), d.tag);
+      if (ok) d.applied = total;
     } else if (d.kind === 'trim') {
       const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
       const step = total - d.applied;
@@ -1216,7 +1300,7 @@ export class TimelineView {
     if (!d) return;
     if (d.kind === 'trim') { window.clearTimeout(d.hold); this.syncFreeTrim(); }
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
-    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key') this.engine.endGesture();
+    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !(this.multi || e.shiftKey || e.metaKey || e.ctrlKey)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);
@@ -1252,6 +1336,47 @@ export class TimelineView {
     this.layout(m);
     const content = TOP_PAD + this.totalH + 80;
     return Math.max(0, Math.min(Math.max(0, content - this.height), y));
+  }
+
+  /** Fingers: pinch for the time scale, two-finger slide to pan, three fingers slide for time scale (across) and track height (up and down); a pen hovering over the Ruler or Tracks scrubs. */
+  private bindGestures(): void {
+    let base = { ppf: 0, start: 0, scrollY: 0, row: 0, anchor: 0, x: 0 };
+    gestureRegion(this.root, {
+      dragging: () => {
+        const k = this.drag?.kind;
+        return k === 'move' || k === 'trim' || k === 'key' || k === 'duration' || k === 'box' || k === 'lasso' || k === 'keylasso';
+      },
+      holdOwn: (target, x, y) => target === this.tracksCanvas && !!this.laneHit({ clientX: x, clientY: y }),
+      begin: (_n, cx) => {
+        const x = cx - this.lanes.getBoundingClientRect().left;
+        base = { ppf: this.ppf, start: this.start, scrollY: this.scrollY, row: BLOCK_H, anchor: this.xf(x), x };
+      },
+      change: (i) => {
+        const m = this.engine.movie;
+        if (!m) return;
+        const r = this.lanes.getBoundingClientRect();
+        if (i.fingers === 2) {
+          this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), base.ppf * i.k));
+          this.start = Math.max(0, base.anchor - (i.cx - r.left - LEFT) / this.ppf);
+          this.scrollY = this.clampScroll(base.scrollY - i.dy, m);
+        } else {
+          this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), base.ppf * Math.exp(i.dx / 180)));
+          this.start = Math.max(0, base.anchor - (base.x - LEFT) / this.ppf);
+          this.setRowHeight(base.row * Math.exp(-i.dy / 220));
+          this.scrollY = this.clampScroll(this.scrollY, m);
+        }
+        this.fitted = true;
+        this.schedule();
+      },
+    });
+    const hover = (e: PointerEvent): void => {
+      const m = this.engine.movie;
+      if (!m || this.drag) return;
+      const r = this.ruler.getBoundingClientRect();
+      this.engine.seek(Math.max(0, Math.min(m.duration - 1, Math.floor(this.xf(e.clientX - r.left)))));
+    };
+    penHover(this.ruler, hover);
+    penHover(this.tracksCanvas, hover);
   }
 
   private wheel(e: WheelEvent): void {

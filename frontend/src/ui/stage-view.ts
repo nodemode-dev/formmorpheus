@@ -1,8 +1,10 @@
 import type { Engine } from '../engine/engine';
 import { end, locate } from '../engine/model';
+import { canvasCentreOffset, canvasOf } from '../engine/canvas';
 import * as ops from '../engine/ops';
 import type { Renderer, View } from '../engine/render';
 import { StageNav } from './stage-nav';
+import { TOUCH_SLOP, snapMod } from './gestures';
 import * as keyOps from '../engine/key-ops';
 import { animate, laneOf } from '../engine/keys';
 import type { Content, Movie } from '../engine/types';
@@ -20,7 +22,16 @@ import * as tops from '../engine/transform-ops';
 import { icon } from './icons';
 import { StageBoxMenu } from './stage-box-menu';
 import { boxOf, frameLines, snapAngle, snapBox, type Box } from './stage-snap';
+import { layoutText } from '../engine/text-layout';
+import { TextStage } from './text-stage';
+import type { TextStyle } from '../engine/types';
 import '../styles/stage-box.css';
+
+/** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
+function textCentre(s: TextStyle, m: Movie): { x: number; y: number } {
+  const r = layoutText(s, m).inner;
+  return { x: r.x + r.w / 2 - m.width / 2, y: r.y + r.h / 2 - m.height / 2 };
+}
 
 /** Side node directions in handle order: top, right, bottom, left. */
 const SIDES: ReadonlyArray<{ axis: 'x' | 'y'; sign: 1 | -1 }> = [{ axis: 'y', sign: -1 }, { axis: 'x', sign: 1 }, { axis: 'y', sign: 1 }, { axis: 'x', sign: -1 }];
@@ -82,15 +93,20 @@ export class StageView {
   private req = 0;
   private grab: Grab | null = null;
   private grabPointer = -1;
+  private slop: [number, number] | null = null;
   private offWrap: (() => void) | null = null;
   private bg = '#0a0a0a';
   private readonly boxMenu: StageBoxMenu;
   private nudgeTimer = 0;
+  private readonly textStage: TextStage;
+  /** Set by the app: opens the Text style card for an id near a screen point. */
+  onEditTextStyle: ((id: string, x: number, y: number) => void) | null = null;
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer) {
     host.appendChild(this.root);
     this.nav = new StageNav(this.root, engine);
     this.nav.onChange = () => this.schedule();
+    this.nav.isDragging = () => !!this.grab;
     this.nav.isEmpty = (x, y) => { const m = this.engine.movie; return !!m && !!this.view && !this.pick(m, x, y); };
     this.boxMenu = new StageBoxMenu(engine, () => this.root.focus({ preventScroll: true }));
     this.root.tabIndex = 0;
@@ -104,6 +120,23 @@ export class StageView {
     this.camera = new CameraOverlay(this.space, engine);
     cameraMode.onChange(() => this.schedule());
     warpMode.onChange(() => this.schedule());
+    this.textStage = new TextStage(this.space, engine, {
+      view: () => this.view,
+      corners: (c) => this.corners(this.engine.movie as Movie, c),
+      point: (e, id) => this.parentPt(this.engine.movie as Movie, id, ...this.nav.local(e)),
+      pose: (c) => this.pose(c),
+      editStyle: (id, x, y) => this.onEditTextStyle?.(id, x, y),
+      focus: () => this.root.focus({ preventScroll: true }),
+    });
+    window.addEventListener('fm:fonts', () => this.schedule());
+    const dbl = (e: MouseEvent): void => {
+      const m = this.engine.movie;
+      if (!m || !this.view || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
+      const id = this.pick(m, ...this.nav.local(e));
+      const c = id ? locate(m, id)?.content : null;
+      if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); }
+    };
+    this.root.addEventListener('dblclick', dbl);
     this.bones = new BonesOverlay(this.space, engine);
     bonesMode.onChange(() => this.schedule());
     engine.on('mode', () => { this.cancelRecording(); this.schedule(); });
@@ -216,6 +249,13 @@ export class StageView {
     return [(lx - a.s[0]) / v.scale, (ly - a.s[1]) / v.scale];
   }
 
+  /** Starts the inline Text editor on a content (all of its text selected, so typing replaces it). */
+  editText(id: string): void {
+    this.engine.select([id]);
+    this.schedule();
+    requestAnimationFrame(() => this.textStage.start(id));
+  }
+
   private keyed(): boolean { return this.engine.mode !== 'compose'; }
 
   private pose(c: Content): Pose {
@@ -255,8 +295,10 @@ export class StageView {
     const hw = (size.w / 2) * t.sx * t.kx * v.scale, hh = (size.h / 2) * t.sy * t.ky * v.scale;
     const a = (t.rot * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
     const S = this.sm(m, c);
+    const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : canvasCentreOffset(c, m);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x0, y0]) => {
-      const x = x0 - pvx * t.sx * t.kx * t.fx, y = y0 - pvy * t.sy * t.ky * t.fy;
+      // the box centre is the canvas centre, which sits off the movie centre for a Drawing with its own canvas
+      const x = x0 + (dc.x * v.scale - pvx) * t.sx * t.kx * t.fx, y = y0 + (dc.y * v.scale - pvy) * t.sy * t.ky * t.fy;
       return mapPt(S, cx + x * cos - y * sin, cy + x * sin + y * cos);
     });
   }
@@ -264,15 +306,16 @@ export class StageView {
   private extent(m: Movie, c: Content): { w: number; h: number } {
     if (c.kind === 'image' && c.asset && m.assets[c.asset]) return { w: m.assets[c.asset].width, h: m.assets[c.asset].height };
     if (c.kind === 'text' && c.text) {
-      const lines = c.text.text.split('\n');
-      const longest = Math.max(...lines.map((l) => l.length));
-      return { w: Math.min(m.width * 0.8, Math.max(c.text.size, longest * c.text.size * 0.56)), h: lines.length * c.text.size * 1.2 };
+      const r = layoutText(c.text, m).inner;
+      return { w: Math.max(r.w, 8), h: Math.max(r.h, 8) };
     }
-    return { w: m.width, h: m.height };
+    const k = canvasOf(c, m);
+    return { w: k.w, h: k.h };
   }
 
   private drawBox(m: Movie): void {
     const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => this.engine.isOver(c));
+    this.textStage.sync();
     const warpShown = this.warp.sync(this.view, sel), bonesShown = this.bones.sync(this.view, sel);
     const handles = warpShown || bonesShown;
     this.paths.sync(handles ? null : this.view, sel);
@@ -322,6 +365,11 @@ export class StageView {
       e.preventDefault();
       return;
     }
+    if (sel.length === 1 && target.classList.contains('fm-box-s') && TextStage.wrapSide(sel[0], Number((target as SVGElement).dataset.s), this.keyed())) {
+      this.textStage.beginWrap(e, sel[0].id, Number((target as SVGElement).dataset.s), target);
+      e.preventDefault();
+      return;
+    }
     if (sel.length === 1 && target.classList.contains('fm-box-s')) {
       const side = SIDES[Number((target as SVGElement).dataset.s)] ?? SIDES[0];
       this.grab = { kind: 'stretch', id: sel[0].id, base: this.pose(sel[0]), axis: side.axis, sign: side.sign, tag };
@@ -350,6 +398,7 @@ export class StageView {
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     this.grabPointer = e.pointerId;
+    this.slop = e.pointerType === 'touch' ? [e.clientX, e.clientY] : null;
     e.preventDefault();
     this.beginRec(e);
   }
@@ -460,6 +509,11 @@ export class StageView {
   private move(e: PointerEvent): void {
     const g = this.grab, m = this.engine.movie, v = this.view;
     if (!g || !m || !v || e.pointerId !== this.grabPointer) return;
+    // a finger has to leave its landing spot before a drag starts, so a pinch beginning on content moves nothing
+    if (this.slop) {
+      if (Math.hypot(e.clientX - this.slop[0], e.clientY - this.slop[1]) < TOUCH_SLOP) return;
+      this.slop = null;
+    }
     let [x, y] = this.local(e);
     // scale and rotate read the pointer in the content's parent space, so they hold under a moving parent
     if (g.kind !== 'move') [x, y] = this.parentPt(m, g.id, x, y);
@@ -470,7 +524,7 @@ export class StageView {
       let snapV: number | null = null, snapH: number | null = null;
       if (!e.altKey) {
         const tol = SNAP_PX / v.scale;
-        if (e.shiftKey && g.snap) {
+        if (snapMod(e) && g.snap) {
           // the snap modifier: the content's edges and centre against the frame and the other contents
           const b = g.snap.box;
           const s = snapBox({ l: b.l + dx, t: b.t + dy, r: b.r + dx, b: b.b + dy }, g.snap.xs, g.snap.ys, tol);
@@ -508,7 +562,7 @@ export class StageView {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       let deg = b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
-      if (e.shiftKey) deg = snapAngle(deg, this.keyed() ? 30 : 15);
+      if (snapMod(e)) deg = snapAngle(deg, this.keyed() ? 30 : 15);
       if (this.keyed()) {
         const r = Math.round(deg * 10) / 10;
         this.writeKeys('Rotate Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: b.sx, scaleY: b.sy, rotation: r }), g.tag);

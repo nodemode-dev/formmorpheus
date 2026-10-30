@@ -1,0 +1,33 @@
+/* Touch, pen and gesture parity (ui/gestures.ts). Fingers get 44 px targets where the main pointer is coarse. */
+:root {
+  --touch-target: 44px;
+  --touch-gap: var(--space-2);
+}
+
+/* the surfaces that take fingers hand them to the gesture hub: no browser pan or zoom there */
+.fm-stage, .fm-stage-space, .fm-stage-box, .fm-timeline .fm-tl-lanes, .fm-fs-rows, .fm-lp-list { touch-action: none; }
+.fm-stage, .fm-timeline, .fm-lp-row, .fm-fs-cell { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+@media (pointer: coarse) {
+  :root {
+    --ctl-sm: 36px;
+    --ctl-md: 40px;
+    --ctl-lg: var(--touch-target);
+    --ctl-xl: 48px;
+  }
+  .fm-round-btn, .fm-ghost-btn, .fm-pill-btn, .fm-play-btn, .fm-nav-btn, .fm-paint-side-btn, .cv-btn, .fm-mode {
+    min-width: var(--touch-target); min-height: var(--touch-target);
+  }
+  .fm-nav-zoom { min-height: var(--touch-target); min-width: 56px; }
+  .fm-nav { gap: var(--space-1); }
+  .fm-lp-row { min-height: var(--touch-target); }
+  .fm-split { min-height: 16px; }
+  /* Stage box handles: bigger grips (r, x, y, width and height are CSS properties on SVG shapes) */
+  .fm-stage-box .fm-box-h { r: 13px; }
+  .fm-stage-box .fm-box-rot { r: 14px; }
+  .fm-stage-box .fm-box-s { x: -11px; y: -11px; width: 22px; height: 22px; }
+  .fm-stage-box .fm-box-more circle:first-child { r: 16px; }
+  .fm-pv-scrub { min-height: var(--touch-target); }
+  input[type="range"] { min-height: var(--touch-target); }
+  .cv-check, .cv-select, .cv-input { min-height: var(--touch-target); }
+}

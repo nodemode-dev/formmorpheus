@@ -19,6 +19,8 @@ export class Popover {
     if (!t || this.el.contains(t) || this.anchor?.contains(t)) return;
     // the Color panel opened from a popover is part of it
     if (t instanceof Element && t.closest('.fm-col')) return;
+    // the Warp / Distort card stays open while its handles are dragged on the Stage
+    if (t instanceof Element && t.closest('.fm-warp-h')) return;
     for (const p of this.subs.keys()) if (p.contains(t)) return;
     this.hide();
   };

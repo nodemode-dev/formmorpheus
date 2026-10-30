@@ -7,7 +7,8 @@ import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { animate, evalLane, laneOf, warpSize, type Animated } from '../engine/keys';
 import { applyTake, Recorder } from '../engine/perform';
-import { DISTORT_IDS, contentRect, localToStage, stageToLocal, warpId, warpPoint, type Rect } from '../engine/warp-draw';
+import { DISTORT_IDS, contentRect, localToStage, setStagePost, stageToLocal, warpId, warpPoint, type Rect } from '../engine/warp-draw';
+import { postMatrix } from '../engine/transform';
 import type { Content } from '../engine/types';
 import { el } from './dom';
 
@@ -31,7 +32,15 @@ class WarpMode {
   id: string | null = null;
   /** Merge tag of the lane the card just added in Perform mode: the first take joins it, so lane and take undo as one. */
   tag: string | null = null;
+  /** The node (row by row) or corner last grabbed, whose numbers the card shows. */
+  handle = 0;
   private readonly subs = new Set<Listener>();
+
+  pick(i: number): void {
+    if (i === this.handle) return;
+    this.handle = i;
+    for (const fn of this.subs) fn();
+  }
 
   set(kind: WarpKind | null, id: string | null = null): void {
     if (kind === this.kind && id === this.id) return;
@@ -135,6 +144,8 @@ export class WarpOverlay {
     const a = rawAnimated(c, kind, local, vals, n);
     const rect = contentRect(c, m);
     const o = this.pt;
+    // the handles follow the parents and the camera, like the drawing does
+    setStagePost(postMatrix(m, c, this.engine.frame, false, 0));
     const place = (u: number, v: number): [number, number] => {
       warpPoint(a, rect, u, v, o);
       localToStage(a, m.width, m.height, o[0], o[1], o);
@@ -161,7 +172,9 @@ export class WarpOverlay {
       const [x, y] = place(hs[i].col / (n > 1 && kind === 'warp' ? n - 1 : 1), hs[i].row / (n > 1 && kind === 'warp' ? n - 1 : 1));
       dot.setAttribute('cx', x.toFixed(1));
       dot.setAttribute('cy', y.toFixed(1));
+      dot.classList.toggle('is-picked', i === warpMode.handle);
     }
+    setStagePost(null);
     return true;
   }
 
@@ -181,6 +194,7 @@ export class WarpOverlay {
     const handle = handlesOf(t.kind, n, contentRect(t.c, m))[Number(dot.getAttribute('data-i'))];
     if (!handle) return;
     const vals = evalLane(t.c, lane, this.engine.frame - t.c.start);
+    warpMode.pick(Number(dot.getAttribute('data-i')));
     this.drag = { id: t.c.id, kind: t.kind, handle, vals, tag: `warp-${Date.now()}`, pointer: e.pointerId };
     (dot as Element).setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -210,7 +224,9 @@ export class WarpOverlay {
     const sx = (lx - v.ox) / v.scale, sy = (ly - v.oy) / v.scale;
     const a = animate(found, this.engine.frame - found.start);
     const p = [0, 0];
+    setStagePost(postMatrix(m, found, this.engine.frame, false, 0));
     stageToLocal(a, m.width, m.height, sx, sy, p);
+    setStagePost(null);
     const [ix, iy] = d.handle.ids;
     const ox = Math.round((p[0] - d.handle.base[0]) * 10) / 10, oy = Math.round((p[1] - d.handle.base[1]) * 10) / 10;
     if (d.rec) {

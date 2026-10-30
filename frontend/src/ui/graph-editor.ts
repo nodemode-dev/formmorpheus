@@ -24,6 +24,8 @@ interface Sel { channel: string; frame: number }
 type Drag =
   | { kind: 'key'; base: Content; channel: string; from: number; cur: number; x0: number; y0: number; v0: number; lock: 0 | 1 | 2; moved: boolean; tag: string }
   | { kind: 'handle'; base: Content; channel: string; owner: number; side: 'out' | 'in'; tag: string; moved: boolean }
+  | { kind: 'keys'; base: Content; items: Sel[]; anchor: Sel; x0: number; y0: number; moved: boolean; tag: string; shift: number }
+  | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; add: boolean }
   | { kind: 'pan'; x0: number; y0: number; t0: number; vc: number }
   | { kind: 'scrub' };
 
@@ -80,6 +82,8 @@ export class GraphEditor {
   private id: string | null = null;
   private kind: KeyKind = 'move';
   private sel: Sel | null = null;
+  /** Keys picked together by a box (or Shift-click); empty means just `sel`. */
+  private multi = new Map<string, Sel>();
   private mode: Mode = 'value';
   private t0 = 0;
   private ppf = 8;
@@ -141,6 +145,7 @@ export class GraphEditor {
     this.id = c.id;
     this.kind = k;
     this.sel = null;
+    this.multi.clear();
     this.chanKey = '';
     const lane = laneOf(c, k);
     const first = channel && lane?.channels[channel]?.length ? channel : lane ? laneChannels(lane).find((s) => lane.channels[s.id]?.length)?.id : undefined;
@@ -171,6 +176,7 @@ export class GraphEditor {
     if (!lane || !Object.values(lane.channels).some((x) => x.length)) return;
     this.id = s[0].id;
     this.sel = null;
+    this.multi.clear();
     this.chanKey = '';
     this.fitted = false;
   }
@@ -290,9 +296,33 @@ export class GraphEditor {
     const hy = Math.abs(dv) < 1e-9 ? orig[1] : (this.yv(py) - a.value) / dv;
     const out: [number, number] = d.side === 'out' ? [hx, hy] : [h0.out[0], h0.out[1]];
     const inn: [number, number] = d.side === 'in' ? [hx, hy] : [h0.in[0], h0.in[1]];
-    const { base, channel, owner, tag } = d;
+    const { base, channel, owner, tag, side } = d;
     const kind = this.kind;
-    this.engine.run('Edit Ease Curve', (m) => ops.updateContent(m, id, () => gOps.setHandles(base, kind, channel, owner, out, inn)), tag);
+    const link = !e.altKey; // Alt breaks the handle from the one across the key
+    this.engine.run('Edit Ease Curve', (m) => ops.updateContent(m, id, () => gOps.setHandlesLinked(base, kind, channel, owner, side, out, inn, link)), tag);
+  }
+
+  private applyKeys(d: Extract<Drag, { kind: 'keys' }>, e: PointerEvent): void {
+    const id = this.id;
+    if (!id) return;
+    const dx = e.clientX - d.x0;
+    let dy = e.clientY - d.y0;
+    if (!d.moved && Math.hypot(dx, e.clientY - d.y0) < 3) return;
+    d.moved = true;
+    let df = Math.round(dx / this.ppf);
+    if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else df = 0; }
+    const { base, items, tag } = d;
+    const kind = this.kind;
+    const act = this.sel?.channel ?? items[0].channel;
+    const [a0, a1] = this.range(base, act);
+    const dvAct = -dy / this.views.value.sc;
+    // another channel's key sits on a mapped range: scale the move back to that channel's own units
+    const dv = (ch: string): number => { if (ch === act) return dvAct; const [b0, b1] = this.range(base, ch); return (dvAct * (b1 - b0)) / (a1 - a0); };
+    d.shift = gOps.clampShift(base, kind, items, df);
+    this.engine.run('Edit Keyframes', (m) => ops.updateContent(m, id, () => gOps.moveKeys(base, kind, items, df, dv)), tag);
+    this.multi.clear();
+    for (const s of items) this.multi.set(`${s.channel}|${s.frame + d.shift}`, { channel: s.channel, frame: s.frame + d.shift });
+    this.sel = { channel: d.anchor.channel, frame: d.anchor.frame + d.shift };
   }
 
   // ---- input -------------------------------------------------------------
@@ -331,16 +361,56 @@ export class GraphEditor {
         }
       }
       if (best) {
-        this.sel = { channel: best.ch, frame: best.k.frame };
+        const hit: Sel = { channel: best.ch, frame: best.k.frame };
+        const hk = `${hit.channel}|${hit.frame}`;
+        if (e.shiftKey && this.mode === 'value') {
+          // Shift-click adds or removes a key from the picked set
+          if (!this.multi.size && this.sel) this.multi.set(`${this.sel.channel}|${this.sel.frame}`, { ...this.sel });
+          if (this.multi.has(hk)) this.multi.delete(hk); else this.multi.set(hk, hit);
+          this.sel = hit;
+          this.schedule();
+          return;
+        }
+        const together = this.mode === 'value' && this.multi.size > 1 && this.multi.has(hk);
+        if (!together) this.multi.clear();
+        this.sel = hit;
         this.engine.seek(c.start + best.k.frame);
-        if (this.mode === 'value') {
+        if (together) {
+          this.drag = { kind: 'keys', base: c, items: Array.from(this.multi.values()), anchor: hit, x0: e.clientX, y0: e.clientY, moved: false, tag: `graph-m-${Date.now()}`, shift: 0 };
+        } else if (this.mode === 'value') {
           this.drag = { kind: 'key', base: c, channel: best.ch, from: best.k.frame, cur: best.k.frame, x0: e.clientX, y0: e.clientY, v0: best.k.value, lock: 0, moved: false, tag: `graph-k-${Date.now()}` };
         } else this.drag = null;
         this.schedule();
         return;
       }
     }
+    if (this.mode === 'value' && !e.altKey) {
+      const add = e.shiftKey;
+      if (!add) this.multi.clear();
+      this.drag = { kind: 'box', x0: x, y0: y, x1: x, y1: y, add };
+      this.schedule();
+      return;
+    }
     this.beginPan(e);
+  }
+
+  private boxPick(d: Extract<Drag, { kind: 'box' }>): void {
+    const c = this.content();
+    const lane = c ? laneOf(c, this.kind) : null;
+    if (!c || !lane) return;
+    const xa = Math.min(d.x0, d.x1), xb = Math.max(d.x0, d.x1), ya = Math.min(d.y0, d.y1), yb = Math.max(d.y0, d.y1);
+    if (!d.add) this.multi.clear();
+    for (const id in lane.channels) {
+      if (!this.visible(id)) continue;
+      for (const k of lane.channels[id]) {
+        const p = this.pointOf(c, id, k);
+        if (p[0] >= xa && p[0] <= xb && p[1] >= ya && p[1] <= yb) this.multi.set(`${id}|${k.frame}`, { channel: id, frame: k.frame });
+      }
+    }
+    if (this.multi.size) {
+      const has = this.sel && this.multi.has(`${this.sel.channel}|${this.sel.frame}`);
+      if (!has) this.sel = Array.from(this.multi.values())[0];
+    }
   }
 
   private beginPan(e: PointerEvent): void {
@@ -358,6 +428,8 @@ export class GraphEditor {
     const d = this.drag;
     if (!d) return;
     if (d.kind === 'key') this.applyKey(d, e);
+    else if (d.kind === 'keys') this.applyKeys(d, e);
+    else if (d.kind === 'box') { [d.x1, d.y1] = this.local(e); this.schedule(); }
     else if (d.kind === 'handle') { d.moved = true; this.applyHandle(d, e); }
     else if (d.kind === 'pan') {
       this.t0 = d.t0 - (e.clientX - d.x0) / this.ppf;
@@ -367,7 +439,8 @@ export class GraphEditor {
   }
 
   private up(e: PointerEvent): void {
-    if (this.drag && (this.drag.kind === 'key' || this.drag.kind === 'handle')) this.engine.endGesture();
+    if (this.drag && (this.drag.kind === 'key' || this.drag.kind === 'handle' || this.drag.kind === 'keys')) this.engine.endGesture();
+    if (this.drag && this.drag.kind === 'box') this.boxPick(this.drag);
     this.drag = null;
     try { this.canvas.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
     this.schedule();
@@ -561,8 +634,19 @@ export class GraphEditor {
         this.handles.push({ side, owner: owner.frame, x, y, ax, ay });
       };
       const [kx, ky] = this.pointOf(c, sel.channel, key);
-      if (hasSpan) add('out', key, keysA[idx + 1], kx, ky);
-      if (idx > 0) add('in', keysA[idx - 1], key, kx, ky);
+      // both spans around the key, both handles of each: the leaving span's out and in (in sits on the next key),
+      // the arriving span's out (on the previous key) and in
+      const next = keysA[idx + 1], prev = keysA[idx - 1];
+      if (hasSpan) {
+        add('out', key, next, kx, ky);
+        const [nx, ny] = this.pointOf(c, sel.channel, next);
+        add('in', key, next, nx, ny);
+      }
+      if (prev) {
+        const [px, py] = this.pointOf(c, sel.channel, prev);
+        add('out', prev, key, px, py);
+        add('in', prev, key, kx, ky);
+      }
       ctx.strokeStyle = P.accent;
       ctx.lineWidth = 1;
       for (const hp of this.handles) {
@@ -587,7 +671,8 @@ export class GraphEditor {
       for (const k of lane.channels[id]) {
         const [x, y] = this.pointOf(c, id, k);
         if (x < PL - 8 || x > PL + pw + 8) continue;
-        const on = act && k.frame === sel.frame;
+        const picked = this.multi.has(`${id}|${k.frame}`);
+        const on = (act && k.frame === sel.frame) || picked;
         ctx.beginPath();
         ctx.rect(x - (on ? 5 : 4), y - (on ? 5 : 4), on ? 10 : 8, on ? 10 : 8);
         ctx.fillStyle = on ? P.accent : act ? P.hi : P.text2;
@@ -598,6 +683,16 @@ export class GraphEditor {
       }
     }
     ctx.restore();
+    const bx = this.drag;
+    if (bx && bx.kind === 'box') {
+      ctx.fillStyle = P.accent;
+      ctx.globalAlpha = 0.14;
+      ctx.fillRect(Math.min(bx.x0, bx.x1), Math.min(bx.y0, bx.y1), Math.abs(bx.x1 - bx.x0), Math.abs(bx.y1 - bx.y0));
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = P.accent;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(Math.min(bx.x0, bx.x1) + 0.5, Math.min(bx.y0, bx.y1) + 0.5, Math.abs(bx.x1 - bx.x0), Math.abs(bx.y1 - bx.y0));
+    }
   }
 
   private paintGrid(ctx: CanvasRenderingContext2D, P: Record<string, string>, spec: ChannelSpec | undefined): void {

@@ -13,7 +13,9 @@ const ICON_CHEV = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" st
 const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>';
 const ICON_GROUP_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/></svg>';
 
-const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5"/></svg>';
+const ICON_GROUP_SEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="11" height="11" rx="2"/><rect x="9" y="9" width="11" height="11" rx="2"/></svg>';
+const ICON_PLUS ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
 const ICON_HOOK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a2 2 0 0 0 2 2h7M9.5 8.5 12 11l-2.5 2.5"/></svg>';
 
@@ -38,6 +40,9 @@ export class LayersPanel {
   private side: { kind: SideKind; id: string } | null = null;
   private renaming: string | null = null;
   private lastDrag = 0;
+  /** Extra selection from Ctrl or Shift click: the active row plus these. Empty: a single selection. */
+  private sel = new Set<string>();
+  private anchorId = '';
 
   private readonly onDown = (e: PointerEvent): void => {
     const t = e.target as Node | null;
@@ -59,7 +64,7 @@ export class LayersPanel {
     const modes = BLEND_MODES;
     this.root = el<HTMLElement>(`<div class="fm-lp" hidden>
       <div class="fm-lp-card fm-pp-glass">
-        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-add fm-lp-addgroup" aria-label="New Group" title="New Group">${ICON_GROUP_PLUS}</button><button type="button" class="fm-lp-add fm-lp-addlayer" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div></div>
+        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-add fm-lp-multi fm-lp-delsel" aria-label="Delete selected layers" title="Delete selected layers" hidden>${ICON_TRASH}</button><button type="button" class="fm-lp-add fm-lp-multi fm-lp-groupsel" aria-label="Group selected layers" title="Group selected layers" hidden>${ICON_GROUP_SEL}</button><button type="button" class="fm-lp-add fm-lp-addgroup" aria-label="New Group" title="New Group">${ICON_GROUP_PLUS}</button><button type="button" class="fm-lp-add fm-lp-addlayer" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div></div>
         <div class="fm-lp-listwrap"><div class="fm-lp-list"></div><div class="fm-lp-drop" hidden></div></div>
       </div>
       <div class="fm-lp-side fm-lp-menu fm-pp-glass" hidden>
@@ -70,6 +75,7 @@ export class LayersPanel {
         <button type="button" class="fm-pop-row" data-act="addmask" data-for="layer"><span class="fm-pop-label">Add Mask</span></button>
         <button type="button" class="fm-pop-row" data-act="group"><span class="fm-pop-label">Group</span></button>
         <button type="button" class="fm-pop-row" data-act="ungroup" data-for="group"><span class="fm-pop-label">Ungroup</span></button>
+        <button type="button" class="fm-pop-row" data-act="flatten" data-for="group"><span class="fm-pop-label">Flatten</span></button>
         <div class="fm-pop-sep"></div>
         <button type="button" class="fm-pop-row" data-act="merge" data-for="layer"><span class="fm-pop-label">Merge Down</span></button>
         <button type="button" class="fm-pop-row" data-act="dup"><span class="fm-pop-label">Duplicate</span></button>
@@ -108,6 +114,18 @@ export class LayersPanel {
       const d = this.doc(); if (!d) return;
       d.addGroup(); this.refresh();
     });
+    q(this.root, '.fm-lp-delsel').addEventListener('click', () => {
+      const d = this.doc(); if (!d || this.sel.size < 2) return;
+      const ids = Array.from(this.sel);
+      this.sel.clear(); this.closeSide();
+      d.deleteMany(ids); this.refresh();
+    });
+    q(this.root, '.fm-lp-groupsel').addEventListener('click', () => {
+      const d = this.doc(); if (!d || this.sel.size < 2) return;
+      const ids = Array.from(this.sel);
+      this.sel.clear(); this.closeSide();
+      d.groupMany(ids); this.refresh();
+    });
     this.maskCard.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-mact]');
       if (b) this.onMaskMenu(b.dataset.mact ?? '');
@@ -144,7 +162,18 @@ export class LayersPanel {
       d.setProps(id, { blend: b.dataset.blend as BlendMode });
       this.refresh();
     });
-    this.root.addEventListener('contextmenu', (e) => e.preventDefault());
+    // a right click or a touch held on a row opens its menu
+    this.root.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const row = (e.target as HTMLElement).closest<HTMLElement>('.fm-lp-row');
+      const id = row?.dataset.key, d = this.doc();
+      if (!row || !id || !d) return;
+      const l = d.layer(id);
+      if (!l) return;
+      if (!l.group && d.active !== id) d.setActive(id);
+      this.openSide('menu', id, row);
+      this.refresh();
+    });
   }
 
   open(anchor: HTMLElement): void {
@@ -174,6 +203,13 @@ export class LayersPanel {
 
   isOpen(): boolean { return this.opened; }
 
+  /** Layers (not groups) picked together with Ctrl or Shift click, top to bottom; empty for a single selection. */
+  selectedLeaves(): string[] {
+    const d = this.doc();
+    if (!d || this.sel.size < 2) return [];
+    return d.layers.filter((l) => !l.group && this.sel.has(l.id)).map((l) => l.id);
+  }
+
   refresh(): void {
     if (!this.opened) return;
     const d = this.doc();
@@ -181,6 +217,10 @@ export class LayersPanel {
     // rows inside a folded group are not listed
     const layers = all.filter((l) => !hiddenByFold(all, l.id));
     const active = d?.active ?? '';
+    for (const id of Array.from(this.sel)) if (!all.some((l) => l.id === id)) this.sel.delete(id);
+    if (this.sel.size === 1) this.sel.clear();
+    const multi = this.sel.size > 1;
+    for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-lp-multi'))) setHidden(b, !multi);
     patchList(this.list, layers, {
       key: (l) => l.id,
       create: (l) => {
@@ -213,6 +253,7 @@ export class LayersPanel {
     setClass(row, 'is-group', group);
     setClass(row, 'is-clip', l.clipping && !group);
     setClass(row, 'is-hidden', !l.visible);
+    setClass(row, 'is-multi', this.sel.has(l.id));
     setClass(row, 'is-folded', !!l.collapsed);
     setClass(row, 'is-side', !!this.side && this.side.id === l.id);
     setStyleVar(row, '--fm-depth', String(depthOf(layers, l.id)));
@@ -282,6 +323,21 @@ export class LayersPanel {
     const l = d.layer(id);
     if (!l) return;
     if (t.closest('.fm-lp-fold')) { d.setCollapsed(id, !l.collapsed); this.closeSide(); this.refresh(); return; }
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      this.closeSide();
+      if (this.sel.size === 0 && !d.layer(d.active)?.group) this.sel.add(d.active);
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        const shown = d.layers.filter((x) => !hiddenByFold(d.layers, x.id));
+        const a = shown.findIndex((x) => x.id === (this.anchorId || d.active)), b = shown.findIndex((x) => x.id === id);
+        if (a >= 0 && b >= 0) { this.sel.clear(); for (let k = Math.min(a, b); k <= Math.max(a, b); k++) this.sel.add(shown[k].id); }
+      } else if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id);
+      this.anchorId = id;
+      if (!l.group && this.sel.has(id)) d.setActive(id);
+      this.refresh();
+      return;
+    }
+    this.anchorId = id;
+    if (this.sel.size) { this.sel.clear(); this.refresh(); }
     if (t.closest('.fm-lp-blend')) {
       if (!l.group && d.active !== id) d.setActive(id);
       this.openSide('blend', id, row);
@@ -394,6 +450,7 @@ export class LayersPanel {
       case 'addmask': d.addMask(id); this.closeSide(); break;
       case 'group': d.addGroup(id); this.closeSide(); break;
       case 'ungroup': d.ungroup(id); this.closeSide(); break;
+      case 'flatten': d.flattenGroup(id); this.closeSide(); break;
     }
     this.refresh();
   }
@@ -538,7 +595,10 @@ export class LayersPanel {
       row.classList.remove('is-lifted');
       this.list.classList.remove('is-dragging');
       setHidden(this.dropEl, true);
-      if (drop && ev.type === 'pointerup') d.moveEntry(id, drop.parent, drop.before);
+      if (drop && ev.type === 'pointerup') {
+        if (this.sel.size > 1 && this.sel.has(id)) d.moveMany(Array.from(this.sel), drop.parent, drop.before);
+        else d.moveEntry(id, drop.parent, drop.before);
+      }
       this.refresh();
       requestAnimationFrame(() => this.list.classList.remove('is-settling'));
     };

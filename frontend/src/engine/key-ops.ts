@@ -179,6 +179,8 @@ function reverseLane(lane: KeyLane): KeyLane {
       const src = list[n - 1 - i];
       const span = i < n - 1 ? mirrorSpan(list[n - 2 - i]) : { ease: list[n - 1].ease === 'custom' ? 'linear' as const : list[n - 1].ease };
       out[i] = { frame: first + last - src.frame, value: src.value, ...span };
+      // the path runs backwards: what arrived now leaves, so the tangent sides swap
+      if (src.sp) out[i].sp = { ...src.sp, in: [src.sp.out[0], src.sp.out[1]], out: [src.sp.in[0], src.sp.in[1]] };
     }
     channels[id] = out;
   }

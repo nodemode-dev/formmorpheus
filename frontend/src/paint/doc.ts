@@ -395,6 +395,117 @@ export class PaintDoc implements PaintHost {
     this.record('Ungroup', before);
   }
 
+  /** Collapses a group and everything in it into one layer that keeps the group's place, opacity and mask-free look. */
+  flattenGroup(id: string): PaintLayer | null {
+    const i = this.layers.findIndex((l) => l.id === id);
+    if (i < 0 || !this.layers[i].group) return null;
+    const end = blockEnd(this.layers, i);
+    const g = this.layers[i];
+    const before = this.snap();
+    // render the block alone: the group at the top level with plain opacity and blend, so they stay on the new layer
+    const block = this.layers.slice(i, end).map((l, k): PaintLayer => (k === 0 ? { ...l, parent: undefined, opacity: 1, blend: 'normal', visible: true, clipping: false } : l));
+    const r = this.readerCtx();
+    r.setTransform(1, 0, 0, 1, 0, 0);
+    r.globalAlpha = 1;
+    r.globalCompositeOperation = 'source-over';
+    r.clearRect(0, 0, this.width, this.height);
+    r.save();
+    drawTree(r, block, this.width, this.height, this.hooks, this.surfaces());
+    r.restore();
+    const raster: Raster = { width: this.width, height: this.height, data: r.getImageData(0, 0, this.width, this.height).data };
+    const l: PaintLayer = {
+      id: newId(), name: g.name, visible: g.visible, opacity: g.opacity, blend: g.blend === 'passthrough' ? 'normal' : g.blend,
+      alphaLock: false, clipping: g.clipping, source: null, raster, version: counter++,
+    };
+    if (g.parent) l.parent = g.parent;
+    this.layers.splice(i, end - i, l);
+    this.active = l.id;
+    this.maskEdit = false;
+    this.record('Flatten group', before);
+    return l;
+  }
+
+  /** Deletes several entries (with their content) as one step; at least one layer always remains. */
+  deleteMany(ids: string[]): void {
+    const gone = new Set<string>();
+    for (const id of ids) {
+      const i = this.layers.findIndex((l) => l.id === id);
+      if (i < 0) continue;
+      for (const l of this.layers.slice(i, blockEnd(this.layers, i))) gone.add(l.id);
+    }
+    if (!gone.size) return;
+    const before = this.snap();
+    const rest = this.layers.filter((l) => !gone.has(l.id));
+    if (!rest.some((l) => !l.group)) {
+      const keep = this.layers.find((l) => !l.group && ids.includes(l.id)) ?? this.layers.find((l) => !l.group);
+      if (!keep) return;
+      this.layers = this.layers.filter((l) => l.id === keep.id);
+      delete this.layers[0].parent;
+      this.layers[0].raster.data.fill(0);
+      this.touch(this.layers[0].raster, { x: 0, y: 0, w: this.width, h: this.height });
+      this.active = keep.id;
+    } else {
+      const was = this.layers;
+      this.layers = rest;
+      if (gone.has(this.active)) {
+        const at = Math.max(0, was.findIndex((l) => l.id === this.active));
+        this.active = (rest.slice(at).find((l) => !l.group) ?? [...rest].reverse().find((l) => !l.group) ?? rest[0]).id;
+      }
+    }
+    this.maskEdit = false;
+    this.record('Delete layers', before);
+  }
+
+  /** Wraps several layers in one new group placed at the topmost of them. Entries inside a chosen group are left in it. */
+  groupMany(ids: string[]): PaintLayer | null {
+    const set = new Set(ids);
+    const top = this.layers.filter((l) => set.has(l.id) && !(l.parent && set.has(l.parent)));
+    if (top.length < 2) return top.length === 1 ? this.addGroup(top[0].id) : null;
+    const before = this.snap();
+    const used = new Set(this.layers.map((l) => l.name));
+    let n = 1;
+    while (used.has('Group ' + n)) n++;
+    const g: PaintLayer = {
+      id: newId(), name: 'Group ' + n, visible: true, opacity: 1, blend: 'normal', alphaLock: false, clipping: false,
+      source: null, raster: newRaster(1, 1), version: counter++, group: true,
+    };
+    const first = top[0];
+    if (first.parent) g.parent = first.parent;
+    const blocks: PaintLayer[][] = top.map((t) => {
+      const i = this.layers.indexOf(t);
+      return this.layers.slice(i, blockEnd(this.layers, i));
+    });
+    const drop = new Set(blocks.flat());
+    const at = this.layers.indexOf(first);
+    const head = this.layers.slice(0, at).filter((l) => !drop.has(l));
+    const tail = this.layers.slice(at).filter((l) => !drop.has(l));
+    for (const b of blocks) { b[0].parent = g.id; b[0].clipping = false; }
+    this.layers = [...head, g, ...blocks.flat(), ...tail];
+    this.record('Group layers', before);
+    return g;
+  }
+
+  /** Moves several entries together, keeping their order, to sit above `beforeId` inside `parent`. */
+  moveMany(ids: string[], parent: string | null, beforeId: string | null): void {
+    const set = new Set(ids);
+    const top = this.layers.filter((l) => set.has(l.id) && !(l.parent && set.has(l.parent)));
+    if (top.length < 2) { if (top[0]) this.moveEntry(top[0].id, parent, beforeId); return; }
+    if (parent && top.some((t) => t.id === parent || isInside(this.layers, parent, t.id))) return;
+    const before = this.snap();
+    const blocks = top.map((t) => { const i = this.layers.indexOf(t); return this.layers.slice(i, blockEnd(this.layers, i)); });
+    const drop = new Set(blocks.flat());
+    let rest = this.layers.filter((l) => !drop.has(l));
+    let k: number;
+    if (beforeId && !drop.has(this.layers.find((l) => l.id === beforeId) as PaintLayer)) k = rest.findIndex((l) => l.id === beforeId);
+    else if (parent) k = blockEnd(rest, rest.findIndex((l) => l.id === parent));
+    else k = rest.length;
+    if (k < 0) k = rest.length;
+    for (const b of blocks) { if (parent) b[0].parent = parent; else delete b[0].parent; }
+    rest = [...rest.slice(0, k), ...blocks.flat(), ...rest.slice(k)];
+    this.layers = rest;
+    this.record('Move layers', before);
+  }
+
   /** Folds or opens a group in the panel. Saved with the file but not an undo step. */
   setCollapsed(id: string, on: boolean): void {
     const g = this.layer(id);
@@ -643,6 +754,13 @@ export class PaintDoc implements PaintHost {
   commitPatch(patch: PixelPatch, label = 'Paint'): void {
     this.uncommitted = false;
     this.history.push({ kind: 'pixels', label, patch });
+  }
+
+  /** One undo step for pixel changes on several layers (a transform of a multi-layer selection). */
+  commitPatches(patches: PixelPatch[], label: string): void {
+    this.uncommitted = false;
+    if (patches.length === 1) { this.history.push({ kind: 'pixels', label, patch: patches[0] }); return; }
+    if (patches.length) this.history.push({ kind: 'pixels', label, patches });
   }
 
   undo(): boolean { return this.history.undo(); }

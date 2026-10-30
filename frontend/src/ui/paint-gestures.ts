@@ -9,7 +9,7 @@ export class HoldRepeat {
   private wait = 0;
   private tick = 0;
 
-  constructor(private readonly delay = 420, private readonly every = 90) {}
+  constructor(public delay = 420, private readonly every = 90) {}
 
   get running(): boolean { return this.wait !== 0 || this.tick !== 0; }
 

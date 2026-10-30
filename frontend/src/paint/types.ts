@@ -105,6 +105,8 @@ export interface Brush {
   grainScale?: number;
   /** 0 to 1: the stroke starts thin and thick up over its first stretch. */
   taper?: number;
+  /** 0 to 1: the stroke thins out over a tail past the lift. Absent: the same as `taper`. */
+  taperEnd?: number;
   /** Pressure response exponent, 0.4 (soft) to 2.5 (firm); 1 when absent. */
   pressureGamma?: number;
   /** Per-brush smoothing card, each 0 to 100; the input pipeline reads these. */

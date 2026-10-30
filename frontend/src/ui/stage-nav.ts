@@ -12,6 +12,7 @@ import type { Movie } from '../engine/types';
 import { MAX_SCALE, MIN_SCALE, rotPt, snapRotation, wrapAngle } from '../paint/viewmath';
 import { anyDialogOpen } from './dialogs';
 import { el, q, setClass, setHidden, setText, setValue } from './dom';
+import { gesturePrefsNow, gestureRegion } from './gestures';
 import { t } from './i18n';
 import '../styles/stage-nav.css';
 
@@ -201,11 +202,21 @@ export class StageNav {
 
   fit(): void {
     if (this.previewing) return;
-    this.zoom = 1; this.px = 0; this.py = 0; this.rot = 0;
+    // the turn stays: the Rotate button puts it back, Fit fits the turned bounds
+    this.zoom = this.turnedFit(); this.px = 0; this.py = 0;
     this.changed();
   }
 
-  atFit(): boolean { return this.zoom === 1 && this.px === 0 && this.py === 0 && !this.rotated; }
+  /** Zoom (relative to the unturned Fit) at which the turned movie's bounds fill the viewport. */
+  private turnedFit(): number {
+    if (!this.rotated) return 1;
+    const c = Math.abs(Math.cos(this.rot)), s = Math.abs(Math.sin(this.rot));
+    const room = 1 - FIT_MARGIN * 2;
+    const bw = this.mw * c + this.mh * s, bh = this.mw * s + this.mh * c;
+    return Math.min(1, Math.min((this.vw * room) / bw, (this.vh * room) / bh) / this.fitScale);
+  }
+
+  atFit(): boolean { return Math.abs(this.zoom - this.turnedFit()) < 1e-6 && this.px === 0 && this.py === 0; }
 
   /** Pan by a screen-space delta. */
   panBy(dx: number, dy: number): void {
@@ -225,9 +236,46 @@ export class StageNav {
 
   rotateStep(dir: number): void { this.rotateBy(dir * ROT_STEP); }
 
+  // ---- touch: pinch, rotate and pan with two fingers
+  private pinch: { zoom: number; px: number; py: number; rot: number; mx: number; my: number; cx: number; cy: number } | null = null;
+
+  /** The view as it is now; a pinch is measured from here. (cx, cy) is the middle of the fingers on the screen. */
+  pinchStart(cx: number, cy: number): void {
+    if (this.previewing) { this.pinch = null; return; }
+    const g = this.geom();
+    const r = this.root.getBoundingClientRect();
+    const v = rotPt(cx - (r.left + r.width / 2), cy - (r.top + r.height / 2), -this.rot);
+    // the movie point (relative to the movie centre) under the fingers
+    this.pinch = { zoom: this.zoom, px: this.px, py: this.py, rot: this.rot, mx: (v.x - this.px) / g.scale, my: (v.y - this.py) / g.scale, cx, cy };
+  }
+
+  /** `k` scales the view, `dRot` turns it (radians), and the movie point first under the fingers follows (cx, cy). */
+  pinchTo(k: number, dRot: number, cx: number, cy: number, rotate: boolean): void {
+    const s = this.pinch;
+    if (!s || this.previewing) return;
+    const scale0 = clamp(this.fitScale * s.zoom, MIN_SCALE, MAX_SCALE);
+    const scale = clamp(scale0 * k, MIN_SCALE, MAX_SCALE);
+    this.zoom = scale / this.fitScale;
+    if (rotate) {
+      this.rot = snapRotation(wrapAngle(s.rot + dRot), 0.05);
+      if (Math.abs(this.rot) < 1e-4) this.rot = 0;
+    }
+    const r = this.root.getBoundingClientRect();
+    const v = rotPt(cx - (r.left + r.width / 2), cy - (r.top + r.height / 2), -this.rot);
+    this.px = v.x - s.mx * scale;
+    this.py = v.y - s.my * scale;
+    this.clampPan();
+    this.changed();
+  }
+
+  /** The first finger is dragging something on the Stage (the Stage view sets this). */
+  isDragging: () => boolean = () => false;
+
   resetRotation(): void {
     if (!this.rotated) return;
+    const wasFit = this.atFit();
     this.rot = 0;
+    if (wasFit) this.zoom = 1;
     this.changed();
   }
 
@@ -288,6 +336,12 @@ export class StageNav {
   // ---- input ----
   private wire(): void {
     const root = this.root;
+    gestureRegion(root, {
+      dragging: () => this.isDragging(),
+      begin: (n, cx, cy) => { if (n === 2) this.pinchStart(cx, cy); },
+      change: (i) => { if (i.fingers === 2) this.pinchTo(i.k, i.rot, i.cx, i.cy, gesturePrefsNow().rotatePinch); },
+      end: (i) => { if (i.quickIn) this.fit(); },
+    });
     root.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     root.addEventListener('pointerdown', (e) => this.down(e), true);
     root.addEventListener('pointermove', (e) => { this.moveDrag(e); if (this.previewing) this.wake(); });

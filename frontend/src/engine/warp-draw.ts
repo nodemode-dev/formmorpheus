@@ -4,7 +4,9 @@
 // affine-textured triangles on a 2D canvas; `warpQuads` hands the same list to any other drawer (the GPU path).
 // Offsets are in content-space pixels, applied before the content's move / scale / rotation. Pure, no DOM.
 import type { Animated } from './keys';
+import { canvasOf } from './canvas';
 import type { Content, Movie } from './types';
+import { layoutText } from './text-layout';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -33,9 +35,16 @@ const WU = [0, 0, 0, 0];
 const WV = [0, 0, 0, 0];
 
 /** Offset of the Warp mesh at (u, v) in 0..1 across the content. */
-export function meshOffset(n: number, dx: number[], dy: number[], u: number, v: number, out: number[]): void {
+export function meshOffset(n: number, dx: number[], dy: number[], u: number, v: number, out: number[], linear = false): void {
   const gu = Math.min(Math.max(u, 0), 1) * (n - 1), gv = Math.min(Math.max(v, 0), 1) * (n - 1);
   const i = Math.min(Math.floor(gu), n - 2), j = Math.min(Math.floor(gv), n - 2);
+  if (linear) {
+    const fu = gu - i, fv = gv - j, k = j * n + i;
+    const w00 = (1 - fu) * (1 - fv), w10 = fu * (1 - fv), w01 = (1 - fu) * fv, w11 = fu * fv;
+    out[0] = w00 * dx[k] + w10 * dx[k + 1] + w01 * dx[k + n] + w11 * dx[k + n + 1];
+    out[1] = w00 * dy[k] + w10 * dy[k + 1] + w01 * dy[k + n] + w11 * dy[k + n + 1];
+    return;
+  }
   cr(gu - i, WU);
   cr(gv - j, WV);
   let ox = 0, oy = 0;
@@ -76,24 +85,24 @@ function homography(p: number[]): (u: number, v: number, out: number[]) => void 
 export function warpPoint(a: Animated, r: Rect, u: number, v: number, out: number[]): void {
   if (a.distort) {
     const o = a.distort;
+    if (a.bilinear) {
+      // straight edges, no perspective: the four corners blended bilinearly
+      const x0 = r.x + o[0], y0 = r.y + o[1], x1 = r.x + r.w + o[2], y1 = r.y + o[3], x2 = r.x + r.w + o[4], y2 = r.y + r.h + o[5], x3 = r.x + o[6], y3 = r.y + r.h + o[7];
+      out[0] = (1 - v) * ((1 - u) * x0 + u * x1) + v * ((1 - u) * x3 + u * x2);
+      out[1] = (1 - v) * ((1 - u) * y0 + u * y1) + v * ((1 - u) * y3 + u * y2);
+      return;
+    }
     homography([r.x + o[0], r.y + o[1], r.x + r.w + o[2], r.y + o[3], r.x + r.w + o[4], r.y + r.h + o[5], r.x + o[6], r.y + r.h + o[7]])(u, v, out);
     return;
   }
   if (a.warp) {
-    meshOffset(a.warp.n, a.warp.dx, a.warp.dy, u, v, out);
+    meshOffset(a.warp.n, a.warp.dx, a.warp.dy, u, v, out, a.bilinear === true);
     out[0] += r.x + u * r.w;
     out[1] += r.y + v * r.h;
     return;
   }
   out[0] = r.x + u * r.w;
   out[1] = r.y + v * r.h;
-}
-
-let measureCtx: OffscreenCanvasRenderingContext2D | null | undefined;
-/** A 1x1 OffscreenCanvas context for measuring text (null where OffscreenCanvas is missing). */
-function measurer(): OffscreenCanvasRenderingContext2D | null {
-  if (measureCtx === undefined) measureCtx = typeof OffscreenCanvas === 'undefined' ? null : (new OffscreenCanvas(1, 1).getContext('2d') as OffscreenCanvasRenderingContext2D | null);
-  return measureCtx;
 }
 
 /** The part of content space a Warp or Distort covers: the picture's own rectangle, else the whole movie frame. */
@@ -105,19 +114,9 @@ export function contentRect(c: Content, movie: Movie): Rect {
   if (c.kind === 'text' && c.text) {
     // the measured box the renderer draws text into (Renderer.textBox: same font, alignment anchors and padding),
     // so the mesh covers every glyph instead of a width guessed from the character count
-    const s = c.text, lines = s.text.split('\n');
-    let tw = 0;
-    const mc = measurer();
-    if (mc) {
-      mc.font = `${s.weight} ${s.size}px ${JSON.stringify(s.font)}, Inter, sans-serif`;
-      for (const line of lines) tw = Math.max(tw, mc.measureText(line).width);
-    } else tw = Math.max(...lines.map((l) => l.length)) * s.size * 0.6;
-    const pad = s.size * 0.4, th = lines.length * s.size * 1.2;
-    const ax = s.align === 'left' ? movie.width * 0.1 : s.align === 'right' ? movie.width * 0.9 : movie.width / 2;
-    const x = (s.align === 'left' ? ax : s.align === 'right' ? ax - tw : ax - tw / 2) - pad;
-    return { x, y: movie.height / 2 - th / 2 - pad, w: tw + pad * 2, h: th + pad * 2 };
+    return layoutText(c.text, movie).box;
   }
-  return { x: 0, y: 0, w: movie.width, h: movie.height };
+  return canvasOf(c, movie);
 }
 
 /** A matrix applied after the content's own transform (its parents and the camera, set by the renderer around a draw, engine/transform.ts). */

@@ -272,6 +272,7 @@ export class Engine extends Emitter<EngineEvents> {
     this.playing = false;
     this.ticker.cancel(this.tick);
     this.tick = 0;
+    this.reportDrops();
     this.emit('playing', false);
   }
 
@@ -296,10 +297,30 @@ export class Engine extends Emitter<EngineEvents> {
       }
       this.playStart = this.ticker.now();
       f = this.playFrom;
+      this.lastLoopFrame = -1;
       this.emit('wrap', { frame: f, direction: this.direction });
     }
+    const jump = Math.abs(f - this.lastLoopFrame) - 1;
+    if (this.lastLoopFrame >= 0 && jump > 0 && jump < 30) this.skipped += jump;
+    this.shown++;
+    this.lastLoopFrame = f;
     this.seek(f);
     this.tick = this.ticker.request(() => this.loop());
+  }
+
+  private lastLoopFrame = -1;
+  private skipped = 0;
+  private shown = 0;
+
+  /** Playback is clock-driven, so a heavy movie drops frames; say so once a run, after it stops. */
+  private reportDrops(): void {
+    const total = this.skipped + this.shown;
+    if (total >= 24 && this.skipped / total > 0.2) {
+      this.notice(`Playback skipped ${Math.round((this.skipped / total) * 100)} percent of the frames: this movie is heavy for the Stage. Hide tracks, shrink the movie size, or turn on the GPU in Preferences.`);
+    }
+    this.skipped = 0;
+    this.shown = 0;
+    this.lastLoopFrame = -1;
   }
 
   step(delta: number): void {

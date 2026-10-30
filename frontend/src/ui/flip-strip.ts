@@ -75,6 +75,10 @@ export class FlipStrip {
   private readonly cellMenu: Popover;
   private readonly rowMenu: Popover;
   private readonly shots = new WeakMap<HTMLElement, HTMLCanvasElement>();
+  /** True while a drag across the cells scrubs frames (paint-view hides the onions then if asked). */
+  scrubbing = false;
+  /** Called when scrubbing starts or stops so the Stage can redraw. */
+  onScrub?: () => void;
   private sx = 0;
   private laneW = 400;
   private cols = 0;
@@ -796,6 +800,7 @@ export class FlipStrip {
         mode = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) || (this.sel.multi && selected) ? 'drag' : 'scrub';
         this.suppressClick = true;
         cancelPress();
+        if (mode === 'scrub') { this.scrubbing = true; this.onScrub?.(); }
         if (mode === 'scrub' && this.sel.clear()) this.paint();
         if (mode === 'drag') drag.begin();
       }
@@ -806,6 +811,7 @@ export class FlipStrip {
       if (to !== last) { last = to; this.host.select(r, to); }
     }, (m) => {
       if (mode === 'drag') drag.end(m);
+      if (this.scrubbing) { this.scrubbing = false; this.onScrub?.(); }
       if (mode) this.eat();
     });
   }

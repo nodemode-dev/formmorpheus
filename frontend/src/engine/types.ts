@@ -161,7 +161,26 @@ export interface TextStyle {
   size: number;
   weight: number;
   color: string;
-  align: 'left' | 'center' | 'right';
+  align: 'left' | 'center' | 'right' | 'justify';
+  /** Format fields; each is written only when set (a movie without them draws as before). */
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  caps?: 'upper' | 'lower' | 'small';
+  /** Outline drawn around the letters (colour, width in movie pixels). */
+  stroke?: { color: string; width: number };
+  /** Letter spacing in thousandths of an em. */
+  tracking?: number;
+  /** Pair kerning: the font's own (default), none, or optical (measured from the letter shapes). */
+  kerning?: 'none' | 'optical';
+  /** Line height as a multiple of the size (default 1.2). */
+  leading?: number;
+  /** Baseline shift in movie pixels (positive raises the text). */
+  baseline?: number;
+  /** Upright letters stacked in columns that run right to left. */
+  vertical?: boolean;
+  /** Wrap width in movie pixels; unset, the text is one block as wide as its longest line. */
+  boxW?: number;
 }
 
 /** A bone at rest, in content pixels: `x`, `y` is its head, `angle` (degrees) points to its tip at `length`. */
@@ -208,7 +227,11 @@ export interface Content {
   rig?: Rig;
   /** Id of the content this one follows: its transform is applied inside the parent's. Absent: none. */
   parent?: string;
+  /** Drawing and Flipbook only: the canvas its pictures cover, in movie pixels from the movie's top-left (may reach past the Stage). Absent: the movie rectangle. A Flipbook's frames all share it. */
+  canvas?: CanvasRect;
 }
+
+export interface CanvasRect { x: number; y: number; w: number; h: number }
 
 export interface Track {
   id: string;
@@ -246,6 +269,13 @@ export interface OnionSettings {
   backColor: string;
   foreColor: string;
   blendPrimary: boolean;
+  /** Per-direction overrides of `opacity` and `tint`; absent: the shared value. */
+  backOpacity?: number;
+  foreOpacity?: number;
+  backTint?: boolean;
+  foreTint?: boolean;
+  /** Ghosts stay visible while the frame strip is scrubbed. Absent: they do. */
+  showWhileScrubbing?: boolean;
 }
 
 export interface Movie {
