@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app.core import config
+from app.core.fsmove import safe_move
 
 router = APIRouter()
 
@@ -143,11 +144,18 @@ def restore(item_id: str) -> dict:
         original = Path(meta["original"])
         if meta["kind"] == "movie":
             folder = config.library_dir()
-            dst = _free(folder, original.stem if original.suffix.lower() == config.PROJECT_EXT else original.name, config.PROJECT_EXT)
+            from app.routers.library import find_movie   # lazy: library imports this module
+            stem = original.stem if original.suffix.lower() == config.PROJECT_EXT else original.name
+            # names are unique across the whole library, stack folders included
+            n, name = 2, stem
+            while find_movie(name):
+                name = f"{stem} {n}"
+                n += 1
+            dst = folder / f"{name}{config.PROJECT_EXT}"
         else:
             folder = config.exports_dir()
             dst = _free(folder, original.stem, original.suffix)
-        os.replace(path, dst)
+        safe_move(path, dst)
         data.pop(path.name, None)
         _write_index(data)
     return {"restored": dst.name, "kind": meta["kind"]}

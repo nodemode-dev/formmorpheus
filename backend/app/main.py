@@ -5,10 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core import config
+from app.core.guard import GuardMiddleware
 from app.routers import brushes, exports, files, jobs, library, recovery, system, trash, transcode
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=config.window_origins(), allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(GuardMiddleware)   # added last, so it runs first on every request
 
 app.include_router(system.router, prefix="/api")
 app.include_router(library.router, prefix="/api/library")

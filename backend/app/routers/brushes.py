@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from app.core import config
+from app.core.upload import read_limited
 
 router = APIRouter()
 
@@ -25,9 +26,7 @@ def read_library() -> Response:
 
 @router.put("")
 async def write_library(request: Request) -> dict:
-    body = await request.body()
-    if len(body) > LIMIT:
-        raise HTTPException(413, "The brush library is too large.")
+    body = await read_limited(request, LIMIT, "The brush library is too large.")
     try:
         json.loads(body)
     except ValueError:

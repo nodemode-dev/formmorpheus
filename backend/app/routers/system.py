@@ -32,7 +32,7 @@ def _safe_folder(raw: str) -> Path:
     if len(path.parts) < 2 or any(shown == b.lower() or shown.startswith(b.lower() + "/") for b in _BLOCKED):
         raise HTTPException(400, "That folder belongs to the system. Choose one of your own.")
     data = config.data_dir().resolve()
-    for sub in ("Exports", "Jobs", "Recently Deleted"):
+    for sub in ("Exports", "Jobs", "Recently Deleted", "Recovery"):
         inner = data / sub
         if path == inner or inner in path.parents:
             raise HTTPException(400, "That folder is used for something else.")
@@ -79,11 +79,25 @@ def set_library(body: LibraryBody) -> dict:
         settings["libraryDir"] = str(target)
     copied = 0
     if body.copyMovies and target.resolve() != old.resolve():
-        for src in list(old.glob(f"*{config.PROJECT_EXT}")) + [old / ".stacks.json"]:
-            dst = target / src.name
+        # Top-level movies and order file, the legacy stacks file, then each stack folder (movies + hidden order file).
+        # Copies, never moves: the old library stays as it was. Nothing is overwritten.
+        def _copy(src: Path, dst: Path) -> int:
             if src.is_file() and not dst.exists():
                 shutil.copy2(src, dst)
-                copied += src.suffix == config.PROJECT_EXT
+                return int(src.suffix == config.PROJECT_EXT)
+            return 0
+
+        for src in list(old.glob(f"*{config.PROJECT_EXT}")) + [old / ".stacks.json", old / ".order.json"]:
+            copied += _copy(src, target / src.name)
+        for d in sorted(p for p in old.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            if d.resolve() == target.resolve() or d.resolve() in target.resolve().parents:
+                continue   # the new library sits inside a stack folder: do not copy into itself
+            if not any(d.glob(f"*{config.PROJECT_EXT}")):
+                continue
+            sub = target / d.name
+            sub.mkdir(exist_ok=True)
+            for src in list(d.glob(f"*{config.PROJECT_EXT}")) + [d / ".order.json"]:
+                copied += _copy(src, sub / src.name)
     config.write_settings(settings)
     return {"dir": str(config.library_dir()), "copied": copied, "source": config.library_source()}
 

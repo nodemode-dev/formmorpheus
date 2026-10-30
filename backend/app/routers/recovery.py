@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from app.core import config
+from app.core.upload import read_limited
 
 router = APIRouter()
 
@@ -46,9 +47,16 @@ def _entry(session: str, fmo: Path, side: Path) -> dict:
         meta = data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         pass
-    taken = float(meta.get("time") or fmo.stat().st_mtime)
+    def num(key: str, fallback: float) -> float:
+        try:
+            v = float(meta.get(key) or fallback)
+            return v if v == v and abs(v) < 1e12 else fallback
+        except (TypeError, ValueError):
+            return fallback
+
+    taken = num("time", fmo.stat().st_mtime)
     # the heartbeat of the window that owns this snapshot; older files only have the snapshot time
-    alive = float(meta.get("alive") or taken)
+    alive = num("alive", taken)
     return {
         "session": session,
         "name": str(meta.get("name") or "Untitled"),
@@ -67,7 +75,7 @@ def list_snapshots() -> dict:
         if fmo.is_file() and _SESSION.match(fmo.stem):
             try:
                 items.append(_entry(fmo.stem, fmo, fmo.with_suffix(".json")))
-            except OSError:
+            except (OSError, ValueError, TypeError):
                 continue
     items.sort(key=lambda e: e["time"], reverse=True)
     return {"items": items}
@@ -84,9 +92,7 @@ def read_snapshot(session: str) -> Response:
 @router.put("/{session}")
 async def write_snapshot(session: str, request: Request, name: str = "Untitled", library: str | None = None) -> dict:
     fmo, side = _paths(_session(session))
-    body = await request.body()
-    if len(body) > config.MAX_PROJECT_BYTES:
-        raise HTTPException(413, "The movie is too large to snapshot.")
+    body = await read_limited(request, config.MAX_PROJECT_BYTES, "The movie is too large to snapshot.")
     if body[:4] != b"PK\x03\x04":
         raise HTTPException(400, "That is not a formmorpheus project.")
     now = time.time()
@@ -99,7 +105,7 @@ async def write_snapshot(session: str, request: Request, name: str = "Untitled",
 
 @router.post("/{session}/alive")
 def heartbeat(session: str) -> dict:
-    """The owning window calls this every 20 s; a snapshot whose heartbeat is over 60 s old is offered as a crash."""
+    """The owning window calls this every 20 s and on every visibility change; a snapshot whose heartbeat is over 240 s old is offered as a crash."""
     fmo, side = _paths(_session(session))
     with _lock:
         if not fmo.is_file():

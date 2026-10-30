@@ -121,4 +121,7 @@ def dist_dir() -> Path | None:
 
 
 def window_origins() -> list[str]:
-    return [f"http://localhost:{FRONTEND_PORT}", f"http://127.0.0.1:{FRONTEND_PORT}", "tauri://localhost", "http://tauri.localhost"]
+    return [
+        f"http://localhost:{FRONTEND_PORT}", f"http://127.0.0.1:{FRONTEND_PORT}",
+        "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
+    ]

@@ -32,6 +32,7 @@ CRF = {"low": 28, "medium": 24, "high": 20, "very-high": 16}
 VT_Q = {"low": 40, "medium": 55, "high": 65, "very-high": 80}
 MAX_KEPT_RECORDS = 40
 ABANDON_SECONDS = 600
+ORPHAN_SECONDS = 1800   # an unowned folder is swept only after 30 minutes without a write
 SWEEP_EVERY_SECONDS = 60
 
 
@@ -116,11 +117,16 @@ def sweep_abandoned(now: float | None = None) -> int:
             job.error = "The window stopped sending this job."
             _remove_files(job)
             gone += 1
-    # folders no job owns (the engine restarted) that nothing has written to for as long
-    owned = {j.folder.name for j in JOBS.values()}
+    # Folders no live registry owns (the engine restarted) that nothing has written to for ORPHAN_SECONDS.
+    # Import transcodes (import-*) live in transcode.JOBS: a running one, or a finished one whose result has not
+    # been fetched within its 30 minute keep time, is owned there and never swept here. Uploads touch their folder
+    # while receiving, so a slow upload keeps its folder fresh.
+    from app.routers import transcode
+
+    owned = {j.folder.name for j in JOBS.values()} | {j.folder.name for j in transcode.JOBS.values()}
     try:
         for p in config.jobs_dir().iterdir():
-            if p.is_dir() and p.name not in owned and now - p.stat().st_mtime > ABANDON_SECONDS:
+            if p.is_dir() and p.name not in owned and now - p.stat().st_mtime > ORPHAN_SECONDS:
                 shutil.rmtree(p, ignore_errors=True)
                 gone += 1
     except OSError:
@@ -249,9 +255,10 @@ def create_job(body: NewJob) -> dict:
     return describe(job)
 
 
-async def _stream_to(request: Request, dest: Path, limit: int) -> int:
+async def _stream_to(request: Request, dest: Path, limit: int, job: "Job | None" = None) -> int:
     tmp = dest.with_name(f".{uuid.uuid4().hex}.part")
     size = 0
+    last_touch = 0.0
     try:
         with open(tmp, "wb") as out:
             async for chunk in request.stream():
@@ -259,6 +266,16 @@ async def _stream_to(request: Request, dest: Path, limit: int) -> int:
                 if size > limit:
                     raise HTTPException(413, "That upload is too large.")
                 out.write(chunk)
+                now = time.monotonic()
+                if now - last_touch > 5:
+                    # a slow upload keeps its folder (and the job) fresh so no sweep takes it
+                    last_touch = now
+                    if job is not None:
+                        job.touch()
+                    try:
+                        os.utime(dest.parent, None)
+                    except OSError:
+                        pass
         os.replace(tmp, dest)
     finally:
         tmp.unlink(missing_ok=True)
@@ -277,7 +294,7 @@ async def put_frame(job_id: str, index: int, request: Request) -> dict:
     if not (0 <= index < job.frames):
         raise HTTPException(400, "Frame index out of range.")
     dest = job.folder / "frames" / f"{index:06d}.png"
-    await _stream_to(request, dest, config.MAX_JOB_FRAME_BYTES)
+    await _stream_to(request, dest, config.MAX_JOB_FRAME_BYTES, job)
     if job.state not in ("queued", "receiving"):
         dest.unlink(missing_ok=True)
         raise HTTPException(409, "The job ended.")
@@ -297,7 +314,7 @@ async def put_audio(job_id: str, request: Request) -> dict:
     if not job.has_audio:
         raise HTTPException(400, "This job was created without sound.")
     dest = job.folder / "audio.wav"
-    await _stream_to(request, dest, config.MAX_JOB_AUDIO_BYTES)
+    await _stream_to(request, dest, config.MAX_JOB_AUDIO_BYTES, job)
     with open(dest, "rb") as f:
         head = f.read(12)
     if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
