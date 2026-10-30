@@ -353,6 +353,20 @@ A self-contained CPU paint core on plain straight-alpha RGBA rasters (ImageData 
 
 The stroke opacity cap holds per stroke through a coverage buffer; tile snapshots (64 px) are taken on first touch so `finish()` returns one exact patch. The first dab waits for the second sample so a stroke-following dab knows its angle. `predicted` samples are ignored here (drawing them is the view's job; the view does not draw them yet). Mouse pressure is a fixed 0.5 and does not go through the pressure curve. Measured: one 2,000 sample stroke at 120 px on 3840x2160 about 490 ms in node (0.6 ms a dab).
 
+### src/paint/stroke.ts · applySmudge
+- refers-to: src/paint/stroke.ts :: applySmudge
+- kind: fix
+- logged: v0.4.0 · 2026-10-30
+
+Smudge first only mixed colour inside existing paint (alpha untouched, from a wrong brief), so it never smeared. It now mixes the carried paint into the layer in premultiplied space, alpha included: paint drags out past its edge & dragging from empty canvas thins it. With alpha lock it mixes colour only.
+
+### src/styles/paint.css · .fm-paint z-index
+- refers-to: src/styles/paint.css :: .fm-paint
+- kind: fix
+- logged: v0.4.0 · 2026-10-30
+
+The view sits at `--z-menu`, level w/ `#overlay-root`, which comes later in the page & so stays on top: the Flipbook strip's frame & track menus live there. At `--z-modal` they opened behind the canvas.
+
 ### src/paint/doc.ts · composite
 - refers-to: src/paint/doc.ts :: composite
 - kind: warning-context

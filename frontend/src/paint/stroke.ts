@@ -396,7 +396,9 @@ export class Stroke implements StrokeLike {
       this.carryG = G;
       return;
     }
-    // Drag the carried colour onto the layer; alpha is never changed.
+    // Drag the carried paint onto the layer, colour and alpha together in premultiplied space, so paint
+    // smears out past its edge and dragging from empty canvas thins it. Alpha lock keeps each alpha.
+    const lock = this.s.alphaLock;
     const inSpan = 1 / span;
     for (let py = y0; py < y1; py++) {
       const rowO = (py - y0) * bw - x0;
@@ -406,18 +408,26 @@ export class Stroke implements StrokeLike {
         if (a < 0.0004) continue;
         const idx = py * w + px;
         const di = idx << 2;
-        if (data[di + 3] === 0) continue;
         const ci = Math.min(Gp - 1, Math.max(0, Math.floor(((px + 0.5 - cx) * inSpan + 0.5) * Gp)));
         const co = (cj * Gp + ci) << 2;
         const ca = old[co + 3];
-        if (ca <= 0.001) continue;
         let c = a * opacity;
         if (sel) c *= sel[idx] / 255;
-        const wgt = c * ca;
-        const inv = 1 / ca;
-        data[di] += (old[co] * inv - data[di]) * wgt;
-        data[di + 1] += (old[co + 1] * inv - data[di + 1]) * wgt;
-        data[di + 2] += (old[co + 2] * inv - data[di + 2]) * wgt;
+        const pa = data[di + 3] / 255;
+        if (lock) {
+          if (pa === 0 || ca <= 0.001) continue;
+          const wgt = c * ca, inv = 1 / ca;
+          data[di] += (old[co] * inv - data[di]) * wgt;
+          data[di + 1] += (old[co + 1] * inv - data[di + 1]) * wgt;
+          data[di + 2] += (old[co + 2] * inv - data[di + 2]) * wgt;
+          continue;
+        }
+        const na = pa + (ca - pa) * c;
+        if (na <= 0.0005) { data[di + 3] = 0; continue; }
+        const r = data[di] * pa + (old[co] - data[di] * pa) * c;
+        const g = data[di + 1] * pa + (old[co + 1] - data[di + 1] * pa) * c;
+        const b = data[di + 2] * pa + (old[co + 2] - data[di + 2] * pa) * c;
+        data[di] = r / na; data[di + 1] = g / na; data[di + 2] = b / na; data[di + 3] = na * 255;
       }
     }
     // Reload the carry: keep (1 - pickup) of what is carried, take pickup of what was under the dab.

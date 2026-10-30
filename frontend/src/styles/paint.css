@@ -5,7 +5,8 @@
   --fm-paint-bar-h: 52px;
   position: absolute;
   inset: 0;
-  z-index: var(--z-modal);
+  /* above the Stage and Timeline chrome, under #overlay-root, whose menus (the Flipbook strip's) must show on top */
+  z-index: var(--z-menu);
   overflow: hidden;
   background: var(--fm-paint-backdrop);
   touch-action: none;

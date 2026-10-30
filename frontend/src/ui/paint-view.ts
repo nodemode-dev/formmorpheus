@@ -236,7 +236,10 @@ export class PaintView {
     this.syncChrome();
     this.strip.refresh();
     this.busy = false;
-    this.redraw();
+    // paint the canvas now, in the same task that unhides the view, so its first frame is never an empty canvas
+    if (this.frameReq) { cancelAnimationFrame(this.frameReq); this.frameReq = 0; }
+    this.full = true;
+    this.paint();
   }
 
   /** Encodes the open frame and writes it to the movie; then closes unless `stay`. */
@@ -444,6 +447,10 @@ export class PaintView {
     this.syncChrome();
     this.strip.refresh();
     this.redraw();
+    // the strip selects right after an edit (a new frame, a new track): that move waited for this edit
+    const next = this.pendingNav;
+    this.pendingNav = null;
+    if (next) void this.gotoFrame(next.row, next.index);
   }
 
   private playIndex(): number {
@@ -465,6 +472,7 @@ export class PaintView {
       this.full = true;
       this.redraw();
       this.strip.refresh();
+      this.syncChrome();
     }, 1000 / fps);
     this.strip.refresh();
     this.redraw();
@@ -517,6 +525,7 @@ export class PaintView {
     if (!c) return;
     if (c.onion) this.engine.run('Onion skins', (m) => ops.updateContent(m, c.id, (x) => ({ ...x, onion: { ...(x.onion as OnionSettings), ...p } })), merge ?? null);
     else this.engine.run('Onion skins', (m) => ({ ...m, onion: { ...m.onion, ...p } }), merge ?? null);
+    this.settings.refresh();
     this.full = true;
     this.redraw();
   }
@@ -756,7 +765,7 @@ export class PaintView {
     if (what === 'pixels' && rect) this.redraw(rect);
     else { this.full = true; this.redraw(); }
     if (what !== 'pixels') this.layersPanel.refresh();
-    else if (!this.layersRefresh) this.layersRefresh = window.setTimeout(() => { this.layersRefresh = 0; this.layersPanel.refresh(); if (this.content()?.kind === 'flipbook') this.strip.refresh(); }, 250);
+    else if (!this.layersRefresh) this.layersRefresh = window.setTimeout(() => { this.layersRefresh = 0; this.layersPanel.refresh(); if (this.content()?.kind === 'flipbook') this.strip.invalidate(); }, 250);
     this.syncUndo();
   }
 

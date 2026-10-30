@@ -110,7 +110,8 @@ export function flipbookToTracks(movie: Movie, id: string): { movie: Movie; ids:
       ids.push(d.id);
       at += run;
     }
-    made.push(makeTrack(fb.flip.length > 1 ? `${fb.name} ${t.name}` : fb.name, items));
+    // a row keeps its own name (Convert to Flipbook gives it back), a single row takes the flipbook's
+    made.push(makeTrack(fb.flip.length > 1 ? t.name : fb.name, items));
   });
   const stripped = deleteContent(movie, [id]);
   const tracks = [...stripped.tracks];
@@ -122,7 +123,8 @@ export function flipbookToTracks(movie: Movie, id: string): { movie: Movie; ids:
 /** Selected Drawings become one Flipbook: each source track a row, each Drawing a frame held for its duration (gaps become blank frames). */
 export function tracksToFlipbook(movie: Movie, ids: string[]): { movie: Movie; id: string } {
   const idSet = new Set(ids);
-  const picked = movie.tracks.map((t) => t.content.filter((c) => idSet.has(c.id) && c.kind === 'drawing').sort((a, b) => a.start - b.start)).filter((l) => l.length);
+  const sources = movie.tracks.filter((t) => t.content.some((c) => idSet.has(c.id) && c.kind === 'drawing'));
+  const picked = sources.map((t) => t.content.filter((c) => idSet.has(c.id) && c.kind === 'drawing').sort((a, b) => a.start - b.start));
   if (!picked.length) throw new OpError('Select drawings to make a flipbook.');
   const start = Math.min(...picked.map((l) => l[0].start));
   const stop = Math.max(...picked.map((l) => end(l[l.length - 1])));
@@ -136,7 +138,7 @@ export function tracksToFlipbook(movie: Movie, ids: string[]): { movie: Movie; i
     }
     // rows loop, so a row that ends early is padded with a blank frame to the common end
     if (at < stop) out.push({ id: uid('f'), hold: stop - at, layers: [drawingLayer()] });
-    return { ...flipTrack(`Track ${i + 1}`, 1), frames: out };
+    return { ...flipTrack(sources.length > 1 ? sources[i].name : `Track ${i + 1}`, 1), frames: out };
   });
   const topIndex = movie.tracks.findIndex((t) => t.content.some((c) => idSet.has(c.id)));
   // the first Drawing lends its placement and keys (drawings made by flipbookToTracks all share them)
