@@ -247,6 +247,22 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
+## New in 0.9.0
+
+**Start.** formmorpheus opens on the Movies grid (the Theater). The brand name at the top of Home opens About, What's New, Help and Reset Examples. Three example movies are built at first run, and Help · Take the Tour points out the Stage, Timeline, modes, Create menu and Stage Options. Hover a movie to preview it; Share offers the movie w/ its full undo history or a smaller file. Preferences · Change Library Folder... moves the library.
+
+**Text.** Create · Text places dark text ready to type on the Stage; double-click text to edit it in place. The Text card has Fonts (built in, in this movie, on this computer, and Import font...) and Format (bold, italic, underline, strikethrough, case, size, tracking, leading, baseline, kerning, alignment incl. justify, outline, vertical text, wrap). In Compose, the side nodes of a text box set its wrap width.
+
+**Export.** Advanced export has a preview window (Preview renders the chosen settings; it goes stale when you change them). Video can be H.264, HEVC, ProRes (Proxy, LT, 422, HQ, 4444, 4444 XQ) or VP9, in .mp4, .mov or .webm, w/ AAC or Linear PCM sound. GIF has frame duration presets, Diffuse or Stable dithering, colours and a custom palette. Frames can be PNG, JPG, TIFF, TGA, BMP or WebP.
+
+**Import.** TGA, PSD, ORA and KRA (as a Drawing w/ its layers), AIFF, CAF and AC3 sound, and ProRes or other video the window cannot play (converted by the engine). Drop a file on the Timeline to place it at that track and time, or on the Stage to place it at the Playhead. Brush files dropped anywhere are imported.
+
+**Drawing and Flipbooks.** Settings · Canvas · Crop and resize gives a Drawing or Flipbook its own canvas, which may reach past the movie. The strip has Previous / Next Drawing, a scrub wheel w/ Scrub Lock, labelled buttons and a hide control; Esc closes a menu first and never leaves a Flipbook. The size and opacity sliders have fine control (drag sideways or hold Alt) and a bubble w/ memory markers; hold an unselected Paint, Smudge or Erase button to carry the brush across. Smudge has a strength slider. The brush panel has libraries (Animation, Classic, Imported, your own).
+
+**Keyframes and the Stage.** Lanes start collapsed w/ a thumbnail; the Playhead shows a line in Compose, a record disc in Perform and a clapperboard in Keyframe; when a block is animated but not keyed at the Playhead the pill turns red and a click makes the key. Right-click a key for Set easing. The box ··· menu has Edit anchor (snaps to nine sectors; Shift skips). Full-screen preview only plays and scrubs. The Timeline has on-screen time zoom and track height buttons.
+
+**Touch and pen.** Pinch and rotate on the Stage and Timeline, two-finger tap to undo, three to redo, touch and hold for menus, a second finger as Shift while dragging, three-finger swipe down for Copy & Paste and four-finger tap for full screen in Draw and Paint. Preferences · Gestures turns them on or off.
+
 ## New in 0.8.0
 
 **The Stage.** Ctrl or Cmd with the wheel (or a trackpad pinch) zooms toward the pointer; the wheel pans, Space-drag or the middle button pans too; Ctrl or Cmd+0 or a double-click on the empty Stage fits; Alt+Ctrl with Left or Right turns the view in 15 degree steps; Shift+Ctrl+F shows the Stage alone and plays it (Esc leaves). The zoom cluster sits at the bottom right. Stage Options (View menu, Shift+Ctrl+J, or right-click the Stage) holds the background colour, transparency, Backstage visibility, the timecode and the movie's onion skins; Movie settings · Stage shows the same.

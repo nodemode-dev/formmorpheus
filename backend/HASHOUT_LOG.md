@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.8.0
-Last updated: 2026-10-30 · brush library storage, Theater stacks
+Current build version: v0.9.0
+Last updated: 2026-10-30 · transcode jobs, library folder, previews, H.264 and audio codecs in jobs
 
 ---
 
@@ -143,3 +143,10 @@ A job w/ no upload or poll for 10 min is cancelled and removed, checked every mi
 - logged: v0.8.0 · 2026-10-30
 
 `GET` / `PUT /api/brushes` keeps the person's brush library (imported and edited brushes, tips as data) in `brushes.json` in the data folder, so it survives a cleared browser profile and the desktop app shares it. Theater stacks (non-nested folders, as the reference) live under `/api/library/_stacks`; rename and delete follow a movie's stack entry.
+
+### v0.9.0 · transcode, library folder, job codecs
+- refers-to: app/routers/transcode.py; app/routers/system.py :: library; app/routers/library.py :: preview, poster 204; app/routers/jobs.py :: h264 target, audio_codec, ProRes profile; app/services/ffmpeg.py :: WANTED (libx264)
+- kind: explainer
+- logged: v0.9.0 · 2026-10-30
+
+`/api/transcode` turns video the window cannot decode into H.264 MP4 (VP9 WebM when the source has alpha) and sound into 48 kHz WAV, w/ the job pattern of jobs.py. The library folder is chosen at runtime (`settings.json` in the data folder); `FORMMORPHEUS_LIBRARY_DIR` still wins; system and relative paths are refused. A movie w/o a poster or preview answers 204, not 404. Jobs can write H.264, choose AAC or PCM (PCM only in .mov) and a ProRes profile; libx264 had to be added to the encoders the probe looks for.

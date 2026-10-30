@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.8.0
-Last updated: 2026-10-30 · phases 16 to 19 (curves, paths, pivots, rigging, camera, lip-sync, boil, round trips, reference parity wave one)
+Current build version: v0.9.0
+Last updated: 2026-10-30 · phases 20 to 22 (reference parity waves two and three, the fresh audit's fix wave)
 
 ---
 
@@ -653,3 +653,10 @@ Two builders appended to existing files w/ a shell heredoc instead of the Edit t
 - logged: v0.8.0 · 2026-10-30
 
 Measured against the reference inventory and audit in the planning sidecar. The Stage has one view transform (stage-nav.ts); overlays read the pointer through `stageLocal`, and a rotated view turns the `.fm-stage-space` wrapper w/ CSS. Backstage visibility is a movie field (default 20%, `BACKSTAGE_DEFAULT`). Snapping uses Shift as the reference's second finger; Alt turns snapping off. Key combos are canonical (`canonCombo`), so duplicates are caught. Undo depth defaults to 250 w/ a Recent share kept one by one. Luminance masks use 0.299 / 0.587 / 0.114 on the CPU and GPU alike. The nine extra blend modes are pixel maths on the CPU (engine/blend.ts) and shader ids 17 to 25 on the GPU; pass-through groups really pass through. A mouse paints at full pressure. Brushes live in the engine data folder (`/api/brushes`), w/ an IndexedDB copy as fallback. A plain drag on the Timeline ruler now scales time (the reference's behaviour); scrub w/ the Playhead handle or Shift.
+
+### Phases 20 to 22 (v0.9.0)
+- refers-to: src/engine/text-layout.ts, src/ui/text-stage.ts, text-card.ts; src/ui/whats-new*.ts, about-dialog.ts, examples*.ts, tour.ts, onboarding.ts, theater-*.ts, library-folder.ts; src/export/still-formats.ts, src/ui/export-preview.ts; src/io/psd-import.ts, ora-import.ts, kra-import.ts, pdn-import.ts, layered-import.ts; src/media/tga-decode.ts, transcode.ts; src/engine/canvas.ts, src/ui/paint-crop.ts; src/ui/gestures.ts; src/paint/brushes-animation.ts; src/ui/paint-sliders.ts, flip-wheel.ts, brush-drop.ts, anchor-mode.ts
+- kind: explainer
+- logged: v0.9.0 · 2026-10-30
+
+One text layout (`layoutText`) serves the renderer, the GPU text texture (keyed w/ `fontEpoch`), warp rects and the Stage box. `Content.canvas` (movie pixels) is written only when it differs from the movie rect; paint docs load at canvas size. The PSD reader is written from the spec (formvis uses a library this repo does not carry). Layered imports become movie-sized PNG assets per layer and mask. Videos and sounds the window cannot decode go through the engine's `/api/transcode` (the person's own ffmpeg). The gesture hub (`gestures.ts`) recognises multi-touch and turns a second finger into Shift. The Animation brush library is original (180 brushes); `.brush` import keys beyond spacing, jitter, scatter, rotation, texture, dynamics and opacity are assumptions, listed in BUILD_NOTES. Text defaults to #111111 so it reads on the default Stage. `--glass-bg` went to 99% opacity so popovers over a white canvas read as one piece. Process: the text builder rewrote `ui/text-card.ts` whole (SEDO), logged and kept.
