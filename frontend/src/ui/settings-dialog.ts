@@ -16,8 +16,8 @@ export class SettingsDialog extends Dialog {
   private readonly grid = el('<div class="nm-theme-grid" role="group" aria-label="Theme"></div>');
   private readonly nav = el('<div class="cv-prefs-nav" role="tablist"></div>');
   private readonly sections = new Map<string, HTMLElement>();
-  private readonly dataPath = el<HTMLInputElement>('<input class="cv-input" type="text" readonly spellcheck="false" aria-label="Settings folder">');
-  private readonly libraryPath = el<HTMLInputElement>('<input class="cv-input" type="text" readonly spellcheck="false" aria-label="Library folder">');
+  private readonly dataPath = el<HTMLInputElement>('<input class="cv-input" type="text" dir="ltr" readonly spellcheck="false" aria-label="Settings folder">');
+  private readonly libraryPath = el<HTMLInputElement>('<input class="cv-input" type="text" dir="ltr" readonly spellcheck="false" aria-label="Library folder">');
   private pagesEl: HTMLElement | null = null;
   private shell: { frame: HTMLElement; rail: HTMLElement; port: HTMLElement; shade: SVGPathElement; line: SVGPathElement } | null = null;
   private current = '';
@@ -41,6 +41,7 @@ export class SettingsDialog extends Dialog {
   private readonly fontSizeRow = selectRow('Text size', UI_FONT_SIZES, (v) => this.change({ uiFontSize: v as UiFontSize }));
   private readonly scaleRow = selectRow('Interface scale', UI_SCALES, (v) => setUiScale(v));
   private readonly animationsRow = checkRow('Animations', (v) => this.change({ animations: v }));
+  private readonly gpuRow = checkRow('GPU compositing', (v) => this.change({ gpu: v }));
   private readonly noticeRow = selectRow('Notice time', NOTICE_CHOICES, (v) => this.change({ noticeSeconds: Number(v) }));
   private readonly undoRow = selectRow('Undo steps', UNDO_CHOICES, (v) => this.change({ undoDepth: Number(v) }));
   private readonly scrubRow = selectRow('Scrub speed', SCRUB_SPEEDS, (v) => this.change({ scrubSpeed: v as ScrubSpeed }));
@@ -109,7 +110,8 @@ export class SettingsDialog extends Dialog {
     add('Interface',
       grp('Theme', this.grid, nt('Right-click a theme to favorite it. Theme and accent are shared with the other Form apps on this device.'), this.accentRow.el, this.intensityRow.el, nt('Intensity sets how strongly the accent tints what it marks; 100% is the design\'s.'), this.themeAutoRow.el, cols(this.themeLightRow.el, this.themeDarkRow.el), nt('Match System Appearance switches between the light and dark theme chosen here when the appearance of the computer changes.')),
       grp('Language, Text and Scale', this.languageRow.el, nt('The language of the whole interface. Names you give movies and layers stay as you wrote them.'), cols(this.fontSizeRow.el, this.scaleRow.el)),
-      grp('Motion and Notices', this.animationsRow.el, this.noticeRow.el));
+      grp('Motion and Notices', this.animationsRow.el, this.noticeRow.el),
+      grp('Performance', this.gpuRow.el, nt('Draws the Stage and exports on the graphics card when it gives the same picture as the processor. Off, or without WebGL 2, everything is drawn on the processor.')));
     add('Timeline',
       grp('History', this.undoRow.el, nt('Undo steps are saved inside the movie file, so more steps make the file larger.')),
       grp('Playhead', this.scrubRow.el),
@@ -185,6 +187,7 @@ export class SettingsDialog extends Dialog {
     this.fontSizeRow.set(p.uiFontSize);
     this.scaleRow.set(uiScaleChoice());
     this.animationsRow.set(p.animations);
+    this.gpuRow.set(p.gpu);
     this.noticeRow.set(String(p.noticeSeconds));
     this.undoRow.set(String(p.undoDepth));
     this.scrubRow.set(p.scrubSpeed);

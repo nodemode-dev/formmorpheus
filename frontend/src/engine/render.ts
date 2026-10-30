@@ -1,9 +1,15 @@
 import { end, flipIndexAt } from './model';
+import { drawMaskedRows, hasRowMask } from './flip-draw';
 import { animate, type Animated } from './keys';
+import { contentRect, drawWarped } from './warp-draw';
 import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
 import type { Raster } from '../paint/types';
+import { hasTree } from '../paint/layer-tree';
+import { drawLayerTree } from './layer-draw';
 import type { VideoSource } from '../media/types';
 import type { BlendMode, Content, Movie, Track } from './types';
+import { GpuCompositor, type GpuHost } from './gpu/compositor';
+import { probeGpu, type ProbeResult } from './gpu/probe';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type Surface = OffscreenCanvas;
@@ -41,15 +47,127 @@ export class Renderer {
   private gen = 0;
   private readonly used = new Map<string, number>();
   private readonly pool: Surface[] = [];
+  /** Movie-sized flat surfaces for Warp / Distort (a stack, since a warped group may hold warped members). */
+  private readonly warpPool: OffscreenCanvas[] = [];
   private pw = 0;
   private ph = 0;
   private spare: Raster = { width: 0, height: 0, data: new Uint8ClampedArray(0) };
   private video: VideoSource | null = null;
+  /** GPU compositing (engine/gpu): the compositor, whether frames use it, and the host it calls back into. */
+  private gpu: GpuCompositor | null = null;
+  private gpuOn = false;
+  private gpuHostObj: GpuHost | null = null;
+  /** What the last probe measured; null before the first probe. */
+  gpuProbe: ProbeResult | null = null;
 
   constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
 
+  /** Whether frames are composed on the GPU right now. */
+  get gpuActive(): boolean {
+    return this.gpuOn && !!this.gpu && this.gpu.ready;
+  }
+
+  /** Switches GPU compositing; false when WebGL2 is missing. The CPU path stays the reference and the fallback. `shared`: a compositor owned elsewhere (the probe). */
+  useGpu(on: boolean, shared?: GpuCompositor): boolean {
+    if (!on) {
+      if (this.gpuOn) { this.gpuOn = false; this.onReady(); }
+      return false;
+    }
+    if (shared) this.gpu = shared;
+    if (!this.gpu) {
+      this.gpu = GpuCompositor.create();
+      if (this.gpu) this.gpu.onRestore = () => { this.onReady(); };
+    }
+    if (!this.gpu) return false;
+    if (!this.gpuOn) { this.gpuOn = true; if (!shared) this.onReady(); }
+    return true;
+  }
+
+  /** Turns the GPU on when WebGL2 is available, a probe frame matches the CPU path and a heavy frame is not slower (software GL is); `force` skips the speed test. Resolves to whether it is on. */
+  async autoGpu(force = false): Promise<boolean> {
+    if (!this.gpu) {
+      this.gpu = GpuCompositor.create();
+      if (this.gpu) this.gpu.onRestore = () => { this.onReady(); };
+    }
+    if (!this.gpu) return false;
+    const gpu = this.gpu;
+    this.gpuProbe = await probeGpu(() => new Renderer(() => undefined, () => {}), gpu);
+    if (!this.gpuProbe.ok || (!force && !this.gpuProbe.fast)) return false;
+    return this.useGpu(true);
+  }
+
+  private gpuHost(): GpuHost {
+    return this.gpuHostObj ?? (this.gpuHostObj = {
+      bitmap: (id) => this.bitmap(id),
+      video: (c, local, movie) => {
+        if (!this.video || !c.asset) return null;
+        const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie), c.id);
+        return img && 'width' in img ? (img as OffscreenCanvas) : null;
+      },
+      direct: (c, a, tracks, i, frame) => this.direct(c, a, tracks, i, frame),
+      cpu: (c, a, local) => this.needsCpu(c, a, local),
+      textBox: (c, movie, density, into) => this.textBox(c, movie, density, into),
+      raster: (c, local, view, movie, a, into) => { this.drawContent(into.getContext('2d') as OffscreenCanvasRenderingContext2D, c, local, view as View, movie, a); },
+    });
+  }
+
+  /** Draws a Text content tightly into `into` at `density` pixels per movie pixel; returns the movie-space box it covers. */
+  private textBox(c: Content, movie: Movie, density: number, into: OffscreenCanvas): { x: number; y: number; w: number; h: number } | null {
+    const s = c.text;
+    if (!s || !s.text) return null;
+    const mc = into.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    mc.setTransform(1, 0, 0, 1, 0, 0);
+    mc.font = `${s.weight} ${s.size}px ${JSON.stringify(s.font)}, Inter, sans-serif`;
+    const lines = s.text.split('\n');
+    let tw = 0;
+    for (const line of lines) tw = Math.max(tw, mc.measureText(line).width);
+    const pad = s.size * 0.4;
+    const th = lines.length * s.size * 1.2;
+    const ax = s.align === 'left' ? movie.width * 0.1 : s.align === 'right' ? movie.width * 0.9 : movie.width / 2;
+    const x = (s.align === 'left' ? ax : s.align === 'right' ? ax - tw : ax - tw / 2) - pad;
+    const y = movie.height / 2 - th / 2 - pad;
+    const w = tw + pad * 2, h = th + pad * 2;
+    const pw = Math.min(4096, Math.max(1, Math.ceil(w * density))), ph = Math.min(4096, Math.max(1, Math.ceil(h * density)));
+    if (into.width !== pw || into.height !== ph) { into.width = pw; into.height = ph; }
+    mc.setTransform(1, 0, 0, 1, 0, 0);
+    mc.clearRect(0, 0, pw, ph);
+    const k = pw / w, kv = ph / h;
+    mc.setTransform(k, 0, 0, kv, -x * k, -y * kv);
+    this.drawText(mc, c, movie);
+    return { x, y, w, h };
+  }
+
+  /** Content the GPU compositor does not draw itself: Warp and Distort, layer groups and masks, row masks (a group that holds any). */
+  private needsCpu(c: Content, a: Animated, local: number): boolean {
+    if (a.warp || a.distort) return true;
+    switch (c.kind) {
+      case 'drawing': return hasTree(c.layers);
+      case 'flipbook': {
+        if (hasRowMask(c)) return true;
+        const f = local + c.offset;
+        return c.flip.some((t) => { const i = t.hidden || t.opacity <= 0 ? -1 : flipIndexAt(t, f); return i >= 0 && hasTree(t.frames[i].layers); });
+      }
+      case 'group': {
+        const g = local + c.offset;
+        return c.tracks.some((t) => {
+          if (t.hidden) return false;
+          const m = t.content.find((x) => g >= x.start && g < end(x));
+          return !!m && m.opacity > 0 && this.needsCpu(m, animate(m, g - m.start), g - m.start);
+        });
+      }
+      default: return false;
+    }
+  }
+
+  /** The GPU's result for this frame as a canvas, or null (off, lost, failed): the caller composes on the CPU. */
+  private gpuCompose(movie: Movie, frame: number, view: View): OffscreenCanvas | null {
+    if (!this.gpuOn || !this.gpu || !this.gpu.ready) return null;
+    return this.gpu.compose(this.gpuHost(), movie.tracks, frame, view, movie);
+  }
+
   /** `keep`: pictures of a movie being swapped in stay decoded. */
   forget(keep?: Set<string>): void {
+    this.gpu?.forget(keep);
     for (const [id, b] of [...this.bitmaps]) {
       if (keep?.has(id)) continue;
       b?.close();
@@ -120,6 +238,7 @@ export class Renderer {
     this.pw = Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
     this.gen++;
+    const gpu = this.gpuCompose(movie, frame, view);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, view.width, view.height);
@@ -128,15 +247,16 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(view.ox, view.oy, movie.width * view.scale, movie.height * view.scale);
       ctx.clip();
-      this.composeTracks(ctx as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
+      if (gpu) ctx.drawImage(gpu, 0, 0);
+      else this.composeTracks(ctx as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
       ctx.restore();
       return;
     }
     ctx.fillStyle = opts.background;
     ctx.fillRect(0, 0, view.width, view.height);
     const mw = movie.width * view.scale, mh = movie.height * view.scale;
-    const layer = this.surface();
-    this.composeTracks(layer.getContext('2d') as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
+    const layer = gpu ?? this.surface();
+    if (!gpu) this.composeTracks(layer.getContext('2d') as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
     if (opts.backstage) {
       ctx.globalAlpha = 0.28;
       ctx.drawImage(layer, 0, 0);
@@ -155,7 +275,7 @@ export class Renderer {
     }
     ctx.drawImage(layer, 0, 0);
     ctx.restore();
-    this.release(layer);
+    if (!gpu) this.release(layer);
     ctx.restore();
   }
 
@@ -243,6 +363,21 @@ export class Renderer {
 
   drawContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie, anim?: Animated): void {
     const t = anim ?? animate(c, local);
+    if (t.warp || t.distort) {
+      // drawn flat on a surface, then re-projected through the Warp / Distort (warp-draw.ts)
+      // sized to the whole movie at this scale, not to the view: a zoomed Stage or a group member's unit view
+      // would otherwise crop the content before it is warped
+      const fw = Math.max(1, Math.ceil(movie.width * view.scale)), fh = Math.max(1, Math.ceil(movie.height * view.scale));
+      const flat = this.warpPool.pop() ?? new OffscreenCanvas(fw, fh);
+      if (flat.width !== fw || flat.height !== fh) { flat.width = fw; flat.height = fh; }
+      const fc = flat.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      fc.setTransform(1, 0, 0, 1, 0, 0);
+      fc.clearRect(0, 0, fw, fh);
+      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, warp: null, distort: null });
+      drawWarped(ctx, flat, t, view, movie.width, movie.height, contentRect(c, movie));
+      this.warpPool.push(flat);
+      return;
+    }
     ctx.save();
     ctx.translate(view.ox + (movie.width / 2 + t.x) * view.scale, view.oy + (movie.height / 2 + t.y) * view.scale);
     ctx.rotate((t.rotation * Math.PI) / 180);
@@ -309,8 +444,8 @@ export class Renderer {
         const local = f - c.start;
         const want = (id: string | null): void => { if (id && !this.bitmaps.get(id)) { const b = this.blobOf(id); if (b) blobs.set(id, b); } };
         if (c.kind === 'image') want(c.asset);
-        if (c.kind === 'drawing') c.layers.forEach((l) => want(l.pixels));
-        if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, local + c.offset); if (i >= 0) row.frames[i].layers.forEach((l) => want(l.pixels)); }
+        if (c.kind === 'drawing') c.layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); });
+        if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, local + c.offset); if (i >= 0) row.frames[i].layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); }); }
         if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie), c.id));
         if (c.kind === 'group') visit(c.tracks, local + c.offset);
       }
@@ -338,6 +473,7 @@ export class Renderer {
 
   /** Layer opacity multiplies the caller's alpha (a Flipbook row, a group member); a normal layer keeps the caller's blend. */
   private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie): void {
+    if (hasTree(layers)) { drawLayerTree(ctx, layers, movie.width, movie.height, (id) => this.bitmap(id)); return; }
     const baseAlpha = ctx.globalAlpha, baseOp = ctx.globalCompositeOperation;
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
@@ -353,6 +489,13 @@ export class Renderer {
   }
 
   private drawFlipbook(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
+    if (hasRowMask(c)) {
+      drawMaskedRows({
+        surface: () => this.surface(), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie),
+        mask: (a, b, m, inv) => this.applyMask(a, b, m, inv), blendOp: (b) => BLEND_OP[b],
+      }, ctx, c, local);
+      return;
+    }
     for (let i = c.flip.length - 1; i >= 0; i--) {
       const t = c.flip[i];
       if (t.hidden || t.opacity <= 0) continue;

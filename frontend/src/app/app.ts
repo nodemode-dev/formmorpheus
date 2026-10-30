@@ -77,6 +77,17 @@ export function startApp(): void {
   const renderer = new Renderer((id) => engine.assets.get(id), () => { stage?.schedule(); timeline?.refreshThumbs(); });
   const video = new VideoPool((id) => engine.assets.get(id), () => { stage?.schedule(); timeline?.refreshThumbs(); });
   renderer.setVideo(video);
+  // GPU compositing turns on when WebGL2 is there and a probe frame matches the CPU path; the CPU stays the fallback
+  let gpuWanted = true;
+  const gpuForced = new URLSearchParams(location.search).get('gpu') === 'force';
+  const syncGpu = (on: boolean): void => {
+    gpuWanted = on;
+    if (!on) renderer.useGpu(false);
+    // a probe that matched the CPU but ran slower keeps the GPU off on later preference changes too (unless forced)
+    else if (renderer.gpuProbe?.ok) { if (renderer.gpuProbe.fast || gpuForced) renderer.useGpu(true); }
+    else if (!renderer.gpuProbe) void renderer.autoGpu(gpuForced).then(() => { if (!gpuWanted) renderer.useGpu(false); });
+  };
+  setTimeout(() => syncGpu(prefs.gpu), 1500);
   const audio = new AudioEngine((id) => engine.assets.get(id), () => timeline?.refreshThumbs());
   // the sound card's clock drives playback whenever sound plays, so pictures and sound cannot drift apart
   engine.setTicker({ now: () => audio.now(), request: (fn) => requestAnimationFrame(fn), cancel: (id) => cancelAnimationFrame(id) });
@@ -107,6 +118,7 @@ export function startApp(): void {
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
   });
   timeline.setMedia({ video, audio });
+  engine.setRegion(() => timeline?.visibleRange() ?? null);
   const textCard = new TextCard(engine);
   const exportDialog = new ExportDialog({
     engine,
@@ -136,11 +148,13 @@ export function startApp(): void {
     openRecent: (name) => { void openFromLibrary(name); },
     openPath: () => toast('Opening files by path arrives with the desktop file panels.'),
     removeRecent: (name) => { prefs = updatePrefs({ recent: prefs.recent.filter((r) => r !== name) }); },
+    openName: () => engine.libraryName,
     run: (cmd) => { commands.run(cmd); },
   });
 
   const settings = new SettingsDialog((p: Prefs) => {
     prefs = p;
+    syncGpu(p.gpu);
     applyShellPrefs(p);
     engine.setUndoDepth(p.undoDepth);
     home.sync();

@@ -33,13 +33,15 @@ export interface Prefs {
   scrubSpeed: ScrubSpeed;
   undoGestures: boolean;
   confirmDelete: boolean;
+  /** Compose the Stage and exports on the GPU (WebGL2) when it matches the CPU path. */
+  gpu: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
   shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 50, autosaveSeconds: 30,
-  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, confirmDelete: false,
+  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, confirmDelete: false, gpu: true,
 };
 
 const KEY = 'formmorpheus.prefs';
@@ -119,6 +121,7 @@ export function loadPrefs(): Prefs {
       scrubSpeed: scrub === 'precise' || scrub === 'fast' ? scrub : 'medium',
       undoGestures: flag(r.undoGestures, d.undoGestures),
       confirmDelete: flag(r.confirmDelete, d.confirmDelete),
+      gpu: flag(r.gpu, d.gpu),
     };
   } catch {
     return { ...d, language: systemLang() };
