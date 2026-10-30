@@ -24,6 +24,7 @@
     "allow-app-ready",
     "allow-set-window-title",
     "allow-text-edit",
-    "allow-take-pending-opens"
+    "allow-take-pending-opens",
+    "allow-note-recent-document"
   ]
 }

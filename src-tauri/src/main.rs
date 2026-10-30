@@ -8,6 +8,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 mod packaged;
+mod recent;
 mod reveal;
 mod text_edit;
 mod traffic_lights;
@@ -220,6 +221,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             take_pending_opens,
+            recent::note_recent_document,
             traffic_lights::set_window_title,
             reveal::app_ready,
             text_edit::text_edit

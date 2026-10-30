@@ -1,6 +1,6 @@
 [package]
 name = "formmorpheus"
-version = "0.5.0"
+version = "0.6.0"
 description = "formmorpheus desktop shell"
 authors = ["nodemode-ai"]
 license = "Apache-2.0"
@@ -19,9 +19,18 @@ regex = "1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 
+# The desktop's recent-documents list (note_recent_document): GTK's RecentManager, the crate Tauri's window layer already builds.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
+# Windows: SHAddToRecentDocs for the taskbar jump list.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWindow", "NSButton", "NSControl", "NSView", "NSResponder", "objc2-core-foundation", "NSColor"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSDocumentController", "NSWindow", "NSButton", "NSControl", "NSView", "NSResponder", "objc2-core-foundation", "NSColor"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSGeometry"] }
 
 [profile.release]
 codegen-units = 1

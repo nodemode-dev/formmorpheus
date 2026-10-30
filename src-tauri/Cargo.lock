@@ -1047,10 +1047,12 @@ dependencies = [
 
 [[package]]
 name = "formmorpheus"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
+ "gtk",
  "objc2",
  "objc2-app-kit",
+ "objc2-foundation",
  "regex",
  "serde",
  "serde_json",
@@ -1059,6 +1061,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

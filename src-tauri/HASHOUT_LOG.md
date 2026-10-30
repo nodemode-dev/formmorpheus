@@ -2,8 +2,8 @@
 
 Living log for the desktop shell (Tauri 2). Source stays comment-free; rationale lives here. The splash and reveal reproduce the owner's formvis splash and boot map exactly.
 
-Current build version: v0.3.0
-Last updated: 2026-10-30 · desktop shell from formvis
+Current build version: v0.6.0
+Last updated: 2026-10-30 · distribution, recent documents, opens from the OS
 
 ---
 
@@ -26,6 +26,7 @@ src-tauri/
     ├── traffic_lights.rs       lights centred in the 38 px title row, set_window_title
     ├── text_edit.rs            menu Edit actions sent to a focused text field (macOS)
     ├── packaged.rs             where the one-folder engine lives in the bundle
+    ├── recent.rs               note_recent_document: the OS recent list
     └── window_state.rs         window size and place kept between launches
 ```
 
@@ -35,6 +36,7 @@ src-tauri/
 
 - [src/main.rs](#main)
 - [src/reveal.rs](#reveal)
+- [src/recent.rs and distribution](#distribution)
 
 ---
 
@@ -71,3 +73,28 @@ The page must call `invoke('app_ready')` after its first paint (`revealApp` in `
 - logged: v0.3.0 · 2026-10-30
 
 Off macOS the main window is built visible (as in formvis), and the launch run on Linux showed it mapped over the splash at about 1.1 s, so the splash was seen for about 0.5 s instead of 2.6 s. Building it hidden was rejected: a hidden web view can stop its animation frames, and `revealApp` signals through them, which would leave the person on the splash until the 20 s fallback. Fix: the splash window is `alwaysOnTop`, so the empty main window waits behind it. Verified on Linux under Xvfb with openbox: the splash stays in front from 0.8 s until it closes over the finished Home screen. Windows is not run here.
+
+---
+
+## src/recent.rs and distribution {#distribution}
+
+### src/recent.rs · note_recent_document
+- refers-to: src/recent.rs :: note_recent_document; build.rs :: APP_COMMANDS; capabilities/default.json
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+Adds a saved or opened `.fmo` to the OS recent list: macOS NSDocumentController, Windows SHAddToRecentDocs, Linux gtk RecentManager (the gtk crate is now a direct dependency, already in the tree through Tauri). The frontend calls it after a save and after an open from a path, desktop only. The macOS and Windows branches come from formvis and are not compiled here.
+
+### src/main.rs · pending opens consumed
+- refers-to: src/main.rs :: take_pending_opens; frontend/src/app/app.ts :: openFromPath; backend/app/routers/files.py
+- kind: fix
+- logged: v0.6.0 · 2026-10-30
+
+The single-instance queue existed since v0.3.0 but nothing read it. The frontend now drains it at start and on `formmorpheus://open-paths`, and reads each path through the engine's `GET /api/files/read` (absolute paths ending in `.fmo` only). On Linux the single-instance plugin needs a D-Bus session bus; without one a second window opens. Several paths at once open in turn and the last one stays.
+
+### build_app · bundles and signing
+- refers-to: ../build_app; ../build_app.bat; tauri.conf.json :: bundle
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+Tauri config cannot read env vars, so the conf keeps null signing placeholders and `build_app` passes `APPLE_SIGNING_IDENTITY` or `WINDOWS_CERT_THUMBPRINT` through `--config` only when set; unset gives an unsigned build (ad-hoc on macOS). `APPIMAGE_EXTRACT_AND_RUN=1` lets the AppImage build w/o FUSE. Verified: Linux deb and AppImage in 317 s, splash then Home, a second launch w/ a `.fmo` opened in the first window. `build_app.bat` and the macOS path are unrun; `setup/desktop_build` is no longer called.
