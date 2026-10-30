@@ -21,6 +21,7 @@ export class Recorder {
   private readonly kind: KeyKind;
   private readonly ids: string[];
   private readonly rows = new Map<string, Map<number, number>>();
+  private last = -1;
 
   constructor(kind: KeyKind, channels: string[]) {
     this.kind = kind;
@@ -31,6 +32,10 @@ export class Recorder {
   add(localFrame: number, values: Record<string, number>): void {
     if (!Number.isFinite(localFrame)) return;
     const f = Math.round(localFrame);
+    // a take only runs forward inside the content: a loop wrap or a ping pong turn mid-gesture (frames
+    // going back) and frames before the content's start are ignored, never stitched across
+    if (f < 0 || f < this.last) return;
+    this.last = f;
     for (const id of this.ids) {
       const v = values[id];
       if (v === undefined || !Number.isFinite(v)) continue;
@@ -182,7 +187,9 @@ export function applyTake(c: Content, take: Take, ease: Ease = 'linear'): Conten
   for (const id in take.channels) {
     const incoming = take.channels[id];
     if (!incoming.length) continue;
-    const kept = (channels[id] ?? []).filter((k) => k.frame < take.from || k.frame > take.to);
+    // each channel replaces only its own recorded span (rotation can join a take late, from a pen twist)
+    const lo = incoming[0].frame, hi = incoming[incoming.length - 1].frame;
+    const kept = (channels[id] ?? []).filter((k) => k.frame < lo || k.frame > hi);
     const merged = kept.concat(incoming.map((k) => ({ frame: k.frame, value: k.value, ease })));
     merged.sort((a, b) => a.frame - b.frame);
     channels[id] = merged;

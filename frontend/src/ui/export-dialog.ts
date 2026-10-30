@@ -122,6 +122,11 @@ export class ExportDialog {
   private readonly run: HTMLButtonElement;
   private readonly cancel: HTMLButtonElement;
   private job: ExportJob | null = null;
+
+  /** True while an export renders: the movie it reads must not be closed or replaced meanwhile. */
+  get running(): boolean {
+    return this.job !== null;
+  }
   private engineJob: ReturnType<Engine['startJob']> | null = null;
   private busy = false;
   private aspect = 16 / 9;

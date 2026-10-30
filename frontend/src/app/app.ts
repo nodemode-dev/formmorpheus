@@ -88,7 +88,7 @@ export function startApp(): void {
       for (const c of t.content) if (c.kind === 'video' && c.asset && f >= c.start - m.fps && f < c.start + c.duration) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, f - c.start), m), 2);
     }
   });
-  engine.on('projects', () => { if (!engine.movie) { renderer.forget(); video.forget(); } });
+  engine.on('projects', () => { if (!engine.movie) { renderer.forget(); video.forget(); audio.forget(); } });
   stage = new StageView(q(root, '.fm-stage-wrap'), engine, renderer);
   const commands = new Commands();
   const contentMenu = new ContentMenu(engine);
@@ -149,6 +149,8 @@ export function startApp(): void {
   const palette = new CommandPalette(commands, () => menus);
 
   const askToKeep = async (): Promise<boolean> => {
+    // an export reads this movie's pictures and sound until it finishes
+    if (exportDialog.running) { toast('An export is running: wait for it, or cancel it, before closing this movie.'); return false; }
     if (!engine.movie || !engine.modified) return true;
     const keep = await confirmAction('Unsaved changes', `Save the changes to "${engine.movie.name}" first?`, 'Save', false, 'Discard');
     if (keep) return save(false);
@@ -160,8 +162,10 @@ export function startApp(): void {
     const job = engine.startJob(`Open ${name}`, 1);
     try {
       const file = await unpackMovie(await api.readMovie(name));
+      engine.stop();
       renderer.forget();
       video.forget();
+      audio.forget();
       await registerFonts(file.movie, (id) => file.assets.get(id));
       await renderer.preload(file.assets);
       engine.open(file.movie, name, file.assets, file.past, file.recovery);
@@ -177,8 +181,10 @@ export function startApp(): void {
     if (!(await askToKeep())) return;
     try {
       const data = await unpackMovie(file);
+      engine.stop();
       renderer.forget();
       video.forget();
+      audio.forget();
       await registerFonts(data.movie, (id) => data.assets.get(id));
       await renderer.preload(data.assets);
       engine.open(data.movie, null, data.assets, data.past, data.recovery);

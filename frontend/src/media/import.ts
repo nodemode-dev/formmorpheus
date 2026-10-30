@@ -5,7 +5,7 @@ import { content, drawingLayer, identity, uid } from '../engine/model';
 import { registerFont } from './fonts';
 import { decodeGif, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
-import { VideoPool } from './video';
+import { UndecodableVideo, VideoPool } from './video';
 
 export interface ImportResult {
   assets: { asset: Asset; blob: Blob }[];
@@ -81,10 +81,15 @@ async function importPicture(file: File, m: Movie, at: number, kind: Sniff): Pro
   return { assets: [{ asset, blob }], contents: [c], ownTrack: [false] };
 }
 
+const MAX_ANIMATION_FRAMES = 1000;
+
 interface RawFrame { image: CanvasImageSource | null; rgba: Uint8ClampedArray | null; w: number; h: number; delayMs: number }
 
 /** Builds the Flipbook content for a list of picture frames (each a PNG asset the size of the movie). */
-async function flipbookFrom(frames: RawFrame[], name: string, m: Movie, at: number): Promise<ImportResult> {
+async function flipbookFrom(all: RawFrame[], name: string, m: Movie, at: number): Promise<ImportResult> {
+  // every frame becomes a movie-sized picture: cap how many so a huge animation cannot exhaust memory
+  const frames = all.slice(0, MAX_ANIMATION_FRAMES);
+  const cut = all.length > frames.length ? ` Only the first ${MAX_ANIMATION_FRAMES} of ${all.length} pictures were imported.` : '';
   const W = m.width;
   const H = m.height;
   const assets: { asset: Asset; blob: Blob }[] = [];
@@ -138,7 +143,7 @@ async function flipbookFrom(frames: RawFrame[], name: string, m: Movie, at: numb
   const row: FlipTrack = { id: uid('ft'), name: 'Row 1', hidden: false, opacity: 1, blend: 'normal', highlight: 'none', frames: out };
   const total = out.reduce((n, f) => n + f.hold, 0);
   const c = content('flipbook', at, Math.max(1, total), { name, flip: [row] });
-  return { assets, contents: [c], ownTrack: [false], notice: `${frames.length} pictures, ${(prevEnd / m.fps).toFixed(1)} s at ${m.fps} fps.` };
+  return { assets, contents: [c], ownTrack: [false], notice: `${frames.length} pictures, ${(prevEnd / m.fps).toFixed(1)} s at ${m.fps} fps.${cut}` };
 }
 
 interface ImageDecoderLike {
@@ -155,7 +160,7 @@ async function viaImageDecoder(file: File, type: string): Promise<RawFrame[] | n
   const dec = new ID({ data: await file.arrayBuffer(), type });
   try {
     await dec.tracks.ready;
-    const n = dec.tracks.selectedTrack?.frameCount ?? 1;
+    const n = Math.min(MAX_ANIMATION_FRAMES, dec.tracks.selectedTrack?.frameCount ?? 1);
     if (n < 2) return null;
     const frames: RawFrame[] = [];
     for (let i = 0; i < n; i++) {
@@ -194,7 +199,7 @@ async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Pr
 
 async function importTimed(file: File, m: Movie, at: number): Promise<ImportResult> {
   let info: Awaited<ReturnType<typeof VideoPool.probe>> | null = null;
-  try { info = await VideoPool.probe(file); } catch { info = null; }
+  try { info = await VideoPool.probe(file); } catch (e) { if (e instanceof UndecodableVideo) throw new Error(`${file.name}: ${e.message}`); info = null; }
   const name = baseName(file.name);
   if (info && info.hasVideo) {
     const seconds = Math.max(info.duration, 1 / m.fps);

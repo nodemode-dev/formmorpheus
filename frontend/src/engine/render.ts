@@ -108,6 +108,10 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, view.width, view.height);
     if (opts.keepAlpha && movie.transparent) {
+      // only the movie frame: letterboxing and content outside the frame stay transparent
+      ctx.beginPath();
+      ctx.rect(view.ox, view.oy, movie.width * view.scale, movie.height * view.scale);
+      ctx.clip();
       this.composeTracks(ctx as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
       ctx.restore();
       return;

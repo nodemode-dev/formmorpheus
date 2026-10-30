@@ -22,6 +22,9 @@ const THUMB_CAP_BYTES = 48 * 1024 * 1024;
 const THUMB_BUCKET = 0.25;
 const THUMB_QUEUE = 48;
 
+/** Thrown by probe when the file is a video whose codec the browser cannot decode. */
+export class UndecodableVideo extends Error {}
+
 interface Frame {
   ts: number;
   end: number;
@@ -78,6 +81,8 @@ export class VideoPool implements VideoSource {
       if (!v && !a) throw new Error('no tracks');
       const duration = await input.computeDuration();
       if (v) {
+        // a video this browser cannot decode (HEVC or ProRes in many browsers) would place a block that stays blank
+        if (!(await v.canDecode().catch(() => false))) throw new UndecodableVideo(`${v.codec ?? 'This'} video cannot be decoded by this browser.`);
         let fps = 0;
         try { fps = (await v.computePacketStats(120)).averagePacketRate; } catch { fps = 0; }
         return {
@@ -104,7 +109,11 @@ export class VideoPool implements VideoSource {
     }
     e.want = t;
     this.ensure(e);
-    return e.lastShown?.canvas ?? null;
+    // nearest cached frame by time, not merely the last shown: two blocks of one video at different times
+    // (a split, a duplicate) must not show each other's picture while decoding
+    let near: Frame | null = null;
+    for (const f of e.frames) if (!near || Math.abs(f.ts - t) < Math.abs(near.ts - t)) near = f;
+    return (near ?? e.lastShown)?.canvas ?? null;
   }
 
   exact(assetId: string, seconds: number): Promise<void> {

@@ -194,19 +194,38 @@ export class AudioEngine implements ClockSource {
   // ---- playback ----
 
   play(movie: Movie, frame: number, direction: 1 | -1): void {
+    // the clock must not jump: a restart at a loop wrap continues from the time the Engine just read
+    const keep = this.now();
     this.stop();
     const ctx = this.context();
     const pos0 = frame / movie.fps;
-    this.startPerf = performance.now();
+    this.startPerf = keep;
     if (!ctx) { this.clockOn = false; return; }
-    this.startCtxTime = ctx.currentTime;
-    // The audible time lags the context time by the output latency; the clock below is the context time,
-    // so schedule each sample that much earlier and the picture and sound line up.
-    this.clockOn = ctx.state === 'running';
     const clips = direction === 1 ? this.clips(movie).filter((c) => c.end > pos0) : [];
-    this.session = { movie, clips, startCtx: this.startCtxTime, pos0, nodes: new Map() };
-    if (!this.clockOn) return;
-    for (const c of clips) this.place(this.session, c);
+    const s: Session = { movie, clips, startCtx: 0, pos0, nodes: new Map() };
+    this.session = s;
+    if (ctx.state === 'running') { this.startClock(s, ctx); return; }
+    // a context that is still waking (created by this very Play, or the first gesture) starts the sound
+    // when it runs, at the movie time reached by then; the picture runs on the system clock meanwhile
+    const perf0 = performance.now();
+    void ctx.resume().then(() => {
+      if (this.session !== s || ctx.state !== 'running') return;
+      s.pos0 = pos0 + (performance.now() - perf0) / 1000;
+      s.clips = s.clips.filter((c) => c.end > s.pos0);
+      this.startPerf = this.now();
+      this.startClock(s, ctx);
+    }).catch(() => {});
+  }
+
+  /**
+   * Starts the sound a little ahead (output latency plus 20 ms) so the first samples are not cut: movie time
+   * `pos0` is heard at `startCtx`, and the clock holds still until then (now() never runs backwards).
+   */
+  private startClock(s: Session, ctx: AudioContext): void {
+    s.startCtx = ctx.currentTime + this.latency() + 0.02;
+    this.startCtxTime = s.startCtx;
+    this.clockOn = true;
+    for (const c of s.clips) this.place(s, c);
   }
 
   private place(s: Session, clip: AudioClip): void {
@@ -241,7 +260,7 @@ export class AudioEngine implements ClockSource {
 
   now(): number {
     const c = this.ctx;
-    if (this.clockOn && c) return this.startPerf + (c.currentTime - this.startCtxTime) * 1000;
+    if (this.clockOn && c) return this.startPerf + Math.max(0, c.currentTime - this.startCtxTime) * 1000;
     return performance.now();
   }
 
@@ -305,6 +324,14 @@ export class AudioEngine implements ClockSource {
     });
     if (!any) return null;
     return off.startRendering();
+  }
+
+  /** Drops decoded sound and peaks (a movie closed or replaced); they decode again on demand. */
+  forget(): void {
+    this.stop();
+    this.buffers.clear();
+    this.pending.clear();
+    this.peakCache.clear();
   }
 
   dispose(): void {

@@ -73,3 +73,14 @@ The body must start w/ the zip signature and is written to a hidden part file, t
 - logged: v0.3.0 · 2026-10-30
 
 Deleted movies are kept w/ a timestamp in `Recently Deleted`; a restore endpoint and a 30 day sweep are not written yet.
+
+---
+
+## app/routers/exports.py {#routers-exports}
+
+### app/routers/exports.py · put_export
+- refers-to: app/routers/exports.py :: put_export; app/core/config.py :: exports_dir, MAX_EXPORT_BYTES
+- kind: rationale
+- logged: v0.5.0 · 2026-10-30
+
+Exports rendered in the window (MP4, WebM, MOV, GIF, frame zips, stills) are kept in the data folder's `Exports` so the Home screen can list them; the browser download happens as well. Writes go to a temporary file then one rename; names are cleaned (no path parts, no leading dot); bodies over 2 GB are refused. Deleting moves the file to `Recently Deleted`. A second export w/ the same name replaces the first.

@@ -52,6 +52,7 @@ export class StageView {
   private dpr = 1;
   private req = 0;
   private grab: Grab | null = null;
+  private grabPointer = -1;
   private bg = '#0a0a0a';
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer) {
@@ -200,7 +201,8 @@ export class StageView {
   private down(e: PointerEvent): void {
     const m = this.engine.movie;
     const v = this.view;
-    if (!m || !v || e.button !== 0) return;
+    // one gesture at a time: a second finger or pen must not orphan the first grab (or its Perform take)
+    if (!m || !v || e.button !== 0 || this.grab) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
     const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
@@ -222,6 +224,7 @@ export class StageView {
       this.grab = { kind: 'move', x0: x, y0: y, ids, base, tag };
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    this.grabPointer = e.pointerId;
     e.preventDefault();
     this.beginRec(e);
   }
@@ -321,7 +324,7 @@ export class StageView {
 
   private move(e: PointerEvent): void {
     const g = this.grab, m = this.engine.movie, v = this.view;
-    if (!g || !m || !v) return;
+    if (!g || !m || !v || e.pointerId !== this.grabPointer) return;
     const [x, y] = this.local(e);
     if (g.rec) { this.recordMove(g, g.rec, m, v, x, y, e); return; }
     if (g.kind === 'move') {
@@ -379,7 +382,7 @@ export class StageView {
   }
 
   private up(e: PointerEvent): void {
-    if (!this.grab) return;
+    if (!this.grab || e.pointerId !== this.grabPointer) return;
     this.endRec(this.grab);
     this.grab = null;
     this.engine.endGesture();

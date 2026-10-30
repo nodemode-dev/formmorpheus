@@ -84,7 +84,7 @@ class Run {
   private readonly canvas: OffscreenCanvas;
   private readonly ctx: OffscreenCanvasRenderingContext2D;
   private readonly view: View;
-  private readonly keepAlpha: boolean;
+  private keepAlpha: boolean;
 
   constructor(
     private readonly deps: Deps,
@@ -165,6 +165,8 @@ class Run {
     const format = fmt === 'mp4' ? new Mp4OutputFormat() : fmt === 'mov' ? new MovOutputFormat() : new WebMOutputFormat();
     const picked = await this.pickVideoCodec(fmt, format.getSupportedVideoCodecs());
     if (!picked) throw new Error(`This browser cannot encode ${fmt.toUpperCase()} video at ${o.width} x ${o.height}.`);
+    // the encoder decides: w/o alpha in the codec the background must be painted, not left transparent (it would encode black)
+    this.keepAlpha = this.keepAlpha && picked.alpha;
     this.check();
 
     // Sound first: the mixdown is a quick offline render, and decides whether an audio track exists.
@@ -272,7 +274,7 @@ class Run {
       await yieldTurn();
     }
     this.progress('encoding', 0, total);
-    const palette = quantize(sampleData, Math.max(2, Math.min(256, Math.round(o.gif.colors))), o.gif.palette);
+    const palette = quantize(sampleData, Math.max(2, Math.min(256, Math.round(o.gif.colors))), o.gif.palette, o.gif.alphaThreshold);
     sampleData.length = 0;
     this.check();
 

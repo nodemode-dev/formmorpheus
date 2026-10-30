@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.4.0
-Last updated: 2026-10-30 · phases 4 to 6 (Draw & Paint, Flipbook & onion skins, Keyframes)
+Current build version: v0.5.0
+Last updated: 2026-10-30 · phases 7 to 9 (Perform, media & audio, export)
 
 ---
 
@@ -35,7 +35,19 @@ frontend/
     │   ├── flip-ops.ts         Flipbook rows & frames, holds, split, conversion to & from tracks
     │   ├── keys.ts             keyframe kinds & channels, temporal Bezier eases, animate()
     │   ├── key-ops.ts          pure key edits: lanes, keys, eases, reverse, copy & paste, shift, scale
-    │   └── render.ts           Canvas 2D compositor: tracks, blends, masks, groups, flipbook rows, keys & live filters, thumbnails
+    │   ├── perform.ts          Perform takes: Recorder, motion filtering, key reduction, applyTake
+    │   └── render.ts           Canvas 2D compositor: tracks, blends, masks, groups, flipbook rows, video, keys & live filters, prepareFrame, thumbnails
+    ├── media/                  video & sound (no DOM except the AudioContext, FontFace & canvases)
+    │   ├── types.ts            MediaInfo, VideoSource, AudioClip, ClockSource
+    │   ├── video.ts            VideoPool: mediabunny decode window, exact frames, filmstrip thumbs
+    │   ├── audio.ts            AudioEngine: decode, peaks, play on one AudioContext (the playback clock), scrub, mixdown
+    │   ├── import.ts           importMedia: sniff, probe, assets & blocks for pictures, GIF, TIFF, video, sound, fonts
+    │   ├── fonts.ts            registerFonts, FONT_FAMILIES
+    │   └── gif-decode.ts, tiff-decode.ts
+    ├── export/
+    │   ├── types.ts            ExportOptions, ExportJob, ExportResult
+    │   ├── run.ts              startExport: frame loop, mediabunny MP4 / WebM / MOV, GIF, frame zips, still
+    │   └── gif.ts              median-cut quantiser, dithers, LZW, GifWriter
     ├── paint/                  the paint core, no DOM (OffscreenCanvas only in doc.ts)
     │   ├── types.ts            contract: Raster, Mask, PixelPatch, PenSample, Brush, StrokeSettings, PaintLayer
     │   ├── tips.ts, dynamics.ts, brushes.ts   tip shapes & grain, pressure curve & tilt, the starter library
@@ -69,7 +81,10 @@ frontend/
     │   ├── paint-settings.ts   Settings popover (Add, Canvas, Onions, Prefs) & the pressure curve
     │   ├── brush-panel.ts, layers-panel.ts, colour-panel.ts, flip-strip.ts   Draw & Paint panels
     │   ├── key-lanes.ts        keyframe lane layout, drawing & hit tests
-    │   ├── action-menu.ts      Action menu, Motion & Live Filters lists, parameter cards, lane menus
+    │   ├── action-menu.ts      Action menu, Motion & Live Filters lists, parameter cards (record in Perform), lane menus
+    │   ├── perform-ui.ts       Perform banner, Modifications popover, perform settings
+    │   ├── export-dialog.ts    Export dialog: Quick share, Advanced, progress, cancel
+    │   ├── text-card.ts        Text options: words, font, size, weight, colour, alignment
     │   └── (from formvis)      dom, themes, icons, i18n, i18n/langs, commands, menu, native-menu,
     │                           caption-buttons, home, home-files, jobs-list, toast, dialogs,
     │                           dialog-history, dropdown, number-fields, command-palette, panels/controls
@@ -440,3 +455,40 @@ Trimming the start or splitting shifts keys so they stay at the same movie time;
 - logged: v0.4.0 · 2026-10-30
 
 Live filters run on the content's whole view-sized surface w/ getImageData, so a blur costs 100 ms or more a frame in software rendering. Limit the work to the content's bounds & move it to a worker (or the GPU compositor) before Phase 9 export.
+
+## Phases 7 to 9 (v0.5.0) {#p789}
+
+### src/app/app.ts · audio clock
+- refers-to: src/app/app.ts :: engine.setTicker, playing, wrap, time handlers
+- kind: rationale
+- logged: v0.5.0 · 2026-10-30
+
+The Engine's ticker reads `audio.now()`: while sound plays it is the AudioContext clock continued from the moment playback started, otherwise performance.now(). The Engine derives the frame from elapsed clock time, so pictures follow the sound card and cannot drift. Loop turns (`wrap`) restart the sound from the new frame; ping pong backwards plays no sound but keeps the clock. Seeks while stopped scrub about one frame of sound.
+
+### src/media/video.ts · VideoPool
+- refers-to: src/media/video.ts :: VideoPool
+- kind: warning-context
+- logged: v0.5.0 · 2026-10-30
+
+On screen `frame()` never returns a blank once a frame of the asset was shown (it returns the last frame while the wanted one decodes); `exact()` is for export & stills. Decoded frames are copied to canvases so the decoder never stalls on held VideoFrames; the window is about 1 s behind & the prefetch ahead, capped at 400 MB.
+
+### src/media/import.ts · importMedia
+- refers-to: src/media/import.ts :: importMedia
+- kind: rationale
+- logged: v0.5.0 · 2026-10-30
+
+Files are recognised by their bytes first, the extension second. Animated GIFs become Flipbooks (one PNG pixel asset per picture, holds from the delays at the movie's frame rate w/ the rounding error carried); TIFF is decoded here & stored as PNG bc browsers do not read it; fonts become assets registered w/ FontFace on import & on every open.
+
+### src/export/run.ts · startExport
+- refers-to: src/export/run.ts :: startExport
+- kind: rationale
+- logged: v0.5.0 · 2026-10-30
+
+Export renders on the main thread through the same renderer, frame by frame w/ `prepareFrame` (exact pictures & video), yielding every frame through a MessageChannel so a background tab does not throttle it (the plan said a worker; the decoders & bitmaps live on the main thread). Codecs are chosen by what the browser can encode: MP4 & MOV take H.264 then HEVC, AV1, VP9; sound AAC when encodable, else Opus w/ a warning (QuickTime does not play Opus in MP4).
+
+### src/engine/perform.ts · Recorder, applyTake
+- refers-to: src/engine/perform.ts :: Recorder, filterMotion, reduceKeys, applyTake
+- kind: rationale
+- logged: v0.5.0 · 2026-10-30
+
+A take keeps one key per touched frame (skipped frames bridged linearly), then a zero-phase Gaussian (sigma 3 x filtering frames) & Ramer-Douglas-Peucker w/ a tolerance from the channel's range. While the pen is down the unfiltered take is applied under one merge tag, & on lift the filtered take replaces it under the same tag, so a performance is one undo step. Same-kind keys inside the take's range are replaced; other kinds stay (layering).
