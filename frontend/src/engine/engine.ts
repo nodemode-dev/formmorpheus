@@ -55,6 +55,7 @@ export class Engine extends Emitter<EngineEvents> {
   private playStart = 0;
   private direction: 1 | -1 = 1;
   private nextJob = 1;
+  private region: (() => { from: number; to: number } | null) | null = null;
 
   get projects(): readonly Movie[] {
     return this.movie ? [this.movie] : [];
@@ -235,10 +236,28 @@ export class Engine extends Emitter<EngineEvents> {
     this.emit('mode', mode);
   }
 
+  /** The Timeline lends its visible frames; playback loops inside them while the movie asks for it. */
+  setRegion(fn: (() => { from: number; to: number } | null) | null): void {
+    this.region = fn;
+  }
+
+  /** First and last frame playback runs between: the visible region when the movie loops it, else the whole movie. */
+  playSpan(): { lo: number; last: number } {
+    const m = this.movie;
+    const whole = { lo: 0, last: Math.max(0, (m?.duration ?? 1) - 1) };
+    const r = m?.loopVisible ? this.region?.() : null;
+    if (!r) return whole;
+    const lo = Math.max(0, Math.min(whole.last, Math.floor(r.from)));
+    const last = Math.max(lo, Math.min(whole.last, Math.floor(r.to)));
+    return { lo, last };
+  }
+
   play(): void {
     const m = this.movie;
     if (!m || this.playing) return;
-    if (m.playback === 'oneshot' && this.frame >= m.duration - 1) this.seek(0);
+    const span = this.playSpan();
+    if (m.loopVisible && (this.frame < span.lo || this.frame > span.last)) this.seek(span.lo);
+    else if (m.playback === 'oneshot' && this.frame >= span.last) this.seek(span.lo);
     this.playing = true;
     this.direction = 1;
     this.playFrom = this.frame;
@@ -264,15 +283,15 @@ export class Engine extends Emitter<EngineEvents> {
     const m = this.movie;
     if (!m || !this.playing) return;
     const elapsed = ((this.ticker.now() - this.playStart) / 1000) * m.fps;
-    const last = Math.max(0, m.duration - 1);
+    const { lo, last } = this.playSpan();
     let f = this.playFrom + this.direction * Math.floor(elapsed);
-    if (f > last || f < 0) {
+    if (f > last || f < lo) {
       if (m.playback === 'oneshot') { this.seek(last); this.stop(); return; }
       if (m.playback === 'pingpong') {
         this.direction = f > last ? -1 : 1;
-        this.playFrom = f > last ? last : 0;
+        this.playFrom = f > last ? last : lo;
       } else {
-        this.playFrom = 0;
+        this.playFrom = lo;
       }
       this.playStart = this.ticker.now();
       f = this.playFrom;

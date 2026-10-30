@@ -301,6 +301,7 @@ export interface MoviePatch {
   transparent?: boolean;
   playback?: PlaybackMode;
   addKeyAtStart?: boolean;
+  loopVisible?: boolean;
 }
 
 export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
@@ -331,6 +332,7 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
   if (patch.transparent !== undefined) next.transparent = patch.transparent;
   if (patch.playback !== undefined) next.playback = patch.playback;
   if (patch.addKeyAtStart !== undefined) next.addKeyAtStart = patch.addKeyAtStart;
+  if (patch.loopVisible !== undefined) next.loopVisible = patch.loopVisible;
   return next;
 }
 

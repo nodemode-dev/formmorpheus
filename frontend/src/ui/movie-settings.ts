@@ -44,6 +44,7 @@ export class MovieSettings {
   private readonly clear = input('checkbox');
   private readonly playback = select(PLAYBACK);
   private readonly addKey = input('checkbox');
+  private readonly loopVisible = input('checkbox');
   private forceCustom = false;
 
   constructor(private readonly engine: Engine) {
@@ -77,7 +78,7 @@ export class MovieSettings {
     const swatch = el<HTMLElement>('<div class="fm-ms-pair"></div>');
     swatch.appendChild(this.bg);
     this.panes[1].append(row('Background', swatch), row('Transparent background', toggleOf(this.clear)));
-    this.panes[2].append(row('Playback', this.playback), row('Add keyframe at start', toggleOf(this.addKey)));
+    this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)));
 
     this.pop.body.append(strip, ...this.panes);
     this.wire();
@@ -129,6 +130,7 @@ export class MovieSettings {
     this.bg.addEventListener('change', () => this.engine.endGesture());
     this.clear.addEventListener('change', () => this.run('Transparent Background', { transparent: this.clear.checked }));
     this.playback.addEventListener('change', () => this.run('Playback', { playback: this.playback.value as PlaybackMode }));
+    this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
   }
 
@@ -155,5 +157,6 @@ export class MovieSettings {
     setClass(this.bg.parentElement, 'is-off', m.transparent);
     this.put(this.playback, m.playback, true);
     setChecked(this.addKey, m.addKeyAtStart);
+    setChecked(this.loopVisible, !!m.loopVisible);
   }
 }

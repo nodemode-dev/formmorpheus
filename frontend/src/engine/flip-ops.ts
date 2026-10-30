@@ -15,7 +15,9 @@ function frames(c: Content, row: number, fn: (f: FlipbookFrame[]) => FlipbookFra
 }
 
 function freshLayers(layers: DrawingLayer[]): DrawingLayer[] {
-  return layers.map((l) => ({ ...l, id: uid('l') }));
+  const ids = new Map(layers.map((l) => [l.id, uid('l')]));
+  // a group's members name it in `parent`, so the copies must name the copied group
+  return layers.map((l) => ({ ...l, id: ids.get(l.id)!, ...(l.parent && ids.has(l.parent) ? { parent: ids.get(l.parent) } : {}) }));
 }
 
 function copyFrame(f: FlipbookFrame): FlipbookFrame {
@@ -80,7 +82,7 @@ export function moveFlipTrack(c: Content, row: number, to: number): Content {
   return { ...c, flip: list };
 }
 
-export function patchFlipTrack(c: Content, row: number, patch: Partial<Pick<FlipTrack, 'name' | 'hidden' | 'opacity' | 'blend' | 'highlight'>>): Content {
+export function patchFlipTrack(c: Content, row: number, patch: Partial<Pick<FlipTrack, 'name' | 'hidden' | 'opacity' | 'blend' | 'highlight' | 'mask' | 'maskInvert'>>): Content {
   return rows(c, row, (t) => ({ ...t, ...patch }));
 }
 
@@ -104,7 +106,9 @@ export function flipbookToTracks(movie: Movie, id: string): { movie: Movie; ids:
       const f = t.frames[fi];
       const d = makeContent('drawing', fb.start + at, run, {
         name: `${t.name} ${fi + 1}`, layers: freshLayers(f.layers), transform: { ...fb.transform }, opacity: fb.opacity * t.opacity,
-        blend: t.blend, highlight: t.highlight, keys: shiftKeys(fb, -at).keys, mask: fb.mask, maskInvert: fb.maskInvert,
+        blend: t.blend, highlight: t.highlight, keys: shiftKeys(fb, -at).keys,
+        // a masking row keeps masking the track made from the row below it
+        mask: t.mask && t.mask !== 'none' ? t.mask : fb.mask, maskInvert: t.mask && t.mask !== 'none' ? !!t.maskInvert : fb.maskInvert,
       });
       items.push(d);
       ids.push(d.id);
@@ -138,12 +142,15 @@ export function tracksToFlipbook(movie: Movie, ids: string[]): { movie: Movie; i
     }
     // rows loop, so a row that ends early is padded with a blank frame to the common end
     if (at < stop) out.push({ id: uid('f'), hold: stop - at, layers: [drawingLayer()] });
-    return { ...flipTrack(sources.length > 1 ? sources[i].name : `Track ${i + 1}`, 1), frames: out };
+    const row: FlipTrack = { ...flipTrack(sources.length > 1 ? sources[i].name : `Track ${i + 1}`, 1), frames: out };
+    // with several rows a Drawing's mask is a row mask again (the inverse of flipbookToTracks)
+    if (sources.length > 1 && (list[0].mask === 'alpha' || list[0].mask === 'luminance')) { row.mask = list[0].mask; row.maskInvert = list[0].maskInvert; }
+    return row;
   });
   const topIndex = movie.tracks.findIndex((t) => t.content.some((c) => idSet.has(c.id)));
   // the first Drawing lends its placement and keys (drawings made by flipbookToTracks all share them)
   const lead = picked[0][0];
-  const fb = makeContent('flipbook', start, stop - start, { name: 'Flipbook', flip, transform: { ...lead.transform }, keys: shiftKeys(lead, lead.start - start).keys, mask: lead.mask, maskInvert: lead.maskInvert });
+  const fb = makeContent('flipbook', start, stop - start, { name: 'Flipbook', flip, transform: { ...lead.transform }, keys: shiftKeys(lead, lead.start - start).keys, mask: sources.length > 1 ? 'none' : lead.mask, maskInvert: sources.length > 1 ? false : lead.maskInvert });
   const stripped = deleteContent(movie, picked.flat().map((c) => c.id));
   const host = stripped.tracks[topIndex];
   return { movie: placeContent(stripped, host?.id ?? null, fb, Math.max(0, topIndex)).movie, id: fb.id };

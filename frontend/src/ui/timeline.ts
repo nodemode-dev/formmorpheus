@@ -206,6 +206,14 @@ export class TimelineView {
     this.schedule();
   }
 
+  /** First and last frame fully in view (for "loop only the visible region"). */
+  visibleRange(): { from: number; to: number } | null {
+    if (this.width <= 0) return null;
+    const from = Math.ceil(this.start);
+    const to = Math.floor(this.start + (this.width - LEFT - RIGHT) / this.ppf) - 1;
+    return to > from ? { from, to } : null;
+  }
+
   fit(): void {
     const m = this.engine.movie;
     if (!m || this.width <= 0) return;
@@ -385,7 +393,10 @@ export class TimelineView {
       if (isMajor) {
         c.fillStyle = p.muted;
         const label = seconds ? `${Math.round(f / m.fps)}s` : String(f);
-        c.fillText(label, x + 3, 5);
+        // Left-aligned whatever the page direction; a label that would pass the movie's end (or the right edge) ends at its tick instead.
+        const lw = c.measureText(label).width;
+        c.textAlign = x + 3 + lw > Math.min(this.width, this.fx(m.duration)) - 2 ? 'right' : 'left';
+        c.fillText(label, c.textAlign === 'left' ? x + 3 : x - 3, 5);
       }
     }
     const endX = this.fx(m.duration);
@@ -522,6 +533,7 @@ export class TimelineView {
       if (!t.hidden) { c.beginPath(); c.moveTo(x0 + 10.5, y + 12); c.lineTo(x0 + 12.5, y + 14); c.lineTo(x0 + 16, y + 9.5); c.stroke(); }
       c.fillStyle = p.text;
       c.textBaseline = 'middle';
+      c.textAlign = 'left';   // not the page direction: the chip sits at the block's left edge
       c.save();
       c.beginPath();
       c.rect(x0 + 19, y + 5, tw - 15, 15);

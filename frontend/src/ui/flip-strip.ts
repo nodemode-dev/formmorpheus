@@ -2,6 +2,10 @@
 // Built once; refresh() patches rows and cells in place by key and never rebuilds a mounted subtree.
 import { addFlipTrack, clearFrame, deleteFlipTrack, deleteFrame, duplicateFrame, insertFrame, moveFlipTrack, pasteFrames, patchFlipTrack, setHold } from '../engine/flip-ops';
 import { flipLength, flipStartOf } from '../engine/model';
+import { isMaskRow } from '../engine/flip-draw';
+import { flipDuration } from '../engine/flip-ops';
+import { FlipPreview } from './flip-preview';
+import { loadPrefs } from './prefs';
 import type { Content, FlipTrack, FlipbookFrame } from '../engine/types';
 import { el, patchList, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { icon } from './icons';
@@ -17,6 +21,9 @@ export interface StripHost {
   togglePlay(): void;
   thumb(row: number, index: number, w: number, h: number): CanvasImageSource | null;
   fps(): number;
+  /** The mini preview: the movie size, and a loop frame drawn (live frame included) into a scaled context. */
+  movieSize(): { w: number; h: number } | null;
+  drawPreview(ctx: CanvasRenderingContext2D, w: number, h: number, local: number): void;
 }
 
 const COL = 36;
@@ -35,6 +42,7 @@ const ICO = {
   copy: svg('<rect x="8.5" y="8.5" width="12" height="12" rx="2.2"/><path d="M15.5 8.5V5.7a2.2 2.2 0 0 0-2.2-2.2H5.7a2.2 2.2 0 0 0-2.2 2.2v7.6a2.2 2.2 0 0 0 2.2 2.2h2.8"/>'),
   paste: svg('<rect x="5" y="5" width="14" height="16" rx="2.2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 12h6M9 16h4"/>'),
   dup: svg('<rect x="3.5" y="7" width="11" height="13" rx="2.2"/><path d="M9 4h9a2.5 2.5 0 0 1 2.5 2.5V16"/>'),
+  preview: svg('<rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="M10 9.4v5.2l4.4-2.6z" fill="currentColor"/>'),
   tracks: svg('<rect x="3" y="4" width="18" height="4.4" rx="1.4"/><rect x="3" y="10" width="18" height="4.4" rx="1.4"/><rect x="3" y="16" width="18" height="4.4" rx="1.4"/>'),
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>',
 };
@@ -64,6 +72,8 @@ export class FlipStrip {
   private pressTimer = 0;
   private suppressClick = false;
   private ro: ResizeObserver | null = null;
+  readonly preview: FlipPreview;
+  private previewBtn: HTMLElement | null = null;
   private readonly cm: {
     cut: ReturnType<typeof tile>; copy: ReturnType<typeof tile>; paste: ReturnType<typeof tile>; dup: ReturnType<typeof tile>;
     hold: ReturnType<typeof popField>; clear: ReturnType<typeof popRow>; del: ReturnType<typeof popRow>; ins: ReturnType<typeof popRow>;
@@ -71,6 +81,7 @@ export class FlipStrip {
   private readonly rm: {
     rename: ReturnType<typeof popRow>; toggle: ReturnType<typeof popRow>; up: ReturnType<typeof popRow>; down: ReturnType<typeof popRow>; del: ReturnType<typeof popRow>;
     range: HTMLInputElement; pct: HTMLElement;
+    maskNone: ReturnType<typeof popRow>; maskAlpha: ReturnType<typeof popRow>; maskLuma: ReturnType<typeof popRow>; invert: ReturnType<typeof popRow>;
   };
 
   constructor(private readonly host: StripHost) {
@@ -78,7 +89,8 @@ export class FlipStrip {
       `<div class="fm-fs" tabindex="0" role="group" aria-label="Flipbook frames">` +
         `<div class="fm-fs-head"><button class="fm-fs-play" type="button"><span class="fm-fs-play-ico"></span><span class="fm-fs-play-lab">Play</span></button>` +
         `<span class="fm-fs-grip" aria-hidden="true"></span>` +
-        `<button class="fm-fs-ib" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="preview" type="button" title="Mini preview" aria-label="Mini preview">${glyph(ICO.preview, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="track"type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}</button>` +
         `<button class="fm-fs-ib" data-act="frame" type="button" title="Add frame" aria-label="Add frame">${icon('plus', 18)}</button></div>` +
         `<div class="fm-fs-body"><div class="fm-fs-rulerrow"><div class="fm-fs-corner"></div><div class="fm-fs-ruler"><div class="fm-fs-ruler-in"></div></div></div>` +
         `<div class="fm-fs-rows"></div></div></div>`);
@@ -95,6 +107,14 @@ export class FlipStrip {
     this.cm = this.buildCellMenu();
     this.rm = this.buildRowMenu();
     this.wire();
+    this.previewBtn = q(this.root, '[data-act="preview"]');
+    this.preview = new FlipPreview({
+      size: () => this.host.movieSize(),
+      length: () => { const c = this.host.content(); return c ? flipDuration(c) : 0; },
+      fps: () => this.host.fps(),
+      draw: (ctx, w, h, local) => this.host.drawPreview(ctx, w, h, local),
+    });
+    this.preview.onChange(() => this.paint());
     this.ro = new ResizeObserver(() => { this.measure(); this.paint(); });
     this.ro.observe(this.ruler);
     this.refresh();
@@ -111,6 +131,7 @@ export class FlipStrip {
   dispose(): void {
     window.clearTimeout(this.pressTimer);
     this.ro?.disconnect();
+    this.preview.dispose();
     this.cellMenu.hide();
     this.rowMenu.hide();
     this.cellMenu.el.remove();
@@ -178,6 +199,8 @@ export class FlipStrip {
     });
     setClass(this.rows, 'is-scroll', list.length > 3);
     setHidden(this.root, !c);
+    if (this.previewBtn) setClass(this.previewBtn, 'is-on', this.preview.isOn());
+    this.preview.sync(!!c);
   }
 
   private createRow(_it: RowItem): HTMLElement {
@@ -195,6 +218,7 @@ export class FlipStrip {
     setText(q(node, '.fm-fs-name'), t.name);
     setClass(label, 'is-active', r === ar);
     setClass(node, 'is-hidden', t.hidden);
+    setClass(node, 'is-mask', isMaskRow(t));
     if (label.dataset.hl !== t.highlight) label.dataset.hl = t.highlight;
     const inner = q<HTMLElement>(node, '.fm-fs-lane-in');
     const lo = Math.floor(this.sx / COL) - 6;
@@ -221,7 +245,7 @@ export class FlipStrip {
   }
 
   private drawCell(cell: HTMLElement, c: CellItem): void {
-    const sig = c.f.layers.map((l) => `${l.id}:${l.pixels ?? ''}:${l.visible ? 1 : 0}:${l.opacity}`).join('|') + `#${Math.max(1, c.f.hold)}`;
+    const sig = c.f.layers.map((l) => `${l.id}:${l.pixels ?? ''}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|') + `#${Math.max(1, c.f.hold)}`;
     if (cell.dataset.sig === sig) return;
     let cv = this.shots.get(cell);
     if (!cv) {
@@ -451,8 +475,28 @@ export class FlipStrip {
     down.el.addEventListener('click', () => this.rowAction('down'));
     const del = popRow('delete', 'Delete track', { danger: true });
     del.el.addEventListener('click', () => this.rowAction('del'));
-    this.rowMenu.body.append(rename.el, op, toggle.el, popSep(), up.el, down.el, popSep(), del.el);
-    return { rename, toggle, up, down, del, range, pct };
+    // a masking row cuts the row below it and is not drawn itself
+    const setMask = (mask: 'none' | 'alpha' | 'luminance'): void => {
+      const id = this.rowTarget;
+      const hit = id ? this.find(id) : null;
+      this.rowMenu.hide();
+      if (hit) this.host.run('Row mask', (c) => patchFlipTrack(c, hit.r, { mask }));
+    };
+    const maskNone = popRow(null, 'No mask', { check: true });
+    maskNone.el.addEventListener('click', () => setMask('none'));
+    const maskAlpha = popRow(null, 'Alpha mask', { check: true });
+    maskAlpha.el.addEventListener('click', () => setMask('alpha'));
+    const maskLuma = popRow(null, 'Luminance mask', { check: true });
+    maskLuma.el.addEventListener('click', () => setMask('luminance'));
+    const invert = popRow(null, 'Invert mask', { check: true });
+    invert.el.addEventListener('click', () => {
+      const id = this.rowTarget;
+      const hit = id ? this.find(id) : null;
+      this.rowMenu.hide();
+      if (hit) this.host.run('Invert row mask', (c) => patchFlipTrack(c, hit.r, { maskInvert: !hit.t.maskInvert }));
+    });
+    this.rowMenu.body.append(rename.el, op, toggle.el, popSep(), maskNone.el, maskAlpha.el, maskLuma.el, invert.el, popSep(), up.el, down.el, popSep(), del.el);
+    return { rename, toggle, up, down, del, range, pct, maskNone, maskAlpha, maskLuma, invert };
   }
 
   private openCellMenu(tg: { track: string; frame: string }, x: number, y: number): void {
@@ -475,6 +519,12 @@ export class FlipStrip {
     setText(this.rm.pct, `${pct}%`);
     setStyleVar(this.rm.range, '--fm-pct', `${pct}%`);
     this.rm.toggle.setLabel(hit.t.hidden ? 'Show' : 'Hide');
+    const mk = hit.t.mask ?? 'none';
+    this.rm.maskNone.setChecked(mk === 'none');
+    this.rm.maskAlpha.setChecked(mk === 'alpha');
+    this.rm.maskLuma.setChecked(mk === 'luminance');
+    this.rm.invert.setChecked(!!hit.t.maskInvert);
+    this.rm.invert.setDisabled(mk === 'none');
     this.rm.up.setDisabled(hit.r === 0);
     this.rm.down.setDisabled(hit.r === hit.c.flip.length - 1);
     this.rm.del.setDisabled(hit.c.flip.length <= 1);
@@ -487,7 +537,8 @@ export class FlipStrip {
     this.playBtn.addEventListener('click', () => this.host.togglePlay());
     this.head.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
-      if (act === 'frame') this.addFrame();
+      if (act === 'preview') this.preview.toggle();
+      else if (act === 'frame') this.addFrame();
       else if (act === 'track') this.addTrack();
     });
 
@@ -538,6 +589,39 @@ export class FlipStrip {
       }, LONG_PRESS);
     });
     const cancel = (): void => window.clearTimeout(this.pressTimer);
+    // drag across the frame cells to scrub through frames; the Scrub speed setting scales frames per distance
+    this.rows.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const tg = this.cellAt(e.target as HTMLElement);
+      const hit = tg ? this.find(tg.track, tg.frame) : null;
+      if (!hit || hit.i < 0) return;
+      const s = loadPrefs().scrubSpeed;
+      const k = s === 'precise' ? 0.4 : s === 'fast' ? 2 : 1;
+      const r = hit.r, i0 = hit.i, x0 = e.clientX;
+      let moved = false, last = i0;
+      const move = (m: PointerEvent): void => {
+        const dx = m.clientX - x0;
+        if (!moved) {
+          if (Math.abs(dx) < 5) return;
+          moved = true;
+          this.suppressClick = true;
+          cancel();
+        }
+        const t = this.host.content()?.flip[r];
+        if (!t) return;
+        const to = Math.max(0, Math.min(t.frames.length - 1, i0 + Math.round((dx * k) / COL)));
+        if (to !== last) { last = to; this.host.select(r, to); }
+      };
+      const up = (): void => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        window.setTimeout(() => { this.suppressClick = false; }, 60);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
     this.rows.addEventListener('pointerup', cancel);
     this.rows.addEventListener('pointercancel', cancel);
     this.rows.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) cancel(); });
