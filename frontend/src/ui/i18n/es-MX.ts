@@ -25,4 +25,6 @@ export const esMX: Record<string, string> = {
   'Items stay here for 30 days, then are deleted for good.': "Los elementos permanecen aquí 30 días y después se borran definitivamente.",
   'Nothing was deleted lately.': "No se ha borrado nada recientemente.", 'Recently Deleted': "Borrados recientemente", 'Empty Recently Deleted?': "¿Vaciar Borrados recientemente?",
   "right-click to add to favorites": "clic derecho para agregar a favoritos",
+  'Delete Bone': "Borrar hueso", 'Delete bone': "Borrar hueso", 'Delete frames': "Borrar fotogramas", 'Delete key': "Borrar clave", 'Delete Camera Keyframe': "Borrar fotograma clave de la cámara", 'Delete set': "Borrar conjunto", 'Add Bone': "Agregar hueso", 'Add keyframes first, then open the Graph.': "Agrega primero fotogramas clave y luego abre el gráfico.",
+  'Felt tip': "Plumón", 'Highlighter': "Marcatextos", 'Gel pen': "Pluma de gel", 'Sandpaper': "Lija", 'Concrete': "Concreto", 'Spray can': "Lata de aerosol", 'Timecode': "Código de tiempo", 'Reorder palette': "Reordenar paleta",
 };
