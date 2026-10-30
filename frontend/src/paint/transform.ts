@@ -411,3 +411,134 @@ export function refineGrid(grid: Point[][], n: number): Point[][] {
   }
   return res;
 }
+
+// ---------------------------------------------------------------- finer mesh warp
+
+/** Extra tangent at a mesh node, in destination pixels, added to the smooth automatic one. */
+export interface Bend { u: Point; v: Point }
+
+export const MESH_MIN = 4;
+export const MESH_MAX = 8;
+
+export function zeroBends(rows: number, cols: number): Bend[][] {
+  return Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ u: { x: 0, y: 0 }, v: { x: 0, y: 0 } })));
+}
+
+/** An n x n control grid laid evenly over a quad (corners tl, tr, br, bl). */
+export function makeGrid(q4: Point[], n: number): Point[][] {
+  const out: Point[][] = [];
+  for (let i = 0; i < n; i++) {
+    const v = i / (n - 1);
+    const l = { x: q4[0].x + (q4[3].x - q4[0].x) * v, y: q4[0].y + (q4[3].y - q4[0].y) * v };
+    const r = { x: q4[1].x + (q4[2].x - q4[1].x) * v, y: q4[1].y + (q4[2].y - q4[1].y) * v };
+    const row: Point[] = [];
+    for (let j = 0; j < n; j++) { const u = j / (n - 1); row.push({ x: l.x + (r.x - l.x) * u, y: l.y + (r.y - l.y) * u }); }
+    out.push(row);
+  }
+  return out;
+}
+
+/** The same warped surface on an n x n grid, so changing the density keeps the shape. */
+export function resampleGrid(grid: Point[][], n: number): Point[][] {
+  const rows = grid.length, cols = rows ? grid[0].length : 0;
+  if (rows === n && cols === n) return grid.map((r) => r.map((p) => ({ ...p })));
+  const K = 8;
+  const fine = refineGrid(grid, K);
+  const fr = fine.length - 1, fc = fine[0].length - 1;
+  const out: Point[][] = [];
+  for (let i = 0; i < n; i++) {
+    const y = (i / (n - 1)) * fr, y0 = Math.min(fr - 1, Math.floor(y)), ty = y - y0;
+    const row: Point[] = [];
+    for (let j = 0; j < n; j++) {
+      const x = (j / (n - 1)) * fc, x0 = Math.min(fc - 1, Math.floor(x)), tx = x - x0;
+      const a = fine[y0][x0], b = fine[y0][x0 + 1], c = fine[y0 + 1][x0], d = fine[y0 + 1][x0 + 1];
+      row.push({
+        x: (a.x * (1 - tx) + b.x * tx) * (1 - ty) + (c.x * (1 - tx) + d.x * tx) * ty,
+        y: (a.y * (1 - tx) + b.y * tx) * (1 - ty) + (c.y * (1 - tx) + d.y * tx) * ty,
+      });
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** The automatic (Catmull-Rom) tangents at node (i, j) along its row and its column. */
+export function autoTangents(grid: Point[][], i: number, j: number): { u: Point; v: Point } {
+  const rows = grid.length, cols = grid[0].length;
+  const g = (a: number, b: number) => grid[a < 0 ? 0 : a > rows - 1 ? rows - 1 : a][b < 0 ? 0 : b > cols - 1 ? cols - 1 : b];
+  return {
+    u: { x: 0.5 * (g(i, j + 1).x - g(i, j - 1).x), y: 0.5 * (g(i, j + 1).y - g(i, j - 1).y) },
+    v: { x: 0.5 * (g(i + 1, j).x - g(i - 1, j).x), y: 0.5 * (g(i + 1, j).y - g(i - 1, j).y) },
+  };
+}
+
+/** Positions of a node's two bending handles: one full tangent out from the node, along its row and its column. */
+export function bendHandles(grid: Point[][], bend: Bend[][] | null, i: number, j: number): { u: Point; v: Point } {
+  const t = autoTangents(grid, i, j);
+  const b = bend?.[i]?.[j];
+  const p = grid[i][j];
+  return {
+    u: { x: p.x + t.u.x + (b?.u.x ?? 0), y: p.y + t.u.y + (b?.u.y ?? 0) },
+    v: { x: p.x + t.v.x + (b?.v.x ?? 0), y: p.y + t.v.y + (b?.v.y ?? 0) },
+  };
+}
+
+/** The bend that puts a handle at `at` (the inverse of bendHandles). */
+export function bendFor(grid: Point[][], i: number, j: number, which: 'u' | 'v', at: Point): Point {
+  const t = autoTangents(grid, i, j)[which];
+  const p = grid[i][j];
+  return { x: at.x - p.x - t.x, y: at.y - p.y - t.y };
+}
+
+/**
+ * refineGrid with per-node bending: each cell is a cubic Hermite whose tangents are the
+ * automatic ones plus the node's bend, so a zero bend gives exactly refineGrid.
+ */
+export function refineGridBent(grid: Point[][], bend: Bend[][] | null, n: number): Point[][] {
+  if (!bend) return refineGrid(grid, n);
+  const rows = grid.length, cols = rows ? grid[0].length : 0;
+  if (n <= 1 || rows < 2 || cols < 2) return grid.map((r) => r.map((p) => ({ ...p })));
+  const cl = (v: number, hi: number) => (v < 0 ? 0 : v > hi ? hi : v);
+  const herm = (p1: number, m1: number, p2: number, m2: number, t: number) => {
+    const t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * p1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * p2 + (t3 - t2) * m2;
+  };
+  const nr = (rows - 1) * n + 1, nc = (cols - 1) * n + 1;
+  const mid: Point[][] = [];
+  const bv: Point[][] = [];
+  for (let i = 0; i < rows; i++) {
+    const out: Point[] = [];
+    const bo: Point[] = [];
+    for (let c = 0; c < nc; c++) {
+      const j = Math.min(cols - 2, Math.floor(c / n)), t = (c - j * n) / n;
+      const g = (k: number) => grid[i][cl(k, cols - 1)];
+      const b1 = bend[i][j], b2 = bend[i][j + 1];
+      const m1x = 0.5 * (g(j + 1).x - g(j - 1).x) + b1.u.x, m1y = 0.5 * (g(j + 1).y - g(j - 1).y) + b1.u.y;
+      const m2x = 0.5 * (g(j + 2).x - g(j).x) + b2.u.x, m2y = 0.5 * (g(j + 2).y - g(j).y) + b2.u.y;
+      out.push({ x: herm(g(j).x, m1x, g(j + 1).x, m2x, t), y: herm(g(j).y, m1y, g(j + 1).y, m2y, t) });
+      const s = t * t * (3 - 2 * t);
+      bo.push({ x: b1.v.x + (b2.v.x - b1.v.x) * s, y: b1.v.y + (b2.v.y - b1.v.y) * s });
+    }
+    mid.push(out);
+    bv.push(bo);
+  }
+  const res: Point[][] = [];
+  for (let r = 0; r < nr; r++) {
+    const i = Math.min(rows - 2, Math.floor(r / n)), t = (r - i * n) / n;
+    const out: Point[] = [];
+    for (let c = 0; c < nc; c++) {
+      const g = (k: number) => mid[cl(k, rows - 1)][c];
+      const b1 = bv[i][c], b2 = bv[i + 1][c];
+      const m1x = 0.5 * (g(i + 1).x - g(i - 1).x) + b1.x, m1y = 0.5 * (g(i + 1).y - g(i - 1).y) + b1.y;
+      const m2x = 0.5 * (g(i + 2).x - g(i).x) + b2.x, m2y = 0.5 * (g(i + 2).y - g(i).y) + b2.y;
+      out.push({ x: herm(g(i).x, m1x, g(i + 1).x, m2x, t), y: herm(g(i).y, m1y, g(i + 1).y, m2y, t) });
+    }
+    res.push(out);
+  }
+  return res;
+}
+
+/** Move points by a whole-pixel step (nudge). */
+export function nudgePoints(pts: Point[], dx: number, dy: number): Point[] {
+  return pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+}

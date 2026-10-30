@@ -135,6 +135,20 @@ export interface PaintLayer {
   raster: Raster;
   /** Bumped on every pixel change; caches compare it. */
   version: number;
+  /** A layer group: no pixels (the raster is a 1 px placeholder); the entries naming it as parent are its content. */
+  group?: boolean;
+  parent?: string | null;
+  collapsed?: boolean;
+  mask?: PaintMask | null;
+  /** Asset id the mask pixels came from; null for a new or changed mask until it is saved. */
+  maskSource?: string | null;
+}
+
+/** A layer mask: an opaque grey raster (255 reveals, 0 hides). Replace the object to change `on` or `linked`; never edit it. */
+export interface PaintMask {
+  raster: Raster;
+  on: boolean;
+  linked: boolean;
 }
 
 export type Interpolation = 'nearest' | 'bilinear' | 'bicubic';

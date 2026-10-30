@@ -6,6 +6,7 @@
 
 import type { Engine } from '../engine/engine';
 import * as flipOps from '../engine/flip-ops';
+import { hasRowMask as flipHasRowMask } from '../engine/flip-draw';
 import { flipIndexAt, flipLength, flipStartOf, locate, uid } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
@@ -14,19 +15,25 @@ import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById } from
 import { PaintDoc } from '../paint/doc';
 import { historyNotice } from '../paint/history';
 import { baseDiameter, setPressureCurve } from '../paint/dynamics';
-import { floodFill } from '../paint/fill';
 import { PenInput } from '../paint/input';
 import { Stroke } from '../paint/stroke';
 import type { Brush, Mask, PaintTool, Point, Rect, RGB } from '../paint/types';
 import { BrushPanel } from './brush-panel';
 import { ColourPanel } from './colour-panel';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
+import { t as tr } from './i18n';
 import { FlipStrip, type StripHost } from './flip-strip';
 import { icon } from './icons';
 import { LayersPanel } from './layers-panel';
 import { PaintSettings, loadPaintPrefs, savePaintPrefs, type PaintPrefs } from './paint-settings';
 import { PaintTools, type Interaction, type ToolHost } from './paint-tools';
+import { ColourDrop } from './paint-drop';
+import { HoldRepeat, SpinDrag, resetRotation } from './paint-gestures';
+import { Loupe } from './paint-loupe';
+import { PredictTail } from './paint-predict';
+import { anchorOffset, canvasToScreen, isQuickPinchIn, panDelta, pinchView, rotBounds, screenToCanvas, unrotate, wrapAngle } from '../paint/viewmath';
 import { toast } from './toast';
+import { BrushSlots } from './brush-slots';
 
 interface BrushState { size: number; opacity: number }
 
@@ -101,7 +108,7 @@ export class PaintView {
   private outline: Point[][] = [];
   private maskOverlay: OffscreenCanvas | null = null;
 
-  private view = { scale: 1, ox: 0, oy: 0 };
+  private view = { scale: 1, ox: 0, oy: 0, rot: 0 };
   private cssW = 0;
   private cssH = 0;
   private dpr = 1;
@@ -112,12 +119,25 @@ export class PaintView {
 
   private readonly input: PenInput;
   private stroke: Stroke | null = null;
+  /** Paint target of the live stroke: a layer id, or `mask:<id>` while a mask is painted. */
+  private strokeId = '';
+  /** Markers for the four remembered size and opacity values of the brush. */
+  private slots: BrushSlots | null = null;
   private strokePointer = -1;
   private readonly touches = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
-  private gesture: { d: number; cx: number; cy: number; scale: number; ox: number; oy: number; count: number; t: number; moved: boolean } | null = null;
+  private gesture: { d: number; ang: number; cx: number; cy: number; scale: number; rot: number; anchor: Point; d0: number; count: number; t: number; moved: boolean } | null = null;
   private pan: { x: number; y: number; ox: number; oy: number; id: number } | null = null;
   private space = false;
-  private drop: { id: number; x: number; y: number; dragging: boolean } | null = null;
+  private drop: { id: number; x: number; y: number; dragging: boolean; wait: number; px: number; py: number } | null = null;
+  private readonly spin = new SpinDrag();
+  private readonly holdUndoBtn = new HoldRepeat(420, 80);
+  private readonly holdRedoBtn = new HoldRepeat(420, 80);
+  private readonly holdTouch = new HoldRepeat(450, 110);
+  private pickHold: { id: number; x: number; y: number; timer: number } | null = null;
+  private readonly tail = new PredictTail();
+  private tailFrom: Point | null = null;
+  private loupe!: Loupe;
+  private dropper!: ColourDrop;
   private live: ((ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => void) | null = null;
   private interaction: Interaction | null = null;
 
@@ -184,6 +204,13 @@ export class PaintView {
     setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y })));
     this.brushIds = readJson<Record<PaintTool, string>>(TOOL_KEY, { paint: DEFAULT_PAINT, smudge: DEFAULT_SMUDGE, erase: DEFAULT_ERASE });
     this.brushStates = readJson<Record<string, BrushState>>(STATE_KEY, {});
+    this.slots = new BrushSlots({ size: this.sizeSlider, opacity: this.opacitySlider }, {
+      key: () => `${this.tool}:${this.brush().id}`,
+      defaults: () => this.brush().presets,
+      current: () => this.state(this.brush()),
+      recall: (kind, v) => this.setState(kind === 'size' ? { size: v } : { opacity: Math.max(0.01, v) }),
+      say: (t) => this.say(t),
+    });
 
     this.input = new PenInput({ toCanvas: (x, y) => this.toCanvas(x, y), smoothing: 0, fingerPaints: this.prefs.fingerPaints });
 
@@ -201,8 +228,22 @@ export class PaintView {
     });
     this.strip = new FlipStrip(this.stripHost());
     this.tools = new PaintTools(this.toolHost());
-    for (const p of [this.colour.root, this.brushPanel.root, this.layersPanel.root, this.settings.root, this.strip.root, this.tools.root]) this.root.appendChild(p);
+    for (const p of [this.colour.root, this.brushPanel.root, this.layersPanel.root, this.settings.root, this.strip.root, this.strip.preview.root, this.tools.root]) this.root.appendChild(p);
 
+    this.loupe = new Loupe({
+      source: this.canvas,
+      dpr: () => this.dpr,
+      sample: (x, y) => {
+        const doc = this.doc;
+        if (!doc) return null;
+        const p = this.toCanvas(x, y);
+        const c = doc.sampleColor(Math.floor(p.x), Math.floor(p.y), true);
+        return c.a === 0 ? null : { r: c.r, g: c.g, b: c.b };
+      },
+    });
+    this.dropper = new ColourDrop({ doc: () => this.doc, selection: () => this.selection, toCanvas: (x, y) => this.toCanvas(x, y), root: this.root });
+    this.root.appendChild(this.loupe.root);
+    this.root.appendChild(this.dropper.bubble);
     this.wire();
     this.setColourChip(this.colour.get());
     new ResizeObserver(() => this.resize()).observe(this.root);
@@ -270,9 +311,10 @@ export class PaintView {
     const s = this.stroke, doc = this.doc;
     this.stroke = null;
     this.strokePointer = -1;
+    this.clearTail();
     if (!s || !doc) return;
     const r = s.cancel();
-    if (r) doc.markDirty(doc.active, r);
+    if (r) doc.markDirty(this.strokeId || doc.active, r);
     doc.settle();
   }
 
@@ -281,6 +323,11 @@ export class PaintView {
     this.stopPlay();
     for (const p of [this.colour, this.brushPanel, this.layersPanel, this.settings]) p.close();
     this.menu.hidden = true;
+    this.dropper.cancel();
+    this.dropper.stopContinue();
+    this.loupe.hide();
+    this.clearPickHold();
+    this.holdTouch.stop();
     this.dropDoc(this.doc);
     this.doc = null;
     this.contentId = null;
@@ -421,7 +468,33 @@ export class PaintView {
       togglePlay: () => { if (this.playTimer) this.stopPlay(); else void this.startPlay(); },
       thumb: (row, index, w, h) => this.frameThumb(row, index, w, h),
       fps: () => this.engine.movie?.fps ?? 24,
+      movieSize: () => { const m = this.engine.movie; return m ? { w: m.width, h: m.height } : null; },
+      drawPreview: (ctx, w, h, local) => this.drawPreview(ctx, w, h, local),
     };
+  }
+
+  /** One loop frame of the open flipbook for the mini preview; the open frame is drawn live. Rows with masks go through the renderer (saved pixels). */
+  private drawPreview(ctx: CanvasRenderingContext2D, w: number, h: number, local: number): void {
+    const c = this.content();
+    const m = this.engine.movie;
+    if (!c || !m || c.kind !== 'flipbook') return;
+    ctx.imageSmoothingQuality = 'high';
+    if (!m.transparent) { ctx.fillStyle = m.background; ctx.fillRect(0, 0, w, h); }
+    if (flipHasRowMask(c)) { this.renderer.thumb(ctx, m, { ...c, offset: 0 }, local + c.offset, w, h); return; }
+    const g = ctx as unknown as OffscreenCanvasRenderingContext2D;
+    ctx.scale(w / m.width, h / m.height);
+    for (let i = c.flip.length - 1; i >= 0; i--) {
+      const t = c.flip[i];
+      if (t.hidden || t.opacity <= 0) continue;
+      const fi = flipIndexAt(t, local + c.offset);
+      if (fi < 0) continue;
+      const f = t.frames[fi];
+      ctx.save();
+      ctx.globalAlpha = t.opacity;
+      const live = i === this.row && fi === this.index && !this.playTimer ? this.doc : this.parked.get(f.id);
+      if (live) live.composite(ctx); else this.renderer.layersInto(g, f.layers, m);
+      ctx.restore();
+    }
   }
 
   /** A frame edit from the strip: the open frame is saved first so the edit sees its pixels; then the open frame is reloaded if it moved or vanished. */
@@ -497,7 +570,7 @@ export class PaintView {
     if (!c || !m || !f) return null;
     const liveDoc = row === this.row && index === this.index && this.doc && !this.playTimer ? this.doc : this.parked.get(f.id) ?? null;
     const live = !!liveDoc;
-    const key = liveDoc ? `live:${liveDoc.layers.map((l) => l.version).join('.')}:${w}x${h}` : `${f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}`).join('|')}:${w}x${h}`;
+    const key = liveDoc ? `live:${liveDoc.layers.map((l) => l.version).join('.')}:${w}x${h}` : `${f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|')}:${w}x${h}`;
     const id = `${row}:${f.id}`;
     const have = this.thumbs.get(id);
     if (have && have.key === key) return have.canvas;
@@ -554,7 +627,7 @@ export class PaintView {
         const f = t.frames[i];
         const parked = this.parked.get(f.id);
         if (!parked && f.layers.every((l) => !l.pixels || !l.visible)) continue;
-        const key = `${parked ? `live:${parked.layers.map((l) => l.version).join('.')}` : f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}`).join('|')}:${o.tint ? colour : ''}:${m.width}x${m.height}`;
+        const key = `${parked ? `live:${parked.layers.map((l) => l.version).join('.')}` : f.layers.map((l) => `${l.pixels}:${l.visible ? 1 : 0}:${l.opacity}:${l.blend}:${l.parent ?? ''}:${l.mask ?? ''}${l.maskOn === false ? 'off' : ''}`).join('|')}:${o.tint ? colour : ''}:${m.width}x${m.height}`;
         const have = this.ghosts.get(f.id);
         if (have && have.key === key) {
           ctx.globalAlpha = o.opacity * (1 - (k - 1) / (count + 1));
@@ -616,6 +689,7 @@ export class PaintView {
     const padX = 72, padTop = 64, padBottom = this.content()?.kind === 'flipbook' ? 200 : 32;
     const s = Math.min((this.cssW - padX * 2) / m.width, (this.cssH - padTop - padBottom) / m.height);
     this.view.scale = Math.max(0.02, s);
+    this.view.rot = 0;
     this.view.ox = (this.cssW - m.width * this.view.scale) / 2;
     this.view.oy = padTop + (this.cssH - padTop - padBottom - m.height * this.view.scale) / 2;
     this.full = true;
@@ -624,19 +698,25 @@ export class PaintView {
 
   private toCanvas(clientX: number, clientY: number): { x: number; y: number } {
     const r = this.canvas.getBoundingClientRect();
-    return { x: (clientX - r.left - this.view.ox) / this.view.scale, y: (clientY - r.top - this.view.oy) / this.view.scale };
+    return screenToCanvas(this.view, clientX - r.left, clientY - r.top);
+  }
+
+  /** Grow the dirty box by a rectangle given in screen pixels. */
+  private addDirty(sr: Rect): void {
+    if (this.dirty) {
+      const x0 = Math.min(this.dirty.x, sr.x), y0 = Math.min(this.dirty.y, sr.y);
+      const x1 = Math.max(this.dirty.x + this.dirty.w, sr.x + sr.w), y1 = Math.max(this.dirty.y + this.dirty.h, sr.y + sr.h);
+      this.dirty = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    } else this.dirty = sr;
   }
 
   private redraw(rect?: Rect): void {
     if (rect && !this.full) {
       const v = this.view;
       const pad = 2;
-      const sr = { x: Math.floor(v.ox + rect.x * v.scale) - pad, y: Math.floor(v.oy + rect.y * v.scale) - pad, w: Math.ceil(rect.w * v.scale) + pad * 2, h: Math.ceil(rect.h * v.scale) + pad * 2 };
-      if (this.dirty) {
-        const x0 = Math.min(this.dirty.x, sr.x), y0 = Math.min(this.dirty.y, sr.y);
-        const x1 = Math.max(this.dirty.x + this.dirty.w, sr.x + sr.w), y1 = Math.max(this.dirty.y + this.dirty.h, sr.y + sr.h);
-        this.dirty = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-      } else this.dirty = sr;
+      const ur = { x: v.ox + rect.x * v.scale, y: v.oy + rect.y * v.scale, w: rect.w * v.scale, h: rect.h * v.scale };
+      const b = rotBounds(ur, v.rot);
+      this.addDirty({ x: Math.floor(b.x) - pad, y: Math.floor(b.y) - pad, w: Math.ceil(b.w) + pad * 2 + 1, h: Math.ceil(b.h) + pad * 2 + 1 });
     } else if (!rect) this.full = true;
     if (this.frameReq) return;
     this.frameReq = requestAnimationFrame(() => { this.frameReq = 0; this.paint(); });
@@ -660,28 +740,34 @@ export class PaintView {
     ctx.fillStyle = getComputedStyle(this.root).getPropertyValue('--fm-paint-backdrop') || '#1b1b1d';
     ctx.fillRect(0, 0, this.cssW, this.cssH);
     const w = m.width * v.scale, h = m.height * v.scale;
+    ctx.setTransform(this.rotM());
     ctx.save();
     roundRect(ctx, v.ox, v.oy, w, h, 12);
     ctx.clip();
     if (m.transparent) { ctx.fillStyle = this.checker(ctx); ctx.fillRect(v.ox, v.oy, w, h); }
     else { ctx.fillStyle = m.background; ctx.fillRect(v.ox, v.oy, w, h); }
-    ctx.setTransform(d * v.scale, 0, 0, d * v.scale, d * v.ox, d * v.oy);
+    ctx.setTransform(this.rotM());
+    ctx.transform(v.scale, 0, 0, v.scale, v.ox, v.oy);
     ctx.imageSmoothingQuality = 'high';
     if (this.playTimer && c.kind === 'flipbook') {
       this.drawRows(ctx, c, m, 'all');
     } else {
-      this.drawOnions(ctx, c, m);
+      // blend primary frame: the ghosts are drawn over the current frame so they read through it
+      const over = this.onion().blendPrimary;
+      if (!over) this.drawOnions(ctx, c, m);
       if (c.kind === 'flipbook') this.drawRows(ctx, c, m, 'below');
-      this.doc.composite(ctx, this.live ?? undefined);
+      this.doc.composite(ctx, this.live ?? undefined, this.canvasRegion(ctx, m));
+      if (over) this.drawOnions(ctx, c, m);
       if (c.kind === 'flipbook') this.drawRows(ctx, c, m, 'above');
     }
+    this.tail.draw(ctx);
     if (this.maskOverlay && this.prefs.maskVisibility > 0) {
       ctx.globalAlpha = this.prefs.maskVisibility;
       ctx.drawImage(this.maskOverlay, 0, 0);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
-    ctx.setTransform(d, 0, 0, d, 0, 0);
+    ctx.setTransform(this.rotM());
     this.drawOutline(ctx);
     this.tools.drawOverlay(ctx, v);
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
@@ -699,7 +785,7 @@ export class PaintView {
   private drawCursor(ctx: CanvasRenderingContext2D): void {
     const p = this.cursor;
     this.cursorBox = null;
-    if (!p || !this.prefs.cursor || this.interaction || this.tools.mode() !== 'paint') return;
+    if (!p || !this.prefs.cursor || this.interaction || this.tools.mode() !== 'paint' || this.loupe.active || this.dropper.active) return;
     const b = this.brush();
     const st = this.state(b);
     const rr = this.cursorRadius(b, st.size);
@@ -712,7 +798,32 @@ export class PaintView {
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.lineWidth = 1;
     ctx.stroke();
-    this.cursorBox = { x: sx - rr - 3, y: sy - rr - 3, w: rr * 2 + 6, h: rr * 2 + 6 };
+    const at = canvasToScreen(this.view, p.x, p.y);
+    this.cursorBox = { x: at.x - rr - 3, y: at.y - rr - 3, w: rr * 2 + 6, h: rr * 2 + 6 };
+  }
+
+  /** Device scale times the canvas rotation: the base matrix every view-space drawing starts from. */
+  /** The part of the picture a dirty repaint touches (the clip, mapped back to movie pixels); undefined for a full repaint. */
+  private canvasRegion(ctx: CanvasRenderingContext2D, m: Movie): Rect | undefined {
+    if (this.full || !this.dirty) return undefined;
+    const boxes = this.cursorBox ? [this.dirty, this.cursorBox] : [this.dirty];
+    const inv = ctx.getTransform().inverse();
+    const d = this.dpr;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const b of boxes) {
+      for (const [px, py] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) {
+        const p = inv.transformPoint({ x: px * d, y: py * d });
+        x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+      }
+    }
+    x0 = Math.max(0, Math.floor(x0) - 2); y0 = Math.max(0, Math.floor(y0) - 2);
+    x1 = Math.min(m.width, Math.ceil(x1) + 2); y1 = Math.min(m.height, Math.ceil(y1) + 2);
+    return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 1, h: 1 };
+  }
+
+  private rotM(): DOMMatrix {
+    const m = new DOMMatrix().scaleSelf(this.dpr);
+    return this.view.rot ? m.rotateSelf((this.view.rot * 180) / Math.PI) : m;
   }
 
   /** Brush outline radius in screen pixels: with dynamic scaling the brush keeps its screen size, else its canvas size. */
@@ -791,8 +902,9 @@ export class PaintView {
     const st = this.state(this.brush());
     setStyleVar(this.sizeSlider, '--v', String(st.size));
     setStyleVar(this.opacitySlider, '--v', String(st.opacity));
-    setTitle(this.sizeSlider, `Brush size ${Math.round(st.size * 100)}%`);
+    setTitle(this.sizeSlider, tr('Brush size {p}%').replace('{p}', String(Math.round(st.size * 100))));
     setTitle(this.opacitySlider, `Brush opacity ${Math.round(st.opacity * 100)}%`);
+    this.slots?.sync();
     setClass(this.root, 'is-side-right', this.prefs.sidebarRight);
     this.syncUndo();
   }
@@ -831,6 +943,7 @@ export class PaintView {
   }
 
   private setTool(t: PaintTool): void {
+    this.dropper.stopContinue();
     if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
     if (this.tool === t && !this.brushPanel.isOpen()) {
       const b = q<HTMLElement>(this.root, `.fm-paint-tool[data-tool="${t}"]`);
@@ -939,11 +1052,12 @@ export class PaintView {
       color: () => this.colour.get(),
       toCanvas: (x, y) => this.toCanvas(x, y),
       view: () => this.view,
+      unrotate: (x, y) => unrotate(this.view, x, y),
       setLive: (fn) => { this.live = fn; this.full = true; this.redraw(); },
       redraw: () => { this.full = true; this.redraw(); },
       setInteraction: (h) => { this.interaction = h; this.cursor = null; this.full = true; this.redraw(); },
       say: (t) => this.say(t),
-      modeChanged: () => { this.closePanels(); this.syncChrome(); },
+      modeChanged: () => { this.dropper.stopContinue(); this.closePanels(); this.syncChrome(); },
     };
   }
 
@@ -998,18 +1112,34 @@ export class PaintView {
 
     // colour: click opens the panel; dragging the chip onto the canvas fills (color drop)
     this.colourBtn.addEventListener('pointerdown', (e) => {
-      this.drop = { id: e.pointerId, x: e.clientX, y: e.clientY, dragging: false };
+      this.drop = { id: e.pointerId, x: e.clientX, y: e.clientY, dragging: false, wait: 0, px: e.clientX, py: e.clientY };
       this.colourBtn.setPointerCapture(e.pointerId);
     });
     this.colourBtn.addEventListener('pointermove', (e) => {
       const d = this.drop;
       if (!d || d.id !== e.pointerId) return;
       if (!d.dragging && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) { d.dragging = true; this.say('Drop on the canvas to fill'); }
+      if (!d.dragging) return;
+      if (this.dropper.active) { this.dropper.drag(e.clientX, e.clientY); return; }
+      // holding still over the picture drops the fill, then a horizontal drag sets its threshold
+      d.px = e.clientX; d.py = e.clientY;
+      clearTimeout(d.wait);
+      if (document.elementFromPoint(e.clientX, e.clientY) === this.canvas) {
+        d.wait = window.setTimeout(() => { if (this.drop === d) this.dropper.begin(d.px, d.py, this.colour.get()); }, 380);
+      }
+    });
+    this.colourBtn.addEventListener('pointercancel', () => {
+      const d = this.drop;
+      this.drop = null;
+      if (d) clearTimeout(d.wait);
+      this.dropper.cancel();
     });
     this.colourBtn.addEventListener('pointerup', (e) => {
       const d = this.drop;
       this.drop = null;
       if (!d || d.id !== e.pointerId) return;
+      clearTimeout(d.wait);
+      if (this.dropper.active) { this.finishDrop(); return; }
       if (d.dragging) { this.colourDrop(e.clientX, e.clientY); return; }
       if (this.colour.isOpen()) this.colour.close();
       else { this.closePanels(this.colour); this.colour.open(this.colourBtn); }
@@ -1031,8 +1161,8 @@ export class PaintView {
     };
     slider(this.sizeSlider, 'size');
     slider(this.opacitySlider, 'opacity');
-    this.undoBtn.addEventListener('click', () => this.undo());
-    this.redoBtn.addEventListener('click', () => this.redo());
+    this.holdUndoBtn.bind(this.undoBtn, () => this.undo());
+    this.holdRedoBtn.bind(this.redoBtn, () => this.redo());
 
     const cv = this.canvas;
     cv.addEventListener('pointerdown', (e) => this.down(e));
@@ -1045,20 +1175,26 @@ export class PaintView {
     cv.addEventListener('dblclick', (e) => { if (this.tools.mode() === 'paint' && e.altKey) this.fit(); });
 
     window.addEventListener('keydown', (e) => this.key(e), true);
-    window.addEventListener('keyup', (e) => { if (e.code === 'Space') this.space = false; }, true);
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space') this.space = false;
+      if (e.key === 'Alt' && this.loupe.active && !this.loupe.held) this.loupe.hide();
+    }, true);
+    window.addEventListener('blur', () => { this.space = false; if (this.loupe.active) this.loupe.hide(); });
   }
 
   private colourDrop(clientX: number, clientY: number): void {
-    const doc = this.doc;
-    if (!doc) return;
-    const p = this.toCanvas(clientX, clientY);
-    if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
-    const layer = doc.activeLayer();
-    const patch = floodFill(layer.raster, layer.raster, Math.floor(p.x), Math.floor(p.y), this.colour.get(), 0.3, this.selection, layer.id);
-    if (!patch) return;
-    doc.markDirty(layer.id, patch.rect);
-    doc.commitPatch(patch, 'Fill');
-    this.colour.commit(this.colour.get());
+    if (!this.dropper.begin(clientX, clientY, this.colour.get())) { this.dropper.cancel(); return; }
+    this.finishDrop();
+  }
+
+  /** The pointer lifted on a color drop: keep the fill and stay in continue-fill. */
+  private finishDrop(): void {
+    const c = this.colour.get();
+    const was = this.dropper.continuing;
+    if (!this.dropper.end()) return;
+    this.syncUndo();
+    this.colour.commit(c);
+    if (!was) this.say('Tap other areas to keep filling');
   }
 
   /** Undo and redo never run under a live stroke, transform or filter (their patches would be built on stale bytes). */
@@ -1076,6 +1212,10 @@ export class PaintView {
     if (!this.isOpen()) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'Alt') {
+      if (this.lastMouse && !this.stroke && !this.interaction && this.tools.mode() === 'paint' && !e.repeat) this.showLoupe(this.lastMouse.x, this.lastMouse.y, false);
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     let handled = true;
     if (mod && e.key.toLowerCase() === 'z') { if (e.shiftKey) this.redo(); else this.undo(); }
@@ -1097,6 +1237,17 @@ export class PaintView {
     else if (e.key === 'l' || e.key === 'L') q<HTMLButtonElement>(this.root, '.fm-paint-tool[data-tool="layers"]').click();
     else if (e.key === '[' || e.key === ']') { const st = this.state(this.brush()); this.setState({ size: Math.max(0, Math.min(1, st.size + (e.key === ']' ? 0.05 : -0.05))) }); this.say(`Size ${Math.round(this.state(this.brush()).size * 100)}%`); }
     else if (e.key === '0') this.fit();
+    else if (e.key === 'r' || e.key === 'R') {
+      resetRotation(this.view, { width: this.cssW, height: this.cssH });
+      this.full = true;
+      this.redraw();
+      this.say('Rotation reset');
+    }
+    else if (this.tools.mode() === 'transform' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+      const dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+      this.tools.nudge(dx, dy, e.shiftKey);
+    }
     else if (this.content()?.kind === 'flipbook' && (e.key === ',' || e.key === '.' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       const t2 = this.content()?.flip[this.row];
       const n = t2?.frames.length ?? 1;
@@ -1115,8 +1266,9 @@ export class PaintView {
       const f = Math.exp(-e.deltaY * 0.0025);
       this.zoomAt(px, py, this.view.scale * f);
     } else {
-      this.view.ox -= e.shiftKey ? e.deltaY : e.deltaX;
-      this.view.oy -= e.shiftKey ? 0 : e.deltaY;
+      const dl = panDelta(this.view, e.shiftKey ? e.deltaY : e.deltaX, e.shiftKey ? 0 : e.deltaY);
+      this.view.ox -= dl.x;
+      this.view.oy -= dl.y;
     }
     this.full = true;
     this.redraw();
@@ -1124,10 +1276,11 @@ export class PaintView {
 
   private zoomAt(px: number, py: number, scale: number): void {
     const s = Math.max(0.02, Math.min(32, scale));
-    const cx = (px - this.view.ox) / this.view.scale, cy = (py - this.view.oy) / this.view.scale;
+    const a = screenToCanvas(this.view, px, py);
+    const o = anchorOffset(s, this.view.rot, a, { x: px, y: py });
     this.view.scale = s;
-    this.view.ox = px - cx * s;
-    this.view.oy = py - cy * s;
+    this.view.ox = o.x;
+    this.view.oy = o.y;
   }
 
   private down(e: PointerEvent): void {
@@ -1137,12 +1290,19 @@ export class PaintView {
     if (e.pointerType === 'touch') {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
       if (this.touches.size >= 2) {
+        this.clearPickHold();
         this.cancelStroke();
         this.startGesture();
         cv.setPointerCapture(e.pointerId);
         return;
       }
+      if (!this.interaction && this.tools.mode() === 'paint') this.armPickHold(e);
       if (!this.input.paintable(e)) { this.pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId }; cv.setPointerCapture(e.pointerId); return; }
+    }
+    if (this.space && e.button === 0 && e.shiftKey) {
+      this.spin.begin(this.view, e.pointerId, e.clientX, e.clientY, cv.getBoundingClientRect());
+      cv.setPointerCapture(e.pointerId);
+      return;
     }
     if (e.button === 1 || this.space || (e.button === 0 && e.pointerType === 'mouse' && e.buttons === 4)) {
       this.pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId };
@@ -1153,32 +1313,37 @@ export class PaintView {
     cv.setPointerCapture(e.pointerId);
     if (this.interaction) { this.interaction.down(e); return; }
     if (this.playTimer) this.stopPlay();
-    if (e.altKey) { this.pick(e); return; }
+    if (e.altKey) { this.showLoupe(e.clientX, e.clientY, true, e.pointerId); return; }
+    const fillWith = this.dropper.continuing;
+    if (fillWith) {
+      if (this.dropper.begin(e.clientX, e.clientY, fillWith)) this.dropPointer = e.pointerId;
+      else this.dropper.cancel();
+      return;
+    }
     this.startStroke(e);
-  }
-
-  private pick(e: PointerEvent): void {
-    const p = this.toCanvas(e.clientX, e.clientY);
-    const doc = this.doc;
-    if (!doc || p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return;
-    const c = doc.sampleColor(Math.floor(p.x), Math.floor(p.y), true);
-    if (c.a === 0) return;
-    const rgb = { r: c.r, g: c.g, b: c.b };
-    this.colour.set(rgb);
-    this.setColourChip(rgb);
-    this.say('Color picked');
   }
 
   private startStroke(e: PointerEvent): void {
     const doc = this.doc as PaintDoc;
     const layer = doc.activeLayer();
-    if (!layer.visible) { this.say('This layer is hidden'); return; }
+    const target = doc.paintTarget();
+    if (!target) { this.say('Select a layer to paint on'); return; }
+    if (!layer.visible && !target.mask) { this.say('This layer is hidden'); return; }
     const b = this.brush();
     const st = this.state(b);
     this.input.smoothing = Math.min(1, b.smoothing + this.prefs.smoothing);
-    this.stroke = new Stroke(layer.raster, layer.id, {
-      tool: this.tool, brush: b, color: this.colour.get(), size: st.size, opacity: st.opacity,
-      alphaLock: layer.alphaLock, selection: this.selection, zoom: this.view.scale, dynamicScaling: this.prefs.dynamicScaling,
+    // a mask takes grey: the color's brightness, and the eraser hides
+    let color = this.colour.get();
+    let tool = this.tool;
+    if (target.mask) {
+      const v = Math.round(color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722);
+      color = tool === 'erase' ? { r: 0, g: 0, b: 0 } : { r: v, g: v, b: v };
+      if (tool === 'erase') tool = 'paint';
+    }
+    this.strokeId = target.id;
+    this.stroke = new Stroke(target.raster, target.id, {
+      tool, brush: b, color, size: st.size, opacity: st.opacity,
+      alphaLock: target.alphaLock, selection: this.selection, zoom: this.view.scale, dynamicScaling: this.prefs.dynamicScaling,
       seed: (Math.random() * 0x7fffffff) | 0,
     });
     this.strokePointer = e.pointerId;
@@ -1189,29 +1354,70 @@ export class PaintView {
     const s = this.stroke, doc = this.doc;
     if (!s || !doc) return;
     let rect: Rect | null = null;
+    const ahead: Parameters<Stroke['add']>[0][] = [];
     for (const p of samples as Parameters<Stroke['add']>[0][]) {
-      if (p.predicted) continue;
+      if (p.predicted) { ahead.push(p); continue; }
       const r = s.add(p);
+      this.tailFrom = { x: p.x, y: p.y };
       if (r) rect = rect ? unite(rect, r) : r;
     }
-    if (rect) doc.markDirty(doc.active, rect);
+    if (rect) doc.markDirty(this.strokeId || doc.active, rect);
+    this.setTail(ahead);
   }
 
+  /** The predicted points ride on screen as a thin tail until the real points replace them. */
+  private setTail(ahead: Parameters<Stroke['add']>[0][]): void {
+    if (this.tool !== 'paint' || !this.tailFrom || !ahead.length) { this.clearTail(); return; }
+    const b = this.brush(), st = this.state(b);
+    const base = baseDiameter(b, st.size);
+    const [lo, hi] = b.pressureSize;
+    const r = this.tail.set(this.tailFrom, ahead, (s) => base * (lo + (hi - lo) * s.pressure), this.colour.get(), st.opacity);
+    if (r) this.redraw(r);
+  }
+
+  private clearTail(): void {
+    this.tailFrom = null;
+    const r = this.tail.clear();
+    if (r) this.redraw(r);
+  }
+
+  private lastMouse: Point | null = null;
+
   private move(e: PointerEvent): void {
+    if (e.pointerType === 'mouse') this.lastMouse = { x: e.clientX, y: e.clientY };
     if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
       const t = this.touches.get(e.pointerId)!;
       if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) t.moved = true;
       t.x = e.clientX; t.y = e.clientY;
       if (this.gesture) { this.updateGesture(); return; }
     }
-    if (this.pan && this.pan.id === e.pointerId) {
-      this.view.ox = this.pan.ox + e.clientX - this.pan.x;
-      this.view.oy = this.pan.oy + e.clientY - this.pan.y;
+    if (this.spin.active && this.spin.pointer === e.pointerId) {
+      this.spin.move(this.view, e.clientX, e.clientY, this.canvas.getBoundingClientRect());
       this.full = true;
       this.redraw();
       return;
     }
+    if (this.pan && this.pan.id === e.pointerId) {
+      const dl = panDelta(this.view, e.clientX - this.pan.x, e.clientY - this.pan.y);
+      this.view.ox = this.pan.ox + dl.x;
+      this.view.oy = this.pan.oy + dl.y;
+      this.full = true;
+      this.redraw();
+      return;
+    }
+    if (this.pickHold && this.pickHold.id === e.pointerId && Math.hypot(e.clientX - this.pickHold.x, e.clientY - this.pickHold.y) > 7) this.clearPickHold(e.pointerId);
+    if (this.loupe.active) {
+      // Alt held: the loupe follows the pointer (a press makes release pick)
+      if (this.loupe.held && this.pickPointer !== e.pointerId) return;
+      if (!this.loupe.held && !e.altKey) this.loupe.hide();
+      else { this.loupe.move(e.clientX, e.clientY); return; }
+    }
+    if (this.dropper.active && this.dropPointer === e.pointerId) { this.dropper.drag(e.clientX, e.clientY); return; }
     if (this.interaction) { this.interaction.move(e); return; }
+    if (e.altKey && e.pointerType === 'mouse' && !this.stroke && this.doc && this.tools.mode() === 'paint') {
+      this.showLoupe(e.clientX, e.clientY, false);
+      return;
+    }
     if (this.stroke && e.pointerId === this.strokePointer) this.feed(this.input.move(e));
     if (e.pointerType !== 'touch') {
       const old = this.cursorBox;
@@ -1226,33 +1432,93 @@ export class PaintView {
   }
 
   private dirtyScreen(r: Rect): void {
-    const v = this.view;
-    this.redraw({ x: (r.x - v.ox) / v.scale, y: (r.y - v.oy) / v.scale, w: r.w / v.scale, h: r.h / v.scale });
+    this.addDirty({ x: Math.floor(r.x), y: Math.floor(r.y), w: Math.ceil(r.w) + 1, h: Math.ceil(r.h) + 1 });
+    if (!this.frameReq) this.frameReq = requestAnimationFrame(() => { this.frameReq = 0; this.paint(); });
+  }
+
+  // ---------------------------------------------------------------- eyedropper loupe
+
+  private pickPointer = -1;
+  private dropPointer = -1;
+
+  /** Show the loupe; the brush outline is painted away first so the lens never magnifies it. */
+  private showLoupe(clientX: number, clientY: number, pressing: boolean, id = -1): void {
+    if (!this.loupe.active) {
+      this.cursor = null;
+      this.full = true;
+      if (this.frameReq) { cancelAnimationFrame(this.frameReq); this.frameReq = 0; }
+      this.paint();
+    }
+    this.pickPointer = id;
+    this.loupe.show(clientX, clientY, this.colour.get(), pressing);
+  }
+
+  private endLoupe(e: PointerEvent, cancelled: boolean): void {
+    const c = this.loupe.colour;
+    this.loupe.hide();
+    this.pickPointer = -1;
+    this.cursor = this.toCanvas(e.clientX, e.clientY);
+    this.full = true;
+    this.redraw();
+    if (cancelled || !c) return;
+    this.colour.set(c);
+    this.setColourChip(c);
+    this.say('Color picked');
+  }
+
+  /** A finger held still on the picture opens the loupe; the stroke it started is thrown away. */
+  private armPickHold(e: PointerEvent): void {
+    this.clearPickHold();
+    const x = e.clientX, y = e.clientY, id = e.pointerId;
+    const timer = window.setTimeout(() => {
+      this.pickHold = null;
+      if (this.interaction || this.gesture || this.loupe.active || !this.touches.has(id) || this.touches.size !== 1) return;
+      this.cancelStroke();
+      this.pan = null;
+      this.showLoupe(x, y, true, id);
+    }, 500);
+    this.pickHold = { id, x, y, timer };
+  }
+
+  private clearPickHold(id?: number): void {
+    const h = this.pickHold;
+    if (!h || (id !== undefined && h.id !== id)) return;
+    clearTimeout(h.timer);
+    this.pickHold = null;
   }
 
   private up(e: PointerEvent, cancelled = false): void {
     if (e.pointerType === 'touch') {
       const info = this.touches.get(e.pointerId);
       this.touches.delete(e.pointerId);
+      this.clearPickHold(e.pointerId);
       if (this.gesture) {
         const g = this.gesture;
+        this.holdTouch.stop();
         if (!this.touches.size) {
-          const quick = performance.now() - g.t < 300 && !g.moved && !(info?.moved);
+          const ms = performance.now() - g.t;
+          const quick = ms < 300 && !g.moved && !(info?.moved);
           this.gesture = null;
           if (quick && g.count === 2) this.undo();
           if (quick && g.count === 3) this.redo();
+          if (g.moved && g.count === 2 && this.dLast && isQuickPinchIn(g.d0, this.dLast, ms)) { this.fit(); this.say('Fit'); }
+          this.dLast = 0;
         }
         return;
       }
     }
+    if (this.spin.active && this.spin.pointer === e.pointerId) { this.spin.end(); return; }
+    if (this.loupe.held && this.pickPointer === e.pointerId) { this.endLoupe(e, cancelled); return; }
+    if (this.dropper.active && this.dropPointer === e.pointerId) { this.dropPointer = -1; this.finishDrop(); return; }
     if (this.pan && this.pan.id === e.pointerId) { this.pan = null; return; }
     if (this.interaction) { this.interaction.up(e); return; }
     if (!this.stroke || e.pointerId !== this.strokePointer) return;
     const s = this.stroke;
     const doc = this.doc as PaintDoc;
+    this.clearTail();
     if (cancelled) {
       const r = s.cancel();
-      if (r) doc.markDirty(doc.active, r);
+      if (r) doc.markDirty(this.strokeId || doc.active, r);
       doc.settle();
     } else {
       this.feed(this.input.up(e));
@@ -1260,6 +1526,7 @@ export class PaintView {
       if (patch) {
         doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : this.tool === 'smudge' ? 'Smudge' : 'Paint');
         if (this.tool === 'paint') this.colour.commit(this.colour.get());
+        this.syncUndo();
       }
     }
     this.stroke = null;
@@ -1270,8 +1537,15 @@ export class PaintView {
     const pts = [...this.touches.values()];
     const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length, cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
     const d = pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 1;
+    const ang = pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : 0;
     const prev = this.gesture;
-    this.gesture = { d, cx, cy, scale: this.view.scale, ox: this.view.ox, oy: this.view.oy, count: Math.max(prev?.count ?? 0, pts.length), t: prev?.t ?? performance.now(), moved: prev?.moved ?? false };
+    const r = this.canvas.getBoundingClientRect();
+    const anchor = screenToCanvas(this.view, cx - r.left, cy - r.top);
+    this.gesture = { d, ang, cx, cy, scale: this.view.scale, rot: this.view.rot, anchor, d0: prev?.d0 ?? d, count: Math.max(prev?.count ?? 0, pts.length), t: prev?.t ?? performance.now(), moved: prev?.moved ?? false };
+    // holding still keeps undoing (two fingers) or redoing (three)
+    this.holdTouch.stop();
+    if (pts.length === 2) this.holdTouch.start(() => this.undo(), false);
+    else if (pts.length === 3) this.holdTouch.start(() => this.redo(), false);
   }
 
   private updateGesture(): void {
@@ -1281,17 +1555,21 @@ export class PaintView {
     if (pts.length < 2) return;
     const cx = (pts[0].x + pts[1].x) / 2, cy = (pts[0].y + pts[1].y) / 2;
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    if (Math.abs(d - g.d) > 12 || Math.hypot(cx - g.cx, cy - g.cy) > 12) g.moved = true;
+    const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+    if (Math.abs(d - g.d) > 12 || Math.hypot(cx - g.cx, cy - g.cy) > 12 || (pts.length === 2 && Math.abs(wrapAngle(ang - g.ang)) > 0.14)) { g.moved = true; this.holdTouch.stop(); }
     if (!g.moved) return;
     const r = this.canvas.getBoundingClientRect();
-    const s = Math.max(0.02, Math.min(32, g.scale * (d / g.d)));
-    const ax = (g.cx - r.left - g.ox) / g.scale, ay = (g.cy - r.top - g.oy) / g.scale;
-    this.view.scale = s;
-    this.view.ox = cx - r.left - ax * s;
-    this.view.oy = cy - r.top - ay * s;
+    const next = pinchView({ d: g.d, ang: g.ang, scale: g.scale, rot: g.rot, anchor: g.anchor }, { d, ang, cx: cx - r.left, cy: cy - r.top }, pts.length === 2);
+    this.view.scale = next.scale;
+    this.view.rot = next.rot;
+    this.view.ox = next.ox;
+    this.view.oy = next.oy;
+    this.dLast = d;
     this.full = true;
     this.redraw();
   }
+
+  private dLast = 0;
 }
 
 function unite(a: Rect, b: Rect): Rect {

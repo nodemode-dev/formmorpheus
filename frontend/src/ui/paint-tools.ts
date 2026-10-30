@@ -7,9 +7,11 @@ import { clearMask, fillMask } from '../paint/fill';
 import { FILTER_DEFAULTS, gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
 import { readRect } from '../paint/history';
 import { autoMask, combine, ellipseMask, extract, invertMask, isEmpty, maskBounds, maskOutline, polygonMask, rectMask } from '../paint/select';
-import { refineGrid, transformMesh, transformQuad } from '../paint/transform';
+import { MESH_MAX, MESH_MIN, bendFor, bendHandles, makeGrid, nudgePoints, refineGridBent, resampleGrid, transformMesh, transformQuad, zeroBends, type Bend } from '../paint/transform';
 import type { CombineMode, Interpolation, Mask, Point, Raster, Rect, RGB, SelectMode, TransformMode } from '../paint/types';
 import { el, q, setHidden, setText } from './dom';
+import { t as tr } from './i18n';
+import { HoldRepeat } from './paint-gestures';
 
 export interface Interaction {
   down(e: PointerEvent): void;
@@ -26,6 +28,8 @@ export interface ToolHost {
   color(): RGB;
   toCanvas(clientX: number, clientY: number): { x: number; y: number };
   view(): { scale: number; ox: number; oy: number };
+  /** Point relative to the canvas element to the unrotated space overlays are drawn in. */
+  unrotate?(x: number, y: number): { x: number; y: number };
   setLive(fn: ((ctx: Ctx) => void) | null): void;
   redraw(): void;
   setInteraction(h: Interaction | null): void;
@@ -68,6 +72,15 @@ const TRANSFORM_MODES: { id: TransformMode; label: string }[] = [
 const INTERP: Interpolation[] = ['nearest', 'bilinear', 'bicubic'];
 const INTERP_LABEL: Record<Interpolation, string> = { nearest: 'Nearest', bilinear: 'Bilinear', bicubic: 'Bicubic' };
 
+const NUDGE: Record<string, [number, number]> = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] };
+const ARROW: Record<string, string> = {
+  l: 'M10.5 3 5.5 8l5 5',
+  r: 'M5.5 3l5 5-5 5',
+  u: 'M3 10.5 8 5.5l5 5',
+  d: 'M3 5.5l5 5 5-5',
+};
+const NUDGE_PAD = `<span class="fm-ptools-nudge" title="Nudge 1 px (Shift 10 px; arrow keys too)">${(['l', 'u', 'd', 'r'] as const).map((k) => `<button type="button" data-nudge="${k}" aria-label="Nudge ${({ l: 'left', r: 'right', u: 'up', d: 'down' })[k]}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${ARROW[k]}"/></svg></button>`).join('')}</span>`;
+
 const TEMPLATE = `<div class="fm-ptools" hidden>
 <div class="fm-ptools-modes"></div>
 <div class="fm-ptools-actions"></div>
@@ -81,7 +94,8 @@ interface Float {
   srcRect: Rect;
   canvas: OffscreenCanvas;
   quad: Point[];          // tl, tr, br, bl in canvas pixels
-  grid: Point[][] | null; // warp control points (4 x 4)
+  grid: Point[][] | null; // warp control points (n x n, 4 to 8)
+  bend: Bend[][] | null;  // per-node bending of the warp, null until a handle is used
   preview: { canvas: OffscreenCanvas; rect: Rect } | null;
 }
 
@@ -96,6 +110,10 @@ export class PaintTools {
   private threshold = 0.3;
   private drag: { kind: string; start: Point; last: Point; pts: Point[]; i: number; j: number; quad0: Point[]; grid0: Point[][] | null; th0: number; cx: number } | null = null;
   private float: Float | null = null;
+  private meshN = MESH_MIN;
+  private node: { i: number; j: number } | null = null;
+  private handle0: Point = { x: 0, y: 0 };
+  private readonly repeat = new HoldRepeat(380, 60);
   private filter: FilterId | null = null;
   private values: Record<string, number> = {};
   private filterOrig: Uint8ClampedArray | null = null;
@@ -114,6 +132,15 @@ export class PaintTools {
     this.params = q(this.root, '.fm-ptools-params');
     this.filterMenu = el<HTMLElement>(`<div class="fm-pfilters fm-pop" hidden><div class="fm-pfilters-title">Adjustments</div>${FILTERS.map((f) => `<button class="fm-pop-row" type="button" data-f="${f.id}">${f.label}</button>`).join('')}</div>`);
     this.root.addEventListener('click', (e) => this.click(e));
+    this.root.addEventListener('pointerdown', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-nudge]');
+      if (!b || e.button !== 0) return;
+      const [dx, dy] = NUDGE[b.dataset.nudge as string] ?? [0, 0];
+      const step = (): void => { this.nudge(dx, dy, e.shiftKey); };
+      try { b.setPointerCapture(e.pointerId); } catch { /* released already */ }
+      this.repeat.start(step);
+    });
+    for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) this.root.addEventListener(t, () => this.repeat.stop());
     this.filterMenu.addEventListener('click', (e) => {
       const id = (e.target as HTMLElement).closest<HTMLElement>('[data-f]')?.dataset.f as FilterId | undefined;
       this.filterMenu.hidden = true;
@@ -126,6 +153,20 @@ export class PaintTools {
   mode(): ToolMode { return this.current; }
 
   outlineOf(m: Mask): Point[][] { return maskOutline(m); }
+
+  /** Move the floating piece by whole pixels (Shift multiplies by 10). False when nothing is floating. */
+  nudge(dx: number, dy: number, big = false): boolean {
+    const f = this.float;
+    if (this.current !== 'transform' || !f) return false;
+    const k = big ? 10 : 1;
+    f.quad = nudgePoints(f.quad, dx * k, dy * k);
+    if (f.grid) f.grid = f.grid.map((row) => nudgePoints(row, dx * k, dy * k));
+    // whole-pixel steps move a resampled preview exactly, so it is shifted instead of resampled
+    if (f.preview) { f.preview = { canvas: f.preview.canvas, rect: { ...f.preview.rect, x: f.preview.rect.x + dx * k, y: f.preview.rect.y + dy * k } }; this.host.redraw(); }
+    else if (f.grid || this.transformMode === 'distort') this.refreshPreview();
+    else this.host.setLive((ctx) => this.drawFloat(ctx));
+    return true;
+  }
 
   setMode(m: ToolMode): void {
     if (m === this.current) return;
@@ -184,8 +225,10 @@ export class PaintTools {
       ].map(([id, label, on]) => `<button type="button" class="fm-ptools-act${on ? ' is-active' : ''}" data-act="${id}">${label}</button>`).join('');
     } else if (this.current === 'transform') {
       this.modes.innerHTML = TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode${m.id === this.transformMode ? ' is-active' : ''}" data-tr="${m.id}">${m.label}</button>`).join('');
-      this.actions.innerHTML = [['flipH', 'Flip horizontal'], ['flipV', 'Flip vertical'], ['rot', 'Rotate 45°'], ['interp', INTERP_LABEL[this.interp]], ['reset', 'Reset'], ['cancel', 'Cancel'], ['done', 'Done']]
-        .map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label}</button>`).join('');
+      const acts = [['flipH', 'Flip horizontal'], ['flipV', 'Flip vertical'], ['rot', 'Rotate 45°'], ['interp', INTERP_LABEL[this.interp]]];
+      if (this.transformMode === 'warp') acts.push(['mesh', tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN))]);
+      acts.push(['reset', 'Reset'], ['cancel', 'Cancel'], ['done', 'Done']);
+      this.actions.innerHTML = NUDGE_PAD + acts.map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${label}</button>`).join('');
     } else if (this.current === 'filters' && this.filter) {
       const f = FILTERS.find((x) => x.id === this.filter)!;
       this.params.innerHTML = `<div class="fm-ptools-title">${f.label} <span>drag on the canvas to set ${f.params[0].label.toLowerCase()}</span></div>${f.params.map((p) => `<label class="fm-ptools-param"><span>${p.label}</span><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${this.values[p.id] ?? p.def}" data-p="${p.id}"><output data-o="${p.id}"></output></label>`).join('')}`;
@@ -247,9 +290,16 @@ export class PaintTools {
       case 'flipH': case 'flipV': case 'rot': this.quadOp(act); break;
       case 'interp': this.interp = INTERP[(INTERP.indexOf(this.interp) + 1) % INTERP.length]; this.build(); this.refreshPreview(); break;
       case 'reset':
-        if (this.current === 'transform' && this.float) { this.float.quad = rectQuad(this.float.srcRect); this.float.grid = this.transformMode === 'warp' ? gridOf(this.float.quad) : null; this.refreshPreview(); }
+        if (this.current === 'transform' && this.float) { this.float.quad = rectQuad(this.float.srcRect); this.float.grid = this.transformMode === 'warp' ? makeGrid(this.float.quad, this.meshN) : null; this.float.bend = null; this.node = null; this.refreshPreview(); }
         if (this.current === 'filters') { this.values = {}; this.build(); this.scheduleFilter(); }
         break;
+      case 'mesh': {
+        this.meshN = this.meshN >= MESH_MAX ? MESH_MIN : this.meshN + 1;
+        setText(t, tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN)));
+        const f = this.float;
+        if (f?.grid) { f.grid = resampleGrid(f.grid, this.meshN); f.bend = null; this.node = null; this.refreshPreview(); }
+        break;
+      }
       case 'cancel': this.cancel(); break;
       case 'done': case 'apply': this.finish(); break;
       default: break;
@@ -274,6 +324,12 @@ export class PaintTools {
     if (this.current === 'transform' && this.float) {
       const hit = this.hitHandle(e);
       this.drag = { kind: hit.kind, ...base, i: hit.i, j: hit.j };
+      if (hit.kind === 'grid') this.node = { i: hit.i, j: hit.j };
+      if ((hit.kind === 'bendu' || hit.kind === 'bendv') && this.float?.grid) {
+        const h = bendHandles(this.float.grid, this.float.bend, hit.i, hit.j);
+        this.handle0 = hit.kind === 'bendu' ? h.u : h.v;
+      }
+      this.host.redraw();
     }
   }
 
@@ -361,6 +417,19 @@ export class PaintTools {
         for (let c = 0; c < f.grid[0].length; c++) f.grid.forEach((row, i) => { const s = S(row[c]); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
         ctx.stroke();
         for (const row of f.grid) for (const p of row) dot(ctx, S(p), 5);
+        const n = this.node;
+        if (n && f.grid[n.i]?.[n.j]) {
+          const h = bendHandles(f.grid, f.bend, n.i, n.j);
+          const c = S(f.grid[n.i][n.j]);
+          ctx.fillStyle = accent();
+          dot(ctx, c, 6.5);
+          ctx.fillStyle = '#ffffff';
+          for (const hp of [S(h.u), S(h.v)]) {
+            ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(hp.x, hp.y); ctx.stroke();
+            ctx.fillStyle = '#30c46c';
+            ctx.beginPath(); ctx.arc(hp.x, hp.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          }
+        }
       } else {
         for (const p of q4) dot(ctx, p, 6);
         if (this.transformMode !== 'distort') {
@@ -391,7 +460,7 @@ export class PaintTools {
     doc.markDirty(layer.id, bounds);
     const canvas = new OffscreenCanvas(Math.max(1, piece.raster.width), Math.max(1, piece.raster.height));
     (canvas.getContext('2d') as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(piece.raster.data), piece.raster.width, piece.raster.height), 0, 0);
-    this.float = { layer: layer.id, orig, src: piece.raster, srcRect: piece.rect, canvas, quad: rectQuad(piece.rect), grid: null, preview: null };
+    this.float = { layer: layer.id, orig, src: piece.raster, srcRect: piece.rect, canvas, quad: rectQuad(piece.rect), grid: null, bend: null, preview: null };
     this.transformMode = this.transformMode === 'warp' ? 'freeform' : this.transformMode;
     this.host.setLive((ctx) => this.drawFloat(ctx));
     return true;
@@ -417,7 +486,7 @@ export class PaintTools {
     if (!f || !doc) { this.host.redraw(); return; }
     if (!(this.transformMode === 'distort' || this.transformMode === 'warp')) { f.preview = null; this.host.redraw(); return; }
     const dst: Raster = { width: doc.width, height: doc.height, data: new Uint8ClampedArray(doc.width * doc.height * 4) };
-    const rect = f.grid ? transformMesh(f.src, refineGrid(f.grid, 4), dst, this.interp) : transformQuad(f.src, quad4(f.quad), dst, this.interp);
+    const rect = f.grid ? transformMesh(f.src, refineGridBent(f.grid, f.bend, 4), dst, this.interp) : transformQuad(f.src, quad4(f.quad), dst, this.interp);
     if (!rect) { f.preview = null; this.host.redraw(); return; }
     const cv = new OffscreenCanvas(rect.w, rect.h);
     (cv.getContext('2d') as OffscreenCanvasRenderingContext2D).putImageData(new ImageData(new Uint8ClampedArray(readRect(dst, rect)), rect.w, rect.h), 0, 0);
@@ -429,8 +498,9 @@ export class PaintTools {
     const f = this.float;
     this.transformMode = m;
     if (f) {
-      if (m === 'warp') f.grid = f.grid ?? gridOf(f.quad);
-      else if (f.grid) { f.grid = null; f.quad = rectQuad(f.srcRect); }
+      if (m === 'warp') f.grid = f.grid ?? makeGrid(f.quad, this.meshN);
+      else if (f.grid) { f.grid = null; f.bend = null; f.quad = rectQuad(f.srcRect); }
+      this.node = null;
       if (m === 'freeform' || m === 'uniform') f.preview = null;
     }
     this.build();
@@ -442,9 +512,16 @@ export class PaintTools {
     const v = this.host.view();
     const S = (p: Point): Point => ({ x: v.ox + p.x * v.scale, y: v.oy + p.y * v.scale });
     const r = (e.target as HTMLElement).getBoundingClientRect();
-    const m = { x: e.clientX - r.left, y: e.clientY - r.top };
+    const rel = { x: e.clientX - r.left, y: e.clientY - r.top };
+    const m = this.host.unrotate ? this.host.unrotate(rel.x, rel.y) : rel;
     const near = (p: Point): boolean => Math.hypot(p.x - m.x, p.y - m.y) < 14;
     if (f.grid && this.transformMode === 'warp') {
+      const n = this.node;
+      if (n && f.grid[n.i]?.[n.j]) {
+        const h = bendHandles(f.grid, f.bend, n.i, n.j);
+        const du = Math.hypot(S(h.u).x - m.x, S(h.u).y - m.y), dv = Math.hypot(S(h.v).x - m.x, S(h.v).y - m.y);
+        if (Math.min(du, dv) < 14) return { kind: du <= dv ? 'bendu' : 'bendv', i: n.i, j: n.j };
+      }
       for (let i = 0; i < f.grid.length; i++) for (let j = 0; j < f.grid[i].length; j++) if (near(S(f.grid[i][j]))) return { kind: 'grid', i, j };
       return { kind: 'move', i: -1, j: -1 };
     }
@@ -471,6 +548,11 @@ export class PaintTools {
       if (f.grid && d.grid0) f.grid = d.grid0.map((row) => row.map((x) => ({ x: x.x + dx, y: x.y + dy })));
     } else if (d.kind === 'grid' && f.grid && d.grid0) {
       f.grid = d.grid0.map((row, i) => row.map((x, j) => (i === d.i && j === d.j ? { x: x.x + dx, y: x.y + dy } : x)));
+    } else if ((d.kind === 'bendu' || d.kind === 'bendv') && f.grid) {
+      const w = d.kind === 'bendu' ? 'u' : 'v';
+      f.bend = f.bend ?? zeroBends(f.grid.length, f.grid[0].length);
+      const cur = f.bend[d.i][d.j];
+      f.bend[d.i][d.j] = { ...cur, [w]: bendFor(f.grid, d.i, d.j, w, { x: this.handle0.x + dx, y: this.handle0.y + dy }) };
     } else if (d.kind === 'rotate') {
       const c = centre(q0);
       let a = Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(d.start.y - c.y, d.start.x - c.x);
@@ -492,7 +574,7 @@ export class PaintTools {
     if (op === 'rot') f.quad = f.quad.map((x) => rotate(x, c, Math.PI / 4));
     if (op === 'flipH') f.quad = [f.quad[1], f.quad[0], f.quad[3], f.quad[2]];
     if (op === 'flipV') f.quad = [f.quad[3], f.quad[2], f.quad[1], f.quad[0]];
-    if (f.grid) f.grid = gridOf(f.quad);
+    if (f.grid) { f.grid = makeGrid(f.quad, this.meshN); f.bend = null; this.node = null; }
     this.refreshPreview();
   }
 
@@ -504,7 +586,7 @@ export class PaintTools {
     if (!f || !doc) return;
     const layer = doc.layer(f.layer);
     if (!layer) return;
-    const r = f.grid ? transformMesh(f.src, refineGrid(f.grid, 4), layer.raster, this.interp) : transformQuad(f.src, quad4(f.quad), layer.raster, this.interp);
+    const r = f.grid ? transformMesh(f.src, refineGridBent(f.grid, f.bend, 4), layer.raster, this.interp) : transformQuad(f.src, quad4(f.quad), layer.raster, this.interp);
     const union = r ? unite(f.srcRect, r) : f.srcRect;
     const rect = clipRect(union, doc.width, doc.height);
     if (!rect) return;
@@ -635,18 +717,6 @@ function rectQuad(r: Rect): Point[] {
 }
 function normRect(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
-}
-function gridOf(q4: Point[], n = 4): Point[][] {
-  const out: Point[][] = [];
-  for (let i = 0; i < n; i++) {
-    const v = i / (n - 1);
-    const l = { x: q4[0].x + (q4[3].x - q4[0].x) * v, y: q4[0].y + (q4[3].y - q4[0].y) * v };
-    const r = { x: q4[1].x + (q4[2].x - q4[1].x) * v, y: q4[1].y + (q4[2].y - q4[1].y) * v };
-    const row: Point[] = [];
-    for (let j = 0; j < n; j++) { const u = j / (n - 1); row.push({ x: l.x + (r.x - l.x) * u, y: l.y + (r.y - l.y) * u }); }
-    out.push(row);
-  }
-  return out;
 }
 function unite(a: Rect, b: Rect): Rect {
   const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);

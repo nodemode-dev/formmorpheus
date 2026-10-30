@@ -2,10 +2,12 @@
 // structure edits with undo, compositing through cached per-layer canvases, and
 // PNG encode / decode. Needs OffscreenCanvas only, so it also runs in a worker.
 
-import type { Asset, BlendMode, DrawingLayer } from '../engine/types';
-import type { PaintLayer, PixelPatch, Raster, Rect } from './types';
+import type { Asset, DrawingLayer } from '../engine/types';
+import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
 import { PaintHistory, readRect, writeRect } from './history';
 import type { LayerSnapshot, PaintEntry, PaintHost, SnapLayer } from './history';
+import { BLEND_OP, SurfacePool, blockEnd, drawTree, isInside } from './layer-tree';
+import type { TreeHooks } from './layer-tree';
 
 export { PaintHistory } from './history';
 export type { LayerSnapshot, PaintEntry } from './history';
@@ -14,12 +16,30 @@ export type LayerProps = Partial<Pick<PaintLayer, 'name' | 'visible' | 'opacity'
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
-const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
-  normal: 'source-over', multiply: 'multiply', screen: 'screen', overlay: 'overlay', darken: 'darken', lighten: 'lighten',
-  'color-dodge': 'color-dodge', 'color-burn': 'color-burn', 'hard-light': 'hard-light', 'soft-light': 'soft-light',
-  difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
-  add: 'lighter', passthrough: 'source-over',
-};
+/** Canvas copy of a mask raster whose alpha is the mask value; ImageData is its own buffer. */
+interface AlphaMirror {
+  canvas: OffscreenCanvas;
+  ctx: OffscreenCanvasRenderingContext2D;
+  img: ImageData;
+  dirty: Rect | null;
+}
+
+const alphaMirrors = new WeakMap<Raster, AlphaMirror>();
+
+function markAlpha(r: Raster, rect: Rect): void {
+  const a = alphaMirrors.get(r);
+  if (a) a.dirty = unionRect(a.dirty, rect);
+}
+
+/** An opaque grey raster of one value. */
+function maskRaster(w: number, h: number, value: number): Raster {
+  const data = new Uint8ClampedArray(w * h * 4);
+  data.fill(value);
+  for (let i = 3; i < data.length; i += 4) data[i] = 255;
+  return { width: w, height: h, data };
+}
+
+export type MaskFill = 'reveal' | 'hide';
 
 /** Canvas mirror of one raster; ImageData shares the raster's buffer. */
 interface Mirror {
@@ -90,7 +110,19 @@ function meta(l: PaintLayer): SnapLayer {
   return {
     id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blend: l.blend,
     alphaLock: l.alphaLock, clipping: l.clipping, source: l.source, raster: l.raster,
+    group: l.group, parent: l.parent, collapsed: l.collapsed, mask: l.mask, maskSource: l.maskSource,
   };
+}
+
+/** Decodes a PNG into a raster of the movie's size (straight alpha). */
+async function decodeRaster(blob: Blob, width: number, height: number, ctx: OffscreenCanvasRenderingContext2D): Promise<Raster> {
+  const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(bmp, 0, 0, width, height);
+  bmp.close();
+  const r = newRaster(width, height);
+  r.data.set(ctx.getImageData(0, 0, width, height).data);
+  return r;
 }
 
 export class PaintDoc implements PaintHost {
@@ -102,11 +134,19 @@ export class PaintDoc implements PaintHost {
   onChange: ((what: 'pixels' | 'layers' | 'active', rect?: Rect) => void) | null = null;
 
   private baseline: PaintEntry | null = null;
-  private scratch: { c: OffscreenCanvas; x: OffscreenCanvasRenderingContext2D } | null = null;
-  private scratch2: { c: OffscreenCanvas; x: OffscreenCanvasRenderingContext2D } | null = null;
+  private pool: SurfacePool | null = null;
   private reader: { c: OffscreenCanvas; x: OffscreenCanvasRenderingContext2D } | null = null;
+  /** The mask of the active layer is the paint target (not the pixels). */
+  private maskEdit = false;
+  /** Fold state changed since the last save (it is not an undo step). */
+  private metaDirty = false;
   private flat: { key: string; raster: Raster } | null = null;
   private thumbs = new Map<string, { key: string; canvas: OffscreenCanvas }>();
+  private mthumbs = new Map<string, { key: string; canvas: OffscreenCanvas }>();
+  private readonly hooks: TreeHooks<PaintLayer> = {
+    image: (l) => (l.group ? null : this.mirror(l.raster).canvas),
+    mask: (l) => (l.mask && l.mask.on ? this.alphaOf(l.mask) : null),
+  };
   private disposed = false;
   /** Pixels marked dirty by a live stroke whose patch is not yet in history. */
   private uncommitted = false;
@@ -116,34 +156,45 @@ export class PaintDoc implements PaintHost {
     this.width = width;
     this.height = height;
     this.layers = layers.length ? layers : [this.makeLayer('Layer 1')];
-    this.active = this.layers[0].id;
+    this.active = (this.layers.find((l) => !l.group) ?? this.layers[0]).id;
     this.history = new PaintHistory(this);
   }
 
   static async load(width: number, height: number, layers: DrawingLayer[], blobOf: (assetId: string) => Blob | undefined): Promise<PaintDoc> {
     const out: PaintLayer[] = [];
     let x: OffscreenCanvasRenderingContext2D | null = null;
+    const ctx = (): OffscreenCanvasRenderingContext2D => (x ??= new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!);
     for (const d of layers) {
-      const raster = newRaster(width, height);
+      let raster = newRaster(d.group ? 1 : width, d.group ? 1 : height);
       let source: string | null = null;
-      const blob = d.pixels ? blobOf(d.pixels) : undefined;
+      const blob = !d.group && d.pixels ? blobOf(d.pixels) : undefined;
       if (blob) {
         try {
-          const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-          if (!x) x = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!;
-          x.clearRect(0, 0, width, height);
-          x.drawImage(bmp, 0, 0);
-          bmp.close();
-          raster.data.set(x.getImageData(0, 0, width, height).data);
+          raster = await decodeRaster(blob, width, height, ctx());
           source = d.pixels;
         } catch {
           source = null;
         }
       }
-      out.push({
+      const layer: PaintLayer = {
         id: d.id, name: d.name, visible: d.visible, opacity: d.opacity, blend: d.blend,
         alphaLock: d.alphaLock, clipping: d.clipping, source, raster, version: counter++,
-      });
+      };
+      if (d.group) layer.group = true;
+      if (d.parent) layer.parent = d.parent;
+      if (d.collapsed) layer.collapsed = true;
+      if (d.mask) {
+        const mb = blobOf(d.mask);
+        if (mb) {
+          try {
+            const mr = await decodeRaster(mb, width, height, ctx());
+            for (let i = 3; i < mr.data.length; i += 4) mr.data[i] = 255;
+            layer.mask = { raster: mr, on: d.maskOn !== false, linked: d.maskLinked !== false };
+            layer.maskSource = d.mask;
+          } catch { /* a mask that will not decode leaves the layer whole */ }
+        }
+      }
+      out.push(layer);
     }
     return new PaintDoc(width, height, out);
   }
@@ -165,18 +216,48 @@ export class PaintDoc implements PaintHost {
     return this.layers.find((l) => l.id === id) ?? null;
   }
 
+  /** A layer by id; `mask:<id>` is that layer's mask seen as a layer (what the history patches target). */
   layerById(id: string): PaintLayer | null {
+    if (id.startsWith('mask:')) {
+      const o = this.layer(id.slice(5));
+      return o && o.mask ? { ...o, id, raster: o.mask.raster } : null;
+    }
     return this.layer(id);
   }
 
   activeLayer(): PaintLayer {
-    return this.layer(this.active) ?? this.layers[0];
+    return this.layer(this.active) ?? this.layers.find((l) => !l.group) ?? this.layers[0];
   }
 
   setActive(id: string): void {
-    if (id === this.active || !this.layer(id)) return;
+    const l = this.layer(id);
+    if (!l || l.group) return;
+    if (id === this.active) return;
     this.active = id;
+    this.maskEdit = false;
     this.onChange?.('active');
+  }
+
+  // ---- mask editing ----
+
+  /** True while the active layer's mask (not its pixels) takes the brush. */
+  maskEditing(): boolean {
+    return this.maskEdit && !!this.activeLayer().mask;
+  }
+
+  setMaskEdit(on: boolean): void {
+    const want = on && !!this.activeLayer().mask;
+    if (want === this.maskEdit) return;
+    this.maskEdit = want;
+    this.onChange?.('active');
+  }
+
+  /** What a stroke, fill or smudge paints on: the active layer's pixels, or its mask when that is selected. Null for a group. */
+  paintTarget(): { id: string; raster: Raster; alphaLock: boolean; mask: boolean } | null {
+    const l = this.activeLayer();
+    if (this.maskEdit && l.mask) return { id: 'mask:' + l.id, raster: l.mask.raster, alphaLock: false, mask: true };
+    if (l.group) return null;
+    return { id: l.id, raster: l.raster, alphaLock: l.alphaLock, mask: false };
   }
 
   // ---- history host ----
@@ -186,14 +267,23 @@ export class PaintDoc implements PaintHost {
   }
 
   restore(s: LayerSnapshot): void {
-    this.layers = s.layers.map((m) => ({ ...m, version: counter++ }));
-    this.active = this.layers.some((l) => l.id === s.active) ? s.active : this.layers[0].id;
+    const fold = new Map(this.layers.map((l) => [l.id, l.collapsed]));
+    this.layers = s.layers.map((m) => {
+      const c = fold.has(m.id) ? fold.get(m.id) : m.collapsed;
+      return { ...m, collapsed: c, version: counter++ };
+    });
+    this.active = this.layers.some((l) => l.id === s.active) ? s.active : (this.layers.find((l) => !l.group) ?? this.layers[0]).id;
+    if (!this.activeLayer().mask) this.maskEdit = false;
   }
 
   touch(raster: Raster, rect: Rect): void {
     const m = mirrors.get(raster);
     if (m) m.dirty = unionRect(m.dirty, rect);
-    for (const l of this.layers) if (l.raster === raster) { l.version = counter++; l.source = null; }
+    markAlpha(raster, rect);
+    for (const l of this.layers) {
+      if (l.raster === raster) { l.version = counter++; l.source = null; }
+      else if (l.mask && l.mask.raster === raster) { l.version = counter++; l.maskSource = null; }
+    }
   }
 
   changed(what: 'pixels' | 'layers', rect?: Rect): void {
@@ -214,8 +304,10 @@ export class PaintDoc implements PaintHost {
     while (!name && used.has('Layer ' + n)) n++;
     const l = this.makeLayer(name ?? 'Layer ' + n);
     const i = this.layers.findIndex((x) => x.id === (above ?? this.active));
+    if (i >= 0 && this.layers[i].parent) l.parent = this.layers[i].parent;
     this.layers.splice(i < 0 ? 0 : i, 0, l);
     this.active = l.id;
+    this.maskEdit = false;
     this.record('Add layer', before);
     return l;
   }
@@ -223,25 +315,204 @@ export class PaintDoc implements PaintHost {
   deleteLayer(id: string): void {
     const i = this.layers.findIndex((l) => l.id === id);
     if (i < 0) return;
-    if (this.layers.length === 1) { this.clearLayer(id); return; }
+    const end = blockEnd(this.layers, i);
+    const rest = [...this.layers.slice(0, i), ...this.layers.slice(end)];
+    if (!rest.some((l) => !l.group)) {
+      if (!this.layers[i].group) { this.clearLayer(id); return; }
+      const f = this.makeLayer('Layer 1');
+      if (this.layers[i].parent) f.parent = this.layers[i].parent;
+      rest.splice(i, 0, f);
+    }
     const before = this.snap();
-    this.layers.splice(i, 1);
-    if (this.active === id) this.active = this.layers[Math.min(i, this.layers.length - 1)].id;
-    this.record('Delete layer', before);
+    const gone = new Set(this.layers.slice(i, end).map((l) => l.id));
+    this.layers = rest;
+    if (gone.has(this.active)) {
+      const leaf = (l: PaintLayer): boolean => !l.group;
+      this.active = (rest.slice(i).find(leaf) ?? rest.slice(0, i).reverse().find(leaf) ?? rest[0]).id;
+      this.maskEdit = false;
+    }
+    this.record(before.layers[i].group ? 'Delete group' : 'Delete layer', before);
   }
 
   duplicateLayer(id: string): PaintLayer {
     const src = this.layer(id) ?? this.activeLayer();
     const before = this.snap();
-    const l: PaintLayer = {
-      ...src, id: newId(), name: src.name + ' copy', source: null,
-      raster: { width: src.raster.width, height: src.raster.height, data: src.raster.data.slice() },
-      version: counter++,
+    const at = this.layers.indexOf(src);
+    const end = blockEnd(this.layers, at);
+    const map = new Map<string, string>();
+    for (let k = at; k < end; k++) map.set(this.layers[k].id, newId());
+    const copies = this.layers.slice(at, end).map((o, k): PaintLayer => {
+      const c: PaintLayer = {
+        ...o, id: map.get(o.id)!, source: null, version: counter++,
+        raster: o.group ? newRaster(1, 1) : { width: o.raster.width, height: o.raster.height, data: o.raster.data.slice() },
+      };
+      if (k === 0) c.name = o.name + (o.group ? ' copy' : ' copy');
+      if (o.parent && map.has(o.parent)) c.parent = map.get(o.parent);
+      if (o.mask) {
+        c.mask = { ...o.mask, raster: { width: o.mask.raster.width, height: o.mask.raster.height, data: o.mask.raster.data.slice() } };
+        c.maskSource = null;
+      }
+      return c;
+    });
+    this.layers.splice(at, 0, ...copies);
+    const lead = copies.find((c) => !c.group);
+    if (lead) this.active = lead.id;
+    this.maskEdit = false;
+    this.record(src.group ? 'Duplicate group' : 'Duplicate layer', before);
+    return copies[0];
+  }
+
+  // ---- groups ----
+
+  /** Wraps the layer (or group) in a new group placed where it was. */
+  addGroup(id?: string): PaintLayer | null {
+    const t = this.layer(id ?? this.active);
+    if (!t) return null;
+    const before = this.snap();
+    const used = new Set(this.layers.map((l) => l.name));
+    let n = 1;
+    while (used.has('Group ' + n)) n++;
+    const g: PaintLayer = {
+      id: newId(), name: 'Group ' + n, visible: true, opacity: 1, blend: 'normal', alphaLock: false, clipping: false,
+      source: null, raster: newRaster(1, 1), version: counter++, group: true,
     };
-    this.layers.splice(this.layers.indexOf(src), 0, l);
-    this.active = l.id;
-    this.record('Duplicate layer', before);
-    return l;
+    if (t.parent) g.parent = t.parent;
+    t.parent = g.id;
+    t.clipping = false;
+    this.layers.splice(this.layers.indexOf(t), 0, g);
+    this.record('New group', before);
+    return g;
+  }
+
+  /** Dissolves a group: its content stays where it is, one level up. */
+  ungroup(id: string): void {
+    const i = this.layers.findIndex((l) => l.id === id);
+    if (i < 0 || !this.layers[i].group) return;
+    const before = this.snap();
+    const g = this.layers[i];
+    for (const l of this.layers) if (l.parent === id) { if (g.parent) l.parent = g.parent; else delete l.parent; }
+    this.layers.splice(i, 1);
+    this.record('Ungroup', before);
+  }
+
+  /** Folds or opens a group in the panel. Saved with the file but not an undo step. */
+  setCollapsed(id: string, on: boolean): void {
+    const g = this.layer(id);
+    if (!g || !g.group || !!g.collapsed === on) return;
+    g.collapsed = on;
+    this.metaDirty = true;
+    this.onChange?.('layers');
+  }
+
+  /**
+   * Moves a layer or group (with its content) into `parent` (null for the top level), above the entry `beforeId`
+   * or, when that is null, at the bottom of the parent. A group cannot move into itself.
+   */
+  moveEntry(id: string, parent: string | null, beforeId: string | null): void {
+    const i = this.layers.findIndex((l) => l.id === id);
+    if (i < 0) return;
+    if (parent && (parent === id || isInside(this.layers, parent, id))) return;
+    if (beforeId && (beforeId === id || isInside(this.layers, beforeId, id))) return;
+    const key = (): string => this.layers.map((l) => l.id + '>' + (l.parent ?? '')).join('|');
+    const was = key();
+    const before = this.snap();
+    const end = blockEnd(this.layers, i);
+    const block = this.layers.splice(i, end - i);
+    if (parent) block[0].parent = parent; else delete block[0].parent;
+    let k: number;
+    if (beforeId) k = this.layers.findIndex((l) => l.id === beforeId);
+    else if (parent) k = blockEnd(this.layers, this.layers.findIndex((l) => l.id === parent));
+    else k = this.layers.length;
+    if (k < 0) k = this.layers.length;
+    this.layers.splice(k, 0, ...block);
+    if (key() === was) { this.layers = before.layers.map((m) => ({ ...m, version: counter++ })); return; }
+    this.record(block[0].group ? 'Move group' : 'Move layer', before);
+  }
+
+  // ---- masks ----
+
+  /** Adds a mask to a layer: revealing everything (white) or hiding everything (black). The mask becomes the paint target. */
+  addMask(id: string, fill: MaskFill = 'reveal'): void {
+    const l = this.layer(id);
+    if (!l || l.group || l.mask) return;
+    const before = this.snap();
+    l.mask = { raster: maskRaster(this.width, this.height, fill === 'reveal' ? 255 : 0), on: true, linked: true };
+    l.maskSource = null;
+    l.version = counter++;
+    this.active = id;
+    this.maskEdit = true;
+    this.record('Add mask', before);
+  }
+
+  deleteMask(id: string): void {
+    const l = this.layer(id);
+    if (!l || !l.mask) return;
+    const before = this.snap();
+    l.mask = null;
+    l.maskSource = null;
+    l.version = counter++;
+    if (l.id === this.active) this.maskEdit = false;
+    this.record('Delete mask', before);
+  }
+
+  /** Bakes the mask into the layer's alpha, then removes it. */
+  applyMask(id: string): void {
+    const l = this.layer(id);
+    if (!l || l.group || !l.mask) return;
+    const before = this.snap();
+    const patches: PixelPatch[] = [];
+    const b = alphaBounds(l.raster);
+    if (b) {
+      const was = readRect(l.raster, b);
+      const now = new Uint8ClampedArray(was);
+      const m = l.mask.raster.data, w = l.raster.width;
+      for (let y = 0; y < b.h; y++) {
+        let o = y * b.w * 4 + 3, mo = ((b.y + y) * w + b.x) * 4;
+        for (let x = 0; x < b.w; x++, o += 4, mo += 4) now[o] = (now[o] * m[mo] + 127) / 255;
+      }
+      writeRect(l.raster, b, now);
+      patches.push({ layer: l.id, rect: b, before: was, after: now });
+      this.touch(l.raster, b);
+    }
+    l.mask = null;
+    l.maskSource = null;
+    l.version = counter++;
+    if (l.id === this.active) this.maskEdit = false;
+    this.record('Apply mask', before, patches);
+  }
+
+  invertMask(id: string): void {
+    const l = this.layer(id);
+    if (!l || !l.mask) return;
+    const r = l.mask.raster;
+    const rect = { x: 0, y: 0, w: r.width, h: r.height };
+    const was = readRect(r, rect);
+    const now = new Uint8ClampedArray(was);
+    for (let i = 0; i < now.length; i += 4) { const v = 255 - now[i]; now[i] = v; now[i + 1] = v; now[i + 2] = v; }
+    writeRect(r, rect, now);
+    this.touch(r, rect);
+    this.onChange?.('pixels', rect);
+    this.commitPatch({ layer: 'mask:' + id, rect, before: was, after: now }, 'Invert mask');
+  }
+
+  /** Turns the mask on or off, or links it to the layer or not. */
+  setMask(id: string, p: { on?: boolean; linked?: boolean }): void {
+    const l = this.layer(id);
+    if (!l || !l.mask) return;
+    const on = p.on ?? l.mask.on, linked = p.linked ?? l.mask.linked;
+    if (on === l.mask.on && linked === l.mask.linked) return;
+    const before = this.snap();
+    const label = p.on !== undefined ? (on ? 'Enable mask' : 'Disable mask') : 'Link mask';
+    l.mask = { raster: l.mask.raster, on, linked };
+    l.version = counter++;
+    this.record(label, before);
+  }
+
+  canMergeDown(id: string): boolean {
+    const i = this.layers.findIndex((l) => l.id === id);
+    if (i < 0 || this.layers[i].group) return false;
+    const lower = this.layers[i + 1];
+    return !!lower && !lower.group && (lower.parent ?? null) === (this.layers[i].parent ?? null);
   }
 
   moveLayer(id: string, toIndex: number): void {
@@ -257,7 +528,7 @@ export class PaintDoc implements PaintHost {
 
   mergeDown(id: string): void {
     const i = this.layers.findIndex((l) => l.id === id);
-    if (i < 0 || i >= this.layers.length - 1) return;
+    if (i < 0 || !this.canMergeDown(id)) return;
     const upper = this.layers[i];
     const lower = this.layers[i + 1];
     const before = this.snap();
@@ -270,7 +541,19 @@ export class PaintDoc implements PaintHost {
       r.drawImage(this.mirror(lower.raster).canvas, 0, 0);
       r.globalAlpha = upper.opacity;
       r.globalCompositeOperation = upper.clipping ? 'source-atop' : BLEND_OP[upper.blend];
-      r.drawImage(this.mirror(upper.raster).canvas, 0, 0);
+      let src: CanvasImageSource = this.mirror(upper.raster).canvas;
+      let tmp: ReturnType<SurfacePool['get']> | null = null;
+      if (upper.mask && upper.mask.on) {
+        // the upper layer's mask goes into the merged pixels
+        tmp = this.surfaces().get();
+        tmp.x.drawImage(src, 0, 0);
+        tmp.x.globalCompositeOperation = 'destination-in';
+        tmp.x.drawImage(this.alphaOf(upper.mask), 0, 0);
+        tmp.x.globalCompositeOperation = 'source-over';
+        src = tmp.c;
+      }
+      r.drawImage(src, 0, 0);
+      if (tmp) this.surfaces().put(tmp);
       r.globalAlpha = 1;
       r.globalCompositeOperation = 'source-over';
       const got = r.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
@@ -285,11 +568,13 @@ export class PaintDoc implements PaintHost {
   }
 
   flatten(): void {
-    const vis = this.layers.filter((l) => l.visible);
-    if (this.layers.length === 1 && this.layers[0].blend === 'normal' && this.layers[0].opacity === 1) return;
+    const leaves = this.layers.filter((l) => !l.group);
+    const vis = leaves.filter((l) => l.visible);
+    if (this.layers.length === 1 && this.layers[0].blend === 'normal' && this.layers[0].opacity === 1 && !this.layers[0].mask) return;
     const before = this.snap();
     const raster = vis.length ? this.renderRaster() : newRaster(this.width, this.height);
-    const base = vis.length ? vis[vis.length - 1] : this.layers[this.layers.length - 1];
+    const base = vis.length ? vis[vis.length - 1] : leaves[leaves.length - 1];
+    this.maskEdit = false;
     const l: PaintLayer = {
       id: newId(), name: base.name, visible: true, opacity: 1, blend: 'normal', alphaLock: false, clipping: false,
       source: null, raster, version: counter++,
@@ -301,7 +586,7 @@ export class PaintDoc implements PaintHost {
 
   clearLayer(id: string): void {
     const l = this.layer(id);
-    if (!l) return;
+    if (!l || l.group) return;
     const b = alphaBounds(l.raster);
     if (!b) return;
     const before = readRect(l.raster, b);
@@ -333,17 +618,19 @@ export class PaintDoc implements PaintHost {
   // ---- pixels ----
 
   markDirty(layerId: string, rect: Rect): void {
-    const l = this.layer(layerId);
-    if (!l) return;
+    const isMask = layerId.startsWith('mask:');
+    const l = this.layer(isMask ? layerId.slice(5) : layerId);
+    const raster = isMask ? l?.mask?.raster : l?.raster;
+    if (!l || !raster) return;
     const x0 = Math.max(0, Math.floor(rect.x)), y0 = Math.max(0, Math.floor(rect.y));
     const x1 = Math.min(this.width, Math.ceil(rect.x + rect.w)), y1 = Math.min(this.height, Math.ceil(rect.y + rect.h));
     if (x1 <= x0 || y1 <= y0) return;
     const r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     l.version = counter++;
-    l.source = null;
+    if (isMask) { l.maskSource = null; markAlpha(raster, r); } else l.source = null;
     this.uncommitted = true;
     this.dirtCount++;
-    const m = mirrors.get(l.raster);
+    const m = mirrors.get(raster);
     if (m) m.dirty = unionRect(m.dirty, r);
     this.onChange?.('pixels', r);
   }
@@ -366,7 +653,7 @@ export class PaintDoc implements PaintHost {
   redoLabel(): string | null { return this.history.redoLabel(); }
 
   isChanged(): boolean {
-    return this.uncommitted || this.history.top() !== this.baseline || (this.baseline === null && this.history.hasDropped());
+    return this.uncommitted || this.metaDirty || this.history.top() !== this.baseline || (this.baseline === null && this.history.hasDropped());
   }
 
   // ---- compositing ----
@@ -390,15 +677,35 @@ export class PaintDoc implements PaintHost {
     return m;
   }
 
-  private surface(which: 'scratch' | 'scratch2'): { c: OffscreenCanvas; x: OffscreenCanvasRenderingContext2D } {
-    let s = this[which];
-    if (!s) {
-      const c = new OffscreenCanvas(this.width, this.height);
-      s = { c, x: c.getContext('2d')! };
-      this[which] = s;
+  private surfaces(): SurfacePool {
+    return (this.pool ??= new SurfacePool(this.width, this.height));
+  }
+
+  /** The mask as a canvas whose alpha is the mask value; only the rows touched since the last call are converted. */
+  private alphaOf(m: PaintMask): CanvasImageSource {
+    const r = m.raster;
+    let a = alphaMirrors.get(r);
+    if (!a) {
+      const canvas = new OffscreenCanvas(r.width, r.height);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+      a = { canvas, ctx, img: new ImageData(r.width, r.height), dirty: { x: 0, y: 0, w: r.width, h: r.height } };
+      alphaMirrors.set(r, a);
     }
-    s.x.setTransform(1, 0, 0, 1, 0, 0);
-    return s;
+    const d = a.dirty;
+    if (d) {
+      const x = Math.max(0, d.x), y = Math.max(0, d.y);
+      const w = Math.min(r.width, d.x + d.w) - x, h = Math.min(r.height, d.y + d.h) - y;
+      if (w > 0 && h > 0) {
+        const src = r.data, dst = a.img.data;
+        for (let yy = y; yy < y + h; yy++) {
+          let o = (yy * r.width + x) * 4;
+          for (let xx = 0; xx < w; xx++, o += 4) dst[o + 3] = src[o];
+        }
+        a.ctx.putImageData(a.img, 0, 0, x, y, w, h);
+      }
+      a.dirty = null;
+    }
+    return a.canvas;
   }
 
   private readerCtx(): OffscreenCanvasRenderingContext2D {
@@ -409,67 +716,10 @@ export class PaintDoc implements PaintHost {
     return this.reader.x;
   }
 
-  private drawClipped(into: OffscreenCanvasRenderingContext2D, l: PaintLayer): void {
-    const src = this.mirror(l.raster).canvas;
-    if (l.blend === 'normal' || l.blend === 'passthrough') {
-      into.globalAlpha = l.opacity;
-      into.globalCompositeOperation = 'source-atop';
-      into.drawImage(src, 0, 0);
-    } else {
-      // Blend into a copy, then lay that copy over the base only where the base has alpha.
-      const s2 = this.surface('scratch2').x;
-      s2.globalAlpha = 1;
-      s2.globalCompositeOperation = 'copy';
-      s2.drawImage(this.surface('scratch').c, 0, 0);
-      s2.globalAlpha = l.opacity;
-      s2.globalCompositeOperation = BLEND_OP[l.blend];
-      s2.drawImage(src, 0, 0);
-      s2.globalAlpha = 1;
-      s2.globalCompositeOperation = 'source-over';
-      into.globalAlpha = 1;
-      into.globalCompositeOperation = 'source-atop';
-      into.drawImage(this.scratch2!.c, 0, 0);
-    }
-    into.globalAlpha = 1;
-    into.globalCompositeOperation = 'source-over';
-  }
-
-  composite(ctx: Ctx, live?: (ctx: Ctx) => void): void {
-    const L = this.layers;
-    const act = this.active;
+  /** Draws the layers, groups and masks. `live` previews a tool over the active layer's pixels. */
+  composite(ctx: Ctx, live?: (ctx: Ctx) => void, region?: Rect): void {
     ctx.save();
-    let i = L.length - 1;
-    while (i >= 0) {
-      const base = L[i];
-      let j = i - 1;
-      while (j >= 0 && L[j].clipping) j--;
-      const next = j;
-      if (base.visible) {
-        const clipped: PaintLayer[] = [];
-        for (let k = i - 1; k > j; k--) if (L[k].visible) clipped.push(L[k]);
-        const hasLive = !!live && (base.id === act || clipped.some((c) => c.id === act));
-        if (!clipped.length && !hasLive) {
-          ctx.globalAlpha = base.opacity;
-          ctx.globalCompositeOperation = BLEND_OP[base.blend];
-          ctx.drawImage(this.mirror(base.raster).canvas, 0, 0);
-        } else {
-          const s = this.surface('scratch');
-          s.x.globalAlpha = 1;
-          s.x.globalCompositeOperation = 'source-over';
-          s.x.clearRect(0, 0, this.width, this.height);
-          s.x.drawImage(this.mirror(base.raster).canvas, 0, 0);
-          if (hasLive && base.id === act) live!(s.x);
-          for (let k = clipped.length - 1; k >= 0; k--) {
-            this.drawClipped(s.x, clipped[k]);
-            if (hasLive && clipped[k].id === act) live!(s.x);
-          }
-          ctx.globalAlpha = base.opacity;
-          ctx.globalCompositeOperation = BLEND_OP[base.blend];
-          ctx.drawImage(s.c, 0, 0);
-        }
-      }
-      i = next;
-    }
+    drawTree(ctx, this.layers, this.width, this.height, this.hooks, this.surfaces(), live ? { active: this.active, draw: live } : undefined, region);
     ctx.restore();
   }
 
@@ -485,7 +735,7 @@ export class PaintDoc implements PaintHost {
   }
 
   flattened(): Raster {
-    const key = this.layers.map((l) => `${l.id}:${l.version}:${+l.visible}:${l.opacity}:${l.blend}:${+l.clipping}`).join('|');
+    const key = this.layers.map((l) => `${l.id}:${l.version}:${+l.visible}:${l.opacity}:${l.blend}:${+l.clipping}:${l.parent ?? ''}:${l.mask?.on ? 1 : 0}`).join('|');
     if (!this.flat || this.flat.key !== key) this.flat = { key, raster: this.renderRaster() };
     return this.flat.raster;
   }
@@ -511,11 +761,34 @@ export class PaintDoc implements PaintHost {
     if (t.canvas.width !== w || t.canvas.height !== h) { t.canvas.width = w; t.canvas.height = h; }
     const x = t.canvas.getContext('2d')!;
     x.clearRect(0, 0, w, h);
-    if (l) {
+    if (l && !l.group) {
       const s = Math.min(w / this.width, h / this.height);
       const dw = this.width * s, dh = this.height * s;
       x.imageSmoothingQuality = 'high';
       x.drawImage(this.mirror(l.raster).canvas, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    }
+    return t.canvas;
+  }
+
+  /** Thumbnail of a layer's mask (grey), cached on the layer's version. */
+  maskThumbnail(layerId: string, w: number, h: number): OffscreenCanvas {
+    const l = this.layer(layerId);
+    let t = this.mthumbs.get(layerId);
+    const key = `${l ? l.version : 0}:${w}x${h}:${l?.mask ? 1 : 0}`;
+    if (t && t.key === key) return t.canvas;
+    if (!t) {
+      t = { key, canvas: new OffscreenCanvas(w, h) };
+      this.mthumbs.set(layerId, t);
+    }
+    t.key = key;
+    if (t.canvas.width !== w || t.canvas.height !== h) { t.canvas.width = w; t.canvas.height = h; }
+    const x = t.canvas.getContext('2d')!;
+    x.clearRect(0, 0, w, h);
+    if (l && l.mask) {
+      const s = Math.min(w / this.width, h / this.height);
+      const dw = this.width * s, dh = this.height * s;
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(this.mirror(l.mask.raster).canvas, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
     return t.canvas;
   }
@@ -532,9 +805,26 @@ export class PaintDoc implements PaintHost {
     const versions = new Map(list.map((l) => [l.id, l.version]));
     const top = this.history.top();
     const dirt = this.dirtCount;
+    const maskSources = new Map<string, string | null>();
     for (const l of list) {
       let pixels: string | null = null;
-      if (l.source) {
+      let mask: string | null = null;
+      if (l.mask) {
+        if (l.maskSource) mask = l.maskSource;
+        else {
+          const blob = await this.mirror(l.mask.raster).canvas.convertToBlob({ type: 'image/png' });
+          const asset: Asset = {
+            id: newAssetId(), kind: 'pixels', name: l.name + ' mask', mime: 'image/png',
+            width: this.width, height: this.height, frames: 0, size: blob.size,
+          };
+          assets.push({ asset, blob });
+          mask = asset.id;
+        }
+        maskSources.set(l.id, mask);
+      }
+      if (l.group) {
+        pixels = null;
+      } else if (l.source) {
         pixels = l.source;
       } else if (!isTransparent(l.raster)) {
         const blob = await this.mirror(l.raster).canvas.convertToBlob({ type: 'image/png' });
@@ -546,13 +836,24 @@ export class PaintDoc implements PaintHost {
         pixels = asset.id;
       }
       sources.set(l.id, pixels);
-      layers.push({
+      const out: DrawingLayer = {
         id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blend: l.blend,
         alphaLock: l.alphaLock, clipping: l.clipping, pixels,
-      });
+      };
+      // optional fields only when set, so a file without groups or masks is byte-for-byte as before
+      if (l.group) out.group = true;
+      if (l.parent) out.parent = l.parent;
+      if (l.collapsed) out.collapsed = true;
+      if (l.mask && mask) { out.mask = mask; out.maskOn = l.mask.on; out.maskLinked = l.mask.linked; }
+      layers.push(out);
     }
-    for (const l of this.layers) if (versions.get(l.id) === l.version && sources.has(l.id)) l.source = sources.get(l.id) ?? null;
+    for (const l of this.layers) {
+      if (versions.get(l.id) !== l.version) continue;
+      if (sources.has(l.id) && !l.group) l.source = sources.get(l.id) ?? null;
+      if (maskSources.has(l.id)) l.maskSource = maskSources.get(l.id) ?? null;
+    }
     this.baseline = top;
+    this.metaDirty = false;
     if (this.dirtCount === dirt) this.uncommitted = false;
     return { layers, assets };
   }
@@ -560,12 +861,19 @@ export class PaintDoc implements PaintHost {
   dispose(): void {
     this.disposed = true;
     for (const l of this.layers) {
-      const m = mirrors.get(l.raster);
-      if (m) { m.canvas.width = 0; mirrors.delete(l.raster); }
+      for (const r of l.mask ? [l.raster, l.mask.raster] : [l.raster]) {
+        const m = mirrors.get(r);
+        if (m) { m.canvas.width = 0; mirrors.delete(r); }
+        const a = alphaMirrors.get(r);
+        if (a) { a.canvas.width = 0; alphaMirrors.delete(r); }
+      }
     }
-    for (const s of [this.scratch, this.scratch2, this.reader]) if (s) s.c.width = 0;
-    this.scratch = this.scratch2 = this.reader = null;
+    if (this.reader) this.reader.c.width = 0;
+    this.reader = null;
+    this.pool?.dispose();
+    this.pool = null;
     this.thumbs.clear();
+    this.mthumbs.clear();
     this.flat = null;
   }
 }

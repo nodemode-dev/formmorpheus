@@ -2,7 +2,7 @@
 // layer entries hold two layer-list snapshots (rasters are referenced, not copied)
 // plus the patches of any raster the edit changed in place (merge down).
 
-import type { PaintLayer, PixelPatch, Raster, Rect } from './types';
+import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
 import type { BlendMode } from '../engine/types';
 
 export interface SnapLayer {
@@ -15,6 +15,11 @@ export interface SnapLayer {
   clipping: boolean;
   source: string | null;
   raster: Raster;
+  group?: boolean;
+  parent?: string | null;
+  collapsed?: boolean;
+  mask?: PaintMask | null;
+  maskSource?: string | null;
 }
 
 export interface LayerSnapshot {
@@ -109,11 +114,13 @@ function entryBytes(e: PaintEntry): number {
   if (e.patches) for (const p of e.patches) n += p.before.byteLength + p.after.byteLength;
   // Rasters held by only one side stay alive only through this entry.
   const a = new Set<Raster>();
-  for (const l of e.after.layers) a.add(l.raster);
+  for (const l of e.after.layers) { a.add(l.raster); if (l.mask) a.add(l.mask.raster); }
   const b = new Set<Raster>();
   for (const l of e.before.layers) {
-    b.add(l.raster);
-    if (!a.has(l.raster)) n += l.raster.data.byteLength;
+    for (const r of l.mask ? [l.raster, l.mask.raster] : [l.raster]) {
+      b.add(r);
+      if (!a.has(r)) n += r.data.byteLength;
+    }
   }
   for (const r of a) if (!b.has(r)) n += r.data.byteLength;
   return n;

@@ -5,17 +5,21 @@ import { BLEND_MODES } from '../engine/types';
 import type { BlendMode } from '../engine/types';
 import type { PaintDoc } from '../paint/doc';
 import type { PaintLayer } from '../paint/types';
+import { blockEnd, depthOf, hiddenByFold, isInside } from '../paint/layer-tree';
 
-const TW = 56, TH = 38, TS = 2;
-const ROW_H = 50, ROW_GAP = 2;
+const TW = 56, TH = 38, TS = 2, MW = 56;
+const ROW_H = 50, ROW_GAP = 2, INDENT = 16;
+const ICON_CHEV = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5.5 6.5 2.5 3 2.5-3"/></svg>';
+const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>';
+const ICON_GROUP_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/></svg>';
 
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
 const ICON_HOOK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a2 2 0 0 0 2 2h7M9.5 8.5 12 11l-2.5 2.5"/></svg>';
 
-type SideKind = 'menu' | 'blend';
+type SideKind = 'menu' | 'blend' | 'mask';
 
-interface Thumb { layer: PaintLayer; raster: unknown; ver: number }
+interface Thumb { layer: PaintLayer; raster: unknown; ver: number; mask: unknown }
 
 export class LayersPanel {
   readonly root: HTMLElement;
@@ -23,6 +27,8 @@ export class LayersPanel {
   private readonly list: HTMLElement;
   private readonly menu: HTMLElement;
   private readonly blendCard: HTMLElement;
+  private readonly maskCard: HTMLElement;
+  private readonly dropEl: HTMLElement;
   private readonly range: HTMLInputElement;
   private readonly pct: HTMLElement;
   private readonly blendList: HTMLElement;
@@ -38,7 +44,7 @@ export class LayersPanel {
     if (!t || this.anchor?.contains(t)) return;
     if (this.root.contains(t)) {
       // A press outside the side cards and the rows' controls dismisses the side card.
-      if (this.side && !this.menu.contains(t) && !this.blendCard.contains(t) && !(t as HTMLElement).closest?.('.fm-lp-row')) this.closeSide();
+      if (this.side && !this.menu.contains(t) && !this.blendCard.contains(t) && !this.maskCard.contains(t) && !(t as HTMLElement).closest?.('.fm-lp-row')) this.closeSide();
       return;
     }
     this.close();
@@ -50,21 +56,33 @@ export class LayersPanel {
   };
 
   constructor(private readonly opts: { doc: () => PaintDoc | null; onClose?: () => void }) {
-    const modes = BLEND_MODES.filter((m) => m.id !== 'passthrough');
+    const modes = BLEND_MODES;
     this.root = el<HTMLElement>(`<div class="fm-lp" hidden>
       <div class="fm-lp-card fm-pp-glass">
-        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><button type="button" class="fm-lp-add" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div>
-        <div class="fm-lp-list"></div>
+        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-add fm-lp-addgroup" aria-label="New Group" title="New Group">${ICON_GROUP_PLUS}</button><button type="button" class="fm-lp-add fm-lp-addlayer" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div></div>
+        <div class="fm-lp-listwrap"><div class="fm-lp-list"></div><div class="fm-lp-drop" hidden></div></div>
       </div>
       <div class="fm-lp-side fm-lp-menu fm-pp-glass" hidden>
         <button type="button" class="fm-pop-row" data-act="rename"><span class="fm-pop-label">Rename</span></button>
-        <button type="button" class="fm-pop-row has-check" data-act="clip"><span class="fm-pop-label">Clipping Mask</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
-        <button type="button" class="fm-pop-row has-check" data-act="lock"><span class="fm-pop-label">Alpha Lock</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <button type="button" class="fm-pop-row has-check" data-act="clip" data-for="layer"><span class="fm-pop-label">Clipping Mask</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <button type="button" class="fm-pop-row has-check" data-act="lock" data-for="layer"><span class="fm-pop-label">Alpha Lock</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
         <div class="fm-pop-sep"></div>
-        <button type="button" class="fm-pop-row" data-act="merge"><span class="fm-pop-label">Merge Down</span></button>
+        <button type="button" class="fm-pop-row" data-act="addmask" data-for="layer"><span class="fm-pop-label">Add Mask</span></button>
+        <button type="button" class="fm-pop-row" data-act="group"><span class="fm-pop-label">Group</span></button>
+        <button type="button" class="fm-pop-row" data-act="ungroup" data-for="group"><span class="fm-pop-label">Ungroup</span></button>
+        <div class="fm-pop-sep"></div>
+        <button type="button" class="fm-pop-row" data-act="merge" data-for="layer"><span class="fm-pop-label">Merge Down</span></button>
         <button type="button" class="fm-pop-row" data-act="dup"><span class="fm-pop-label">Duplicate</span></button>
-        <button type="button" class="fm-pop-row" data-act="clear"><span class="fm-pop-label">Clear</span></button>
+        <button type="button" class="fm-pop-row" data-act="clear" data-for="layer"><span class="fm-pop-label">Clear</span></button>
         <button type="button" class="fm-pop-row is-danger" data-act="delete"><span class="fm-pop-label">Delete</span></button>
+      </div>
+      <div class="fm-lp-side fm-lp-maskcard fm-pp-glass" hidden>
+        <button type="button" class="fm-pop-row has-check" data-mact="on"><span class="fm-pop-label">Mask Enabled</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <button type="button" class="fm-pop-row has-check" data-mact="link"><span class="fm-pop-label">Linked to Layer</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <div class="fm-pop-sep"></div>
+        <button type="button" class="fm-pop-row" data-mact="invert"><span class="fm-pop-label">Invert Mask</span></button>
+        <button type="button" class="fm-pop-row" data-mact="apply"><span class="fm-pop-label">Apply Mask</span></button>
+        <button type="button" class="fm-pop-row is-danger" data-mact="delete"><span class="fm-pop-label">Delete Mask</span></button>
       </div>
       <div class="fm-lp-side fm-lp-blendcard fm-pp-glass" hidden>
         <div class="fm-cm-opacity"><div class="fm-cm-opacity-head"><span>Opacity</span><span class="fm-cm-pct fm-lp-pct">100%</span></div><input class="fm-cm-range fm-lp-range" type="range" min="0" max="100" step="1" value="100"></div>
@@ -76,13 +94,23 @@ export class LayersPanel {
     this.list = q(this.root, '.fm-lp-list');
     this.menu = q(this.root, '.fm-lp-menu');
     this.blendCard = q(this.root, '.fm-lp-blendcard');
+    this.maskCard = q(this.root, '.fm-lp-maskcard');
+    this.dropEl = q(this.root, '.fm-lp-drop');
     this.range = q<HTMLInputElement>(this.root, '.fm-lp-range');
     this.pct = q(this.root, '.fm-lp-pct');
     this.blendList = q(this.root, '.fm-lp-blends');
 
-    q(this.root, '.fm-lp-add').addEventListener('click', () => {
+    q(this.root, '.fm-lp-addlayer').addEventListener('click', () => {
       const d = this.doc(); if (!d) return;
       d.addLayer(); this.refresh();
+    });
+    q(this.root, '.fm-lp-addgroup').addEventListener('click', () => {
+      const d = this.doc(); if (!d) return;
+      d.addGroup(); this.refresh();
+    });
+    this.maskCard.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-mact]');
+      if (b) this.onMaskMenu(b.dataset.mact ?? '');
     });
     this.list.addEventListener('click', (e) => this.onListClick(e));
     this.list.addEventListener('change', (e) => {
@@ -149,22 +177,27 @@ export class LayersPanel {
   refresh(): void {
     if (!this.opened) return;
     const d = this.doc();
-    const layers = d ? d.layers : [];
+    const all = d ? d.layers : [];
+    // rows inside a folded group are not listed
+    const layers = all.filter((l) => !hiddenByFold(all, l.id));
     const active = d?.active ?? '';
     patchList(this.list, layers, {
       key: (l) => l.id,
       create: (l) => {
         const row = el<HTMLElement>(`<div class="fm-lp-row">
+          <button type="button" class="fm-lp-fold" aria-label="Fold group" title="Fold or open the group" hidden>${ICON_CHEV}</button>
           <span class="fm-lp-hook">${ICON_HOOK}</span>
           <canvas class="fm-lp-thumb" width="${TW * TS}" height="${TH * TS}"></canvas>
+          <span class="fm-lp-folder" hidden>${ICON_FOLDER}</span>
+          <canvas class="fm-lp-mthumb" width="${MW * TS}" height="${TH * TS}" title="Mask" hidden></canvas>
           <span class="fm-lp-name"></span><input class="fm-lp-rename" type="text" hidden spellcheck="false">
           <button type="button" class="fm-lp-blend" title="Opacity and blend mode"></button>
           <label class="fm-lp-vis"><input class="fm-lp-check" type="checkbox"></label>
         </div>`);
-        this.patchRow(row, l, active, layers);
+        this.patchRow(row, l, active, all);
         return row;
       },
-      update: (row, l) => this.patchRow(row, l, active, layers),
+      update: (row, l) => this.patchRow(row, l, active, all),
     });
     this.syncSide();
     this.fit();
@@ -173,26 +206,48 @@ export class LayersPanel {
   private doc(): PaintDoc | null { return this.opts.doc(); }
 
   private patchRow(row: HTMLElement, l: PaintLayer, active: string, layers: PaintLayer[]): void {
-    setClass(row, 'is-active', l.id === active);
-    setClass(row, 'is-clip', l.clipping);
+    const d = this.doc();
+    const group = !!l.group;
+    const editMask = !!d && d.maskEditing() && l.id === active;
+    setClass(row, 'is-active', !group && l.id === active);
+    setClass(row, 'is-group', group);
+    setClass(row, 'is-clip', l.clipping && !group);
     setClass(row, 'is-hidden', !l.visible);
+    setClass(row, 'is-folded', !!l.collapsed);
+    setClass(row, 'is-side', !!this.side && this.side.id === l.id);
+    setStyleVar(row, '--fm-depth', String(depthOf(layers, l.id)));
     if (this.renaming !== l.id) setText(q(row, '.fm-lp-name'), l.name);
     const short = BLEND_MODES.find((m) => m.id === l.blend)?.short ?? 'N';
     setText(q(row, '.fm-lp-blend'), short);
     setClass(q(row, '.fm-lp-blend'), 'is-set', l.blend !== 'normal' || l.opacity < 0.995);
     setChecked(q<HTMLInputElement>(row, '.fm-lp-check'), l.visible);
-    void layers;
     const c = q<HTMLCanvasElement>(row, '.fm-lp-thumb');
+    const mc = q<HTMLCanvasElement>(row, '.fm-lp-mthumb');
+    setHidden(q(row, '.fm-lp-fold'), !group);
+    setHidden(q(row, '.fm-lp-folder'), !group);
+    setHidden(c, group);
+    setHidden(mc, !l.mask);
+    setClass(c, 'is-sel', !group && l.id === active && !editMask);
+    setClass(mc, 'is-sel', editMask);
+    setClass(mc, 'is-off', !!l.mask && !l.mask.on);
     const prev = this.thumbs.get(row);
-    if (!prev || prev.layer !== l || prev.raster !== l.raster || prev.ver !== l.version) {
-      const d = this.doc();
+    if (!prev || prev.layer !== l || prev.raster !== l.raster || prev.ver !== l.version || prev.mask !== l.mask) {
       if (d) {
-        const ctx = c.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, c.width, c.height);
-          try { ctx.drawImage(d.thumbnail(l.id, c.width, c.height) as unknown as CanvasImageSource, 0, 0); } catch { /* thumbnail not ready */ }
+        if (!group) {
+          const ctx = c.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, c.width, c.height);
+            try { ctx.drawImage(d.thumbnail(l.id, c.width, c.height) as unknown as CanvasImageSource, 0, 0); } catch { /* thumbnail not ready */ }
+          }
         }
-        this.thumbs.set(row, { layer: l, raster: l.raster, ver: l.version });
+        if (l.mask) {
+          const mctx = mc.getContext('2d');
+          if (mctx) {
+            mctx.clearRect(0, 0, mc.width, mc.height);
+            try { mctx.drawImage(d.maskThumbnail(l.id, mc.width, mc.height) as unknown as CanvasImageSource, 0, 0); } catch { /* thumbnail not ready */ }
+          }
+        }
+        this.thumbs.set(row, { layer: l, raster: l.raster, ver: l.version, mask: l.mask });
       }
     }
   }
@@ -224,12 +279,32 @@ export class LayersPanel {
     const d = this.doc();
     if (!row || !id || !d) return;
     if (t.closest('.fm-lp-vis') || t.closest('.fm-lp-rename')) return;
+    const l = d.layer(id);
+    if (!l) return;
+    if (t.closest('.fm-lp-fold')) { d.setCollapsed(id, !l.collapsed); this.closeSide(); this.refresh(); return; }
     if (t.closest('.fm-lp-blend')) {
-      if (d.active !== id) d.setActive(id);
+      if (!l.group && d.active !== id) d.setActive(id);
       this.openSide('blend', id, row);
       this.refresh();
       return;
     }
+    if (l.group) {
+      if (this.side?.kind === 'menu' && this.side.id === id) this.closeSide(); else this.openSide('menu', id, row);
+      this.refresh();
+      return;
+    }
+    if (t.closest('.fm-lp-mthumb') && l.mask) {
+      if (d.active === id && d.maskEditing()) {
+        if (this.side?.kind === 'mask' && this.side.id === id) this.closeSide(); else this.openSide('mask', id, row);
+      } else {
+        d.setActive(id);
+        d.setMaskEdit(true);
+        this.closeSide();
+      }
+      this.refresh();
+      return;
+    }
+    if (t.closest('.fm-lp-thumb') && d.active === id && d.maskEditing()) { d.setMaskEdit(false); this.closeSide(); this.refresh(); return; }
     if (d.active !== id) { d.setActive(id); this.closeSide(); this.refresh(); return; }
     if (this.side?.kind === 'menu' && this.side.id === id) this.closeSide();
     else this.openSide('menu', id, row);
@@ -239,6 +314,7 @@ export class LayersPanel {
     this.side = { kind, id };
     setHidden(this.menu, kind !== 'menu');
     setHidden(this.blendCard, kind !== 'blend');
+    setHidden(this.maskCard, kind !== 'mask');
     this.syncSide();
     this.placeSide(row);
   }
@@ -248,10 +324,15 @@ export class LayersPanel {
     this.side = null;
     setHidden(this.menu, true);
     setHidden(this.blendCard, true);
+    setHidden(this.maskCard, true);
+  }
+
+  private sideEl(): HTMLElement | null {
+    return this.side ? (this.side.kind === 'menu' ? this.menu : this.side.kind === 'mask' ? this.maskCard : this.blendCard) : null;
   }
 
   private placeSide(row: HTMLElement): void {
-    const s = this.side ? (this.side.kind === 'menu' ? this.menu : this.blendCard) : null;
+    const s = this.sideEl();
     if (!s) return;
     const host = (this.root.offsetParent as HTMLElement | null) ?? document.body;
     const cardW = this.card.offsetWidth, w = s.offsetWidth, h = s.offsetHeight;
@@ -271,11 +352,19 @@ export class LayersPanel {
     if (!this.side || !d) return;
     const l = d.layer(this.side.id);
     if (!l) { this.closeSide(); return; }
+    const grp = !!l.group;
     if (this.side.kind === 'menu') {
+      for (const b of Array.from(this.menu.querySelectorAll<HTMLElement>('[data-for]'))) setHidden(b, b.dataset.for === 'layer' ? grp : !grp);
+      setHidden(q(this.menu, '[data-act=addmask]'), grp || !!l.mask);
       setClass(q(this.menu, '[data-act=clip]'), 'is-checked', l.clipping);
       setClass(q(this.menu, '[data-act=lock]'), 'is-checked', l.alphaLock);
-      setClass(q(this.menu, '[data-act=merge]'), 'is-disabled', d.layers.indexOf(l) >= d.layers.length - 1);
+      setClass(q(this.menu, '[data-act=merge]'), 'is-disabled', !d.canMergeDown(l.id));
+    } else if (this.side.kind === 'mask') {
+      if (!l.mask) { this.closeSide(); return; }
+      setClass(q(this.maskCard, '[data-mact=on]'), 'is-checked', l.mask.on);
+      setClass(q(this.maskCard, '[data-mact=link]'), 'is-checked', l.mask.linked);
     } else {
+      setHidden(q(this.blendList, '[data-blend=passthrough]'), !grp);
       const v = Math.round(l.opacity * 100);
       if (document.activeElement !== this.range && this.range.value !== String(v)) this.range.value = String(v);
       setText(this.pct, `${v}%`);
@@ -298,10 +387,28 @@ export class LayersPanel {
       }
       case 'clip': d.setProps(id, { clipping: !l.clipping }); break;
       case 'lock': d.setProps(id, { alphaLock: !l.alphaLock }); break;
-      case 'merge': if (d.layers.indexOf(l) < d.layers.length - 1) { d.mergeDown(id); this.closeSide(); } break;
+      case 'merge': if (d.canMergeDown(id)) { d.mergeDown(id); this.closeSide(); } break;
       case 'dup': d.duplicateLayer(id); this.closeSide(); break;
       case 'clear': d.clearLayer(id); this.closeSide(); break;
       case 'delete': d.deleteLayer(id); this.closeSide(); break;
+      case 'addmask': d.addMask(id); this.closeSide(); break;
+      case 'group': d.addGroup(id); this.closeSide(); break;
+      case 'ungroup': d.ungroup(id); this.closeSide(); break;
+    }
+    this.refresh();
+  }
+
+  private onMaskMenu(act: string): void {
+    const d = this.doc(); const id = this.side?.id;
+    if (!d || !id) return;
+    const l = d.layer(id);
+    if (!l || !l.mask) return;
+    switch (act) {
+      case 'on': d.setMask(id, { on: !l.mask.on }); break;
+      case 'link': d.setMask(id, { linked: !l.mask.linked }); break;
+      case 'invert': d.invertMask(id); this.closeSide(); break;
+      case 'apply': d.applyMask(id); this.closeSide(); break;
+      case 'delete': d.deleteMask(id); this.closeSide(); break;
     }
     this.refresh();
   }
@@ -344,25 +451,70 @@ export class LayersPanel {
     input.addEventListener('blur', onBlur);
   }
 
-  // Drag to reorder
+  // Drag to reorder and to move into or out of groups
+
+  /** Where a dragged row would land at the pointer: its group and the entry it goes above (null: bottom of the group). Moves the drop line. */
+  private dropAt(d: PaintDoc, dragId: string, dx: number, cy: number): { parent: string | null; before: string | null } | null {
+    const all = d.layers;
+    const di = all.findIndex((l) => l.id === dragId);
+    if (di < 0) return null;
+    const gone = new Set(all.slice(di, blockEnd(all, di)).map((l) => l.id));
+    const rest = all.filter((l) => !gone.has(l.id));
+    const rows = (Array.from(this.list.children) as HTMLElement[]).filter((r) => !gone.has(r.dataset.key ?? ''));
+    let g = 0;
+    for (const r of rows) {
+      const b = r.getBoundingClientRect();
+      if (cy > b.top + b.height / 2) g++; else break;
+    }
+    const byId = new Map(rest.map((l) => [l.id, l]));
+    const prev = g > 0 ? byId.get(rows[g - 1].dataset.key ?? '') : undefined;
+    const next = g < rows.length ? byId.get(rows[g].dataset.key ?? '') : undefined;
+    const depthPrev = prev ? depthOf(rest, prev.id) : -1;
+    const maxD = prev ? depthPrev + (prev.group && !prev.collapsed ? 1 : 0) : 0;
+    const minD = Math.min(next ? depthOf(rest, next.id) : 0, maxD);
+    const depth = Math.max(minD, Math.min(maxD, depthOf(all, dragId) + Math.round(dx / INDENT)));
+    let parent: string | null;
+    let before: string | null;
+    if (!prev) {
+      parent = null;
+      before = rest[0]?.id ?? null;
+    } else if (depth === depthPrev + 1) {
+      parent = prev.id;
+      const n = rest[rest.indexOf(prev) + 1];
+      before = n && n.parent === prev.id ? n.id : null;
+    } else {
+      let a = prev;
+      for (let da = depthPrev; da > depth; da--) a = byId.get(a.parent ?? '') ?? a;
+      parent = a.parent ?? null;
+      const n = rest[blockEnd(rest, rest.indexOf(a))];
+      before = n && (n.parent ?? null) === parent ? n.id : null;
+    }
+    const wrap = this.dropEl.parentElement as HTMLElement;
+    const wr = wrap.getBoundingClientRect();
+    const edge = prev ? rows[g - 1].getBoundingClientRect().bottom : rows[0] ? rows[0].getBoundingClientRect().top : wr.top;
+    const left = 8 + depth * INDENT;
+    this.dropEl.style.top = `${Math.round(edge - wr.top)}px`;
+    this.dropEl.style.left = `${left}px`;
+    this.dropEl.style.width = `${Math.max(20, wr.width - left - 8)}px`;
+    setHidden(this.dropEl, false);
+    return { parent, before };
+  }
 
   private onRowDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     const t = e.target as HTMLElement;
-    if (t.closest('.fm-lp-vis, .fm-lp-blend, .fm-lp-rename')) return;
+    if (t.closest('.fm-lp-vis, .fm-lp-blend, .fm-lp-rename, .fm-lp-fold')) return;
     const row = t.closest<HTMLElement>('.fm-lp-row');
     const d = this.doc();
     if (!row || !d || d.layers.length < 2) return;
-    const rows = Array.from(this.list.children) as HTMLElement[];
-    const from = rows.indexOf(row);
     const id = row.dataset.key ?? '';
-    const startY = e.clientY, pid = e.pointerId;
-    const pitch = row.offsetHeight + ROW_GAP || ROW_H + ROW_GAP;
-    let started = false, to = from;
+    const startX = e.clientX, startY = e.clientY, pid = e.pointerId;
+    let started = false;
+    let drop: { parent: string | null; before: string | null } | null = null;
 
     const move = (ev: PointerEvent): void => {
       if (ev.pointerId !== pid) return;
-      let dy = ev.clientY - startY;
+      const dy = ev.clientY - startY;
       if (!started) {
         if (Math.abs(dy) < 5) return;
         started = true;
@@ -371,14 +523,8 @@ export class LayersPanel {
         row.classList.add('is-lifted');
         this.closeSide();
       }
-      dy = Math.max(-from * pitch, Math.min((rows.length - 1 - from) * pitch, dy));
       row.style.transform = `translateY(${dy}px)`;
-      to = Math.max(0, Math.min(rows.length - 1, Math.round(from + dy / pitch)));
-      rows.forEach((r, i) => {
-        if (r === row) return;
-        const shift = from < to && i > from && i <= to ? -pitch : from > to && i >= to && i < from ? pitch : 0;
-        r.style.transform = shift ? `translateY(${shift}px)` : '';
-      });
+      drop = this.dropAt(d, id, ev.clientX - startX, ev.clientY);
     };
     const end = (ev: PointerEvent): void => {
       if (ev.pointerId !== pid) return;
@@ -388,10 +534,11 @@ export class LayersPanel {
       if (!started) return;
       this.lastDrag = performance.now();
       this.list.classList.add('is-settling');
-      for (const r of rows) r.style.transform = '';
+      row.style.transform = '';
       row.classList.remove('is-lifted');
       this.list.classList.remove('is-dragging');
-      if (to !== from && ev.type === 'pointerup') d.moveLayer(id, to);
+      setHidden(this.dropEl, true);
+      if (drop && ev.type === 'pointerup') d.moveEntry(id, drop.parent, drop.before);
       this.refresh();
       requestAnimationFrame(() => this.list.classList.remove('is-settling'));
     };

@@ -166,6 +166,35 @@
   background: var(--text-primary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
+/* the four remembered values of the brush: small ticks beside the track */
+.fm-paint-slot {
+  --m: 0;
+  position: absolute;
+  left: -10px;
+  width: 12px;
+  height: 14px;
+  bottom: calc(var(--m) * (100% - 14px));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+.fm-paint-slot::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 5px;
+  width: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  transition: background 0.12s var(--ease-glass), transform 0.12s var(--ease-glass);
+}
+.fm-paint-slot:hover::after { background: var(--text-primary); transform: scaleX(1.4); }
+.fm-paint-slot.is-at::after { background: var(--accent-color); }
+.fm-paint.is-side-right .fm-paint-slot { left: auto; right: -10px; }
+.fm-paint.is-side-right .fm-paint-slot::after { left: auto; right: 1px; }
 .fm-paint-side-btn {
   width: 34px;
   height: 34px;
