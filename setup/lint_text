@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Text lint: no em dash, no emoji, no commit-attribution trailers, no other vendors' product names.
+
+Scans the tracked text files (git ls-files when git is available, else a walk) and prints file:line hits.
+Exits 1 on any hit. Banned names live in setup/lint_text_banned.txt, one per line, matched as whole words.
+Set FM_LINT_WALK=1 to skip git and walk the tree.
+"""
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SKIP_DIRS = {"node_modules", "dist", "target", "venv", ".git", "__pycache__", "build", "dist-engine", "gen"}
+SKIP_FILES = {"package-lock.json", "Cargo.lock", "lint_text", "lint_text_banned.txt"}
+RULE_DOCS = {"CLAUDE.md", "AGENTS.md", ".docs/wiki/Contributing.md"}
+BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".woff", ".woff2", ".ttf", ".otf", ".zip", ".mp4", ".mov", ".webm", ".wav", ".mp3", ".fmo", ".pdf", ".tif", ".tiff", ".wasm", ".gz"}
+MAX_BYTES = 4 * 1024 * 1024
+
+EM_DASH = "—"
+# Pictographs, dingbats, symbols, variation selector 16 and the zero width joiner used to build emoji sequences.
+EMOJI = re.compile("[☀-➿⭐⭕⬛⬜⌚⌛⏩-⏿⤴⤵〰〽㊗㊙\U0001f000-\U0001faff️‍]")
+ATTRIBUTION = re.compile("co-" + "authored-by", re.I)
+
+
+def banned_names() -> list[re.Pattern]:
+    path = ROOT / "setup" / "lint_text_banned.txt"
+    names = []
+    if path.is_file():
+        for line in path.read_text("utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                names.append(re.compile(r"\b" + re.escape(line) + r"\b"))
+    return names
+
+
+def tracked() -> list[Path]:
+    if not os.environ.get("FM_LINT_WALK"):
+        try:
+            out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True).stdout
+            return [ROOT / p for p in out.decode("utf-8").split("\0") if p]
+        except (OSError, subprocess.CalledProcessError):
+            pass
+    found = []
+    for base, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        found.extend(Path(base) / f for f in files)
+    return found
+
+
+def wanted(p: Path) -> bool:
+    rel = p.relative_to(ROOT).parts
+    if p.name in SKIP_FILES or p.suffix.lower() in BINARY_EXT or any(part in SKIP_DIRS for part in rel[:-1]):
+        return False
+    return p.is_file()
+
+
+def main() -> int:
+    names = banned_names()
+    hits = 0
+    for p in sorted(filter(wanted, tracked())):
+        try:
+            if p.stat().st_size > MAX_BYTES:
+                continue
+            raw = p.read_bytes()
+            if b"\0" in raw[:8192]:
+                continue
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = p.relative_to(ROOT)
+        for n, line in enumerate(text.splitlines(), 1):
+            found = []
+            if EM_DASH in line:
+                found.append("em dash")
+            m = EMOJI.search(line)
+            if m:
+                found.append(f"emoji U+{ord(m.group()):04X}")
+            # The agent guides and the wiki state the rule itself, so they may name the trailer.
+            if ATTRIBUTION.search(line) and str(rel) not in RULE_DOCS:
+                found.append("commit attribution trailer")
+            for rx in names:
+                if rx.search(line):
+                    found.append(f"banned name {rx.pattern[2:-2]}".replace("\\", ""))
+            for what in found:
+                print(f"{rel}:{n}: {what}")
+                hits += 1
+    print(f"lint_text: {hits} hit{'s' if hits != 1 else ''}", file=sys.stderr)
+    return 1 if hits else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
