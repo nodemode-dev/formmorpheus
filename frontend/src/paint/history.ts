@@ -22,8 +22,17 @@ export interface LayerSnapshot {
   active: string;
 }
 
+/** Default cap on the bytes all paint undo entries may hold; the oldest entries drop beyond it. */
+export const PAINT_HISTORY_BUDGET = 1024 * 1024 * 1024;
+const TILE = 128;
+/** Patches under this many bytes stay one rectangle: tiling them saves nothing. */
+const TILE_MIN_BYTES = 256 * 1024;
+
+/** Where the history reports that it dropped its oldest steps (the paint view shows it in its toast). */
+export const historyNotice: { handler: ((text: string) => void) | null } = { handler: null };
+
 export type PaintEntry =
-  | { kind: 'pixels'; label: string; patch: PixelPatch }
+  | { kind: 'pixels'; label: string; patches: PixelPatch[] }
   | { kind: 'layers'; label: string; before: LayerSnapshot; after: LayerSnapshot; tag?: string; patches?: PixelPatch[] };
 
 /** What the history needs from its document. */
@@ -56,8 +65,46 @@ export function readRect(r: Raster, rect: Rect): Uint8ClampedArray {
   return out;
 }
 
+/**
+ * A big patch (a long stroke has a bounding box close to the whole layer) is kept as only the
+ * TILE-sized squares whose pixels changed, so a 4K stroke costs its length, not its bounding box.
+ */
+export function tilePatch(p: PixelPatch): PixelPatch[] {
+  const { rect, before, after } = p;
+  if (before.byteLength < TILE_MIN_BYTES || before.byteOffset % 4 || after.byteOffset % 4) return [p];
+  const a = new Uint32Array(before.buffer, before.byteOffset, before.byteLength >> 2);
+  const b = new Uint32Array(after.buffer, after.byteOffset, after.byteLength >> 2);
+  const out: PixelPatch[] = [];
+  let kept = 0;
+  for (let ty = 0; ty < rect.h; ty += TILE) {
+    const th = Math.min(TILE, rect.h - ty);
+    for (let tx = 0; tx < rect.w; tx += TILE) {
+      const tw = Math.min(TILE, rect.w - tx);
+      let same = true;
+      for (let y = 0; y < th && same; y++) {
+        let i = (ty + y) * rect.w + tx;
+        for (let x = 0; x < tw; x++, i++) if (a[i] !== b[i]) { same = false; break; }
+      }
+      if (same) continue;
+      const tb = new Uint8ClampedArray(tw * th * 4), ta = new Uint8ClampedArray(tw * th * 4);
+      for (let y = 0; y < th; y++) {
+        const src = ((ty + y) * rect.w + tx) * 4;
+        tb.set(before.subarray(src, src + tw * 4), y * tw * 4);
+        ta.set(after.subarray(src, src + tw * 4), y * tw * 4);
+      }
+      kept += tb.byteLength;
+      out.push({ layer: p.layer, rect: { x: rect.x + tx, y: rect.y + ty, w: tw, h: th }, before: tb, after: ta });
+    }
+  }
+  return kept * 4 < before.byteLength * 3 ? out : [p];
+}
+
 function entryBytes(e: PaintEntry): number {
-  if (e.kind === 'pixels') return e.patch.before.byteLength + e.patch.after.byteLength;
+  if (e.kind === 'pixels') {
+    let n = 0;
+    for (const p of e.patches) n += p.before.byteLength + p.after.byteLength;
+    return n;
+  }
   let n = 0;
   if (e.patches) for (const p of e.patches) n += p.before.byteLength + p.after.byteLength;
   // Rasters held by only one side stay alive only through this entry.
@@ -77,14 +124,16 @@ export class PaintHistory {
   private redoStack: PaintEntry[] = [];
   private bytes = 0;
   private dropped = false;
+  private warned = false;
 
   constructor(
     private readonly host: PaintHost,
     public depth = 200,
-    public budget = 1.5 * 1024 * 1024 * 1024,
+    public budget = PAINT_HISTORY_BUDGET,
   ) {}
 
-  push(e: PaintEntry): void {
+  push(input: PaintEntry | { kind: 'pixels'; label: string; patch: PixelPatch }): void {
+    const e: PaintEntry = 'patch' in input ? { kind: 'pixels', label: input.label, patches: tilePatch(input.patch) } : input;
     this.redoStack.length = 0;
     const top = this.undoStack[this.undoStack.length - 1];
     if (e.kind === 'layers' && e.tag && top && top.kind === 'layers' && top.tag === e.tag) {
@@ -94,10 +143,17 @@ export class PaintHistory {
     }
     this.undoStack.push(e);
     this.bytes += entryBytes(e);
+    let overBudget = false;   // only a memory drop earns the toast; a depth drop is the setting working
     while (this.undoStack.length > 1 && (this.undoStack.length > this.depth || this.bytes > this.budget)) {
+      if (this.bytes > this.budget) overBudget = true;
       const old = this.undoStack.shift()!;
       this.bytes -= entryBytes(old);
       this.dropped = true;
+    }
+    if (!overBudget && this.bytes < this.budget / 2) this.warned = false;   // warn again after a real recovery
+    if (overBudget && !this.warned) {
+      this.warned = true;
+      historyNotice.handler?.(`Paint history reached its ${Math.round(this.budget / 1048576)} MB limit: the oldest steps were dropped.`);
     }
   }
 
@@ -143,11 +199,13 @@ export class PaintHistory {
 
   private apply(e: PaintEntry, forward: boolean): void {
     if (e.kind === 'pixels') {
-      const l = this.host.layerById(e.patch.layer);
-      if (!l) return;
-      writeRect(l.raster, e.patch.rect, forward ? e.patch.after : e.patch.before);
-      this.host.touch(l.raster, e.patch.rect);
-      this.host.changed('pixels', e.patch.rect);
+      for (const p of e.patches) {
+        const l = this.host.layerById(p.layer);
+        if (!l) continue;
+        writeRect(l.raster, p.rect, forward ? p.after : p.before);
+        this.host.touch(l.raster, p.rect);
+        this.host.changed('pixels', p.rect);
+      }
       return;
     }
     const from = forward ? e.before : e.after;

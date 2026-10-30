@@ -15,7 +15,8 @@ const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   add: 'lighter', passthrough: 'source-over',
 };
 
-const BITMAP_CAP = 160;
+/** Decoded pictures may hold this many bytes; the ones drawn in the last two frames always stay. */
+const BITMAP_CAP_BYTES = 1024 * 1024 * 1024;
 /** Canvas filters (blur) where the browser has them; others take the CPU path in paint/filters. */
 const CANVAS_FILTER = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'filter' in OffscreenCanvasRenderingContext2D.prototype;
 
@@ -36,6 +37,9 @@ export function fitView(movie: Movie, width: number, height: number, margin = 0.
 export class Renderer {
   private readonly bitmaps = new Map<string, ImageBitmap | null>();
   private readonly pending = new Set<string>();
+  /** Draw counter and the draw each picture was last used in (byte-cap eviction spares recent ones). */
+  private gen = 0;
+  private readonly used = new Map<string, number>();
   private readonly pool: Surface[] = [];
   private pw = 0;
   private ph = 0;
@@ -44,9 +48,13 @@ export class Renderer {
 
   constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
 
-  forget(): void {
-    for (const b of this.bitmaps.values()) b?.close();
-    this.bitmaps.clear();
+  /** `keep`: pictures of a movie being swapped in stay decoded. */
+  forget(keep?: Set<string>): void {
+    for (const [id, b] of [...this.bitmaps]) {
+      if (keep?.has(id)) continue;
+      b?.close();
+      this.bitmaps.delete(id);
+    }
     this.pending.clear();
   }
 
@@ -64,6 +72,7 @@ export class Renderer {
       // most recently used last, so eviction takes the oldest
       this.bitmaps.delete(id);
       this.bitmaps.set(id, have);
+      this.used.set(id, this.gen);
       return have;
     }
     if (!this.pending.has(id)) {
@@ -78,10 +87,16 @@ export class Renderer {
   /** Decoded pictures are capped (each 4K layer is about 33 MB); the least recently drawn are closed and decode again on demand. */
   private keep(id: string, bmp: ImageBitmap | null): void {
     this.bitmaps.set(id, bmp);
-    while (this.bitmaps.size > BITMAP_CAP) {
-      const oldest = this.bitmaps.keys().next().value as string;
-      this.bitmaps.get(oldest)?.close();
-      this.bitmaps.delete(oldest);
+    this.used.set(id, this.gen);
+    let sum = 0;
+    for (const b of this.bitmaps.values()) if (b) sum += b.width * b.height * 4;
+    if (sum <= BITMAP_CAP_BYTES) return;
+    for (const [k, b] of Array.from(this.bitmaps)) {
+      if (sum <= BITMAP_CAP_BYTES) break;
+      if ((this.used.get(k) ?? 0) >= this.gen - 1) continue;
+      if (b) { sum -= b.width * b.height * 4; b.close(); }
+      this.bitmaps.delete(k);
+      this.used.delete(k);
     }
   }
 
@@ -104,6 +119,7 @@ export class Renderer {
   drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean }): void {
     this.pw = Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
+    this.gen++;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, view.width, view.height);
@@ -162,6 +178,12 @@ export class Renderer {
       if (!c || c.opacity <= 0) continue;
       const a = animate(c, frame - c.start);
       if (a.opacity <= 0) continue;
+      if (this.direct(c, a, tracks, i, frame)) {
+        // plain content nothing above masks: drawn straight onto the output, no surface to clear and composite
+        commit();
+        this.drawContent(out, c, frame - c.start, view, movie, a);
+        continue;
+      }
       const layer = this.surface();
       const lc = layer.getContext('2d') as OffscreenCanvasRenderingContext2D;
       this.drawContent(lc, c, frame - c.start, view, movie, a);
@@ -180,6 +202,21 @@ export class Renderer {
       held = { layer, c, opacity: a.opacity };
     }
     commit();
+  }
+
+  /** True when content `c` (track `i`) may skip its own surface: opaque, normal blend, no mask or filter, and the next content above does not mask it. */
+  private direct(c: Content, a: Animated, tracks: Track[], i: number, frame: number): boolean {
+    if (c.mask !== 'none' || c.blend !== 'normal' || a.opacity < 1) return false;
+    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens) return false;
+    if (c.kind === 'drawing') { if (c.layers.some((l) => l.blend !== 'normal' || l.opacity < 1)) return false; }
+    else if (c.kind !== 'image' && c.kind !== 'text' && c.kind !== 'video') return false;
+    for (let j = i - 1; j >= 0; j--) {
+      if (tracks[j].hidden) continue;
+      const n = tracks[j].content.find((x) => frame >= x.start && frame < end(x));
+      // same skip test as composeTracks, keyed opacity included, so the mask above is found exactly when it applies
+      if (n && n.opacity > 0 && animate(n, frame - n.start).opacity > 0) return n.mask === 'none';
+    }
+    return true;
   }
 
   private applyMask(target: Surface, mask: Surface, mode: 'alpha' | 'luminance', invert: boolean): void {
@@ -231,10 +268,26 @@ export class Renderer {
   private drawVideoContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
     const asset = c.asset ? movie.assets[c.asset] : undefined;
     if (!asset || !this.video || !c.asset) return;
-    const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie));
+    const img = this.video.frame(c.asset, Renderer.videoSeconds(c, local, movie), c.id);
     if (!img) return;
     const w = asset.width, h = asset.height;
     ctx.drawImage(img, (movie.width - w) / 2, (movie.height - h) / 2, w, h);
+  }
+
+  /** Every video block showing at `frame` (groups included): asset, block id (its decode lane) and asset seconds. */
+  static videosAt(movie: Movie, frame: number): { asset: string; lane: string; seconds: number }[] {
+    const out: { asset: string; lane: string; seconds: number }[] = [];
+    const visit = (tracks: Track[], f: number): void => {
+      for (const t of tracks) {
+        if (t.hidden) continue;
+        const c = t.content.find((x) => f >= x.start && f < end(x));
+        if (!c) continue;
+        if (c.kind === 'video' && c.asset) out.push({ asset: c.asset, lane: c.id, seconds: Renderer.videoSeconds(c, f - c.start, movie) });
+        if (c.kind === 'group') visit(c.tracks, f - c.start + c.offset);
+      }
+    };
+    visit(movie.tracks, frame);
+    return out;
   }
 
   setVideo(v: VideoSource | null): void {
@@ -258,7 +311,7 @@ export class Renderer {
         if (c.kind === 'image') want(c.asset);
         if (c.kind === 'drawing') c.layers.forEach((l) => want(l.pixels));
         if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, local + c.offset); if (i >= 0) row.frames[i].layers.forEach((l) => want(l.pixels)); }
-        if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie)));
+        if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie), c.id));
         if (c.kind === 'group') visit(c.tracks, local + c.offset);
       }
     };

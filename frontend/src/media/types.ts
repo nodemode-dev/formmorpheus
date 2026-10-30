@@ -23,12 +23,16 @@ export interface VideoSource {
    * The frame shown at `seconds` into the asset, synchronously, for on-screen drawing: the decoded frame
    * nearest at or before that time when cached, otherwise the last frame drawn for that asset (never a
    * blank), while a decode is requested in the background (the pool calls its onReady when it lands).
+   * `lane` names the decode focus (the block's content id): blocks of one asset at different times each get
+   * their own, so their seeks do not fight.
    */
-  frame(assetId: string, seconds: number): CanvasImageSource | null;
+  frame(assetId: string, seconds: number, lane?: string): CanvasImageSource | null;
   /** Resolves when `frame(assetId, seconds)` will return the exact frame for that time (export, thumbnails). */
-  exact(assetId: string, seconds: number): Promise<void>;
+  exact(assetId: string, seconds: number, lane?: string): Promise<void>;
   /** Hint during playback: decode ahead from `seconds` for `ahead` seconds. */
-  prefetch(assetId: string, seconds: number, ahead: number): void;
+  prefetch(assetId: string, seconds: number, ahead: number, lane?: string): void;
+  /** Drops a lane that is no longer needed (a prefetch for the start of a looping movie). */
+  release?(assetId: string, lane: string): void;
 }
 
 /** One sounding block for the audio engine: where it plays in the movie and which asset seconds it reads. */

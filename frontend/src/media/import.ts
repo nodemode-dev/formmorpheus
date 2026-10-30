@@ -3,7 +3,7 @@
 import type { Asset, Content, FlipTrack, FlipbookFrame, Movie } from '../engine/types';
 import { content, drawingLayer, identity, uid } from '../engine/model';
 import { registerFont } from './fonts';
-import { decodeGif, isGif } from './gif-decode';
+import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
 import { UndecodableVideo, VideoPool } from './video';
 
@@ -82,14 +82,22 @@ async function importPicture(file: File, m: Movie, at: number, kind: Sniff): Pro
 }
 
 const MAX_ANIMATION_FRAMES = 1000;
+/** RGBA bytes of source pictures one animation import may decode. */
+const MAX_DECODE_BYTES = 512 * 1024 * 1024;
 
 interface RawFrame { image: CanvasImageSource | null; rgba: Uint8ClampedArray | null; w: number; h: number; delayMs: number }
 
-/** Builds the Flipbook content for a list of picture frames (each a PNG asset the size of the movie). */
-async function flipbookFrom(all: RawFrame[], name: string, m: Movie, at: number): Promise<ImportResult> {
-  // every frame becomes a movie-sized picture: cap how many so a huge animation cannot exhaust memory
-  const frames = all.slice(0, MAX_ANIMATION_FRAMES);
-  const cut = all.length > frames.length ? ` Only the first ${MAX_ANIMATION_FRAMES} of ${all.length} pictures were imported.` : '';
+/** Pictures pulled one at a time, so a huge animation is never held whole in memory. */
+interface FrameSource { next(): RawFrame | null; total: number; limit: number; cap: 'count' | 'memory' }
+
+const fromList = (all: RawFrame[]): FrameSource => {
+  let i = 0;
+  return { next: () => all[i++] ?? null, total: all.length, limit: MAX_ANIMATION_FRAMES, cap: 'count' };
+};
+
+/** Builds the Flipbook content for a stream of picture frames (each a PNG asset the size of the movie). */
+async function flipbookFrom(src: FrameSource, name: string, m: Movie, at: number): Promise<ImportResult> {
+  // every frame becomes a movie-sized picture: the source is cut at a count and a memory budget so a huge animation cannot exhaust memory
   const W = m.width;
   const H = m.height;
   const assets: { asset: Asset; blob: Blob }[] = [];
@@ -97,8 +105,9 @@ async function flipbookFrom(all: RawFrame[], name: string, m: Movie, at: number)
   let cum = 0;
   let prevEnd = 0;
   const jobs: Promise<void>[] = [];
-  const run = async (i: number): Promise<void> => {
-    const f = frames[i];
+  const delays: number[] = [];
+  const run = async (i: number, f: RawFrame): Promise<void> => {
+    delays[i] = f.delayMs;
     const cv = new OffscreenCanvas(W, H);
     const ctx = cv.getContext('2d')!;
     const s = Math.min(1, W / f.w, H / f.h);
@@ -121,18 +130,23 @@ async function flipbookFrom(all: RawFrame[], name: string, m: Movie, at: number)
   for (let l = 0; l < lanes; l++) {
     jobs.push((async () => {
       for (;;) {
+        if (nextIndex >= src.limit) return;
+        const f = src.next();
+        if (!f) return;
         const i = nextIndex++;
-        if (i >= frames.length) return;
-        await run(i);
-        frames[i].rgba = null;
-        if (frames[i].image && 'close' in (frames[i].image as object)) (frames[i].image as ImageBitmap).close();
-        frames[i].image = null;
+        await run(i, f);
+        f.rgba = null;
+        if (f.image && 'close' in (f.image as object)) (f.image as ImageBitmap).close();
+        f.image = null;
       }
     })());
   }
   await Promise.all(jobs);
-  for (let i = 0; i < frames.length; i++) {
-    cum += frames[i].delayMs / 1000;
+  const count = delays.length;
+  if (!count) throw new Error(`${name} has no readable pictures.`);
+  const cut = src.total > count ? ` Only the first ${count} of ${src.total} pictures were imported (${src.cap === 'memory' ? 'memory budget' : `${MAX_ANIMATION_FRAMES} picture limit`}).` : '';
+  for (let i = 0; i < count; i++) {
+    cum += delays[i] / 1000;
     const end = Math.round(cum * m.fps);
     const hold = Math.max(1, end - prevEnd);
     prevEnd += hold;
@@ -143,7 +157,7 @@ async function flipbookFrom(all: RawFrame[], name: string, m: Movie, at: number)
   const row: FlipTrack = { id: uid('ft'), name: 'Row 1', hidden: false, opacity: 1, blend: 'normal', highlight: 'none', frames: out };
   const total = out.reduce((n, f) => n + f.hold, 0);
   const c = content('flipbook', at, Math.max(1, total), { name, flip: [row] });
-  return { assets, contents: [c], ownTrack: [false], notice: `${frames.length} pictures, ${(prevEnd / m.fps).toFixed(1)} s at ${m.fps} fps.${cut}` };
+  return { assets, contents: [c], ownTrack: [false], notice: `${count} pictures, ${(prevEnd / m.fps).toFixed(1)} s at ${m.fps} fps.${cut}` };
 }
 
 interface ImageDecoderLike {
@@ -180,17 +194,31 @@ async function viaImageDecoder(file: File, type: string): Promise<RawFrame[] | n
 
 async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Promise<ImportResult | null> {
   if (kind === 'gif') {
-    let gif: ReturnType<typeof decodeGif>;
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!isGif(bytes)) return null;
-    try { gif = decodeGif(bytes); } catch { throw new Error(`${file.name} is a damaged GIF.`); }
-    if (gif.frames.length < 2) return null;
-    return flipbookFrom(gif.frames.map((f) => ({ image: null, rgba: f.rgba, w: gif.width, h: gif.height, delayMs: f.delayMs })), baseName(file.name), m, at);
+    let info: ReturnType<typeof gifInfo>;
+    try { info = gifInfo(bytes); } catch { throw new Error(`${file.name} is a damaged GIF.`); }
+    if (info.count < 2) return null;
+    // streamed: one picture at a time is composed and encoded, so a 4K GIF never sits in memory whole
+    const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (info.width * info.height * 4)));
+    const it = gifFrames(bytes);
+    const src: FrameSource = {
+      next: () => {
+        try {
+          const r = it.next();
+          return r.done ? null : { image: null, rgba: r.value.rgba, w: info.width, h: info.height, delayMs: r.value.delayMs };
+        } catch { return null; }
+      },
+      total: info.count,
+      limit: Math.min(MAX_ANIMATION_FRAMES, byMemory),
+      cap: byMemory < MAX_ANIMATION_FRAMES ? 'memory' : 'count',
+    };
+    return flipbookFrom(src, baseName(file.name), m, at);
   }
   if (kind === 'webp' || kind === 'png' || kind === 'avif') {
     const type = file.type || (kind === 'png' ? 'image/png' : `image/${kind}`);
     const frames = await viaImageDecoder(file, type);
-    if (frames) return flipbookFrom(frames, baseName(file.name), m, at);
+    if (frames) return flipbookFrom(fromList(frames), baseName(file.name), m, at);
   }
   return null;
 }

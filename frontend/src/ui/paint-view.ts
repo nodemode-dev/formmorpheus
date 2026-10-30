@@ -12,6 +12,7 @@ import type { Renderer } from '../engine/render';
 import type { Content, DrawingLayer, Movie, OnionSettings } from '../engine/types';
 import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById } from '../paint/brushes';
 import { PaintDoc } from '../paint/doc';
+import { historyNotice } from '../paint/history';
 import { baseDiameter, setPressureCurve } from '../paint/dynamics';
 import { floodFill } from '../paint/fill';
 import { PenInput } from '../paint/input';
@@ -176,6 +177,7 @@ export class PaintView {
     this.hudTitle = q(this.root, '.fm-paint-hud-title');
     this.hudDot = q<HTMLCanvasElement>(this.root, '.fm-paint-hud-dot');
     this.toastEl = q(this.root, '.fm-paint-toast');
+    historyNotice.handler = (text) => toast(text);
     this.menu = q(this.root, '.fm-paint-menu');
 
     this.prefs = loadPaintPrefs();

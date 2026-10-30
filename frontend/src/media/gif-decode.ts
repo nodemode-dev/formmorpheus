@@ -49,7 +49,8 @@ function lzw(minBits: number, data: Uint8Array, out: Uint8Array): void {
   }
 }
 
-export function decodeGif(b: Uint8Array): Gif {
+/** Pictures are composed one at a time, so a caller can stop early; each yielded rgba is its own copy. */
+export function* gifFrames(b: Uint8Array): Generator<GifFrame, void, undefined> {
   if (!isGif(b)) throw new Error('not a GIF');
   let p = 6;
   const u16 = (): number => { const v = b[p] | (b[p + 1] << 8); p += 2; return v; };
@@ -64,7 +65,6 @@ export function decodeGif(b: Uint8Array): Gif {
     p += n;
   }
   if (!width || !height) throw new Error('empty GIF');
-  const frames: GifFrame[] = [];
   const canvas = new Uint8ClampedArray(width * height * 4);
   let delay = 100;
   let transparent = -1;
@@ -130,7 +130,7 @@ export function decodeGif(b: Uint8Array): Gif {
         canvas[d] = ct[k * 3]; canvas[d + 1] = ct[k * 3 + 1]; canvas[d + 2] = ct[k * 3 + 2]; canvas[d + 3] = 255;
       }
     }
-    frames.push({ rgba: canvas.slice(), delayMs: delay <= 10 ? 100 : delay });
+    yield { rgba: canvas.slice(), delayMs: delay <= 10 ? 100 : delay };
 
     if (disposal === 2) {
       for (let y = iy; y < Math.min(height, iy + ih); y++) {
@@ -143,6 +143,36 @@ export function decodeGif(b: Uint8Array): Gif {
     transparent = -1;
     delay = 100;
   }
+}
+
+/** Size and picture count from the block structure alone (no LZW), so an importer can budget before decoding. */
+export function gifInfo(b: Uint8Array): { width: number; height: number; count: number } {
+  if (!isGif(b)) throw new Error('not a GIF');
+  const width = b[6] | (b[7] << 8);
+  const height = b[8] | (b[9] << 8);
+  if (!width || !height) throw new Error('empty GIF');
+  let p = 13;
+  if (b[10] & 0x80) p += 3 * (1 << ((b[10] & 7) + 1));
+  const skip = (): void => { while (p < b.length && b[p] !== 0) p += b[p] + 1; p++; };
+  let count = 0;
+  while (p < b.length) {
+    const tag = b[p++];
+    if (tag === 0x3b) break;
+    if (tag === 0x21) { p++; skip(); continue; }
+    if (tag !== 0x2c) break;
+    p += 8;
+    const pf = b[p++];
+    if (pf & 0x80) p += 3 * (1 << ((pf & 7) + 1));
+    p++;
+    skip();
+    count++;
+  }
+  return { width, height, count };
+}
+
+export function decodeGif(b: Uint8Array): Gif {
+  const { width, height } = gifInfo(b);
+  const frames = [...gifFrames(b)];
   if (!frames.length) throw new Error('GIF has no pictures');
   return { width, height, frames };
 }

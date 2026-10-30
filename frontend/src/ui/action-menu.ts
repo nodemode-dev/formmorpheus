@@ -87,6 +87,7 @@ export class ActionMenu {
   private anchor: HTMLElement | null = null;
   private tag: string | null = null;
   private take: CardTake | null = null;
+  private cardTag: string | null = null;
 
   constructor(private readonly engine: Engine, private readonly state: KeyState) {
     this.pop = new Popover('fm-ka');
@@ -124,7 +125,7 @@ export class ActionMenu {
     this.views = { action, motion, filter };
     this.pop.body.append(action, motion, filter, this.cardHost);
     setHidden(this.cardHost, true);
-    this.pop.onHide(() => { this.anchor = null; this.cardKind = null; this.endRec(); });
+    this.pop.onHide(() => { this.anchor = null; this.cardKind = null; this.endRec(); this.cardTag = null; });
     for (const ev of ['time', 'movie', 'selection'] as const) engine.on(ev, () => { if (this.pop.isOpen && this.view === 'card') this.syncCard(); });
     // a held slider still records: every Playhead step repeats its last value
     engine.on('time', () => { const r = this.take; if (r && r.last !== null && engine.playing) this.recordValue(r, r.last); });
@@ -175,7 +176,9 @@ export class ActionMenu {
     if (!t) { this.pop.hide(); return; }
     const { c, local } = t;
     const ease = this.state.lastEase;
-    this.engine.run(`Add ${kindSpec(kind).label} keyframe`, (m) => ops.updateContent(m, c.id, (cc) => ensureLane(cc, kind, local, m.addKeyAtStart, ease)));
+    // in Perform the lane and the take that follows are one undo step: they share a merge tag
+    this.cardTag = this.engine.mode === 'perform' ? `kc-card-${Date.now()}` : null;
+    this.engine.run(`Add ${kindSpec(kind).label} keyframe`, (m) => ops.updateContent(m, c.id, (cc) => ensureLane(cc, kind, local, m.addKeyAtStart, ease)), this.cardTag);
     this.openCard(kind);
   }
 
@@ -292,7 +295,7 @@ export class ActionMenu {
   private beginRec(kind: KeyKind, channel: string): void {
     const t = targetOf(this.engine);
     if (this.engine.mode !== 'perform' || !t || this.take) return;
-    this.take = { id: t.c.id, kind, channel, rec: new Recorder(kind, [channel]), start: t.c.start, last: null, tag: `kc-rec-${Date.now()}` };
+    this.take = { id: t.c.id, kind, channel, rec: new Recorder(kind, [channel]), start: t.c.start, last: null, tag: this.cardTag ?? `kc-rec-${Date.now()}` };
     perform.setRecording(true);
     this.engine.play();
     const stop = (): void => { window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); this.endRec(); };
