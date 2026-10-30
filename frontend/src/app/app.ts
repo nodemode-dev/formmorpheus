@@ -83,9 +83,15 @@ export function startApp(): void {
     const m = engine.movie;
     if (!m) return;
     if (!engine.playing) { audio.scrub(m, f); return; }
+    // near the end of a looping movie the start is decoded ahead too, so the picture after the wrap is ready
+    const wrapAt = m.playback === 'loop' && f + m.fps >= m.duration ? 0 : -1;
     for (const t of m.tracks) {
       if (t.hidden) continue;
-      for (const c of t.content) if (c.kind === 'video' && c.asset && f >= c.start - m.fps && f < c.start + c.duration) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, f - c.start), m), 2);
+      for (const c of t.content) {
+        if (c.kind !== 'video' || !c.asset) continue;
+        if (f >= c.start - m.fps && f < c.start + c.duration) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, f - c.start), m), 2);
+        else if (wrapAt >= 0 && c.start <= wrapAt + m.fps) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, wrapAt - c.start), m), 1);
+      }
     }
   });
   engine.on('projects', () => { if (!engine.movie) { renderer.forget(); video.forget(); audio.forget(); } });

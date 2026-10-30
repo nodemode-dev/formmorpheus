@@ -417,6 +417,8 @@ export class ExportDialog {
     this.job = null;
     this.busy = false;
     this.paintBusy(false, '', 0);
+    // the Export button was disabled while running and focus fell to the page: bring it back so Escape closes
+    q<HTMLElement>(this.dlg.scrim, '.cv-dialog').focus();
   }
 
   private onCancel(): void {

@@ -151,7 +151,8 @@ export class ActionMenu {
 
   /** Keep the open menu attached to the pill as the Playhead moves. */
   follow(): void {
-    if (this.pop.isOpen) this.reposition();
+    // a card being performed stays put: the slider must not travel under a still pen while the movie plays
+    if (this.pop.isOpen && !this.take) this.reposition();
   }
 
   private kindRow(kind: KeyKind): HTMLElement {

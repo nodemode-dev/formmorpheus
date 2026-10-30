@@ -53,6 +53,7 @@ export class StageView {
   private req = 0;
   private grab: Grab | null = null;
   private grabPointer = -1;
+  private offWrap: (() => void) | null = null;
   private bg = '#0a0a0a';
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer) {
@@ -238,6 +239,13 @@ export class StageView {
     if (!id || !at) return;
     g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' ? e.twist : null, twistSum: 0, twisted: false };
     perform.setRecording(true);
+    // a take ends at the movie's end: playback stops there instead of looping under the pen
+    this.offWrap?.();
+    this.offWrap = this.engine.on('wrap', () => {
+      const last = (this.engine.movie?.duration ?? 1) - 1;
+      this.engine.stop();
+      queueMicrotask(() => this.engine.seek(last));
+    });
     this.engine.play();
   }
 
@@ -298,6 +306,8 @@ export class StageView {
     const r = g.rec;
     if (!r) return;
     g.rec = undefined;
+    this.offWrap?.();
+    this.offWrap = null;
     if (r.last) r.rec.add(this.engine.frame - r.start, r.last);
     this.engine.stop();
     this.commitRec(g, r, perform.filtering);
