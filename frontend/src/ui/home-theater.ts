@@ -4,6 +4,7 @@ import { confirmAction, promptName } from './dialogs';
 import { icon } from './icons';
 import { Popover, popRow, popSep, type PopRow } from './popover';
 import { toast } from './toast';
+import { shareMovie } from './theater-share';
 import '../styles/theater.css';
 
 /** Theater management on Home's Movies page: Select mode (several movies at once), a context menu per movie
@@ -196,15 +197,7 @@ export class TheaterTools {
   }
 
   async share(name: string): Promise<void> {
-    const blob = await api.readMovie(name);
-    const a = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    a.href = url;
-    a.download = `${name}.fmo`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+    await shareMovie(name);
   }
 
   async trash(names: string[]): Promise<void> {

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from pathlib import Path
@@ -59,9 +60,46 @@ def data_dir_source() -> str:
     return "portable" if portable_dir() else "default"
 
 
+def settings_path() -> Path:
+    return data_dir() / "settings.json"
+
+
+def read_settings() -> dict:
+    try:
+        data = json.loads(settings_path().read_text("utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_settings(data: dict) -> None:
+    path = settings_path()
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.part")
+    tmp.write_text(json.dumps(data), "utf-8")
+    os.replace(tmp, path)
+
+
+def library_source() -> str:
+    """Where the library folder comes from: the environment, a folder chosen in Preferences, or the default."""
+    if os.environ.get("FORMMORPHEUS_LIBRARY_DIR", "").strip():
+        return "override"
+    return "custom" if str(read_settings().get("libraryDir") or "").strip() else "default"
+
+
+def default_library_dir() -> Path:
+    return data_dir() / "Library"
+
+
 def library_dir() -> Path:
     raw = os.environ.get("FORMMORPHEUS_LIBRARY_DIR", "").strip()
-    return _ensure(Path(raw).expanduser() if raw else data_dir() / "Library")
+    if not raw:
+        raw = str(read_settings().get("libraryDir") or "").strip()
+    if raw:
+        try:
+            return _ensure(Path(raw).expanduser())
+        except OSError:
+            pass   # a folder that went away (an unplugged drive): fall back to the default
+    return _ensure(default_library_dir())
 
 
 def exports_dir() -> Path:

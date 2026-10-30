@@ -10,7 +10,8 @@ import type { Movie } from '../engine/types';
 import type { Renderer, View } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import { GifWriter, quantize } from './gif';
-import type { ExportJob, ExportOptions, ExportProgress, ExportResult } from './types';
+import { encodeRaw, pictureHasAlpha, pictureMime, type RawPicture } from './still-formats';
+import type { ExportJob, ExportOptions, ExportProgress, ExportResult, PictureExt } from './types';
 
 type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
 
@@ -20,6 +21,14 @@ const QUALITY: Record<ExportOptions['quality'], Quality> = {
 const JPEG_QUALITY: Record<ExportOptions['quality'], number> = { low: 0.6, medium: 0.8, high: 0.92, 'very-high': 0.98 };
 const GIF_MEMORY_LIMIT = 1.5 * 1024 * 1024 * 1024;
 const GIF_SAMPLE_FRAMES = 24;
+
+/** True when this browser can encode AAC sound (otherwise the engine does it). */
+export async function browserHasAac(): Promise<boolean> {
+  try {
+    for (const sampleRate of [44100, 48000]) if (!(await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate, quality: QUALITY_HIGH }))) return false;
+    return true;
+  } catch { return false; }
+}
 
 function abortError(): Error {
   return new DOMException('Export cancelled', 'AbortError');
@@ -95,11 +104,25 @@ class Run {
   ) {
     const { movie } = deps;
     this.canvas = new OffscreenCanvas(o.width, o.height);
-    const gif = o.format === 'gif';
+    const gif = o.format === 'gif' || /^(tiff|tga|bmp)-frames$/.test(o.format) || o.picture === 'tiff' || o.picture === 'tga' || o.picture === 'bmp';
     this.ctx = this.canvas.getContext('2d', gif ? { willReadFrequently: true } : undefined) as OffscreenCanvasRenderingContext2D;
     const scale = Math.min(o.width / movie.width, o.height / movie.height);
     this.view = { scale, ox: (o.width - movie.width * scale) / 2, oy: (o.height - movie.height * scale) / 2, width: o.width, height: o.height };
-    this.keepAlpha = o.alpha && o.format !== 'jpg-frames';
+    this.keepAlpha = o.alpha && pictureHasAlpha(this.ext());
+  }
+
+  /** The picture type of a still or sequence (a plain GIF or video has no picture type and counts as png). */
+  private ext(): PictureExt {
+    const o = this.o;
+    if (o.picture && (o.format === 'png-still' || o.format.endsWith('-frames'))) return o.picture;
+    switch (o.format) {
+      case 'jpg-frames': return 'jpg';
+      case 'webp-frames': return 'webp';
+      case 'tiff-frames': return 'tiff';
+      case 'tga-frames': return 'tga';
+      case 'bmp-frames': return 'bmp';
+      default: return 'png';
+    }
   }
 
   private check(): void {
@@ -121,18 +144,22 @@ class Run {
 
   async go(): Promise<ExportResult> {
     const fmt = this.o.format;
+    // the GPU switch holds still for the whole export, so no frame is composed by the other path
+    const unpin = this.deps.renderer.pinGpu();
     try {
       this.check();
       let r: Omit<ExportResult, 'warnings'>;
       if (fmt === 'mp4' || fmt === 'webm' || fmt === 'mov') r = await this.video(fmt);
       else if (fmt === 'gif') r = await this.gif();
       else if (fmt === 'png-still') r = await this.still();
-      else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4' || fmt === 'hevc-mov') throw new Error('This format is encoded by the engine, not in the window.');
+      else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4' || fmt === 'hevc-mov' || fmt === 'h264-mov' || fmt === 'h264-mp4') throw new Error('This format is encoded by the engine, not in the window.');
       else r = await this.sequence(fmt);
       return { ...r, warnings: this.warnings };
     } catch (e) {
       if (this.isCancelled() && !(e instanceof DOMException && e.name === 'AbortError')) throw abortError();
       throw e;
+    } finally {
+      unpin();
     }
   }
 
@@ -230,6 +257,7 @@ class Run {
 
   private async pickAudioCodec(fmt: 'mp4' | 'webm' | 'mov', supported: AudioCodec[], buf: AudioBuffer): Promise<AudioCodec | null> {
     const opts = { numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate, quality: QUALITY[this.o.quality] };
+    if (this.o.audioCodec === 'pcm' && fmt === 'mov' && supported.includes('pcm-s16') && await canEncodeAudio('pcm-s16', opts)) return 'pcm-s16';
     const order: AudioCodec[] = fmt === 'webm' ? ['opus', 'vorbis'] : ['aac', 'opus'];
     for (const codec of order) {
       if (!supported.includes(codec)) continue;
@@ -280,6 +308,7 @@ class Run {
     this.check();
 
     const writer = new GifWriter(o.width, o.height, o.gif.loop);
+    writer.setOrdered(o.gif.smoothness ?? 2, o.gif.intensity ?? 50);
     const ideal = 100 / movie.fps;
     let emitted = 0;
     for (let i = 0; i < total; i++) {
@@ -291,7 +320,9 @@ class Run {
         px = this.grab();
       }
       let delay: number;
-      if (o.gif.timing === 'exact') {
+      if (o.gif.frameMs && o.gif.frameMs > 0) {
+        delay = Math.max(2, Math.round(o.gif.frameMs / 10));
+      } else if (o.gif.timing === 'exact') {
         delay = Math.max(2, Math.round((i + 1) * ideal - emitted));
         emitted += delay;
       } else {
@@ -310,24 +341,30 @@ class Run {
 
   // Pictures -------------------------------------------------------------------------------------
 
-  private async toBlob(type: string): Promise<Blob> {
-    const q = type === 'image/png' ? undefined : JPEG_QUALITY[this.o.quality];
+  /** The canvas as a file of the chosen picture type. */
+  private async toBlob(ext: PictureExt): Promise<Blob> {
+    if (ext === 'tiff' || ext === 'tga' || ext === 'bmp') {
+      const bytes = encodeRaw(ext as RawPicture, this.grab(), this.o.width, this.o.height, this.keepAlpha, this.o.tiffDeflate === true);
+      return new Blob([bytes as BlobPart], { type: pictureMime(ext) });
+    }
+    const type = pictureMime(ext);
+    const q = ext === 'png' ? undefined : JPEG_QUALITY[this.o.quality];
     return this.canvas.convertToBlob({ type, quality: q });
   }
 
   private async still(): Promise<Omit<ExportResult, 'warnings'>> {
+    const ext = this.ext();
     this.progress('frames', 0, 1);
     await this.render(this.o.from);
-    const blob = await this.toBlob('image/png');
+    const blob = await this.toBlob(ext);
     this.progress('frames', 1, 1);
-    return { blob, name: this.name('png'), mime: 'image/png' };
+    return { blob, name: this.name(ext), mime: pictureMime(ext) };
   }
 
-  private async sequence(fmt: 'png-frames' | 'jpg-frames' | 'webp-frames'): Promise<Omit<ExportResult, 'warnings'>> {
+  private async sequence(_fmt: ExportOptions['format']): Promise<Omit<ExportResult, 'warnings'>> {
     const o = this.o;
     const total = stepCount(o);
-    const ext = fmt === 'png-frames' ? 'png' : fmt === 'jpg-frames' ? 'jpg' : 'webp';
-    const type = fmt === 'png-frames' ? 'image/png' : fmt === 'jpg-frames' ? 'image/jpeg' : 'image/webp';
+    const ext = this.ext();
     const base = safeName(this.deps.movie.name);
     const parts: BlobPart[] = [];
     let failure: Error | null = null;
@@ -339,8 +376,8 @@ class Run {
     for (let i = 0; i < total; i++) {
       this.check();
       await this.render(frameAt(i, o.from, o.to));
-      const blob = await this.toBlob(type);
-      const entry = new ZipPassThrough(`${base}_${String(i + 1).padStart(digits, '0')}.${ext}`);
+      const blob = await this.toBlob(ext);
+      const entry = new ZipPassThrough(`${base}/${base}_${String(i + 1).padStart(digits, '0')}.${ext}`);
       zip.add(entry);
       entry.push(new Uint8Array(await blob.arrayBuffer()), true);
       if (failure) throw failure;

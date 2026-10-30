@@ -1,5 +1,6 @@
 // Fonts that travel with the movie: every font asset is loaded into document.fonts so Text can use its family.
 import type { Movie } from '../engine/types';
+import { bumpFontEpoch } from '../engine/text-layout';
 
 const loaded = new Map<string, FontFace>();
 
@@ -53,4 +54,70 @@ export function FONT_FAMILIES(movie: Movie): string[] {
     if (a.kind === 'font' && a.family && !out.includes(a.family)) out.push(a.family);
   }
   return out;
+}
+
+/** Families that ship with the app (their weights and italics are bundled). */
+export const BUNDLED_FONTS = ['Inter', 'JetBrains Mono'];
+const BUNDLED_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+const SYSTEM_CANDIDATES = ['Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Trebuchet MS', 'Impact', 'Palatino', 'Garamond', 'Comic Sans MS', 'Noto Sans', 'Noto Serif', 'Noto Sans JP', 'Noto Sans Arabic', 'Noto Sans Thai', 'Noto Sans Devanagari', 'DejaVu Sans', 'DejaVu Serif', 'Liberation Sans', 'Liberation Serif', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Segoe UI', 'SF Pro Text', 'Menlo', 'Consolas'];
+export const GENERIC_FONTS = ['sans-serif', 'serif', 'monospace', 'cursive'];
+
+export interface FontGroups { bundled: string[]; movie: string[]; system: string[] }
+
+let systemFonts: string[] | null = null;
+/** Installed system families from a short list, found by measuring against two fallbacks. */
+function installedSystemFonts(): string[] {
+  if (systemFonts) return systemFonts;
+  const out: string[] = [];
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    if (c) {
+      const probe = 'mmmmmmmmmmlliWWW@@ 日本語العربية';
+      const w = (f: string): number => { c.font = `72px ${f}`; return c.measureText(probe).width; };
+      const base = ['monospace', 'serif', 'sans-serif'].map((b) => [b, w(b)] as const);
+      for (const name of SYSTEM_CANDIDATES) if (base.some(([b, bw]) => w(`"${name}", ${b}`) !== bw)) out.push(name);
+    }
+  } catch { /* no canvas: only the generic families */ }
+  systemFonts = out;
+  return out;
+}
+
+/** The font browser's families: bundled, the movie's own, then the system's. */
+export function fontCatalog(movie: Movie | null): FontGroups {
+  const own = movie ? FONT_FAMILIES(movie).filter((f) => !BUNDLED_FONTS.includes(f)) : [];
+  return { bundled: BUNDLED_FONTS.slice(), movie: own, system: [...installedSystemFonts(), ...GENERIC_FONTS] };
+}
+
+/** Weights a family offers, and whether it has an italic; imported families report what their files declare. */
+export function familyFaces(family: string): { weights: number[]; italic: boolean } {
+  if (BUNDLED_FONTS.includes(family)) return { weights: family === 'Inter' ? BUNDLED_WEIGHTS : BUNDLED_WEIGHTS.slice(0, 8), italic: true };
+  const own = Array.from(loaded.values()).filter((f) => f.family.replace(/^["']|["']$/g, '') === family);
+  if (own.length) {
+    const ws = Array.from(new Set(own.map((f) => Number.parseInt(f.weight, 10) || 400))).sort((a, b) => a - b);
+    return { weights: ws, italic: own.some((f) => f.style === 'italic') };
+  }
+  return { weights: [400, 700], italic: true };
+}
+
+/** Starts loading the faces a Text needs; resolves when they are ready (a missing font is not an error). */
+export async function ensureTextFont(s: { font: string; weight: number; italic?: boolean; size: number; text: string }): Promise<void> {
+  try { await document.fonts.load(`${s.italic ? 'italic ' : ''}${s.weight} 32px "${s.font}"`, s.text || 'Aa'); } catch { /* fallback face */ }
+}
+
+/** Loads the faces of every Text in the movie (used before an export and on open). */
+export async function loadTextFonts(movie: Movie): Promise<void> {
+  const jobs: Promise<void>[] = [];
+  const walk = (tracks: Movie['tracks']): void => {
+    for (const t of tracks) for (const c of t.content) {
+      if (c.kind === 'text' && c.text) jobs.push(ensureTextFont(c.text));
+      if (c.kind === 'group') walk(c.tracks);
+    }
+  };
+  walk(movie.tracks);
+  await Promise.all(jobs);
+}
+
+// A face that finishes loading changes the letters' widths: pictures of Text are drawn again.
+if (typeof document !== 'undefined' && document.fonts) {
+  document.fonts.addEventListener('loadingdone', () => { bumpFontEpoch(); window.dispatchEvent(new Event('fm:fonts')); });
 }

@@ -1,10 +1,12 @@
 import { capabilities } from '../io/api';
 import { Dialog, confirmAction } from './dialogs';
 import { el, q, setClass, setHidden, setText, setValue } from './dom';
+import { gesturePrefs, setFingerPaints } from './gestures';
 import { icon } from './icons';
 import { languages, onLanguage, setLanguage, t, type Lang } from './i18n';
 import { checkRow, colorRow, selectRow, sliderRow } from './panels/controls';
 import { SCRUB_SPEEDS, UI_FONT_SIZES, UI_SCALES, UNDO_CHOICES, loadPrefs, savePrefs, setUiScale, uiScaleChoice, type Prefs, type ScrubSpeed, type UiFontSize } from './prefs';
+import { LibraryFolderDialog } from './library-folder';
 import { THEMES, readChoice, setAccent, setIntensity, setTheme, themeSwatchesHtml } from './themes';
 
 const RAIL_KEY = 'formmorpheus.prefsRailCollapsed';
@@ -18,6 +20,8 @@ export class SettingsDialog extends Dialog {
   private readonly sections = new Map<string, HTMLElement>();
   private readonly dataPath = el<HTMLInputElement>('<input class="cv-input" type="text" dir="ltr" readonly spellcheck="false" aria-label="Settings folder">');
   private readonly libraryPath = el<HTMLInputElement>('<input class="cv-input" type="text" dir="ltr" readonly spellcheck="false" aria-label="Library folder">');
+  private readonly libraryBtn = el<HTMLButtonElement>('<button class="cv-btn" type="button">Change Library Folder...</button>');
+  private libraryDialog: LibraryFolderDialog | null = null;
   private pagesEl: HTMLElement | null = null;
   private shell: { frame: HTMLElement; rail: HTMLElement; port: HTMLElement; shade: SVGPathElement; line: SVGPathElement } | null = null;
   private current = '';
@@ -49,10 +53,16 @@ export class SettingsDialog extends Dialog {
   private readonly stageUndoRow = checkRow('Undo and Redo buttons on the Stage', (v) => this.change({ stageUndoButtons: v }));
   private readonly keysBtn = el<HTMLButtonElement>('<button class="cv-btn" type="button">Keyboard Shortcuts...</button>');
   private readonly gesturesRow = checkRow('Two-finger tap undoes and three-finger tap redoes', (v) => this.change({ undoGestures: v }));
-  private readonly confirmDeleteRow = checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
+  private readonly rotatePinchRow = checkRow('Rotate the Stage with pinch zoom', (v) => this.change({ rotatePinch: v }));
+  private readonly secondFingerRow = checkRow('A second finger held while dragging snaps (Shift) and Free Trims (Alt)', (v) => this.change({ secondFinger: v }));
+  private readonly touchHoldRow = checkRow('Touch and hold opens the context menu', (v) => this.change({ touchHold: v }));
+  private readonly penHoverRow = checkRow('Pen hover scrubs the Timeline', (v) => this.change({ penHover: v }));
+  private readonly fingerPaintRow = checkRow('Paint with finger', (v) => setFingerPaints(v));
+  private readonly confirmDeleteRow =checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
 
   constructor(private readonly onPrefs: (p: Prefs) => void) {
     super('Preferences', 620);
+    this.libraryBtn.addEventListener('click', () => { this.libraryDialog ??= new LibraryFolderDialog(); void this.libraryDialog.show(() => this.sync()); });
     const swatches = document.createElement('template');
     swatches.innerHTML = themeSwatchesHtml();
     this.grid.append(swatches.content);
@@ -108,7 +118,7 @@ export class SettingsDialog extends Dialog {
     add('General',
       grp('Startup', this.homeRow.el, this.homeCloseRow.el, this.whatsNewRow.el, nt('The Home screen covers the stage while no movie is open. What\'s New lists the recent additions and opens once after an update when the third choice is on.')),
       grp('Saving', this.autosaveRow.el, nt('Autosave writes the open movie to its project file at this interval while there are unsaved changes.')),
-      grp('Settings Storage', pathRow('Settings folder', this.dataPath), pathRow('Library folder', this.libraryPath), nt('Window preferences such as this page, the theme and the interface scale stay in this window\'s own storage.')),
+      grp('Settings Storage', pathRow('Settings folder', this.dataPath), pathRow('Library folder', this.libraryPath), this.libraryBtn, nt('The library is where your movies are kept: on this computer, in iCloud Drive or in a folder of your own. Window preferences such as this page, the theme and the interface scale stay in this window\'s own storage.')),
       grp('Reset', reset));
     add('Interface',
       grp('Theme', this.grid, nt('Right-click a theme to favorite it. Theme and accent are shared with the other Form apps on this device.'), this.accentRow.el, this.intensityRow.el, nt('Intensity sets how strongly the accent tints what it marks; 100% is the design\'s.'), this.themeAutoRow.el, cols(this.themeLightRow.el, this.themeDarkRow.el), nt('Match System Appearance switches between the light and dark theme chosen here when the appearance of the computer changes.')),
@@ -119,7 +129,7 @@ export class SettingsDialog extends Dialog {
       grp('History', this.undoRow.el, nt('Undo steps are saved inside the movie file, so more steps make the file larger.'), this.recentRow.el, nt('The newest share of the steps stays one by one; the older rest is thinned so Undo reaches further back. 100% keeps every step.'), this.stageUndoRow.el),
       grp('Keyboard', this.keysBtn, nt('See every command with its keys, change them, and set them back.')),
       grp('Playhead', this.scrubRow.el),
-      grp('Gestures', this.gesturesRow.el),
+      grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.penHoverRow.el, this.fingerPaintRow.el),
       grp('Editing', this.confirmDeleteRow.el));
     for (const name of SECTION_ORDER) {
       const tab = this.nav.querySelector<HTMLElement>(`[data-section="${name}"]`), card = this.sections.get(name);
@@ -199,6 +209,11 @@ export class SettingsDialog extends Dialog {
     this.stageUndoRow.set(p.stageUndoButtons);
     this.scrubRow.set(p.scrubSpeed);
     this.gesturesRow.set(p.undoGestures);
+    this.rotatePinchRow.set(p.rotatePinch);
+    this.secondFingerRow.set(p.secondFinger);
+    this.touchHoldRow.set(p.touchHold);
+    this.penHoverRow.set(p.penHover);
+    this.fingerPaintRow.set(gesturePrefs().fingerPaints);
     this.confirmDeleteRow.set(p.confirmDelete);
     this.sync();
     if (section && this.sections.has(section)) this.showSection(section);

@@ -24,7 +24,9 @@ from app.services import ffmpeg as ff
 
 router = APIRouter()
 
-TARGETS = ("prores", "prores4444", "hevc")
+TARGETS = ("prores", "prores4444", "hevc", "h264")
+# prores_ks -profile:v numbers: 0 proxy, 1 lt, 2 standard 422, 3 hq, 4 4444, 5 4444 xq
+PRORES_PROFILES = {"proxy": 0, "lt": 1, "422": 2, "hq": 3, "4444": 4, "4444xq": 5}
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 CRF = {"low": 28, "medium": 24, "high": 20, "very-high": 16}
 VT_Q = {"low": 40, "medium": 55, "high": 65, "very-high": 80}
@@ -44,6 +46,8 @@ class NewJob(BaseModel):
     quality: str = "high"
     container: str = "mp4"
     name: str = "movie"
+    audio_codec: str = "aac"
+    profile: str = ""
 
 
 @dataclass
@@ -60,6 +64,8 @@ class Job:
     container: str
     name: str
     folder: Path
+    audio_codec: str = "aac"
+    profile: str = ""
     state: str = "queued"
     received: set[int] = field(default_factory=set)
     audio_in: bool = False
@@ -178,11 +184,13 @@ def capabilities() -> dict:
         none = {"available": False, "encoder": "", "reason": why}
         return {"ffmpeg": False, "path": "", "version": "", "gpl": False, "aac": False, "targets": {t: dict(none) for t in TARGETS}}
     prores_ok = info.has("prores_ks")
+    h264_ok = info.has("libx264")
     reason_pr = "" if prores_ok else "This ffmpeg has no prores_ks encoder."
     hevc = info.hevc_candidates()
     return {
         "ffmpeg": True, "path": info.path, "version": info.version, "gpl": info.gpl, "aac": info.has("aac"),
         "targets": {
+            "h264": {"available": h264_ok, "encoder": "libx264", "reason": "" if h264_ok else "This ffmpeg has no libx264 encoder."},
             "prores": {"available": prores_ok, "encoder": "prores_ks", "reason": reason_pr},
             "prores4444": {"available": prores_ok, "encoder": "prores_ks", "reason": reason_pr},
             "hevc": {
@@ -209,14 +217,22 @@ def create_job(body: NewJob) -> dict:
         raise HTTPException(400, "Unknown quality.")
     if body.container not in ("mp4", "mov"):
         raise HTTPException(400, "The container must be mp4 or mov.")
+    if body.audio_codec not in ("aac", "pcm"):
+        raise HTTPException(400, "The sound must be aac or pcm.")
+    if body.target in ("prores", "prores4444") and body.profile and body.profile not in PRORES_PROFILES:
+        raise HTTPException(400, "Unknown ProRes profile.")
+    if body.audio_codec == "pcm" and body.container == "mp4" and body.target in ("hevc", "h264"):
+        raise HTTPException(400, "Linear PCM sound needs a .mov file.")
     info = ff.probe()
     if info is None:
         raise HTTPException(503, "ffmpeg was not found.")
-    if body.target != "hevc" and not info.has("prores_ks"):
+    if body.target in ("prores", "prores4444") and not info.has("prores_ks"):
         raise HTTPException(503, "This ffmpeg has no ProRes encoder.")
+    if body.target == "h264" and not info.has("libx264"):
+        raise HTTPException(503, "This ffmpeg has no H.264 encoder.")
     if body.target == "hevc" and not info.hevc_candidates():
         raise HTTPException(503, "This ffmpeg has no HEVC encoder.")
-    if body.has_audio and body.target == "hevc" and not info.has("aac"):
+    if body.has_audio and body.target in ("hevc", "h264") and body.audio_codec == "aac" and not info.has("aac"):
         raise HTTPException(503, "This ffmpeg has no AAC encoder.")
     base = Path(clean_name(body.name or "movie")).stem or "movie"
     job_id = uuid.uuid4().hex[:16]
@@ -224,8 +240,9 @@ def create_job(body: NewJob) -> dict:
     (folder / "frames").mkdir(parents=True, exist_ok=True)
     job = Job(
         id=job_id, target=body.target, fps=float(body.fps), width=body.width, height=body.height, frames=body.frames,
-        has_audio=body.has_audio, alpha=body.alpha and body.target == "prores4444", quality=body.quality,
-        container="mov" if body.target != "hevc" else body.container, name=base, folder=folder,
+        has_audio=body.has_audio, alpha=body.alpha and (body.target == "prores4444" or (body.target == "prores" and body.profile in ("4444", "4444xq"))),
+        quality=body.quality, container="mov" if body.target in ("prores", "prores4444") else body.container, name=base, folder=folder,
+        audio_codec=body.audio_codec, profile=body.profile,
     )
     JOBS[job_id] = job
     _prune()
@@ -307,14 +324,19 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
     bt709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
     matrix = "scale=out_color_matrix=bt709:out_range=tv"
     if job.target in ("prores", "prores4444"):
-        hq = job.target == "prores"
-        pix = "yuv422p10le" if hq else ("yuva444p10le" if job.alpha else "yuv444p10le")
-        cmd += ["-vf", matrix, "-c:v", "prores_ks", "-profile:v", "3" if hq else "4", "-vendor", "apl0", "-pix_fmt", pix, *bt709]
+        name = job.profile or ("hq" if job.target == "prores" else "4444")
+        num = PRORES_PROFILES[name]
+        pix = "yuv422p10le" if num < 4 else ("yuva444p10le" if job.alpha else "yuv444p10le")
+        cmd += ["-vf", matrix, "-c:v", "prores_ks", "-profile:v", str(num), "-vendor", "apl0", "-pix_fmt", pix, *bt709]
         if job.has_audio:
             cmd += ["-c:a", "pcm_s16le"]
     else:
         crf = CRF[job.quality]
-        if encoder == "libx265":
+        if encoder == "libx264":
+            cmd += ["-vf", matrix, "-c:v", "libx264", "-crf", str(crf), "-preset", "medium", "-pix_fmt", "yuv420p", *bt709]
+            if job.container == "mp4":
+                cmd += ["-movflags", "+faststart"]
+        elif encoder == "libx265":
             cmd += ["-vf", matrix, "-c:v", "libx265", "-crf", str(crf), "-preset", "medium", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_videotoolbox":
             cmd += ["-vf", matrix, "-c:v", encoder, "-q:v", str(VT_Q[job.quality]), "-pix_fmt", "yuv420p", *bt709]
@@ -324,9 +346,10 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
             cmd += ["-vf", matrix + ",format=nv12", "-c:v", encoder, "-global_quality", str(crf), *bt709]
         else:
             cmd += ["-vf", "format=nv12,hwupload", "-c:v", encoder, "-qp", str(crf)]
-        cmd += ["-tag:v", "hvc1", "-movflags", "+faststart"]
+        if job.target == "hevc":
+            cmd += ["-tag:v", "hvc1", "-movflags", "+faststart"]
         if job.has_audio:
-            cmd += ["-c:a", "aac", "-b:a", "192k"]
+            cmd += ["-c:a", "pcm_s16le"] if job.audio_codec == "pcm" else ["-c:a", "aac", "-b:a", "192k"]
     # frames and a little over their length, so a longer sound is cut at the picture's end
     cmd += ["-frames:v", str(job.frames)]
     if job.has_audio:
@@ -382,7 +405,7 @@ def _keep(tmp: Path, name: str) -> Path:
 async def _encode(job: Job, info: ff.FfmpegInfo) -> None:
     ext = "mov" if job.container == "mov" else "mp4"
     out = job.folder / f"out.{ext}"
-    encoders = info.hevc_candidates() if job.target == "hevc" else ["prores_ks"]
+    encoders = {"hevc": info.hevc_candidates(), "h264": ["libx264"]}.get(job.target, ["prores_ks"])
     last_error = ""
     try:
         for enc in encoders:

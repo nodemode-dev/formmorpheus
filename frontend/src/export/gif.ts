@@ -319,6 +319,23 @@ const BAYER8 = (() => {
   return m;
 })();
 
+const bayerCache = new Map<number, Float32Array>();
+/** Bayer threshold matrix of side `size` (2, 4, 8 or 16), values in -0.5..0.5. */
+function bayer(size: number): Float32Array {
+  if (size === 8) return BAYER8;
+  const hit = bayerCache.get(size);
+  if (hit) return hit;
+  const m = new Float32Array(size * size);
+  const levels = Math.log2(size), b2 = [0, 2, 3, 1];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let v = 0;
+    for (let l = levels - 1; l >= 0; l--) v = v * 4 + b2[((y >> l) & 1) * 2 + ((x >> l) & 1)];
+    m[y * size + x] = (v + 0.5) / (size * size) - 0.5;
+  }
+  bayerCache.set(size, m);
+  return m;
+}
+
 interface Pending {
   idx: Uint8Array;
   delay: number;
@@ -361,6 +378,29 @@ export class GifWriter {
   private cacheN = -1;
   private errA: Float32Array;
   private errB: Float32Array;
+  private matrix: Float32Array = BAYER8;
+  private matrixSide = 8;
+  private strength = 1;
+
+  /** Stable dithering: smoothness 0..3 picks a 2x2, 4x4, 8x8 or 16x16 matrix; intensity 0..100 (50 is the default strength). */
+  setOrdered(smoothness: number, intensity: number): void {
+    this.matrixSide = 2 << Math.max(0, Math.min(3, Math.round(smoothness)));
+    this.matrix = bayer(this.matrixSide);
+    this.strength = Math.max(0, Math.min(100, intensity)) / 50;
+  }
+
+  /** The frame just added, as RGBA after the palette and dither (for a preview); valid until the next addFrame. */
+  previewRgba(): Uint8ClampedArray | null {
+    const p = this.pending;
+    if (!p) return null;
+    const out = new Uint8ClampedArray(this.w * this.h * 4);
+    for (let i = 0, o = 0; i < p.idx.length; i++, o += 4) {
+      const k = p.idx[i];
+      if (p.hasT && k === p.tIdx) { out[o + 3] = 0; continue; }
+      out[o] = p.pal[k * 3]; out[o + 1] = p.pal[k * 3 + 1]; out[o + 2] = p.pal[k * 3 + 2]; out[o + 3] = 255;
+    }
+    return out;
+  }
 
   constructor(width: number, height: number, loop: boolean) {
     this.w = Math.max(1, width | 0);
@@ -450,13 +490,14 @@ export class GifWriter {
 
   private dOrdered(src: Uint8Array, idx: Uint8Array, thr: number, tIdx: number, n: number): void {
     const w = this.w, h = this.h;
-    const spread = Math.min(160, 205 / Math.cbrt(Math.max(2, n)));
+    const spread = Math.min(160, 205 / Math.cbrt(Math.max(2, n))) * this.strength;
+    const side = this.matrixSide, mask = side - 1, mat = this.matrix;
     for (let y = 0; y < h; y++) {
-      const row = (y & 7) * 8;
+      const row = (y & mask) * side;
       for (let x = 0; x < w; x++) {
         const i = y * w + x, p = i * 4;
         if (src[p + 3] < thr) { idx[i] = tIdx; continue; }
-        const o = BAYER8[row + (x & 7)] * spread;
+        const o = mat[row + (x & mask)] * spread;
         let r = src[p] + o, g = src[p + 1] + o, b = src[p + 2] + o;
         r = r < 0 ? 0 : r > 255 ? 255 : r;
         g = g < 0 ? 0 : g > 255 ? 255 : g;

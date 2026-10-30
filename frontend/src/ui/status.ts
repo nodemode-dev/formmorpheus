@@ -1,5 +1,6 @@
 import type { Engine } from '../engine/engine';
 import { durationLabel } from '../engine/time';
+import type { Content, Movie } from '../engine/types';
 import { el, pendingClass, q, setClass, setStyleVar, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { JobsList } from './jobs-list';
@@ -39,6 +40,7 @@ export class StatusBar {
     engine.on('movie', () => this.syncDims());
     engine.on('projects', () => { this.syncDims(); this.syncHistory(); });
     engine.on('history', () => this.syncHistory());
+    engine.on('selection', () => this.syncDims());
     engine.on('mode', () => this.syncHint());
     engine.on('progress', () => this.syncProgress());
     engine.on('notice', (n) => { if (n.kind === 'error') this.flashError(n.text); });
@@ -54,7 +56,22 @@ export class StatusBar {
 
   private syncDims(): void {
     const m = this.engine.movie;
-    setText(this.dims, m ? `${m.width} × ${m.height} px · ${m.fps} fps · ${durationLabel(m.duration, m.fps)}` : '');
+    const base = m ? `${m.width} × ${m.height} px · ${m.fps} fps · ${durationLabel(m.duration, m.fps)}` : '';
+    const ids = this.engine.selection.content;
+    let pick = '';
+    if (m && ids.length === 1) {
+      const found = this.find(m.tracks, ids[0]);
+      if (found) pick = ` · ${found.name}: frame ${found.start} to ${found.start + found.duration}, ${durationLabel(found.duration, m.fps)}`;
+    } else if (ids.length > 1) pick = ` · ${ids.length} selected`;
+    setText(this.dims, base + pick);
+  }
+
+  private find(tracks: Movie['tracks'], id: string): Content | null {
+    for (const t of tracks) for (const c of t.content) {
+      if (c.id === id) return c;
+      if (c.kind === 'group') { const hit = this.find(c.tracks, id); if (hit) return hit; }
+    }
+    return null;
   }
 
   private syncHistory(): void {

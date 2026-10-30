@@ -2,86 +2,167 @@ import type { Engine } from '../engine/engine';
 import { locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Content, TextStyle } from '../engine/types';
-import { FONT_FAMILIES } from '../media/fonts';
+import { ensureTextFont, familyFaces, fontCatalog } from '../media/fonts';
 import { el, q, setClass, setText } from './dom';
 import { icon } from './icons';
 import { Popover } from './popover';
 
-const WEIGHTS: Array<[number, string]> = [[300, 'Light'], [400, 'Regular'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold'], [800, 'Extra bold'], [900, 'Black']];
-const ALIGNS: Array<[TextStyle['align'], string, string]> = [['left', 'alignLeftEdge', 'Align left'], ['center', 'alignHcenterEdge', 'Align centre'], ['right', 'alignRightEdge', 'Align right']];
+const ALIGNS: Array<[TextStyle['align'], string, string]> = [['left', 'alignLeftEdge', 'Align left'], ['center', 'alignHcenterEdge', 'Align centre'], ['right', 'alignRightEdge', 'Align right'], ['justify', 'alignJustify', 'Justify']];
+const CAPS: Array<[TextStyle['caps'] | '', string, string]> = [['', 'Aa', 'Normal case'], ['upper', 'AA', 'All caps'], ['lower', 'aa', 'Lower case'], ['small', 'Aa', 'Small caps']];
+const KERNS: Array<[TextStyle['kerning'] | '', string, string]> = [['', 'Font', 'The font\'s own pair kerning'], ['none', 'None', 'No pair kerning'], ['optical', 'Optical', 'Spacing measured from the letter shapes']];
+const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
 
-/** Glass card for Text content: text, font, size, weight, colour and alignment. One merged undo step per gesture. */
+interface NumField { key: 'size' | 'tracking' | 'leading' | 'baseline'; label: string; min: number; max: number; step: number; def: number | null }
+const NUMS: NumField[] = [
+  { key: 'size', label: 'Size', min: 8, max: 600, step: 1, def: null },
+  { key: 'tracking', label: 'Tracking', min: -200, max: 1000, step: 5, def: 0 },
+  { key: 'leading', label: 'Leading', min: 0.6, max: 3, step: 0.05, def: 1.2 },
+  { key: 'baseline', label: 'Baseline', min: -300, max: 300, step: 1, def: 0 },
+];
+
+interface Slider { range: HTMLInputElement; num: HTMLInputElement }
+
+/** Glass card for Text content: a Fonts tab (typeface list, variant, color) and a Format tab (size, tracking, kerning, leading,
+ *  baseline, alignment, case, underline, outline, strikethrough, vertical, wrap width). One merged undo step per gesture. */
 export class TextCard {
-  private readonly pop = new Popover('fm-tc', 320);
+  private readonly pop = new Popover('fm-tc', 340);
   private id = '';
   private readonly area: HTMLTextAreaElement;
-  private readonly font: HTMLSelectElement;
-  private readonly size: HTMLInputElement;
-  private readonly sizeRange: HTMLInputElement;
+  private readonly tabs = new Map<string, HTMLButtonElement>();
+  private readonly panes = new Map<string, HTMLElement>();
+  private readonly list: HTMLElement;
+  private readonly groups = new Map<string, HTMLElement>();
+  private readonly faces = new Map<string, HTMLButtonElement>();
   private readonly weight: HTMLSelectElement;
   private readonly color: HTMLInputElement;
   private readonly hex: HTMLElement;
-  private readonly aligns = new Map<TextStyle['align'], HTMLButtonElement>();
-  private fontKey = '';
+  private readonly sliders = new Map<string, Slider>();
+  private readonly aligns = new Map<string, HTMLButtonElement>();
+  private readonly caps = new Map<string, HTMLButtonElement>();
+  private readonly kerns = new Map<string, HTMLButtonElement>();
+  private readonly flags = new Map<string, HTMLButtonElement>();
+  private readonly strokeColor: HTMLInputElement;
+  private readonly strokeW: HTMLInputElement;
+  private readonly wrapW: HTMLInputElement;
+  private readonly wrapAuto: HTMLButtonElement;
+  private weightKey = '';
 
   constructor(private readonly engine: Engine) {
-    const body = this.pop.body;
     const root = el<HTMLElement>(`<div class="fm-tc-body">
       <textarea class="fm-tc-text" rows="3" spellcheck="false" aria-label="Text"></textarea>
-      <label class="fm-tc-row"><span>Font</span><select class="fm-tc-select" data-f="font" data-native aria-label="Font"></select></label>
-      <div class="fm-tc-row"><span>Size</span><input class="fm-cm-range fm-tc-range" type="range" min="8" max="600" step="1" aria-label="Size"><input class="fm-tc-num" type="number" min="1" max="2000" step="1" aria-label="Size in pixels"></div>
-      <label class="fm-tc-row"><span>Weight</span><select class="fm-tc-select" data-f="weight" aria-label="Weight"></select></label>
-      <div class="fm-tc-row"><span>Color</span><label class="fm-tc-swatch"><input type="color" aria-label="Color"></label><span class="fm-tc-hex"></span></div>
-      <div class="fm-tc-row"><span>Align</span><div class="fm-tc-seg" role="group" aria-label="Alignment"></div></div>
+      <div class="fm-tc-tabs" role="tablist"></div>
+      <div class="fm-tc-pane" data-pane="fonts">
+        <div class="fm-tc-fonts" role="listbox" aria-label="Typeface"></div>
+        <label class="fm-tc-row"><span>Font</span><select class="fm-tc-select" data-f="weight" aria-label="Font variant"></select></label>
+        <div class="fm-tc-row"><span>Color</span><label class="fm-tc-swatch"><input type="color" data-f="color" aria-label="Color"></label><span class="fm-tc-hex"></span></div>
+        <div class="fm-tc-row"><span>Style</span><div class="fm-tc-seg" data-g="flags"></div></div>
+      </div>
+      <div class="fm-tc-pane" data-pane="format" hidden>
+        <div data-g="nums"></div>
+        <div class="fm-tc-row"><span>Kerning</span><div class="fm-tc-seg fm-tc-seg-wide" data-g="kern"></div></div>
+        <div class="fm-tc-row"><span>Align</span><div class="fm-tc-seg" data-g="align"></div></div>
+        <div class="fm-tc-row"><span>Case</span><div class="fm-tc-seg" data-g="caps"></div></div>
+        <div class="fm-tc-row"><span>Lines</span><div class="fm-tc-seg" data-g="lines"></div></div>
+        <div class="fm-tc-row"><span>Outline</span><label class="fm-tc-swatch"><input type="color" data-f="strokeColor" aria-label="Outline color"></label><input class="fm-tc-num" type="number" min="0" max="80" step="1" data-f="strokeW" aria-label="Outline width in pixels"></div>
+        <div class="fm-tc-row"><span>Wrap</span><input class="fm-tc-num fm-tc-wide" type="number" min="20" max="8000" step="10" data-f="wrapW" aria-label="Wrap width in pixels"><button class="fm-tc-mini" type="button" data-f="wrapAuto">Auto</button></div>
+      </div>
     </div>`);
-    body.appendChild(root);
+    this.pop.body.appendChild(root);
     this.area = q<HTMLTextAreaElement>(root, 'textarea');
-    this.font = q<HTMLSelectElement>(root, '[data-f="font"]');
+    this.list = q(root, '.fm-tc-fonts');
     this.weight = q<HTMLSelectElement>(root, '[data-f="weight"]');
-    this.sizeRange = q<HTMLInputElement>(root, '.fm-tc-range');
-    this.size = q<HTMLInputElement>(root, '.fm-tc-num');
-    this.color = q<HTMLInputElement>(root, 'input[type="color"]');
-    this.hex = q<HTMLElement>(root, '.fm-tc-hex');
-    for (const [w, label] of WEIGHTS) {
-      const o = document.createElement('option');
-      o.value = String(w);
-      o.textContent = label;
-      this.weight.appendChild(o);
+    this.color = q<HTMLInputElement>(root, '[data-f="color"]');
+    this.hex = q(root, '.fm-tc-hex');
+    this.strokeColor = q<HTMLInputElement>(root, '[data-f="strokeColor"]');
+    this.strokeW = q<HTMLInputElement>(root, '[data-f="strokeW"]');
+    this.wrapW = q<HTMLInputElement>(root, '[data-f="wrapW"]');
+    this.wrapAuto = q<HTMLButtonElement>(root, '[data-f="wrapAuto"]');
+
+    const tabBar = q(root, '.fm-tc-tabs');
+    for (const [id, label] of [['fonts', 'Fonts'], ['format', 'Format']] as const) {
+      const b = el<HTMLButtonElement>(`<button class="fm-tc-tab" type="button" role="tab" aria-selected="false">${label}</button>`);
+      b.addEventListener('click', () => this.showTab(id));
+      this.tabs.set(id, b);
+      this.panes.set(id, q(root, `[data-pane="${id}"]`));
+      tabBar.appendChild(b);
     }
-    const seg = q<HTMLElement>(root, '.fm-tc-seg');
-    for (const [a, ic, label] of ALIGNS) {
-      const b = el<HTMLButtonElement>(`<button class="fm-tc-seg-btn" type="button" title="${label}" aria-label="${label}" aria-pressed="false">${icon(ic, 16)}</button>`);
-      b.addEventListener('click', () => { this.commit({ align: a }, 'align'); this.endGesture(); });
-      this.aligns.set(a, b);
-      seg.appendChild(b);
+    for (const g of ['bundled', 'movie', 'system'] as const) {
+      const head = el(`<div class="fm-tc-group" hidden>${g === 'bundled' ? 'Built in' : g === 'movie' ? 'In this movie' : 'On this computer'}</div>`);
+      const box = el('<div class="fm-tc-group-list"></div>');
+      this.list.append(head, box);
+      this.groups.set(g, box);
+      box.dataset.head = '';
+      (box as unknown as { _head: HTMLElement })._head = head;
     }
 
+    // Fonts tab
+    const flagBox = q(root, '[data-g="flags"]');
+    const mkToggle = (host: HTMLElement, store: Map<string, HTMLButtonElement>, key: string, html: string, title: string, run: () => void, cls = ''): void => {
+      const b = el<HTMLButtonElement>(`<button class="fm-tc-seg-btn ${cls}" type="button" title="${title}" aria-label="${title}" aria-pressed="false">${html}</button>`);
+      b.addEventListener('click', () => { run(); this.endGesture(); });
+      store.set(key, b);
+      host.appendChild(b);
+    };
+    mkToggle(flagBox, this.flags, 'bold', 'B', 'Bold', () => this.toggleBold(), 'fm-tc-b');
+    mkToggle(flagBox, this.flags, 'italic', 'I', 'Italic', () => this.commit({ italic: this.cur()?.italic ? undefined : true }, 'italic'), 'fm-tc-i');
+    mkToggle(flagBox, this.flags, 'underline', 'U', 'Underline', () => this.commit({ underline: this.cur()?.underline ? undefined : true }, 'underline'), 'fm-tc-u');
+    mkToggle(flagBox, this.flags, 'strike', 'S', 'Strikethrough', () => this.commit({ strike: this.cur()?.strike ? undefined : true }, 'strike'), 'fm-tc-s');
+
+    // Format tab
+    const nums = q(root, '[data-g="nums"]');
+    for (const f of NUMS) {
+      const row = el(`<div class="fm-tc-row"><span>${f.label}</span><input class="fm-cm-range fm-tc-range" type="range" min="${f.min}" max="${f.max}" step="${f.step}" aria-label="${f.label}"><input class="fm-tc-num" type="number" step="${f.step}" aria-label="${f.label} value"></div>`);
+      const range = q<HTMLInputElement>(row, 'input[type="range"]'), num = q<HTMLInputElement>(row, 'input[type="number"]');
+      const put = (v: number): void => {
+        if (!Number.isFinite(v)) return;
+        const val = f.key === 'size' ? Math.min(2000, Math.max(1, Math.round(v))) : v;
+        this.commit({ [f.key]: f.def !== null && Math.abs(val - f.def) < 1e-6 ? undefined : val } as Partial<TextStyle>, f.key);
+        this.paintSlider(f, val, range, num, true);
+      };
+      range.addEventListener('input', () => put(range.valueAsNumber));
+      range.addEventListener('change', () => this.endGesture());
+      num.addEventListener('input', () => { if (num.value !== '') put(num.valueAsNumber); });
+      num.addEventListener('change', () => this.endGesture());
+      this.sliders.set(f.key, { range, num });
+      nums.appendChild(row);
+    }
+    for (const [k, label, title] of KERNS) mkToggle(q(root, '[data-g="kern"]'), this.kerns, k ?? '', label, title, () => this.commit({ kerning: k || undefined }, 'kerning'));
+    for (const [a, ic, label] of ALIGNS) mkToggle(q(root, '[data-g="align"]'), this.aligns, a, icon(ic, 16), label, () => this.commit({ align: a }, 'align'));
+    for (const [k, label, title] of CAPS) mkToggle(q(root, '[data-g="caps"]'), this.caps, k ?? '', k === 'small' ? '<span class="fm-tc-sc">Aa</span>' : label, title, () => this.commit({ caps: k || undefined }, 'caps'));
+    mkToggle(q(root, '[data-g="lines"]'), this.flags, 'underline2', '<span class="fm-tc-u">U</span>', 'Underline', () => this.commit({ underline: this.cur()?.underline ? undefined : true }, 'underline'));
+    mkToggle(q(root, '[data-g="lines"]'), this.flags, 'strike2', '<span class="fm-tc-s">S</span>', 'Strikethrough', () => this.commit({ strike: this.cur()?.strike ? undefined : true }, 'strike'));
+    mkToggle(q(root, '[data-g="lines"]'), this.flags, 'vertical', icon('tTypeV', 16), 'Vertical text', () => this.commit({ vertical: this.cur()?.vertical ? undefined : true }, 'vertical'));
+
+    // events
     this.area.addEventListener('input', () => this.commit({ text: this.area.value }, 'text'));
     this.area.addEventListener('change', () => this.endGesture());
-    this.font.addEventListener('change', () => { this.commit({ font: this.font.value }, 'font'); this.paintFont(); this.endGesture(); });
-    this.weight.addEventListener('change', () => { this.commit({ weight: Number(this.weight.value) }, 'weight'); this.endGesture(); });
-    this.sizeRange.addEventListener('input', () => { this.commit({ size: this.sizeRange.valueAsNumber }, 'size'); this.paintSize(this.sizeRange.valueAsNumber); });
-    this.sizeRange.addEventListener('change', () => this.endGesture());
-    this.size.addEventListener('input', () => {
-      const v = this.size.valueAsNumber;
-      if (!Number.isFinite(v) || v < 1) return;
-      this.commit({ size: Math.min(2000, Math.round(v)) }, 'size');
-      this.paintSize(v, true);
-    });
-    this.size.addEventListener('change', () => this.endGesture());
+    this.weight.addEventListener('change', () => { void this.setFace(Number(this.weight.value)); this.endGesture(); });
     this.color.addEventListener('input', () => { this.commit({ color: this.color.value }, 'color'); setText(this.hex, this.color.value.toUpperCase()); });
     this.color.addEventListener('change', () => this.endGesture());
+    const stroke = (): void => {
+      const w = Math.max(0, Math.round(this.strokeW.valueAsNumber || 0));
+      this.commit({ stroke: w > 0 ? { color: this.strokeColor.value, width: w } : undefined }, 'stroke');
+    };
+    this.strokeColor.addEventListener('input', () => { if (this.strokeW.valueAsNumber > 0) stroke(); else { this.strokeW.value = '4'; stroke(); } });
+    this.strokeColor.addEventListener('change', () => this.endGesture());
+    this.strokeW.addEventListener('input', stroke);
+    this.strokeW.addEventListener('change', () => this.endGesture());
+    this.wrapW.addEventListener('input', () => { const v = this.wrapW.valueAsNumber; if (Number.isFinite(v) && v >= 20) this.commit({ boxW: Math.round(v) }, 'boxW'); });
+    this.wrapW.addEventListener('change', () => this.endGesture());
+    this.wrapAuto.addEventListener('click', () => { this.commit({ boxW: undefined }, 'boxW'); this.endGesture(); });
 
     this.pop.onHide(() => { this.endGesture(); this.id = ''; });
     engine.on('movie', () => { if (this.pop.isOpen) this.sync(); });
     engine.on('selection', () => { if (this.pop.isOpen && !this.engine.selection.content.includes(this.id)) this.close(); });
+    this.showTab('fonts');
   }
 
-  open(anchor: HTMLElement | { x: number; y: number }, contentId: string): void {
+  open(anchor: HTMLElement | { x: number; y: number }, contentId: string, tab: 'fonts' | 'format' = 'fonts'): void {
     const m = this.engine.movie;
     const at = m ? locate(m, contentId) : null;
     if (!at || at.content.kind !== 'text' || !at.content.text) return;
     this.id = contentId;
+    this.showTab(tab);
     this.sync(true);
     if (anchor instanceof HTMLElement) this.pop.showFor(anchor, 'below');
     else this.pop.showAt(anchor.x, anchor.y);
@@ -93,18 +174,37 @@ export class TextCard {
     this.pop.hide();
   }
 
+  private showTab(id: string): void {
+    for (const [k, b] of this.tabs) { setClass(b, 'is-on', k === id); b.setAttribute('aria-selected', String(k === id)); }
+    for (const [k, p] of this.panes) if (p.hidden !== (k !== id)) p.hidden = k !== id;
+    if (this.pop.isOpen) this.fit();
+  }
+
+  /** Keeps the card on screen after its height changed (a tab switch). */
+  private fit(): void {
+    const e = this.pop.el, r = e.getBoundingClientRect();
+    const top = Math.max(8, Math.min(r.top, window.innerHeight - 8 - r.height));
+    if (Math.abs(top - r.top) > 0.5) e.style.transform = `translate(${Math.round(r.left)}px, ${Math.round(top)}px)`;
+  }
+
   private current(): Content | null {
     const m = this.engine.movie;
     const at = m && this.id ? locate(m, this.id) : null;
     return at && at.content.text ? at.content : null;
   }
 
+  private cur(): TextStyle | null {
+    return this.current()?.text ?? null;
+  }
+
+  /** Applies a patch; a key set to undefined is removed so a movie only carries what is used. */
   private commit(patch: Partial<TextStyle>, field: string): void {
     const id = this.id;
     if (!id) return;
     this.engine.run('Edit Text', (m) => ops.updateContent(m, id, (c) => {
       if (!c.text) return c;
-      const text = { ...c.text, ...patch };
+      const text = { ...c.text, ...patch } as TextStyle;
+      for (const k of Object.keys(patch) as Array<keyof TextStyle>) if (patch[k] === undefined) delete text[k];
       const named = patch.text !== undefined ? { name: patch.text.split('\n')[0].slice(0, 40) || c.name } : {};
       return { ...c, ...named, text };
     }), `text-${id}-${field}`);
@@ -114,49 +214,112 @@ export class TextCard {
     this.engine.endGesture();
   }
 
-  private paintSize(v: number, fromNumber = false): void {
-    const r = Math.min(600, Math.max(8, v));
-    this.sizeRange.style.setProperty('--fm-pct', `${((r - 8) / 592) * 100}%`);
-    if (fromNumber) { if (this.sizeRange.valueAsNumber !== r) this.sizeRange.value = String(r); }
-    else if (document.activeElement !== this.size) this.size.value = String(Math.round(v));
+  private toggleBold(): void {
+    const t = this.cur();
+    if (!t) return;
+    const ws = familyFaces(t.font).weights;
+    const near = (target: number): number => ws.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a), ws[0] ?? target);
+    void this.setFace(t.weight >= 600 ? near(400) : near(700));
   }
 
-  private paintFont(): void {
-    this.font.style.fontFamily = `"${this.font.value}", Inter, sans-serif`;
+  private async setFace(weight: number): Promise<void> {
+    const t = this.cur();
+    if (!t) return;
+    await ensureTextFont({ ...t, weight });
+    this.commit({ weight }, 'weight');
+    this.endGesture();
+  }
+
+  private pickFont(family: string): void {
+    const t = this.cur();
+    if (!t) return;
+    const faces = familyFaces(family);
+    const weight = faces.weights.includes(t.weight) ? t.weight : faces.weights.reduce((a, b) => (Math.abs(b - t.weight) < Math.abs(a - t.weight) ? b : a), faces.weights[0] ?? 400);
+    void ensureTextFont({ ...t, font: family, weight }).then(() => {
+      this.commit({ font: family, weight }, 'font');
+      this.endGesture();
+    });
+  }
+
+  private paintSlider(f: NumField, v: number, range: HTMLInputElement, num: HTMLInputElement, fromInput = false): void {
+    const r = Math.min(f.max, Math.max(f.min, v));
+    range.style.setProperty('--fm-pct', `${((r - f.min) / (f.max - f.min)) * 100}%`);
+    if (!fromInput || document.activeElement !== range) { if (range.valueAsNumber !== r) range.value = String(r); }
+    if (document.activeElement !== num) num.value = String(f.step < 1 ? Math.round(v * 100) / 100 : Math.round(v));
+  }
+
+  /** Builds the typeface buttons once per family set and patches them after that. */
+  private syncFonts(t: TextStyle): void {
+    const cat = fontCatalog(this.engine.movie);
+    const all: Record<string, string[]> = { bundled: cat.bundled, movie: cat.movie, system: cat.system };
+    if (!Object.values(all).some((l) => l.includes(t.font))) all.movie = [...all.movie, t.font];
+    const wanted = new Set<string>();
+    for (const [g, fams] of Object.entries(all)) {
+      const box = this.groups.get(g) as HTMLElement;
+      for (const fam of fams) {
+        wanted.add(fam);
+        if (this.faces.has(fam)) continue;
+        const b = el<HTMLButtonElement>('<button class="fm-tc-face" type="button" role="option"></button>');
+        b.textContent = fam;
+        b.style.fontFamily = `"${fam}", Inter, sans-serif`;
+        b.addEventListener('click', () => this.pickFont(fam));
+        this.faces.set(fam, b);
+        box.appendChild(b);
+      }
+      (box as unknown as { _head: HTMLElement })._head.hidden = !fams.length;
+    }
+    for (const [fam, b] of this.faces) if (!wanted.has(fam)) { b.remove(); this.faces.delete(fam); }
+    for (const [fam, b] of this.faces) { const on = fam === t.font; setClass(b, 'is-on', on); b.setAttribute('aria-selected', String(on)); }
   }
 
   /** Patch the fields from the content; the focused field keeps what the person is typing. */
-  private sync(rebuildFonts = false): void {
+  private sync(first = false): void {
     const c = this.current();
     if (!c || !c.text) return;
     const t = c.text;
-    const m = this.engine.movie;
-    const families = m ? FONT_FAMILIES(m) : ['Inter'];
-    if (!families.includes(t.font)) families.push(t.font);
-    const key = families.join('|');
-    if (rebuildFonts || key !== this.fontKey) {
-      this.fontKey = key;
-      const have = new Map(Array.from(this.font.options).map((o) => [o.value, o]));
-      for (const f of families) {
-        if (have.has(f)) continue;
+    this.syncFonts(t);
+    if (first) this.faces.get(t.font)?.scrollIntoView({ block: 'nearest' });
+    if (this.area.value !== t.text && document.activeElement !== this.area) this.area.value = t.text;
+    // variants of the family
+    const fc = familyFaces(t.font);
+    const ws = fc.weights.includes(t.weight) ? fc.weights : [...fc.weights, t.weight].sort((a, b) => a - b);
+    const key = `${t.font}|${ws.join()}`;
+    if (key !== this.weightKey) {
+      this.weightKey = key;
+      this.weight.textContent = '';
+      for (const w of ws) {
         const o = document.createElement('option');
-        o.value = f;
-        o.textContent = f;
-        o.style.fontFamily = `"${f}", Inter, sans-serif`;
-        this.font.appendChild(o);
+        o.value = String(w);
+        o.textContent = WEIGHT_NAMES[w] ?? String(w);
+        this.weight.appendChild(o);
       }
-      for (const [v, o] of have) if (!families.includes(v)) o.remove();
     }
-    if (this.font.value !== t.font) this.font.value = t.font;
-    this.paintFont();
-    if (this.area.value !== t.text) this.area.value = t.text;
-    const w = WEIGHTS.some(([n]) => n === t.weight) ? t.weight : WEIGHTS.reduce((a, b) => (Math.abs(b[0] - t.weight) < Math.abs(a[0] - t.weight) ? b : a))[0];
-    if (this.weight.value !== String(w)) this.weight.value = String(w);
-    this.sizeRange.value = String(Math.min(600, Math.max(8, t.size)));
-    this.paintSize(t.size);
-    if (document.activeElement !== this.size) this.size.value = String(Math.round(t.size));
-    if (this.color.value !== t.color.toLowerCase() && /^#[0-9a-f]{6}$/i.test(t.color)) this.color.value = t.color.toLowerCase();
+    if (this.weight.value !== String(t.weight)) this.weight.value = String(t.weight);
+    if (/^#[0-9a-f]{6}$/i.test(t.color) && this.color.value !== t.color.toLowerCase()) this.color.value = t.color.toLowerCase();
     setText(this.hex, t.color.toUpperCase());
-    for (const [a, b] of this.aligns) { setClass(b, 'is-on', a === t.align); b.setAttribute('aria-pressed', String(a === t.align)); }
+    for (const f of NUMS) {
+      const s = this.sliders.get(f.key) as Slider;
+      const v = (t[f.key] as number | undefined) ?? f.def ?? t.size;
+      this.paintSlider(f, v, s.range, s.num);
+    }
+    const on = (b: HTMLButtonElement | undefined, v: boolean): void => { if (!b) return; setClass(b, 'is-on', v); b.setAttribute('aria-pressed', String(v)); };
+    on(this.flags.get('bold'), t.weight >= 600);
+    on(this.flags.get('italic'), !!t.italic);
+    on(this.flags.get('underline'), !!t.underline);
+    on(this.flags.get('underline2'), !!t.underline);
+    on(this.flags.get('strike'), !!t.strike);
+    on(this.flags.get('strike2'), !!t.strike);
+    on(this.flags.get('vertical'), !!t.vertical);
+    const italicBtn = this.flags.get('italic');
+    if (italicBtn) italicBtn.disabled = !fc.italic;
+    for (const [a, b] of this.aligns) on(b, a === t.align);
+    for (const [k, b] of this.caps) on(b, k === (t.caps ?? ''));
+    for (const [k, b] of this.kerns) on(b, k === (t.kerning ?? ''));
+    if (document.activeElement !== this.strokeW) this.strokeW.value = String(t.stroke?.width ?? 0);
+    const sc = t.stroke?.color ?? '#000000';
+    if (/^#[0-9a-f]{6}$/i.test(sc) && this.strokeColor.value !== sc.toLowerCase()) this.strokeColor.value = sc.toLowerCase();
+    if (document.activeElement !== this.wrapW) this.wrapW.value = t.boxW ? String(Math.round(t.boxW)) : '';
+    this.wrapW.placeholder = 'Auto';
+    this.wrapAuto.disabled = !t.boxW;
   }
 }

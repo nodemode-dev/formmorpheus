@@ -4,10 +4,24 @@ import { FPS_PRESETS, durationLabel, parseTime } from '../engine/time';
 import type { PlaybackMode } from '../engine/types';
 import { el, q, setChecked, setClass, setHidden, setText } from './dom';
 import { toggleOf } from './panels/controls';
+import { confirmAction } from './dialogs';
+import { loadPrefs, updatePrefs } from './prefs';
 import { Popover } from './popover';
 import { StageOptionsBody, type BackgroundPicker } from './stage-options';
 
-const TABS = ['Project', 'Stage', 'Timeline'] as const;
+const TABS = ['Project', 'Stage', 'Timeline', 'Share'] as const;
+const UNDO_STEPS: Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
+
+function runCommand(id: string): void {
+  document.dispatchEvent(new CustomEvent('fm:command', { detail: id }));
+}
+
+function actionBtn(label: string, id: string): HTMLButtonElement {
+  const b = el<HTMLButtonElement>('<button class="fm-ms-btn" type="button"></button>');
+  setText(b, label);
+  b.addEventListener('click', () => runCommand(id));
+  return b;
+}
 const PLAYBACK: Array<[PlaybackMode, string]> = [['loop', 'Loop'], ['pingpong', 'Ping Pong'], ['oneshot', 'One Shot']];
 
 function row(label: string, control: HTMLElement): HTMLElement {
@@ -46,6 +60,21 @@ export class MovieSettings {
   private readonly addKey = input('checkbox');
   private readonly loopVisible = input('checkbox');
   private forceCustom = false;
+  private readonly undoSteps = select(UNDO_STEPS);
+  private readonly hh = input('number', 'fm-ms-hms');
+  private readonly mm = input('number', 'fm-ms-hms');
+  private readonly ss = input('number', 'fm-ms-hms');
+
+  /** Whole seconds from the three fields; the frames left over past a whole second stay. */
+  private applyHms(): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    const secs = (this.hh.valueAsNumber || 0) * 3600 + (this.mm.valueAsNumber || 0) * 60 + (this.ss.valueAsNumber || 0);
+    const rest = m.duration % Math.max(1, Math.round(m.fps));
+    const frames = Math.round(secs * m.fps) + rest;
+    if (frames > 0 && frames !== m.duration) this.run('Duration', { duration: frames });
+    else this.patch(true);
+  }
 
   constructor(private readonly engine: Engine, picker: BackgroundPicker) {
     this.stage = new StageOptionsBody(engine, picker);
@@ -78,6 +107,27 @@ export class MovieSettings {
 
     this.panes[1].append(this.stage.el);
     this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)));
+    this.undoSteps.value = String(loadPrefs().undoDepth);
+    this.undoSteps.addEventListener('change', () => {
+      const p = updatePrefs({ undoDepth: Number(this.undoSteps.value) });
+      this.engine.setUndoDepth(p.undoDepth, p.recentUndo);
+    });
+    this.panes[3].append(
+      row('Export', actionBtn('Export...', 'export')),
+      row('Movie file', actionBtn('Share Movie File', 'export-fmo')),
+      row('With undo history', actionBtn('Share Movie File with History', 'export-fmo-history')),
+      row('Undo steps', this.undoSteps),
+      row('Recovery points', actionBtn('Recovery Points...', 'recovery-points')),
+    );
+
+    const hms = el<HTMLElement>('<div class="fm-ms-pair"></div>');
+    for (const [n, tag] of [[this.hh, 'h'], [this.mm, 'm'], [this.ss, 's']] as const) {
+      n.min = '0'; n.step = '1';
+      enter(n);
+      n.addEventListener('change', () => this.applyHms());
+      hms.append(n, el<HTMLElement>(`<span class="fm-ms-x">${tag}</span>`));
+    }
+    this.panes[0].insertBefore(row('Hours, minutes, seconds', hms), this.panes[0].lastElementChild);
 
     this.pop.body.append(strip, ...this.panes);
     this.wire();
@@ -128,9 +178,9 @@ export class MovieSettings {
         return;
       }
       this.forceCustom = false;
-      this.run('Frame Rate', { fps: Number(this.fps.value) });
+      void this.setFps(Number(this.fps.value));
     });
-    this.fpsCustom.addEventListener('change', () => { if (Number.isFinite(this.fpsCustom.valueAsNumber)) this.run('Frame Rate', { fps: this.fpsCustom.valueAsNumber }); else this.patch(true); });
+    this.fpsCustom.addEventListener('change', () => { if (Number.isFinite(this.fpsCustom.valueAsNumber)) void this.setFps(this.fpsCustom.valueAsNumber); else this.patch(true); });
     this.duration.addEventListener('change', () => {
       const m = this.engine.movie;
       const frames = m ? parseTime(this.duration.value, m.fps) : null;
@@ -140,6 +190,16 @@ export class MovieSettings {
     this.playback.addEventListener('change', () => this.run('Playback', { playback: this.playback.value as PlaybackMode }));
     this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
+  }
+
+  /** A new frame rate retimes every block and key to keep its length in seconds, so a movie with content asks first. */
+  private async setFps(fps: number): Promise<void> {
+    const m = this.engine.movie;
+    if (m && m.tracks.some((t) => t.content.length > 0) && fps !== m.fps) {
+      const ok = await confirmAction('Change frame rate', 'Blocks, keyframes and Flipbook frames are retimed to keep their length in seconds. This can shift cuts by a frame. Undo restores them.', 'Change');
+      if (!ok) { this.forceCustom = false; this.patch(true); return; }
+    }
+    this.run('Frame Rate', { fps });
   }
 
   private put(node: HTMLInputElement | HTMLSelectElement, value: string, force: boolean): void {
@@ -160,6 +220,11 @@ export class MovieSettings {
     this.put(this.fpsCustom, String(m.fps), force);
     this.put(this.duration, durationLabel(m.duration, m.fps), force);
     setText(this.frames, `${m.duration} f`);
+    const whole = Math.floor(m.duration / Math.max(1, m.fps));
+    this.put(this.hh, String(Math.floor(whole / 3600)), force);
+    this.put(this.mm, String(Math.floor((whole % 3600) / 60)), force);
+    this.put(this.ss, String(whole % 60), force);
+    this.put(this.undoSteps, String(loadPrefs().undoDepth), true);
     this.stage.sync();
     this.put(this.playback, m.playback, true);
     setChecked(this.addKey, m.addKeyAtStart);

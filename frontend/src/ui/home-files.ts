@@ -6,6 +6,7 @@ import { icon } from './icons';
 import { dateText, onLanguage, t } from './i18n';
 import { toast } from './toast';
 import { TheaterTools, keyOf, type Target } from './home-theater';
+import { TheaterPreview } from './theater-preview';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
  *  thumbnail grid or a list with name, kind, size and when it changed; filter, sort, open on click, and Remove from
@@ -119,7 +120,7 @@ export class HomeFiles {
       refresh: () => this.refresh(), render: () => this.render(), open: (n) => this.d.openRecent(n),
       isOpen: (n) => this.d.openName?.() === n, forget: (n) => this.d.removeRecent(n),
     }, q(this.root, '.cv-hf-bar')) : null;
-    if (this.theater) this.wireTheater(this.theater);
+    if (this.theater) { this.wireTheater(this.theater); new TheaterPreview(this.items); }
     this.chrome();
   }
 

@@ -26,7 +26,7 @@ interface HistoryRecord {
 
 export const MIME = 'application/x-formmorpheus';
 
-export async function packMovie(movie: Movie, past: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory = true): Promise<Blob> {
+export async function packMovie(movie: Movie, past: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory = true, preview: Blob | null = null): Promise<Blob> {
   const files: Zippable = {};
   const manifest: Manifest = { app: 'formmorpheus', format: FORMAT_VERSION, version: VERSION, saved: Date.now(), history: withHistory };
   files['manifest.json'] = [strToU8(JSON.stringify(manifest)), { level: 6 }];
@@ -42,6 +42,7 @@ export async function packMovie(movie: Movie, past: Step[], recovery: RecoveryPo
     if (blob) files[`assets/${id}`] = [new Uint8Array(await blob.arrayBuffer()), { level: 0 }];
   }
   if (poster) files['poster.png'] = [new Uint8Array(await poster.arrayBuffer()), { level: 0 }];
+  if (preview) files['preview.png'] = [new Uint8Array(await preview.arrayBuffer()), { level: 0 }];
   const zipped = zipSync(files);
   return new Blob([zipped.buffer as ArrayBuffer], { type: MIME });
 }

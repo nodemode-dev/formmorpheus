@@ -121,7 +121,7 @@ export class HelpView extends Dialog {
   private readonly empty = el('<p class="fm-help-empty" hidden></p>');
   private current = 0;
 
-  constructor() {
+  constructor(private readonly run: (command: string) => void = () => undefined) {
     super('formmorpheus Manual', 920);
     q<HTMLElement>(this.scrim, '.cv-dialog').classList.add('fm-help-dlg');
     q<HTMLElement>(this.scrim, '.cv-dialog-head').prepend(el(`<span class="fm-help-headicon">${icon('info', 16)}</span>`));
@@ -130,7 +130,16 @@ export class HelpView extends Dialog {
     const parts = manual.replace(/^#\s+.*$/m, '').split(/^##\s+/m);
     const intro = parts.shift() ?? '';
     const side = el('<aside class="fm-help-side"></aside>');
-    side.append(this.search, this.list);
+    const more = el(`<div class="fm-help-more">
+      <button class="cv-btn cv-btn-ghost" type="button" data-c="whats-new">What's New...</button>
+      <button class="cv-btn cv-btn-ghost" type="button" data-c="tour">Take the Tour</button>
+      <button class="cv-btn cv-btn-ghost" type="button" data-c="about">About formmorpheus</button>
+    </div>`);
+    more.addEventListener('click', (e) => {
+      const c = (e.target as HTMLElement).closest<HTMLElement>('[data-c]')?.dataset.c;
+      if (c) { this.close(); this.run(c); }
+    });
+    side.append(this.search, this.list, more);
     const shell = el('<div class="fm-help"></div>');
     shell.append(side, this.page);
     this.body.appendChild(shell);

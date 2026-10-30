@@ -174,12 +174,25 @@ def read_poster(name: str) -> Response:
     path = project_path(name)
     if not path.is_file():
         raise HTTPException(404, "No project by that name.")
+    return _picture(path, "poster.png")
+
+
+def _picture(path: Path, member: str) -> Response:
+    # No picture is an empty 204, not a 404, so the browser console stays quiet for movies saved without one.
     try:
         with zipfile.ZipFile(path) as archive:
-            data = archive.read("poster.png")
+            data = archive.read(member)
     except (KeyError, zipfile.BadZipFile, OSError):
-        raise HTTPException(404, "This project has no poster.")
+        return Response(status_code=204)
     return Response(data, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/{name}/preview")
+def read_preview(name: str) -> Response:
+    path = project_path(name)
+    if not path.is_file():
+        raise HTTPException(404, "No project by that name.")
+    return _picture(path, "preview.png")
 
 
 @router.put("/{name}")

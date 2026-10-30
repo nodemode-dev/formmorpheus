@@ -1,12 +1,21 @@
 import type { Engine } from '../engine/engine';
 import { FPS_PRESETS } from '../engine/time';
-import { MOVIE_PRESETS } from '../engine/types';
+import { MAX_SIDE, MOVIE_PRESETS } from '../engine/types';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setText } from './dom';
 
-const KEY = 'formmorpheus.newMovie';
+const KEY = 'formmorpheus.newMovie2';
 const BOX = 44;
-const CUSTOM = MOVIE_PRESETS.length;
+const SCREEN = MOVIE_PRESETS.length;
+const CUSTOM = SCREEN + 1;
+
+/** This screen's size in device pixels, capped to the movie limit and kept even, then three smaller steps down. */
+function screenSizes(): Array<[number, number]> {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(16, Math.round((window.screen?.width || 1920) * dpr)), h = Math.max(16, Math.round((window.screen?.height || 1080) * dpr));
+  const k = Math.min(1, MAX_SIDE / Math.max(w, h));
+  return [1, 0.75, 0.5, 0.25].map((s): [number, number] => [Math.max(16, Math.round((w * k * s) / 2) * 2), Math.max(16, Math.round((h * k * s) / 2) * 2)]);
+}
 
 interface Saved { card: number; start: 'empty' | 'flipbook' }
 
@@ -36,6 +45,7 @@ export class NewMovieDialog extends Dialog {
   private readonly seconds = el<HTMLInputElement>('<input class="cv-input" type="number" min="1" max="3600" step="1" value="10" aria-label="Duration in seconds">');
   private readonly starts: HTMLButtonElement[] = [];
   private state: Saved = load();
+  private screen: Array<[number, number]> = [];
   /** Called with the id of the Flipbook a "Flipbook" start made, so the editor can open at once. */
   onFlipbook: ((contentId: string) => void) | null = null;
 
@@ -48,13 +58,24 @@ export class NewMovieDialog extends Dialog {
       setText(q(card, '.fm-nm-label'), p.label);
       setText(q(card, '.fm-nm-ratio'), `${p.aspect[0]}:${p.aspect[1]}`);
       const sel = el<HTMLSelectElement>(`<select class="cv-input fm-nm-size" aria-label="${p.label} size">${p.sizes.map(([w, h], k) => `<option value="${k}">${w} x ${h}</option>`).join('')}</select>`);
-      sel.value = '2';
+      sel.value = '0';
       sel.addEventListener('change', () => this.pick(i));
       this.sizes.push(sel);
       card.appendChild(sel);
       this.wireCard(card, i);
       grid.appendChild(card);
     });
+    const screen = screenSizes();
+    const sc = el<HTMLElement>('<div class="fm-nm-card" role="button" tabindex="0"><span class="fm-nm-label">Screen size</span><span class="fm-nm-ratio"></span></div>');
+    sc.prepend(outline(screen[0][0], screen[0][1]));
+    setText(q(sc, '.fm-nm-ratio'), 'This display');
+    const scSel = el<HTMLSelectElement>(`<select class="cv-input fm-nm-size" aria-label="Screen size">${screen.map(([w, h], k) => `<option value="${k}">${w} x ${h}</option>`).join('')}</select>`);
+    scSel.addEventListener('change', () => this.pick(SCREEN));
+    this.sizes.push(scSel);
+    this.screen = screen;
+    sc.appendChild(scSel);
+    this.wireCard(sc, SCREEN);
+    grid.appendChild(sc);
     const custom = el<HTMLElement>('<div class="fm-nm-card" role="button" tabindex="0"><span class="fm-nm-label">Custom</span><span class="fm-nm-ratio">Any size</span></div>');
     custom.prepend(outline(4, 3));
     const pair = el<HTMLElement>('<div class="fm-nm-pair"></div>');
@@ -81,6 +102,7 @@ export class NewMovieDialog extends Dialog {
       if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); this.create(); }
     });
 
+    this.button('Reset to defaults', 'ghost', () => this.reset()).classList.add('cv-btn-apart');
     this.button('Cancel', 'ghost', () => this.close());
     this.button('Create', 'primary', () => this.create());
     this.remember([], {
@@ -137,7 +159,20 @@ export class NewMovieDialog extends Dialog {
   private size(): [number, number] {
     const i = this.state.card;
     if (i === CUSTOM) return [this.width.valueAsNumber || 1920, this.height.valueAsNumber || 1080];
+    if (i === SCREEN) return this.screen[Number(this.sizes[i].value)] ?? [1920, 1080];
     return MOVIE_PRESETS[i].sizes[Number(this.sizes[i].value)] ?? [1920, 1080];
+  }
+
+  /** Back to the first card at its largest size, 24 fps, 10 seconds, an empty start. */
+  private reset(): void {
+    this.sizes.forEach((s) => { s.value = '0'; });
+    this.width.value = '1920';
+    this.height.value = '1080';
+    this.fps.value = '24';
+    this.seconds.value = '10';
+    this.state = { card: 0, start: 'empty' };
+    this.paint();
+    save(this.state);
   }
 
   private create(): void {

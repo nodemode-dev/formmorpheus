@@ -3,6 +3,7 @@ import { el, setClass, setHidden, setText } from './dom';
 import { HomeFiles } from './home-files';
 import { HomeTrash } from './home-trash';
 import { icon } from './icons';
+import { ExamplesRow } from './examples-row';
 
 export interface HomeDeps {
   engine: ShellModel;
@@ -27,6 +28,7 @@ export class HomeScreen {
   private hadDocument = false;
   private back!: HTMLElement;
   private readonly trash: HomeTrash;
+  private readonly examples: ExamplesRow;
 
   /** Home (1.87.3): a navigation column (Start, Recent, Projects, Outputs with counts; Create; Preferences and Help at
    *  its foot) beside a main area. Start has a greeting with Open and New document, a drop zone listing what opens, a
@@ -62,6 +64,7 @@ export class HomeScreen {
           </div>
         </div>
         <section class="cv-home-section"><div class="cv-home-section-head"><h2 class="cv-home-section-title">Recent</h2><button class="cv-btn cv-btn-ghost" type="button" data-v="recent">See all</button></div><div class="cv-home-slot" data-slot="start"></div></section>
+        <div data-slot="examples"></div>
         <section class="cv-home-section"><div class="cv-home-section-head"><h2 class="cv-home-section-title">New movie</h2><button class="cv-btn cv-btn-ghost" type="button" data-cmd="new">More sizes...</button></div><div class="cv-home-sizes">${sizes}</div></section>
       </div>
       <div class="cv-home-page" data-page="recent" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Recent</h1><p class="cv-home-sub">Movies you opened or saved, newest first.</p></div></div><div class="cv-home-slot" data-slot="recent"></div></div>
@@ -77,6 +80,9 @@ export class HomeScreen {
     mount('recent', new HomeFiles(deps, { fixed: 'recent', onCount: count('recent') }));
     mount('projects', new HomeFiles(deps, { fixed: 'projects', onCount: count('projects') }));
     mount('outputs', new HomeFiles(deps, { fixed: 'outputs', onCount: count('outputs') }));
+    this.examples = new ExamplesRow((name) => d.openRecent(name));
+    (this.root.querySelector('[data-slot="examples"]') as HTMLElement).appendChild(this.examples.root);
+    document.addEventListener('fm:library-changed', () => { if (!this.root.hidden) this.fill(); });
     this.trash = new HomeTrash(count('trash'), () => this.fill());
     (this.root.querySelector('[data-slot="trash"]') as HTMLElement).appendChild(this.trash.root);
     this.root.addEventListener('click', (e) => {
@@ -108,10 +114,14 @@ export class HomeScreen {
   private fill(): void {
     void this.pages.get(this.page)?.refresh();
     void this.trash.refresh();
+    void this.examples.refresh();
     for (const [p, f] of this.pages) if (p !== this.page && p !== 'start' && !(p === 'recent' && this.page === 'start')) void f.refresh();
   }
 
   get isShown(): boolean { return !this.root.hidden; }
+
+  /** Closes a Home that was opened over a movie (or by the Help tour). */
+  hide(): void { this.forced = false; this.sync(); }
 
   /** The Home button: shows the Home screen over whatever is open, at `page` when given. */
   show(page?: Page): void {

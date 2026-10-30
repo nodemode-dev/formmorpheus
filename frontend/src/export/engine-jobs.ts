@@ -6,7 +6,7 @@ import type { AudioEngine } from '../media/audio';
 import type { ExportJob, ExportOptions, ExportProgress, ExportResult } from './types';
 
 type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
-export type EngineTarget = 'prores' | 'prores4444' | 'hevc';
+export type EngineTarget = 'prores' | 'prores4444' | 'hevc' | 'h264';
 
 export interface TargetInfo { available: boolean; encoder: string; reason: string; encoders?: string[] }
 export interface JobCapabilities { ffmpeg: boolean; path: string; version: string; gpl: boolean; aac: boolean; targets: Record<EngineTarget, TargetInfo> }
@@ -121,8 +121,10 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     const n = to - from;
     const total = o.pingpong && n >= 3 ? n + (n - 2) : n;
     const warnings: string[] = [];
-    const keepAlpha = o.alpha && o.target === 'prores4444' && movie.transparent;
-    if (o.alpha && o.target !== 'prores4444' && movie.transparent) warnings.push('Only ProRes 4444 carries transparency, so the background is filled.');
+    const profile = o.proresProfile ?? (o.target === 'prores4444' ? '4444' : 'hq');
+    const carries = (o.target === 'prores' || o.target === 'prores4444') && (profile === '4444' || profile === '4444xq');
+    const keepAlpha = o.alpha && carries && movie.transparent;
+    if (o.alpha && !carries && movie.transparent) warnings.push('Only ProRes 4444 carries transparency here, so the background is filled.');
 
     check();
     // sound first: the mixdown decides whether the job has an audio track
@@ -139,7 +141,8 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         target: o.target, fps: movie.fps, width, height, frames: total, has_audio: wav !== null, alpha: keepAlpha,
-        quality: o.quality, container: o.format === 'hevc-mov' ? 'mov' : 'mp4', name: safeName(movie.name),
+        quality: o.quality, container: o.format === 'hevc-mov' || o.format === 'h264-mov' ? 'mov' : 'mp4', name: safeName(movie.name),
+        audio_codec: o.audioCodec ?? 'aac', profile: o.target === 'prores' || o.target === 'prores4444' ? profile : '',
       }),
     })).json() as { id: string };
     jobId = made.id;

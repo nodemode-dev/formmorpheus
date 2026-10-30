@@ -1,4 +1,5 @@
 /* Text card: the glass card for Text content (popover shell comes from .fm-pop). */
+.fm-tc { max-height: calc(100vh - 16px); overflow-y: auto; }
 .fm-tc-body { display: grid; gap: var(--space-3); padding: var(--space-3); }
 .fm-tc-text {
   width: 100%;
@@ -39,3 +40,34 @@
 .fm-tc-seg-btn { display: grid; place-items: center; width: 36px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); cursor: pointer; }
 .fm-tc-seg-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
 .fm-tc-seg-btn.is-on { background: var(--accent-color); color: var(--text-on-accent, #fff); }
+.fm-tc-seg-btn:disabled { opacity: 0.4; cursor: default; }
+.fm-tc-seg-btn { font-size: var(--fs-14); }
+.fm-tc-seg-wide .fm-tc-seg-btn { width: auto; padding: 0 var(--space-3); font-size: var(--fs-12); }
+.fm-tc-b { font-weight: 800; }
+.fm-tc-i { font-style: italic; font-family: Georgia, serif; }
+.fm-tc-u { text-decoration: underline; }
+.fm-tc-s { text-decoration: line-through; }
+.fm-tc-sc { font-size: 0.82em; font-variant-caps: all-small-caps; }
+.fm-tc-tabs { display: flex; gap: 2px; padding: 2px; border-radius: var(--radius-md); background: var(--bg-input); }
+.fm-tc-tab { flex: 1; height: 28px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-12); cursor: pointer; }
+.fm-tc-tab:hover { color: var(--text-primary); }
+.fm-tc-tab.is-on { background: var(--bg-tertiary); color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent-color); }
+.fm-tc-pane { display: grid; gap: var(--space-3); }
+.fm-tc-pane[hidden] { display: none; }
+.fm-tc-fonts { max-height: 188px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--bg-input); padding: var(--space-1); }
+.fm-tc-group { padding: var(--space-2) var(--space-2) var(--space-1); color: var(--text-muted); font-size: var(--fs-11, 11px); letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-tc-group[hidden] { display: none; }
+.fm-tc-face { display: block; width: 100%; text-align: left; padding: 5px var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font-size: 17px; line-height: 1.25; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fm-tc-face:hover { background: var(--accent-soft); }
+.fm-tc-face.is-on { background: var(--accent-color); color: var(--text-on-accent, #fff); }
+.fm-tc-wide { width: 100%; box-sizing: border-box; }
+.fm-tc-mini { height: var(--ctl-md); padding: 0 var(--space-3); border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-secondary); font-size: var(--fs-12); cursor: pointer; }
+.fm-tc-mini:hover:not(:disabled) { border-color: var(--accent-color); color: var(--text-primary); }
+.fm-tc-mini:disabled { opacity: 0.4; cursor: default; }
+
+/* Inline Text editor on the Stage: transparent letters over the drawn text, a visible caret and selection */
+.fm-ted { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: var(--z-raised); margin: 0; padding: 0; border: 0; resize: none; overflow: hidden; background: transparent; color: transparent; white-space: pre-wrap; overflow-wrap: break-word; outline: 1px dashed var(--accent-color); outline-offset: 4px; box-sizing: border-box; }
+.fm-ted[hidden] { display: none; }
+.fm-ted::selection { background: color-mix(in srgb, var(--accent-color) 45%, transparent); color: transparent; }
+.fm-ted:focus { outline: 1px solid var(--accent-color); }
+.fm-box-w { fill: var(--bg-secondary); stroke: var(--accent-color); stroke-width: 1.5; pointer-events: all; cursor: ew-resize; }

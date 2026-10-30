@@ -120,6 +120,10 @@ export const api = {
     if (!by.name) return null;
     try { return await (await request(`${lib(by.name)}/poster`)).blob(); } catch { return null; }
   },
+  /** The hover strip saved in a movie (null when it has none, an empty answer). */
+  async preview(name: string): Promise<Blob | null> {
+    try { const b = await (await request(`${lib(name)}/preview`)).blob(); return b.size ? b : null; } catch { return null; }
+  },
   /** A .fmo from an absolute path the operating system handed the app (double-click, Open With). */
   async readFile(path: string): Promise<Blob> {
     return (await request(`/files/read?path=${encodeURIComponent(path)}`)).blob();
