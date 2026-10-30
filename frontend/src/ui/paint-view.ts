@@ -1129,7 +1129,7 @@ export class PaintView {
     setStyleVar(this.sizeSlider, '--v', String(st.size));
     setStyleVar(this.opacitySlider, '--v', String(st.opacity));
     setTitle(this.sizeSlider, tr('Brush size {p}%').replace('{p}', String(Math.round(st.size * 100))));
-    setTitle(this.opacitySlider, `Brush opacity ${Math.round(st.opacity * 100)}%`);
+    setTitle(this.opacitySlider, tr('Brush opacity {p}%').replace('{p}', String(Math.round(st.opacity * 100))));
     const smudging = this.tool === 'smudge';
     setHidden(this.strengthSlider, !smudging);
     if (smudging) {

@@ -5,6 +5,7 @@
 import type { FlipbookFrame } from '../engine/types';
 import { el, patchList, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import type { FlipStrip, StripHost } from './flip-strip';
+import { t } from './i18n';
 import { loadPrefs } from './prefs';
 import { toast } from './toast';
 
@@ -261,7 +262,7 @@ export class FlipMini {
     this.mid.addEventListener('pointerdown', (e) => e.stopPropagation());
     this.mid.addEventListener('click', () => {
       if (this.lock) { this.lock = null; toast('Scrub Lock off'); }
-      else { this.lock = { row: this.host.row(), index: this.host.index() }; toast(`Scrub Lock on at frame ${this.host.index() + 1}`); }
+      else { this.lock = { row: this.host.row(), index: this.host.index() }; toast(t('Scrub Lock on at frame {n}').replace('{n}', String(this.host.index() + 1))); }
       this.sync();
     });
 

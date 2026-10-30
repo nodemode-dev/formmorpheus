@@ -52,7 +52,7 @@ export class HomeTrash {
   }
 
   private async purge(item: TrashItem): Promise<void> {
-    if (!(await confirmAction('Delete now?', `"${item.name}" will be deleted for good. This cannot be undone.`, 'Delete Now', true))) return;
+    if (!(await confirmAction('Delete now?', t('"{name}" will be deleted for good. This cannot be undone.').replace('{name}', item.name), 'Delete Now', true))) return;
     try { await api.purgeTrash(item.id); } catch (err) { toast((err as Error).message); }
     await this.refresh();
   }

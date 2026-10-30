@@ -1,6 +1,7 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
 import { channelSpec, easeAt, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
+import { t as tt } from './i18n';
 
 export const LANE_H = 28;
 export const ROW_H = 24;
@@ -187,7 +188,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           c.globalAlpha = 1;
           c.fillStyle = p.text;
           c.textAlign = 'center';
-          c.fillText('Graph', px + GRAPH_PILL_W / 2, cy);
+          c.fillText(tt('Graph'), px + GRAPH_PILL_W / 2, cy);
           c.textAlign = 'left';
         }
         if (local !== undefined) {

@@ -5,6 +5,7 @@ import { uid } from '../engine/model';
 import type { Asset, Content, DrawingLayer } from '../engine/types';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setHidden } from './dom';
+import { t } from './i18n';
 
 export interface CropResizeParams {
   /** Percent of the current size, 10 to 400. */
@@ -78,7 +79,7 @@ export class CropResizeDialog extends Dialog {
 
   /** Opens the dialog; resolves with the choice, or null when cancelled. */
   ask(size: { w: number; h: number }, flipbook: boolean): Promise<CropResizeParams | null> {
-    this.note.textContent = `Canvas ${size.w} × ${size.h}. Cropped sides are cleared, then the picture is scaled about the anchor.`;
+    this.note.textContent = t('Canvas {n} × {n}. Cropped sides are cleared, then the picture is scaled about the anchor.').replace('{n}', String(size.w)).replace('{n}', String(size.h));
     setHidden(this.allRow, !flipbook);
     this.resolve?.(null);
     return new Promise((res) => { this.resolve = res; this.open(this.scale); });

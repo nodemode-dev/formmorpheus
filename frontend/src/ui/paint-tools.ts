@@ -433,7 +433,7 @@ export class PaintTools {
     d.last = p;
     if (this.current === 'select') {
       if (d.kind === 'freehand') d.pts.push(p);
-      if (d.kind === 'automatic') { this.threshold = clamp(d.th0 + (e.clientX - d.cx) / 400, 0.01, 1); this.host.say(`Selection threshold ${Math.round(this.threshold * 100)}%`); }
+      if (d.kind === 'automatic') { this.threshold = clamp(d.th0 + (e.clientX - d.cx) / 400, 0.01, 1); this.host.say(tr('Selection threshold {p}%').replace('{p}', String(Math.round(this.threshold * 100)))); }
       this.host.redraw();
       return;
     }

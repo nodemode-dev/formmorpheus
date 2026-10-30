@@ -3,6 +3,7 @@ import { el, q, setClass, setDisabled, setHidden, setText } from './dom';
 import { confirmAction, promptName } from './dialogs';
 import { icon } from './icons';
 import { Popover, popRow, popSep, type PopRow } from './popover';
+import { tn } from './i18n';
 import { toast } from './toast';
 import { shareMovie } from './theater-share';
 import '../styles/theater.css';
@@ -133,7 +134,7 @@ export class TheaterTools {
     this.selBtn.setAttribute('aria-pressed', String(this.selecting));
     setHidden(this.actions, !this.selecting);
     const n = this.selected.size;
-    setText(q(this.actions, '.cv-th-count'), n === 1 ? '1 selected' : `${n} selected`);
+    setText(q(this.actions, '.cv-th-count'), tn(n, '{n} selected', '{n} selected'));
     const movies = this.selectedMovies().length;
     for (const b of Array.from(this.actions.querySelectorAll<HTMLButtonElement>('[data-act]'))) {
       setDisabled(b, b.dataset.act === 'del' ? n === 0 : movies === 0);

@@ -299,8 +299,8 @@ export function askSaveChangesAll(name: string, many = true): Promise<{ choice: 
     saveChangesDialog ??= new SaveChanges();
     return saveChangesDialog.ask(name, many);
   } catch {
-    const save = window.confirm(`Save changes to ${name}?`);
-    const choice = save ? 'save' : window.confirm(`Discard the changes to ${name}? Cancel keeps the document open.`) ? 'discard' : 'cancel';
+    const save = window.confirm(t('Save changes to {name}?').replace('{name}', name));
+    const choice = save ? 'save' : window.confirm(t('Discard the changes to {name}? Cancel keeps the document open.').replace('{name}', name)) ? 'discard' : 'cancel';
     return Promise.resolve({ choice, all: false });
   }
 }

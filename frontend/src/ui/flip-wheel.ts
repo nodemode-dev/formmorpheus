@@ -2,6 +2,7 @@
 // locks the frame you started from, and letting go returns to it. Notch spacing follows the Scrub speed setting.
 
 import { setClass, setStyleVar } from './dom';
+import { t } from './i18n';
 import { loadPrefs } from './prefs';
 import { toast } from './toast';
 import type { Content } from '../engine/types';
@@ -50,7 +51,7 @@ export class ScrubWheel {
     this.mid.addEventListener('pointerdown', (e) => e.stopPropagation());
     this.mid.addEventListener('click', () => {
       if (this.lock) { this.lock = null; toast('Scrub Lock off'); }
-      else { this.lock = { row: this.host.row(), index: this.host.index() }; toast(`Scrub Lock on at frame ${this.host.index() + 1}`); }
+      else { this.lock = { row: this.host.row(), index: this.host.index() }; toast(t('Scrub Lock on at frame {n}').replace('{n}', String(this.host.index() + 1))); }
       setClass(this.mid, 'is-locked', !!this.lock);
     });
     this.root.addEventListener('pointerdown', (e) => {

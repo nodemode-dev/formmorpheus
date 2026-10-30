@@ -54,13 +54,13 @@ function storedOutputs(): string[] {
 
 const sizeText = (n: number): string => (n <= 0 ? '' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-function whenText(t: number): string {
-  if (!t) return '';
-  const ms = t < 1e12 ? t * 1000 : t, s = (Date.now() - ms) / 1000;
+function whenText(at: number): string {
+  if (!at) return '';
+  const ms = at < 1e12 ? at * 1000 : at, s = (Date.now() - ms) / 1000;
   if (s < 60) return 'Just now';
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
+  if (s < 3600) return t('{n} min ago').replace('{n}', String(Math.round(s / 60)));
+  if (s < 86400) return t('{n} h ago').replace('{n}', String(Math.round(s / 3600)));
+  if (s < 86400 * 7) return t('{n} d ago').replace('{n}', String(Math.round(s / 86400)));
   return dateText(ms);
 }
 

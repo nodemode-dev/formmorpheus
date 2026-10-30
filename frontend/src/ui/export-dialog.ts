@@ -10,6 +10,7 @@ import { parseTime, timecode } from '../engine/time';
 import { downloadBlob } from '../io/api';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
+import { t } from './i18n';
 import { toast } from './toast';
 
 const KEY = 'formmorpheus.export';
@@ -628,7 +629,7 @@ export class ExportDialog {
     this.busy = true;
     this.note([]);
     this.paintBusy(true, `Starting`, 0);
-    const label = `Export ${FORMAT_NAMES[opts.format] ?? opts.format.replace(/-/g, ' ')}`;
+    const label = t('Export {name}').replace('{name}', FORMAT_NAMES[opts.format] ?? opts.format.replace(/-/g, ' '));
     const ej = this.deps.engine.startJob(label, 1);
     this.engineJob = ej;
     const off = this.deps.engine.on('progress', () => { if (ej.cancelled) job.cancel(); });
@@ -648,8 +649,8 @@ export class ExportDialog {
       const lines = [...res.warnings];
       if (!kept) lines.push('The file was downloaded, but it could not be kept in Exports.');
       this.finish(off, ej);
-      if (this.dlg.isOpen) this.note([`Saved ${res.name}`, ...lines], lines.length ? 'warn' : 'ok');
-      else toast(lines.length ? `Exported ${res.name}. ${lines.join(' ')}` : `Exported ${res.name}.`, kept ? 'info' : 'error');
+      if (this.dlg.isOpen) this.note([t('Saved {name}').replace('{name}', res.name), ...lines], lines.length ? 'warn' : 'ok');
+      else toast(t('Exported {name}.').replace('{name}', res.name) + (lines.length ? ` ${lines.join(' ')}` : ''),kept ? 'info' : 'error');
     }, (e: unknown) => {
       this.finish(off, ej);
       if (e instanceof DOMException && e.name === 'AbortError') { this.note(['Export cancelled.'], 'warn'); return; }
