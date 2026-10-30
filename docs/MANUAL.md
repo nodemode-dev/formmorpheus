@@ -79,6 +79,7 @@ The library has 18 brushes in 7 sets: Sketch, Ink, Paint, Chalk, Airbrush, Textu
 
 - **Paint** (B), **Smudge** (S) and **Erase** (E). Click an active tool again to open the brush panel.
 - The side bar has two sliders, brush **size** and **opacity**. `[` and `]` change the size.
+- Each slider has four small markers, the remembered values of that brush. Tap a marker to recall its value. Press and hold it (or Shift or Alt click) to store the current value there.
 - Pen pressure, tilt and streamline smoothing shape the stroke.
 
 ### Layers
@@ -89,10 +90,16 @@ Press L for the layers panel. Each Drawing has its own layers with:
 - **clipping** to the layer below
 - **alpha lock** to paint only where there is paint
 - rename, duplicate, merge down, clear and delete
+- **groups**: the New Group button at the top of the panel makes one, and a layer's menu has Group. A group has its own blend mode and opacity.
+- **masks**: a layer's menu has Add Mask. Tap the mask thumbnail to paint on it, and open its menu for Mask Enabled, Invert Mask, Apply Mask and Delete Mask.
 
 ### Color
 
 Click the color swatch for the color panel: a disc, classic squares, harmony, value sliders and palettes. Drag the swatch onto the canvas to fill a shape or an enclosed area.
+
+- **Threshold**: after the drop, keep the pointer down and drag sideways. A bubble shows the threshold, and the fill follows it. Lift to keep the fill as one undo step.
+- **Continue fill**: later taps fill with the same color until you pick another tool.
+- **Eyedropper loupe**: hold Alt (or touch and hold) over the canvas for a round magnifier that shows the color under it. Release to pick.
 
 ### Select
 
@@ -102,13 +109,16 @@ The bottom capsule switches between Paint, Select, Transform and Filters. Select
 
 Move, scale and turn the selection or the layer. The modes are **Freeform**, **Uniform**, **Distort** and **Warp**. Choose Nearest, Bilinear or Bicubic for the resampling. Enter applies. Escape cancels.
 
+- The arrow keys **nudge** by 1 pixel, and Shift+arrow by 10.
+- Warp has a mesh from 4 x 4 up to 8 x 8. Tap the Mesh row to change the size; each node also has bending handles to shape the curve through it.
+
 ### Filters
 
 Adjustment filters with live preview and a slider for each value: Hue, Saturation, Brightness, Gaussian Blur, Sharpen, Noise and Lens Blur. They apply to the layer or the selection.
 
 ### Zoom and pan
 
-Use the wheel to pan, Ctrl+wheel to zoom, hold Space to drag the canvas, and press 0 to fit.
+Use the wheel to pan, Ctrl+wheel to zoom, hold Space to drag the canvas, and press 0 to fit. With two fingers you can pan, zoom and turn the canvas at once; a quick pinch in fits it to the screen. Shift+drag with the Space hand turns the canvas, and R sets it upright again.
 
 ## Flipbooks and onion skins
 
@@ -119,7 +129,11 @@ A **Flipbook** is frame by frame animation inside one block on the Timeline. It 
 - Select a frame to draw on it. Use the arrow keys or `,` and `.` to step.
 - Right-click a frame or track: copy, cut, paste, duplicate, insert, clear, delete, rename, hide, move up or down.
 - A frame can **hold** for several movie frames, so you animate on twos or threes.
-- **Onion skins** show the frames around the current one, tinted for before and after. Their settings are on the **Onions** tab of the Draw and Paint settings panel.
+- **Onion skins** show the frames around the current one, tinted for before and after. Their settings are on the **Onions** tab of the Draw and Paint settings panel. **Blend primary frame** lets the skins blend over the frame you draw on.
+- **Row masks**: right-click a row for No mask, Alpha mask, Luminance mask and Invert mask. A masking row cuts the row below it and is not drawn itself.
+- Scrubbing the frame strip follows **Scrub speed** in Preferences · Timeline.
+- The **Mini preview** button on the strip opens a small floating window that loops the Flipbook while you draw. Drag it where you like; it keeps its place and whether it was open.
+- In Movie settings, **Loop only the visible region** makes playback loop just the part of the Timeline you see. The sound restarts at the start of that region.
 - **Convert to Flipbook** turns a set of drawings on tracks into one. **Convert Flipbook to tracks** goes the other way.
 - Play inside the Flipbook with the strip's play button to see just the loop.
 
@@ -134,7 +148,15 @@ Switch to Keyframe mode (Ctrl+3). Move or scale a block at a chosen Playhead fra
 - Expand a lane to see its channels as separate rows.
 - Copy and paste keys, or choose **Reverse keyframes** from the block's menu.
 
-Warp and Distort keys are not built yet.
+### Warp and Distort
+
+Both are on the **Action** menu in Keyframe mode, each with a card and handles on the Stage.
+
+- **Distort** skews the picture by its four corners. Drag a corner.
+- **Warp** bends it through a mesh of nodes. Drag a node. **Mesh size** on the card picks 2x2 up to 6x6; the shape you made is kept when the size changes.
+- Each drag writes a key at the Playhead. **Reset** puts every node back at the Playhead, and **Done** closes the card.
+- The offsets are in the picture's own pixels and apply before move, scale and rotation.
+- In Perform mode, dragging a node while the movie plays records its keys, and one undo removes the take.
 
 ## Perform
 
@@ -183,6 +205,7 @@ Open Export with Ctrl+E (File · Export). The dialog has **Quick share** tiles a
 | MP4 video | H.264; sound as AAC where the browser can encode it, otherwise Opus with a warning |
 | WebM video | VP9, with transparency if you ask for it |
 | MOV video | the QuickTime container |
+| HEVC as MOV or MP4 | made by the engine (see Engine formats) |
 | Animated GIF | its own palette of 2 to 256 colors, Floyd-Steinberg or ordered dither, loop forever or not, exact or even frame timing, an alpha threshold, and an optional custom palette |
 | PNG, JPG or WebP frames | one picture per frame, in a zip |
 | PNG still | the current frame |
@@ -190,7 +213,7 @@ Open Export with Ctrl+E (File · Export). The dialog has **Quick share** tiles a
 
 ### Engine formats
 
-ProRes, ProRes 4444 (with alpha) and HEVC cannot be encoded by the browser. The desktop engine makes them with **your own ffmpeg**, which it runs as a separate program. Install ffmpeg yourself and the engine finds it; formmorpheus never ships or links it. If ffmpeg is not found, those formats are listed as unavailable with a note on what is missing. The window renders each frame, the engine encodes them, and the result appears on the Exports page.
+ProRes, ProRes 4444 (with alpha) and HEVC (in an MP4 or a MOV) cannot be encoded by the browser. The desktop engine makes them with **your own ffmpeg**, which it runs as a separate program. Install ffmpeg yourself and the engine finds it; formmorpheus never ships or links it. If ffmpeg is not found, those formats are listed as unavailable with a note on what is missing. The window renders each frame, the engine encodes them, and the result appears on the Exports page.
 
 ### Where exports go
 
@@ -204,7 +227,7 @@ Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Th
 - **Recent**: the movies you opened lately.
 - **Movies**: the whole library, as thumbnails or a list, with a filter box and sorting. Rename, duplicate and delete are on each item.
 - **Exports**: everything you exported. Open, save a copy or delete.
-- **Recently Deleted**: deleted movies and exports stay here for 30 days. Restore one, delete it for good, or empty the list. Items past 30 days are swept away.
+- **Recently Deleted**: deleted movies and exports stay here for 30 days. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
 - **Preferences** and **Help** at the foot.
 
 ## Preferences
@@ -213,7 +236,8 @@ Open with Ctrl+, (File or Edit menu). The pages:
 
 - **General**: show Home at launch and when the last movie closes, What's New, Autosave, the settings and library folders, and Reset All Preferences.
 - **Interface**: theme (28 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
-- **Timeline**: undo steps, scrub speed, two and three-finger tap for undo and redo, and ask before deleting.
+- **Timeline**: undo steps, scrub speed (Precise, Medium or Fast, which also sets how fast scrubbing the frame strip moves), two and three-finger tap for undo and redo, and ask before deleting.
+- **Performance**: **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
 
 ## Languages
 
@@ -221,7 +245,7 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 ## Crash recovery
 
-formmorpheus keeps a recovery copy of the open movie while you work. After a crash or a closed window, the next start offers the movie as it was. Choose to restore it, or discard it. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos.
+formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos.
 
 ## Keyboard shortcuts
 
@@ -296,6 +320,12 @@ Ctrl is Cmd on macOS.
 | Deselect | Ctrl+D |
 | Finish | Enter or Escape |
 | Previous or next frame (Flipbook) | Left or `,`, Right or `.` |
+| Eyedropper loupe | hold Alt, or touch and hold |
+| Reset canvas rotation | R |
+| Nudge the Transform 1 pixel | arrow keys |
+| Nudge the Transform 10 pixels | Shift+arrow keys |
+| Turn the canvas | two fingers, or Shift+drag with Space held |
+| Repeat Undo or Redo | hold the button |
 
 On a touch screen, a two-finger tap undoes and a three-finger tap redoes (Preferences can turn this off).
 

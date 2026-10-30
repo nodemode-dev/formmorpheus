@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.6.0
-Last updated: 2026-10-30 · phases 10 to 12 (engine jobs, distribution, stability, docs)
+Current build version: v0.7.0
+Last updated: 2026-10-30 · phases 13 to 15 (paint and Flipbook carries, Warp and Distort, the GPU compositor, stability debt)
 
 ---
 
@@ -113,6 +113,7 @@ frontend/
 - [src/ui (copied from formvis)](#src-ui-copied)
 - [src/styles](#src-styles)
 - [Phases 10 to 12 (v0.6.0)](#p1012)
+- [Phases 13 to 15 (v0.7.0)](#p1315)
 
 ---
 
@@ -552,4 +553,50 @@ Frames render as in the browser export, go up as PNGs (4 at a time) w/ a 16-bit 
 - kind: explainer
 - logged: v0.6.0 · 2026-10-30
 
-The manual is bundled w/ `?raw` and rendered once into DOM nodes (no innerHTML); each `##` heading is a section; search filters sections. F1 opens it, also on the Home screen.
+The manual is bundled w/ `?raw` and rendered once into DOM nodes (no innerHTML); each `##` heading is a section; search filters sections. F1 opens it, also on the Home screen. The section list and the manual text carry `data-no-i18n`: the manual is English only, and word-by-word table hits made it half translated.
+
+---
+
+## Phases 13 to 15 (v0.7.0) {#p1315}
+
+### src/engine/gpu · the GPU compositor
+- refers-to: src/engine/gpu/compositor.ts, shaders.ts, textures.ts, probe.ts; src/engine/render.ts :: useGpu, autoGpu, gpuActive, drawFrame
+- kind: rationale
+- logged: v0.7.0 · 2026-10-30
+
+WebGL2 on an OffscreenCanvas walks the tracks as composeTracks does (held layer, clipping, masks, keyed opacity, groups, the direct path), w/ all 17 blend modes and the live filters as shader passes. The CPU path stays the reference and the fallback: content drawn through warp, distort, layer groups or masks, or row masks is rendered by the CPU and uploaded as one picture. Auto mode turns the GPU on only when WebGL2 exists, a probe frame matches the CPU and a heavy frame is no slower; `?gpu=force` skips the speed test. Against the CPU: blend modes max 24 levels on rotated edges (mean under 0.06), Hue up to 121 on near-grey pixels (0.05%), filters within 24 (mean 0.31), text 73 at glyph edges (resampled). On this machine (software WebGL) the GPU is slower than the CPU raster, so auto leaves it off; a real GPU is unmeasured. Process note: its builder once rewrote regions of its own new compositor.ts w/ a Python script, against SEDO; logged and kept after review.
+
+### src/engine/warp-draw.ts · Warp and Distort keys
+- refers-to: src/engine/warp-draw.ts :: warpQuads, drawWarped; src/engine/keys.ts :: warp, distort; src/ui/warp-view.ts, warp-card.ts
+- kind: explainer
+- logged: v0.7.0 · 2026-10-30
+
+Distort is a projective map of the content's own rectangle (8 channels); Warp is a Catmull-Rom surface through a 2x2 to 6x6 node mesh (node positions exact), resampled when the mesh size changes. Both draw as affine-textured triangles w/ a half-pixel overlap so no seams show. Offsets are in content pixels, applied before move, scale and rotation. In Perform, dragging a node while playing records its track (one undo step per take).
+
+### src/ui/paint-* · the paint tool carries
+- refers-to: src/paint/viewmath.ts; src/ui/paint-gestures.ts, paint-loupe.ts, paint-drop.ts, paint-predict.ts; src/paint/transform.ts :: Bend, refineGridBent, nudgePoints
+- kind: explainer
+- logged: v0.7.0 · 2026-10-30
+
+Eyedropper loupe (Alt or touch-and-hold), color drop threshold by dragging and continue-fill, Transform nudge (1 px, Shift 10 px) and an 8x8 mesh w/ bending handles, canvas rotate (two fingers, Shift w/ the hand, R resets), hold to repeat undo and redo, quick pinch fit, and predicted points drawn as a screen-only tail never written to the layer. A 4K stroke stays about 0.4 ms median per move.
+
+### src/engine/flip-draw.ts, src/ui/flip-preview.ts · Flipbook carries
+- refers-to: src/engine/flip-draw.ts :: drawMaskedRows; src/ui/flip-preview.ts :: FlipPreview; src/engine/engine.ts :: setRegion, playSpan
+- kind: explainer
+- logged: v0.7.0 · 2026-10-30
+
+A row can mask the row below it (alpha or luminance, invert); onion skins can blend over the primary frame; scrubbing the strip follows the Scrub speed preference; a floating mini preview loops the flipbook and keeps its place; Playback can loop only the Timeline's visible region (saved in the movie), and the sound restarts at the region start. Process note: its builder appended to its own new flip-preview.css w/ a shell redirect once, against SEDO; logged.
+
+### src/ui/i18n.ts · tp, dateText, RTL
+- refers-to: src/ui/i18n.ts :: tp, dateText; src/styles/shell.css (logical properties, RTL chevrons); src/ui/timeline.ts (ruler labels)
+- kind: explainer
+- logged: v0.7.0 · 2026-10-30
+
+`tp()` translates a label before a trailing " (shortcut)" group and keeps the group. Plurals go through `tn()` w/ the categories each language needs; dates use the app language. In Arabic, the status bar parts and the frame counter are isolated left to right, the Home sidebar follows the page direction (logical properties), chevrons flip, path fields are left to right. The ellipsis of a label like "Reset..." sits at the logical end in Arabic, as Arabic interfaces write it.
+
+### media and export debt (v0.7.0)
+- refers-to: src/media/video.ts :: lane eviction, exact waiters; src/media/import.ts :: animated streaming; src/export/engine-jobs.ts; src/io/recovery.ts :: heartbeat
+- kind: fix
+- logged: v0.7.0 · 2026-10-30
+
+Lanes held by an exact() waiter are never evicted, and a waiter whose lane goes asks again (6 blocks of one clip exported: 180 of 180 exact tiles, was 73). Animated WebP, APNG and AVIF stream under the GIF budget. Recovery snapshots carry a heartbeat; only one silent for over 60 s is offered as a crash. A restore renamed to "name 2" says so; the open movie cannot be deleted from Home.

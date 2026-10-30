@@ -13,7 +13,10 @@ The animation studio of the form family: a Stage over a Timeline, drawn frame by
 - Tracks of content on a Timeline: drawings, flipbooks, pictures, text, video, sound and groups
 - Compose, Keyframe and Perform modes
 - Draw & Paint with 18 brushes in 7 sets, layers, select, transform and filters
-- Flipbooks with onion skins
+- Flipbooks with onion skins, row masks and a mini preview
+- Warp and Distort keys, recorded by hand or in Perform
+- Draw & Paint layer groups and masks, an eyedropper loupe and canvas rotate
+- An optional GPU compositor that is used only when it is faster and matches the processor
 - Export to MP4, WebM, MOV, GIF and frames, and to ProRes and HEVC through your own ffmpeg
 - Movies saved as `.fmo` with their full undo history
 - 30 interface languages (English and 29 more)

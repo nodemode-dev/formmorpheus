@@ -32,6 +32,8 @@ The AudioContext is the clock while sound plays. Loop turns restart the sound fr
 
 The browser cannot encode ProRes or HEVC. For those the window draws each frame offscreen, uploads it to the engine as a PNG with the sound as a WAV, and the engine runs the person's own ffmpeg as a separate program (an argument list, never a shell). formmorpheus never ships or links ffmpeg, and never asks for a GPL build. The result is kept in Exports. If ffmpeg is not installed, those formats report what is missing.
 
+HEVC can be made as MP4 or as MOV. The engine takes an exact rational frame rate such as 24000/1001. When one video fills more than four blocks, export takes exact frames and a lane being waited on is never evicted. Animated WebP, APNG and AVIF stream on import under the same budget as GIF.
+
 ## Where exports go
 
-Every export downloads and is also kept by the engine in Exports, never overwritten. The Home screen lists them. Deleting one moves it to Recently Deleted for 30 days.
+Every export downloads and is also kept by the engine in Exports, never overwritten. The Home screen lists them. Deleting one moves it to Recently Deleted for 30 days. A restore whose name is taken is renamed and says so.

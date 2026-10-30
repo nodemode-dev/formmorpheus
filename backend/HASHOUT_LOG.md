@@ -2,8 +2,8 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.6.0
-Last updated: 2026-10-30 · export jobs, Recently Deleted, crash recovery, opens from the OS
+Current build version: v0.7.0
+Last updated: 2026-10-30 · job sweep while running, rational frame rates, HEVC in MOV, recovery heartbeats
 
 ---
 
@@ -129,3 +129,10 @@ Library and exports deletes move the file into `Recently Deleted` and call `reco
 - logged: v0.6.0 · 2026-10-30
 
 The desktop app hands the engine absolute paths the OS gave it (double-click, second launch). Only absolute paths ending in `.fmo` are served; the engine listens on 127.0.0.1 only.
+
+### v0.7.0 · jobs and recovery
+- refers-to: app/routers/jobs.py :: abandoned sweep, rational fps, mov container; app/routers/recovery.py :: alive
+- kind: fix
+- logged: v0.7.0 · 2026-10-30
+
+A job w/ no upload or poll for 10 min is cancelled and removed, checked every minute while the engine runs (the loop starts in main.py). Frame rates go to ffmpeg as exact rationals (24000/1001, 30000/1001, 60000/1001). HEVC can be written as MOV. Recovery sidecars carry `alive`, refreshed by `POST /api/recovery/{session}/alive` every 20 s from the window that owns the snapshot; the list reports `idle` so a live window's snapshot is never offered as a crash.
