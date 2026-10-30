@@ -312,7 +312,7 @@ export class VideoPool implements VideoSource {
       this.disposeLane(old);
     }
     const e: Lane = {
-      key, b, gone: false, sink: b.track ? new CanvasSink(b.track) : null, qsink: null, frames: [], quick: [], quickT: -1, quickBusy: false,
+      key, b, gone: false, sink: b.track ? new CanvasSink(b.track, { alpha: true }) : null, qsink: null, frames: [], quick: [], quickT: -1, quickBusy: false,
       gen: null, genEnd: 0, genCount: 0, lastYield: null, running: false, focus: 0, ahead: AHEAD, finalTs: -1,
       lastShown: null, pinned: [], waiters: [], want: -1, used: performance.now(), lastPrefetch: 0, missT: -1, missAt: 0,
       scrubbing: false, scrubTimer: 0, hold: 0,
@@ -330,7 +330,7 @@ export class VideoPool implements VideoSource {
       b.duration = await track.computeDuration();
       try { b.fps = Math.max(1, (await track.computePacketStats(120)).averagePacketRate || 30); } catch { b.fps = 30; }
       b.packets = new EncodedPacketSink(track);
-      for (const l of b.lanes.values()) if (!l.sink) l.sink = new CanvasSink(track);
+      for (const l of b.lanes.values()) if (!l.sink) l.sink = new CanvasSink(track, { alpha: true });
       b.hash = blobHash(blob).catch(() => `${blob.size}`);
       b.ready = true;
       if (b.disposed) return;
@@ -486,7 +486,7 @@ export class VideoPool implements VideoSource {
         if (this.dead(e)) return;
         if (kts === null) continue;
         if (e.quick.some((f) => Math.abs(f.ts - kts) < 1e-6) || e.frames.some((f) => Math.abs(f.ts - kts) < 1e-6)) { this.onReady(); continue; }
-        if (!e.qsink) e.qsink = new CanvasSink(b.track);
+        if (!e.qsink) e.qsink = new CanvasSink(b.track, { alpha: true });
         let wc: Awaited<ReturnType<CanvasSink['getCanvas']>> = null;
         try { wc = await e.qsink.getCanvas(kts); } catch { wc = null; }
         if (this.dead(e)) { if (wc) this.free(wc.canvas); return; }
@@ -660,7 +660,7 @@ export class VideoPool implements VideoSource {
     const sk = `${w}x${h}`;
     let sink = b.thumbSinks.get(sk);
     if (!sink) {
-      sink = new CanvasSink(b.track, { width: w, height: h, fit: 'cover' });
+      sink = new CanvasSink(b.track, { width: w, height: h, fit: 'cover', alpha: true });
       b.thumbSinks.set(sk, sink);
       if (b.thumbSinks.size > 4) {
         const first = b.thumbSinks.keys().next().value;

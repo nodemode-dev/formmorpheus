@@ -3,6 +3,7 @@
 // PNG encode / decode. Needs OffscreenCanvas only, so it also runs in a worker.
 
 import type { Asset, DrawingLayer } from '../engine/types';
+import { blendPixels, isPixelBlend } from '../engine/blend';
 import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
 import { PaintHistory, readRect, writeRect } from './history';
 import type { LayerSnapshot, PaintEntry, PaintHost, SnapLayer } from './history';
@@ -436,13 +437,21 @@ export class PaintDoc implements PaintHost {
     if (!gone.size) return;
     const before = this.snap();
     const rest = this.layers.filter((l) => !gone.has(l.id));
+    const patches: PixelPatch[] = [];
     if (!rest.some((l) => !l.group)) {
       const keep = this.layers.find((l) => !l.group && ids.includes(l.id)) ?? this.layers.find((l) => !l.group);
       if (!keep) return;
       this.layers = this.layers.filter((l) => l.id === keep.id);
-      delete this.layers[0].parent;
-      this.layers[0].raster.data.fill(0);
-      this.touch(this.layers[0].raster, { x: 0, y: 0, w: this.width, h: this.height });
+      delete keep.parent;
+      // the kept layer is emptied through a patch (as clearLayer does), so undo brings its pixels back
+      const b = alphaBounds(keep.raster);
+      if (b) {
+        const prior = readRect(keep.raster, b);
+        const blank = new Uint8ClampedArray(prior.length);
+        writeRect(keep.raster, b, blank);
+        patches.push({ layer: keep.id, rect: b, before: prior, after: blank });
+        this.touch(keep.raster, b);
+      }
       this.active = keep.id;
     } else {
       const was = this.layers;
@@ -453,7 +462,7 @@ export class PaintDoc implements PaintHost {
       }
     }
     this.maskEdit = false;
-    this.record('Delete layers', before);
+    this.record('Delete layers', before, patches.length ? patches : undefined);
   }
 
   /** Wraps several layers in one new group placed at the topmost of them. Entries inside a chosen group are left in it. */
@@ -626,17 +635,6 @@ export class PaintDoc implements PaintHost {
     return !!lower && !lower.group && (lower.parent ?? null) === (this.layers[i].parent ?? null);
   }
 
-  moveLayer(id: string, toIndex: number): void {
-    const i = this.layers.findIndex((l) => l.id === id);
-    if (i < 0) return;
-    const to = Math.max(0, Math.min(this.layers.length - 1, Math.round(toIndex)));
-    if (to === i) return;
-    const before = this.snap();
-    const [l] = this.layers.splice(i, 1);
-    this.layers.splice(to, 0, l);
-    this.record('Move layer', before);
-  }
-
   mergeDown(id: string): void {
     const i = this.layers.findIndex((l) => l.id === id);
     if (i < 0 || !this.canMergeDown(id)) return;
@@ -647,6 +645,8 @@ export class PaintDoc implements PaintHost {
     const bounds = upper.visible ? alphaBounds(upper.raster) : null;
     if (bounds) {
       const r = this.readerCtx();
+      // the canvas has no operation for the per-pixel blend modes: those go through engine/blend.ts
+      const perPixel = isPixelBlend(upper.blend) && !upper.clipping;
       r.globalAlpha = 1;
       r.globalCompositeOperation = 'copy';
       r.drawImage(this.mirror(lower.raster).canvas, 0, 0);
@@ -654,20 +654,30 @@ export class PaintDoc implements PaintHost {
       r.globalCompositeOperation = upper.clipping ? 'source-atop' : BLEND_OP[upper.blend];
       let src: CanvasImageSource = this.mirror(upper.raster).canvas;
       let tmp: ReturnType<SurfacePool['get']> | null = null;
-      if (upper.mask && upper.mask.on) {
+      if (perPixel || (upper.mask && upper.mask.on)) {
         // the upper layer's mask goes into the merged pixels
         tmp = this.surfaces().get();
         tmp.x.drawImage(src, 0, 0);
-        tmp.x.globalCompositeOperation = 'destination-in';
-        tmp.x.drawImage(this.alphaOf(upper.mask), 0, 0);
-        tmp.x.globalCompositeOperation = 'source-over';
+        if (upper.mask && upper.mask.on) {
+          tmp.x.globalCompositeOperation = 'destination-in';
+          tmp.x.drawImage(this.alphaOf(upper.mask), 0, 0);
+          tmp.x.globalCompositeOperation = 'source-over';
+        }
         src = tmp.c;
       }
-      r.drawImage(src, 0, 0);
+      let got: Uint8ClampedArray;
+      if (perPixel) {
+        got = r.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
+        blendPixels(got, tmp!.x.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data, upper.blend, upper.opacity);
+        r.globalAlpha = 1;
+        r.globalCompositeOperation = 'source-over';
+      } else {
+        r.drawImage(src, 0, 0);
+        r.globalAlpha = 1;
+        r.globalCompositeOperation = 'source-over';
+        got = r.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
+      }
       if (tmp) this.surfaces().put(tmp);
-      r.globalAlpha = 1;
-      r.globalCompositeOperation = 'source-over';
-      const got = r.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
       const patch: PixelPatch = { layer: lower.id, rect: bounds, before: readRect(lower.raster, bounds), after: got };
       writeRect(lower.raster, bounds, got);
       patches.push(patch);
@@ -914,6 +924,7 @@ export class PaintDoc implements PaintHost {
   // ---- save ----
 
   async encode(newAssetId: () => string): Promise<{ layers: DrawingLayer[]; assets: { asset: Asset; blob: Blob }[] }> {
+    if (this.disposed) throw new Error('This drawing was closed; it can no longer be encoded.');
     const layers: DrawingLayer[] = [];
     const assets: { asset: Asset; blob: Blob }[] = [];
     const sources = new Map<string, string | null>();
@@ -978,14 +989,17 @@ export class PaintDoc implements PaintHost {
 
   dispose(): void {
     this.disposed = true;
-    for (const l of this.layers) {
-      for (const r of l.mask ? [l.raster, l.mask.raster] : [l.raster]) {
-        const m = mirrors.get(r);
-        if (m) { m.canvas.width = 0; mirrors.delete(r); }
-        const a = alphaMirrors.get(r);
-        if (a) { a.canvas.width = 0; alphaMirrors.delete(r); }
-      }
+    const owned = this.history.rasters();
+    for (const l of this.layers) { owned.add(l.raster); if (l.mask) owned.add(l.mask.raster); }
+    for (const r of owned) {
+      const m = mirrors.get(r);
+      if (m) { m.canvas.width = 0; mirrors.delete(r); }
+      const a = alphaMirrors.get(r);
+      if (a) { a.canvas.width = 0; alphaMirrors.delete(r); }
     }
+    for (const t of this.thumbs.values()) t.canvas.width = 0;
+    for (const t of this.mthumbs.values()) t.canvas.width = 0;
+    this.history.clear();
     if (this.reader) this.reader.c.width = 0;
     this.reader = null;
     this.pool?.dispose();

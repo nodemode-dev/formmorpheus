@@ -74,14 +74,22 @@ export const api = {
   async duplicateMovie(name: string): Promise<LibraryItem> {
     return (await (await request(`${lib(name)}/duplicate`, { method: 'POST' })).json()) as LibraryItem;
   },
+  /** Stacks are folders of the library; `order` is the manual order kept by the engine per folder ('' is the top). */
+  async theater(): Promise<{ stacks: LibraryStack[]; order: Record<string, string[]> }> {
+    try { return (await (await request('/library/_stacks')).json()) as { stacks: LibraryStack[]; order: Record<string, string[]> }; } catch { return { stacks: [], order: {} }; }
+  },
   async stacks(): Promise<LibraryStack[]> {
-    try { return ((await (await request('/library/_stacks')).json()) as { stacks: LibraryStack[] }).stacks; } catch { return []; }
+    return (await api.theater()).stacks;
   },
   async createStack(items: string[], name?: string): Promise<LibraryStack> {
     return (await (await request('/library/_stacks', { method: 'POST', body: JSON.stringify({ items, name }), headers: { 'Content-Type': 'application/json' } })).json()) as LibraryStack;
   },
-  async updateStack(id: string, patch: { name?: string; items?: string[] }): Promise<void> {
-    await request(`/library/_stacks/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(patch), headers: { 'Content-Type': 'application/json' } });
+  /** Returns the stack's id afterwards (a rename changes it), or null when it emptied away. */
+  async updateStack(id: string, patch: { name?: string; items?: string[] }): Promise<string | null> {
+    return ((await (await request(`/library/_stacks/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(patch), headers: { 'Content-Type': 'application/json' } })).json()) as { id: string | null }).id;
+  },
+  async saveOrder(stack: string | null, order: string[]): Promise<void> {
+    await request('/library/_stacks', { method: 'PUT', body: JSON.stringify({ stack, order }), headers: { 'Content-Type': 'application/json' } });
   },
   async ungroupStack(id: string): Promise<void> {
     await request(`/library/_stacks/${encodeURIComponent(id)}`, { method: 'DELETE' });

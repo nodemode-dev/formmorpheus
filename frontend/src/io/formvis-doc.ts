@@ -2,6 +2,7 @@
 // no DOM, no canvas. Layers here run top first with a group's members following it, like a Drawing's list; the
 // document itself lists them bottom to top with a folder after its members.
 import { strFromU8, strToU8, unzipSync, zipSync, zlibSync, type Zippable } from 'fflate';
+import { safeUnzipOr } from './safe-unzip';
 import type { BlendMode } from '../engine/types';
 
 export const FORMVIS_FORMAT = 'com.nodemode.formvis';
@@ -219,7 +220,7 @@ export function looksLikeFormvis(bytes: Uint8Array): boolean {
 /** Reads a formvis project. Throws a sentence the person can read. */
 export function parseFormvis(bytes: Uint8Array, fileName = 'formvis document'): FvDocument {
   let entries: Record<string, Uint8Array>;
-  try { entries = unzipSync(bytes); } catch { throw new Error(`${fileName} is not a formvis document (not a ZIP archive).`); }
+  entries = safeUnzipOr(bytes, `${fileName} is not a formvis document (not a ZIP archive).`);
   let root = '';
   let raw: Uint8Array | undefined;
   for (const [path, data] of Object.entries(entries)) {
@@ -236,6 +237,7 @@ export function parseFormvis(bytes: Uint8Array, fileName = 'formvis document'): 
   if (m.version !== 1) throw new Error(`${fileName} uses format version ${String(m.version)}, which this version cannot read.`);
   const width = Math.round(num(m.width, 0)), height = Math.round(num(m.height, 0));
   if (width < 1 || height < 1) throw new Error(`${fileName}: the canvas size is invalid.`);
+  if (width > 30000 || height > 30000 || width * height > 256_000_000) throw new Error(`${fileName}: the canvas is larger than 30000 px a side or 256 megapixels, so it was not opened.`);
   const records = (Array.isArray(m.layers) ? m.layers : []).map(obj);
   const image = (name: string | null): Uint8Array | null => (name ? entries[`${root}images/${name}`] ?? null : null);
   const collapsed = new Set(Array.isArray(m.collapsedFolders) ? m.collapsedFolders.filter((v): v is string => typeof v === 'string') : []);

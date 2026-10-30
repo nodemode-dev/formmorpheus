@@ -1,6 +1,7 @@
 // Fonts that travel with the movie: every font asset is loaded into document.fonts so Text can use its family.
 import type { Movie } from '../engine/types';
 import { bumpFontEpoch } from '../engine/text-layout';
+import { BUNDLED_EXTRA, extraFaces, isExtraFamily, loadExtraFace, scriptFamilies } from './font-bundle';
 
 const loaded = new Map<string, FontFace>();
 
@@ -14,6 +15,16 @@ export async function registerFont(key: string, family: string, blob: Blob): Pro
   if (loaded.has(key)) return;
   document.fonts.add(face);
   loaded.set(key, face);
+}
+
+/** Drops the faces of fonts that no open movie owns (keys are asset ids), so closed movies do not pile up in document.fonts. */
+export function evictFonts(keep: ReadonlySet<string>): void {
+  for (const [key, face] of loaded) {
+    if (keep.has(key)) continue;
+    try { document.fonts.delete(face); } catch { /* already gone */ }
+    loaded.delete(key);
+  }
+  bumpFontEpoch();
 }
 
 /** Weight and style from the OpenType OS/2 table (usWeightClass, fsSelection italic bit); defaults for WOFF or no table. */
@@ -49,7 +60,7 @@ export async function registerFonts(movie: Movie, blobOf: (assetId: string) => B
 
 /** Families offered for Text: the built-in two, then the movie's own. */
 export function FONT_FAMILIES(movie: Movie): string[] {
-  const out = ['Inter', 'JetBrains Mono'];
+  const out = [...BUNDLED_FONTS];
   for (const a of Object.values(movie.assets)) {
     if (a.kind === 'font' && a.family && !out.includes(a.family)) out.push(a.family);
   }
@@ -57,7 +68,7 @@ export function FONT_FAMILIES(movie: Movie): string[] {
 }
 
 /** Families that ship with the app (their weights and italics are bundled). */
-export const BUNDLED_FONTS = ['Inter', 'JetBrains Mono'];
+export const BUNDLED_FONTS = ['Inter', 'JetBrains Mono', ...BUNDLED_EXTRA.map((f) => f.name)];
 const BUNDLED_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
 const SYSTEM_CANDIDATES = ['Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Trebuchet MS', 'Impact', 'Palatino', 'Garamond', 'Comic Sans MS', 'Noto Sans', 'Noto Serif', 'Noto Sans JP', 'Noto Sans Arabic', 'Noto Sans Thai', 'Noto Sans Devanagari', 'DejaVu Sans', 'DejaVu Serif', 'Liberation Sans', 'Liberation Serif', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Segoe UI', 'SF Pro Text', 'Menlo', 'Consolas'];
 export const GENERIC_FONTS = ['sans-serif', 'serif', 'monospace', 'cursive'];
@@ -75,12 +86,31 @@ function installedSystemFonts(): string[] {
       const probe = 'mmmmmmmmmmlliWWW@@ 日本語العربية';
       const w = (f: string): number => { c.font = `72px ${f}`; return c.measureText(probe).width; };
       const base = ['monospace', 'serif', 'sans-serif'].map((b) => [b, w(b)] as const);
-      for (const name of SYSTEM_CANDIDATES) if (base.some(([b, bw]) => w(`"${name}", ${b}`) !== bw)) out.push(name);
+      // A name the system merely aliases to another face (an unknown name resolved to the app's own Inter, say) measures
+      // like that face: it is not installed under its own name.
+      const alias = ['Inter', 'JetBrains Mono', ...BUNDLED_EXTRA.map((f) => f.name)].map((n) => w(`"${n}", monospace`));
+      for (const name of SYSTEM_CANDIDATES) {
+        if (granted && !granted.has(name.toLowerCase())) continue;
+        const own = w(`"${name}", monospace`);
+        if (base.some(([b, bw]) => w(`"${name}", ${b}`) !== bw) && !alias.includes(own)) out.push(name);
+      }
     }
   } catch { /* no canvas: only the generic families */ }
   systemFonts = out;
   return out;
 }
+
+// Where the browser's Local Font Access is already allowed, its list is the truth (family names, lower case).
+let granted: Set<string> | null = null;
+try {
+  const nav = navigator as Navigator & { queryLocalFonts?: () => Promise<Array<{ family: string }>> };
+  if (nav.queryLocalFonts && navigator.permissions) {
+    void navigator.permissions.query({ name: 'local-fonts' as PermissionName }).then((p) => {
+      if (p.state !== 'granted') return;
+      return nav.queryLocalFonts?.().then((list) => { granted = new Set(list.map((f) => f.family.toLowerCase())); systemFonts = null; });
+    }).catch(() => undefined);
+  }
+} catch { /* the width probe stands */ }
 
 /** The font browser's families: bundled, the movie's own, then the system's. */
 export function fontCatalog(movie: Movie | null): FontGroups {
@@ -90,7 +120,9 @@ export function fontCatalog(movie: Movie | null): FontGroups {
 
 /** Weights a family offers, and whether it has an italic; imported families report what their files declare. */
 export function familyFaces(family: string): { weights: number[]; italic: boolean } {
-  if (BUNDLED_FONTS.includes(family)) return { weights: family === 'Inter' ? BUNDLED_WEIGHTS : BUNDLED_WEIGHTS.slice(0, 8), italic: true };
+  const extra = extraFaces(family);
+  if (extra) return extra;
+  if (family === 'Inter' || family === 'JetBrains Mono') return { weights: family === 'Inter' ? BUNDLED_WEIGHTS : BUNDLED_WEIGHTS.slice(0, 8), italic: true };
   const own = Array.from(loaded.values()).filter((f) => f.family.replace(/^["']|["']$/g, '') === family);
   if (own.length) {
     const ws = Array.from(new Set(own.map((f) => Number.parseInt(f.weight, 10) || 400))).sort((a, b) => a - b);
@@ -101,8 +133,20 @@ export function familyFaces(family: string): { weights: number[]; italic: boolea
 
 /** Starts loading the faces a Text needs; resolves when they are ready (a missing font is not an error). */
 export async function ensureTextFont(s: { font: string; weight: number; italic?: boolean; size: number; text: string }): Promise<void> {
-  try { await document.fonts.load(`${s.italic ? 'italic ' : ''}${s.weight} 32px "${s.font}"`, s.text || 'Aa'); } catch { /* fallback face */ }
+  try {
+    const text = s.text || 'Aa';
+    const need = scriptFamilies(text);
+    // Own family first, then the Noto faces for the scripts in the text (each fetches only the slices it draws)
+    await Promise.all([loadExtraFace(s.font, s.weight, !!s.italic), ...need.map((f) => loadExtraFace(f, s.weight, false))]);
+    await Promise.all([
+      document.fonts.load(`${s.italic ? 'italic ' : ''}${s.weight} 32px "${s.font}"`, text),
+      ...need.map((f) => document.fonts.load(`${s.weight} 32px "${f}"`, text)),
+    ]);
+  } catch { /* fallback face */ }
 }
+
+/** Loads a family's regular face so its name in the list shows in it. */
+export function previewFont(family: string): void { if (isExtraFamily(family)) void loadExtraFace(family, 400, false); }
 
 /** Loads the faces of every Text in the movie (used before an export and on open). */
 export async function loadTextFonts(movie: Movie): Promise<void> {

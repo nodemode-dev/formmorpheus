@@ -180,6 +180,16 @@ export class PaintHistory {
   redoLabel(): string | null { return this.redoStack[this.redoStack.length - 1]?.label ?? null; }
   usedBytes(): number { return this.bytes; }
 
+  /** Every raster the stacks keep alive (layers that a step removed still hold theirs); the document frees their canvas mirrors on dispose. */
+  rasters(): Set<Raster> {
+    const out = new Set<Raster>();
+    for (const e of [...this.undoStack, ...this.redoStack]) {
+      if (e.kind !== 'layers') continue;
+      for (const l of [...e.before.layers, ...e.after.layers]) { out.add(l.raster); if (l.mask) out.add(l.mask.raster); }
+    }
+    return out;
+  }
+
   clear(): void {
     this.undoStack = [];
     this.redoStack = [];

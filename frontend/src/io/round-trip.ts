@@ -8,6 +8,7 @@ import type { Asset, Content, DrawingLayer, Movie } from '../engine/types';
 import type { ImportResult } from '../media/import';
 import { PaintDoc } from '../paint/doc';
 import { FORMVIS_EXT, looksLikeFormvis, parseFormvis, writeFormvis, type FvLayer } from './formvis-doc';
+import { safeUnzip } from './safe-unzip';
 import { FORMVFX_EXT, looksLikeFormvfx, parseFormvfx, writeFormvfx, type VfxPicture } from './formvfx-doc';
 
 type BlobOf = (id: string) => Blob | undefined;
@@ -254,8 +255,7 @@ export async function sniffRoundTrip(file: File, head: Uint8Array): Promise<'for
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (looksLikeFormvis(bytes)) return 'formvis';
     // a bundle holds a .fvxproj
-    const { unzipSync } = await import('fflate');
-    try { return Object.keys(unzipSync(bytes, { filter: (f) => /\.fvxproj$/i.test(f.name) })).length ? 'formvfx' : null; } catch { return null; }
+    try { return Object.keys(safeUnzip(bytes, { only: (f) => /\.fvxproj$/i.test(f.name), entry: 64 * 1024 * 1024 })).length ? 'formvfx' : null; } catch { return null; }
   }
   const text = new TextDecoder().decode(await file.slice(0, 4096).arrayBuffer());
   return ext === FORMVFX_EXT || looksLikeFormvfx(text) ? 'formvfx' : null;

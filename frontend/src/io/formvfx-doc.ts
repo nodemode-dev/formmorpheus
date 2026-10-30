@@ -2,7 +2,8 @@
 // Footage folder, because a formvfx project names its pictures by path and finds them again beside itself.
 // Pure: bytes and model types only, no DOM. Key times are layer seconds; eases map exactly for the presets and
 // through Bezier handles for custom ones.
-import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
+import { strFromU8, strToU8, zipSync, type Zippable } from 'fflate';
+import { safeUnzipOr } from './safe-unzip';
 import { content as makeContent, identity } from '../engine/model';
 import { evalChannel } from '../engine/keys';
 import { handlesOf, pathNodes } from '../engine/path';
@@ -323,7 +324,7 @@ export function parseFormvfx(data: Uint8Array, fileName: string, movie: { fps: n
   const files = new Map<string, Uint8Array>();
   if (data[0] === 0x50 && data[1] === 0x4b) {
     let entries: Record<string, Uint8Array>;
-    try { entries = unzipSync(data); } catch { throw new Error(`${fileName} is not a readable bundle.`); }
+    entries = safeUnzipOr(data, `${fileName} is not a readable bundle.`);
     for (const [path, bytes] of Object.entries(entries)) {
       const p = path.replace(/\\/g, '/');
       if (p.includes('__MACOSX')) continue;

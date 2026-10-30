@@ -1,7 +1,7 @@
 // Krita (.kra / .krz) reader, adapted from the family's layered-image reader: a ZIP holding maindoc.xml (the layer
 // tree, topmost first), a tiled pixel file per paint layer and mergedimage.png. 8 and 16 bit RGBA are decoded (16 bit
 // reduced to 8); other colour models open as the merged picture.
-import { unzipSync } from 'fflate';
+import { safeUnzipOr } from './safe-unzip';
 import type { BlendMode } from '../engine/types';
 import { baseOf, decodePng, noteSet, type LayeredDoc, type LayerSpec, type Raster } from './layered-import';
 
@@ -79,7 +79,7 @@ function readTiles(data: Uint8Array): { tiles: Tile[]; bytes: number; gray: bool
 
 export async function readKra(file: File): Promise<LayeredDoc> {
   let parts: Record<string, Uint8Array>;
-  try { parts = unzipSync(new Uint8Array(await file.arrayBuffer())); } catch { throw new Error(`${file.name} is not a readable Krita file.`); }
+  parts = safeUnzipOr(new Uint8Array(await file.arrayBuffer()), `${file.name} is not a readable Krita file.`);
   const text = (n: string): string => new TextDecoder().decode(parts[n] ?? new Uint8Array());
   const xml = new DOMParser().parseFromString(text('maindoc.xml'), 'application/xml');
   const image = xml.querySelector('IMAGE');

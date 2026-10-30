@@ -24,17 +24,26 @@ class Reader {
 }
 
 /** Rows of PackBits: `h` row byte counts (16-bit), then each row's runs. */
-function unpackRows(r: Reader, w: number, h: number): Uint8Array {
+function unpackRows(r: Reader, w: number, h: number): Uint8Array | null {
+  if (r.left < h * 2) return null;
   const out = new Uint8Array(w * h), counts: number[] = [];
   for (let y = 0; y < h; y++) counts.push(r.u16());
   for (let y = 0; y < h; y++) {
-    const end = r.pos + counts[y];
+    // every read stays inside the file and inside the row's declared byte count
+    const end = Math.min(r.pos + counts[y], r.pos + r.left);
     let x = 0;
     while (r.pos < end && x < w) {
       let n = r.u8();
       if (n >= 128) n -= 256;
-      if (n < 0) { if (n === -128) continue; const v = r.u8(); for (let k = 0; k < 1 - n && x < w; k++) out[y * w + x++] = v; }
-      else for (let k = 0; k < n + 1 && x < w; k++) out[y * w + x++] = r.u8();
+      if (n < 0) {
+        if (n === -128) continue;
+        if (r.pos >= end) break;
+        const v = r.u8();
+        for (let k = 0; k < 1 - n && x < w; k++) out[y * w + x++] = v;
+      } else {
+        const take = Math.min(n + 1, w - x, end - r.pos);
+        for (let k = 0; k < take; k++) out[y * w + x++] = r.u8();
+      }
     }
     r.pos = end;
   }

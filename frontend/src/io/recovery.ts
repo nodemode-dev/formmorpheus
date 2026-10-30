@@ -9,8 +9,14 @@ export interface RecoveryEntry { session: string; name: string; library: string 
 
 const EVERY_MS = 60_000;
 const BEAT_MS = 20_000;
-/** A snapshot is a crash only when its window has not beaten for this long. */
-const DEAD_AFTER_S = 60;
+/**
+ * A snapshot is a crash only when its window has not beaten for this long. A hidden tab's timers are throttled
+ * (about one tick a minute, more after a long while), so the threshold is several of those, and the owning window
+ * also beats on every visibility change.
+ */
+const DEAD_AFTER_S = 240;
+/** How often a running session looks again for snapshots whose window has since died. */
+const RECHECK_MS = 120_000;
 /** One id per page load: a snapshot from any other id belongs to a session that did not finish. */
 const SESSION = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
@@ -74,6 +80,9 @@ export class Recovery {
   private dialog: RecoverDialog | null = null;
   private timer = 0;
   private beat = 0;
+  private recheck = 0;
+  /** Sessions the person has already been asked about (so the periodic look only raises new ones). */
+  private asked = new Set<string>();
 
   constructor(private readonly host: RecoveryHost) {
     const check = (): void => { if (this.written && (!host.engine.movie || !host.engine.modified)) void this.clear(); };
@@ -81,7 +90,10 @@ export class Recovery {
     host.engine.on('projects', check);
     this.timer = window.setInterval(() => { void this.snapshot(); }, EVERY_MS);
     // this window's snapshot stays "alive" while the window lives, so another window does not take it for a crash
-    this.beat = window.setInterval(() => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); }, BEAT_MS);
+    const beat = (): void => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); };
+    this.beat = window.setInterval(beat, BEAT_MS);
+    document.addEventListener('visibilitychange', beat);
+    this.recheck = window.setInterval(() => { if (!document.hidden) void this.offer('new'); }, RECHECK_MS);
     // a normal quit: nothing was lost, so nothing is kept
     window.addEventListener('pagehide', (e) => {
       if (e.persisted) return;
@@ -89,7 +101,7 @@ export class Recovery {
     });
   }
 
-  dispose(): void { window.clearInterval(this.timer); window.clearInterval(this.beat); }
+  dispose(): void { window.clearInterval(this.timer); window.clearInterval(this.beat); window.clearInterval(this.recheck); }
 
   /** Writes one snapshot now if the movie has unsaved changes and none is being written. */
   async snapshot(): Promise<void> {
@@ -118,10 +130,18 @@ export class Recovery {
     try { await fetch(base(SESSION), { method: 'DELETE' }); } catch { /* the engine is gone */ }
   }
 
-  /** At start: offers the snapshots left by sessions that did not finish. */
-  async offer(): Promise<void> {
-    const items = (await listSnapshots()).filter((i) => i.session !== SESSION && (i.idle ?? Infinity) > DEAD_AFTER_S);
-    if (!items.length) return;
+  /**
+   * Offers the snapshots left by sessions that did not finish: at start, from the Edit menu (all of them), and
+   * while the session runs ('new': only those not asked about yet, e.g. a window that died after this one began).
+   */
+  async offer(mode: 'start' | 'menu' | 'new' = 'start'): Promise<void> {
+    if (this.dialog?.isOpen) return;
+    const items = (await listSnapshots()).filter((i) => i.session !== SESSION && (i.idle ?? Infinity) > DEAD_AFTER_S && !(mode === 'new' && this.asked.has(i.session)));
+    if (!items.length) {
+      if (mode === 'menu') toast(t('No lost movies were found.'), 'info');
+      return;
+    }
+    for (const i of items) this.asked.add(i.session);
     this.dialog ??= new RecoverDialog();
     const answer = await this.dialog.ask(items);
     if (answer === 'later') return;

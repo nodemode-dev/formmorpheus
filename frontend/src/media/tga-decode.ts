@@ -17,12 +17,13 @@ function headerOk(b: Uint8Array): boolean {
   return bits === 15 || bits === 16 || bits === 24 || bits === 32;
 }
 
-export function isTga(b: Uint8Array, name = ''): boolean {
+/** `tail` is the last 26 bytes of the file (the 2.0 footer: two offsets, then "TRUEVISION-XFILE." and a zero); `b` may be just the head. */
+export function isTga(b: Uint8Array, name = '', tail?: Uint8Array): boolean {
   if (!headerOk(b)) return false;
   // new-format files end with this footer; old ones are told apart by the name
-  const tail = b.subarray(Math.max(0, b.length - 18));
-  const footer = new TextDecoder('latin1').decode(tail);
-  return footer.startsWith('TRUEVISION-XFILE') || /\.(tga|targa|icb|vda|vst)$/i.test(name);
+  const foot = tail ?? b.subarray(Math.max(0, b.length - 26));
+  const text = new TextDecoder('latin1').decode(foot);
+  return text.includes('TRUEVISION-XFILE') || /\.(tga|targa|icb|vda|vst)$/i.test(name);
 }
 
 export function decodeTga(b: Uint8Array): TgaPicture {

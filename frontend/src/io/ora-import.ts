@@ -1,7 +1,7 @@
 // OpenRaster (.ora) reader, adapted from the family's layered-image reader: a ZIP with stack.xml (topmost layer
 // first, groups as nested stacks) and a PNG per layer. Reads positions, opacity, visibility, blend modes, groups and
 // the alpha lock.
-import { unzipSync } from 'fflate';
+import { safeUnzipOr } from './safe-unzip';
 import type { BlendMode } from '../engine/types';
 import { baseOf, decodePng, noteSet, type LayeredDoc, type LayerSpec } from './layered-import';
 
@@ -18,7 +18,7 @@ export const isOra = (name: string, head: Uint8Array): boolean => /\.ora$/i.test
 
 export async function readOra(file: File): Promise<LayeredDoc> {
   let parts: Record<string, Uint8Array>;
-  try { parts = unzipSync(new Uint8Array(await file.arrayBuffer())); } catch { throw new Error(`${file.name} is not a readable OpenRaster file.`); }
+  parts = safeUnzipOr(new Uint8Array(await file.arrayBuffer()), `${file.name} is not a readable OpenRaster file.`);
   const text = (n: string): string => new TextDecoder().decode(parts[n] ?? new Uint8Array());
   const xml = new DOMParser().parseFromString(text('stack.xml'), 'application/xml');
   const image = xml.querySelector('image');

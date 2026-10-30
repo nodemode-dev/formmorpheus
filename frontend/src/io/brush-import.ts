@@ -2,7 +2,7 @@
 // (a Brush.archive property list plus Shape.png and Grain.png). Each brush becomes one of
 // our brushes with a sampled tip; only the parameters that map cleanly are read.
 
-import { unzipSync } from 'fflate';
+import { safeUnzipOr } from './safe-unzip';
 import { parseAbr } from './abr';
 import { makePresets } from '../paint/brushes';
 import type { Brush } from '../paint/types';
@@ -16,6 +16,8 @@ export interface ImportResult {
   /** A library file: its sets (folder or inner set file names) and the library's name. */
   sets?: { name: string; brushes: Brush[] }[];
   libName?: string;
+  /** A brush set file: the name its brushset.plist gives (or the file's own name). */
+  setName?: string;
 }
 
 // ---- property lists ----------------------------------------------------------
@@ -119,13 +121,17 @@ function unarchive(root: unknown): unknown {
   const top = (r!.$top ?? {}) as Record<string, unknown>;
   const start = top.root instanceof Uid ? top.root : Object.values(top).find((x) => x instanceof Uid);
   const seen = new Set<number>();
+  // a shared reference is resolved once: a graph where many objects point at the same few would otherwise expand exponentially
+  const memo = new Map<number, unknown>();
   const walk = (x: unknown, depth: number): unknown => {
     if (depth > 40) return null;
     if (x instanceof Uid) {
+      if (memo.has(x.n)) return memo.get(x.n);
       if (seen.has(x.n)) return null;
       seen.add(x.n);
       const out = walk(objects[x.n], depth + 1);
       seen.delete(x.n);
+      memo.set(x.n, out);
       return out;
     }
     if (Array.isArray(x)) return x.map((i) => walk(i, depth + 1));
@@ -327,7 +333,12 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   if (tip) { const s = shrink(tip.w, tip.h, tip.data); b.tipImage = { w: s.w, h: s.h, data: s.data, key: id }; }
   if (grain) { b.grainImage = grain; if (tScale !== null) b.grainScale = clamp(tScale, 0.25, 4); }
   mapEngine(m, b);
-  if (taper > 0) b.taper = clamp(taper, 0, 1);
+  // Start and end lengths are separate keys in files from brush-export; other files only give one value
+  const tStart = num(m, 'taperStartLength'), tEnd = num(m, 'taperEndLength');
+  if (tStart !== null && tEnd !== null && tEnd !== tStart) {
+    if (tStart > 0) b.taper = clamp(tStart, 0, 1);
+    b.taperEnd = clamp(tEnd, 0, 1);
+  } else if (taper > 0) b.taper = clamp(taper, 0, 1);
   if (stab !== null) b.stabilization = clamp(stab <= 1 ? stab * 100 : stab, 0, 100);
   if (motion !== null) b.motionFilter = clamp(motion <= 1 ? motion * 100 : motion, 0, 100);
   if (expr !== null) b.expression = clamp(expr <= 1 ? expr * 100 : expr, 0, 100);
@@ -348,17 +359,30 @@ async function brushFromFolder(files: Record<string, Uint8Array>, dir: string, f
 
 export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<ImportResult> {
   let files: Record<string, Uint8Array>;
-  try { files = unzipSync(new Uint8Array(buf), { filter: (f) => f.originalSize < 64 * 1024 * 1024 }); } catch { throw new Error('This file is not a brush archive.'); }
+  files = safeUnzipOr(new Uint8Array(buf), 'This file is not a brush archive.', { entry: 64 * 1024 * 1024, total: 512 * 1024 * 1024 });
   const dirs = new Set<string>();
   for (const k of Object.keys(files)) { if (/(^|\/)Brush\.archive$/i.test(k)) dirs.add(k.slice(0, k.length - 'Brush.archive'.length)); }
   const out: Brush[] = [];
   let skipped = 0, n = 0;
-  for (const dir of Array.from(dirs).sort()) {
+  // brushset.plist lists the brush folders in the set's own order
+  let order: string[] = [];
+  let setName = '';
+  const listFile = files['brushset.plist'];
+  if (listFile) {
+    try {
+      const pl = parsePlist(listFile) as { brushes?: unknown; name?: unknown };
+      if (typeof pl.name === 'string') setName = pl.name.trim();
+      const l = pl.brushes;
+      if (Array.isArray(l)) order = l.filter((x): x is string => typeof x === 'string').map((x) => `${x}/`);
+    } catch { /* sorted by folder */ }
+  }
+  const rank = (d: string): number => { const i = order.indexOf(d); return i < 0 ? order.length : i; };
+  for (const dir of Array.from(dirs).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))) {
     const folder = dir.replace(/\/$/, '').split('/').pop() ?? '';
     const b = await brushFromFolder(files, dir, dirs.size === 1 ? base : `${base} ${++n}` || folder);
     if (b) out.push(b); else skipped++;
   }
-  return { brushes: out, skipped };
+  return { brushes: out, skipped, setName: listFile ? setName || base : undefined };
 }
 
 /**
@@ -367,7 +391,7 @@ export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<Im
  */
 export async function brushesFromLib(buf: ArrayBuffer, base: string): Promise<ImportResult> {
   let files: Record<string, Uint8Array>;
-  try { files = unzipSync(new Uint8Array(buf), { filter: (f) => f.originalSize < 128 * 1024 * 1024 }); } catch { throw new Error('This file is not a brush library.'); }
+  files = safeUnzipOr(new Uint8Array(buf), 'This file is not a brush library.', { entry: 128 * 1024 * 1024, total: 768 * 1024 * 1024 });
   const groups = new Map<string, Brush[]>();
   const add = (name: string, list: Brush[]): void => { if (list.length) groups.set(name, [...(groups.get(name) ?? []), ...list]); };
   let skipped = 0;

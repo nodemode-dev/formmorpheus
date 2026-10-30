@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { packStates, unpackStates, type PackedStates, type RecoveryPoint, type Step } from '../engine/history';
+import { normalizeMovie } from '../engine/normalize';
 import { FORMAT_VERSION, type Movie } from '../engine/types';
 import { VERSION } from '../version';
 
@@ -56,7 +57,8 @@ export async function unpackMovie(data: Blob): Promise<MovieFile> {
   if (typeof manifest.format !== 'number' || manifest.format > FORMAT_VERSION) throw new Error('This movie was saved by a newer formmorpheus. Update to open it.');
   const movieRaw = entries['movie.json'];
   if (!movieRaw) throw new Error('The movie file is damaged.');
-  const movie = JSON.parse(strFromU8(movieRaw)) as Movie;
+  // older files lack fields newer code reads: filled in memory, the file itself changes only when saved
+  const movie = normalizeMovie(JSON.parse(strFromU8(movieRaw)));
   const assets = new Map<string, Blob>();
   for (const [path, bytes] of Object.entries(entries)) {
     if (!path.startsWith('assets/')) continue;
@@ -70,7 +72,7 @@ export async function unpackMovie(data: Blob): Promise<MovieFile> {
   if (histRaw) {
     try {
       const record = JSON.parse(strFromU8(histRaw)) as HistoryRecord;
-      const states = unpackStates(record.states) as Movie[];
+      const states = (unpackStates(record.states) as unknown[]).map((s) => normalizeMovie(s));
       past = record.labels.map((label, i) => ({ label, movie: states[i] }));
       recovery = record.recovery.map((r, i) => ({ ...r, movie: states[record.labels.length + i] }));
     } catch {

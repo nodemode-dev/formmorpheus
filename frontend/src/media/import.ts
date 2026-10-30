@@ -43,7 +43,7 @@ function ascii(b: Uint8Array, at: number, s: string): boolean {
   return true;
 }
 
-function sniff(file: File, b: Uint8Array): Sniff {
+function sniff(file: File, b: Uint8Array, tail?: Uint8Array): Sniff {
   if (b[0] === 0x89 && ascii(b, 1, 'PNG')) return 'png';
   if (b[0] === 0xff && b[1] === 0xd8) return 'jpeg';
   if (ascii(b, 0, 'GIF8')) return 'gif';
@@ -56,7 +56,7 @@ function sniff(file: File, b: Uint8Array): Sniff {
   if (ascii(b, 4, 'ftyp') && HEIF_BRANDS.some((x) => ascii(b, 8, x))) return 'heic';
   if (ascii(b, 0, 'FORM') && (ascii(b, 8, 'AIFF') || ascii(b, 8, 'AIFC'))) return 'media';
   if (ascii(b, 0, 'caff') || (b[0] === 0x0b && b[1] === 0x77)) return 'media';
-  if (isTga(b, file.name)) return 'tga';
+  if (isTga(b, file.name, tail)) return 'tga';
   if (isOra(file.name, b)) return 'ora';
   if (isKra(file.name, b)) return 'kra';
   if (isPdn(file.name, b)) return 'pdn';
@@ -342,13 +342,17 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
       try { info = await VideoPool.probe(file); } catch { throw new Error(`${source.name} was converted but this browser still cannot play it.`); }
     }
   }
-  if (info && !info.hasVideo && RISKY_SOUND.test(source.name) && (await browserDecodes(file)) === null) info = null;
-  if (!info && RISKY_SOUND.test(source.name) && (await browserDecodes(file)) === null) {
+  // a risky sound is decoded once; the length it gave is reused below
+  let decoded: number | null | undefined;
+  const decodes = async (): Promise<number | null> => (decoded === undefined ? (decoded = await browserDecodes(file)) : decoded);
+  if (info && !info.hasVideo && RISKY_SOUND.test(source.name) && (await decodes()) === null) info = null;
+  if (!info && RISKY_SOUND.test(source.name) && (await decodes()) === null) {
     const out = await transcodeViaEngine(source, 'audio', (p) => onProgress?.(p, `Converting ${source.name}`)).catch((er: unknown) => {
       throw new Error(`${source.name} is a sound this browser cannot decode. ${er instanceof Error ? er.message : ''}`.trim());
     });
     file = new File([out.blob], `${name}.wav`, { type: 'audio/wav' });
     info = null;
+    decoded = undefined;   // the converted file is a different one
   }
   if (info && info.hasVideo) {
     const seconds = Math.max(info.duration, 1 / m.fps);
@@ -365,14 +369,9 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
   let mime = file.type || info?.mime || 'audio/mpeg';
   if (!info) {
     // not a container mediabunny knows: let the browser try to decode it as sound
-    try {
-      const ctx = new AudioContext();
-      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
-      seconds = buf.duration;
-      void ctx.close();
-    } catch {
-      throw new Error(`${file.name} is not a video or sound this browser can decode.`);
-    }
+    const secs = await decodes();
+    if (secs === null) throw new Error(`${file.name} is not a video or sound this browser can decode.`);
+    seconds = secs;
   }
   seconds = Math.max(seconds, 1 / m.fps);
   const frames = Math.max(1, Math.ceil(seconds * m.fps));
@@ -433,7 +432,9 @@ async function importFont(file: File): Promise<ImportResult> {
 
 export async function importMedia(file: File, movie: Movie, at: number, onProgress?: (p: number, what: string) => void): Promise<ImportResult> {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
-  const kind0 = sniff(file, head);
+  // a TGA 2.0 file is told by the footer at its end, not by anything at the start
+  const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 26)).arrayBuffer());
+  const kind0 = sniff(file, head, tail);
   // layered artwork: each reader gives a neutral document that becomes a Drawing with its layers
   if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn') {
     const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : readPdn(file));

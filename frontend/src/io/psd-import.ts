@@ -5,7 +5,11 @@
 import type { BlendMode } from '../engine/types';
 import { baseOf, noteSet, type LayeredDoc, type LayerSpec, type Raster } from './layered-import';
 
-export const isPsd = (b: Uint8Array): boolean => b[0] === 0x38 && b[1] === 0x42 && b[2] === 0x50 && b[3] === 0x53;
+/** The app's picture limits: 30000 px a side, 256 megapixels. */
+const MAX_DIM = 30000;
+const MAX_PIXELS = 256_000_000;
+
+export const isPsd =(b: Uint8Array): boolean => b[0] === 0x38 && b[1] === 0x42 && b[2] === 0x50 && b[3] === 0x53;
 
 const BLEND: Record<string, BlendMode> = {
   'norm': 'normal', 'dark': 'darken', 'mul ': 'multiply', 'idiv': 'color-burn', 'lbrn': 'linear-burn', 'dkCl': 'darker-color',
@@ -89,7 +93,7 @@ export async function readPsd(file: File): Promise<LayeredDoc> {
   const big = version === 2;
   c.p += 6;
   const nChannels = c.u16(), H = c.u32(), W = c.u32(), depth = c.u16(), mode = c.u16();
-  if (!(W >= 1 && H >= 1 && W <= 30000 && H <= 30000)) throw new Error(`${file.name}: its size cannot be opened.`);
+  if (!(W >= 1 && H >= 1 && W <= MAX_DIM && H <= MAX_DIM && W * H <= MAX_PIXELS)) throw new Error(`${file.name}: its size cannot be opened (the limit is ${MAX_DIM} px a side and ${MAX_PIXELS / 1e6} megapixels).`);
   if (depth !== 8 && depth !== 16) throw new Error(`${file.name} is a ${depth}-bit PSD; only 8 and 16 bit open.`);
   if (mode !== 1 && mode !== 3) throw new Error(`${file.name} is a ${mode === 4 ? 'CMYK' : mode === 2 ? 'indexed color' : mode === 0 ? 'bitmap' : 'this color mode'} PSD; only RGB and grayscale open. Convert it to RGB first.`);
   const notes = noteSet();
@@ -132,6 +136,10 @@ export async function readPsd(file: File): Promise<LayeredDoc> {
     const rasters: Array<{ rgb: Raster | null; mask: Raster | null; maskOutside: number }> = [];
     for (const r of recs) {
       const w = Math.max(0, r.right - r.left), h = Math.max(0, r.bottom - r.top);
+      const mw0 = r.mask ? Math.max(0, r.mask.right - r.mask.left) : 0, mh0 = r.mask ? Math.max(0, r.mask.bottom - r.mask.top) : 0;
+      for (const [rw, rh] of [[w, h], [mw0, mh0]]) {
+        if (rw > MAX_DIM || rh > MAX_DIM || rw * rh > MAX_PIXELS) throw new Error(`${file.name}: layer "${r.name}" is larger than ${MAX_DIM} px or ${MAX_PIXELS / 1e6} megapixels, so the file was not opened.`);
+      }
       const planes = new Map<number, Uint8Array>();
       let maskPlane: Uint8Array | null = null;
       for (const ch of r.chans) {

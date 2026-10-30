@@ -25,19 +25,24 @@ export async function transcodeViaEngine(file: File, kind: TranscodeKind, onProg
   let job = (await res.json()) as JobState;
   const cancel = (): void => { void fetch(`/api/transcode/${job.id}`, { method: 'DELETE' }).catch(() => undefined); };
   signal?.addEventListener('abort', cancel, { once: true });
-  while (job.state === 'running') {
-    if (signal?.aborted) throw new Error('Import cancelled.');
-    onProgress?.(job.progress);
-    await new Promise((r) => window.setTimeout(r, 250));
-    const poll = await fetch(`/api/transcode/${job.id}`).catch(() => null);
-    if (!poll || !poll.ok) throw new Error(DOWN);
-    job = (await poll.json()) as JobState;
+  try {
+    while (job.state === 'running') {
+      if (signal?.aborted) throw new Error('Import cancelled.');
+      onProgress?.(job.progress);
+      await new Promise((r) => window.setTimeout(r, 250));
+      const poll = await fetch(`/api/transcode/${job.id}`).catch(() => null);
+      if (!poll || !poll.ok) throw new Error(DOWN);
+      job = (await poll.json()) as JobState;
+    }
+    if (job.state !== 'done') throw new Error(job.error || `${file.name} could not be converted.`);
+    onProgress?.(1);
+    const out = await fetch(`/api/transcode/${job.id}/result`, { signal });
+    if (!out.ok) throw new Error(await detail(out, `${file.name} could not be converted.`));
+    const blob = await out.blob();
+    return { blob, mime: job.mime, alpha: job.alpha };
+  } finally {
+    // the engine's copy goes on every way out (a failed or aborted fetch too), and the listener with it
+    signal?.removeEventListener('abort', cancel);
+    cancel();
   }
-  if (job.state !== 'done') throw new Error(job.error || `${file.name} could not be converted.`);
-  onProgress?.(1);
-  const out = await fetch(`/api/transcode/${job.id}/result`);
-  if (!out.ok) throw new Error(await detail(out, `${file.name} could not be converted.`));
-  const blob = await out.blob();
-  void fetch(`/api/transcode/${job.id}`, { method: 'DELETE' }).catch(() => undefined);
-  return { blob, mime: job.mime, alpha: job.alpha };
 }
