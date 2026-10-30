@@ -15,7 +15,7 @@ function defaultOptions(kind: KeyKind): Record<string, string | number | boolean
 
 /** Replace (or insert) a lane, keeping lanes in KEY_KINDS order. A null lane removes it. */
 function withLane(c: Content, kind: KeyKind, lane: KeyLane | null): Content {
-  const rest = c.keys.filter((l) => l.kind !== kind);
+  const rest = (c.keys ?? []).filter((l) => l.kind !== kind);
   if (lane) {
     rest.push(lane);
     rest.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0));
@@ -82,7 +82,9 @@ export function setKeys(c: Content, kind: KeyKind, at: number, values: Record<st
     const e = ease ?? existing?.ease ?? easeBefore(list, frame) ?? 'linear';
     if (existing && existing.value === v && existing.ease === e) continue;
     // keep what else the key carries (spatial tangents, custom ease handles)
-    channels[spec.id] = putKey(list, { ...existing, frame, value: v, ease: e });
+    const { out: oldOut, in: oldIn, ...kept } = existing ?? ({} as Partial<Key>);
+    // custom ease handles only mean something with ease 'custom'; any other ease drops the stale ones
+    channels[spec.id] = putKey(list, e === 'custom' ? { ...kept, ...(oldOut ? { out: oldOut } : {}), ...(oldIn ? { in: oldIn } : {}), frame, value: v, ease: e } : { ...kept, frame, value: v, ease: e });
     changed = true;
   }
   if (!changed) return c;

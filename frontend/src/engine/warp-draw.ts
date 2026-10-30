@@ -157,6 +157,15 @@ export function stageToLocal(a: Animated, w: number, h: number, x: number, y: nu
   out[1] = cy + (-qx * sin + qy * cos) / sy;
 }
 
+const scratch = new Map<string, Float32Array>();
+
+/** A reused Float32Array of at least `n` numbers, returned as a view of exactly `n` (the list is consumed before the next call). */
+export function grab(slot: string, n: number): Float32Array {
+  let b = scratch.get(slot);
+  if (!b || b.length < n) { b = new Float32Array(Math.max(n, 1024)); scratch.set(slot, b); }
+  return b.subarray(0, n);
+}
+
 /** Grid steps per side for the triangle list: enough to look smooth, few enough to draw every frame. */
 function steps(a: Animated): number {
   if (a.distort) return 12;
@@ -173,7 +182,7 @@ function steps(a: Animated): number {
 export function warpQuads(a: Animated, w: number, h: number, rect: Rect = { x: 0, y: 0, w, h }): Float32Array {
   if (!warpActive(a)) return new Float32Array(0);
   const g = steps(a);
-  const ptsD = new Float32Array((g + 1) * (g + 1) * 2);
+  const ptsD = grab('pts', (g + 1) * (g + 1) * 2);
   const o = [0, 0], s = [0, 0];
   for (let j = 0; j <= g; j++) {
     for (let i = 0; i <= g; i++) {
@@ -184,11 +193,13 @@ export function warpQuads(a: Animated, w: number, h: number, rect: Rect = { x: 0
       ptsD[k + 1] = s[1];
     }
   }
-  const out = new Float32Array(g * g * 2 * 12);
+  const out = grab('quads', g * g * 2 * 12);
   let p = 0;
+  const corner = (i: number, j: number): void => { out[p++] = rect.x + (i / g) * rect.w; out[p++] = rect.y + (j / g) * rect.h; };
+  const dest = (i: number, j: number): void => { const k = (j * (g + 1) + i) * 2; out[p++] = ptsD[k]; out[p++] = ptsD[k + 1]; };
   const tri = (i0: number, j0: number, i1: number, j1: number, i2: number, j2: number): void => {
-    for (const [i, j] of [[i0, j0], [i1, j1], [i2, j2]]) { out[p++] = rect.x + (i / g) * rect.w; out[p++] = rect.y + (j / g) * rect.h; }
-    for (const [i, j] of [[i0, j0], [i1, j1], [i2, j2]]) { const k = (j * (g + 1) + i) * 2; out[p++] = ptsD[k]; out[p++] = ptsD[k + 1]; }
+    corner(i0, j0); corner(i1, j1); corner(i2, j2);
+    dest(i0, j0); dest(i1, j1); dest(i2, j2);
   };
   for (let j = 0; j < g; j++) {
     for (let i = 0; i < g; i++) {
@@ -199,7 +210,8 @@ export function warpQuads(a: Animated, w: number, h: number, rect: Rect = { x: 0
   return out;
 }
 
-export interface WarpView { scale: number; ox: number; oy: number }
+/** `srcScale`: pixels per content pixel of the flat source when it was drawn below the view's scale (capped surfaces); default `scale`. */
+export interface WarpView { scale: number; ox: number; oy: number; srcScale?: number }
 
 /**
  * Draws `src` (the content rendered flat at `view.scale`, content space (0,0) at the surface's origin) warped
@@ -211,9 +223,9 @@ export function drawWarped(ctx: Ctx, src: CanvasImageSource, a: Animated, view: 
 
 /** Draws a triangle list in warpQuads's layout (source corners in content px, destination corners in Stage px); bones.ts uses it too. */
 export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array, view: WarpView): void {
-  const k = view.scale;
+  const k = view.scale, ks = view.srcScale ?? view.scale;
   for (let p = 0; p + 11 < t.length; p += 12) {
-    const s0x = t[p] * k, s0y = t[p + 1] * k, s1x = t[p + 2] * k, s1y = t[p + 3] * k, s2x = t[p + 4] * k, s2y = t[p + 5] * k;
+    const s0x = t[p] * ks, s0y = t[p + 1] * ks, s1x = t[p + 2] * ks, s1y = t[p + 3] * ks, s2x = t[p + 4] * ks, s2y = t[p + 5] * ks;
     const d0x = view.ox + t[p + 6] * k, d0y = view.oy + t[p + 7] * k;
     const d1x = view.ox + t[p + 8] * k, d1y = view.oy + t[p + 9] * k;
     const d2x = view.ox + t[p + 10] * k, d2y = view.oy + t[p + 11] * k;
@@ -227,11 +239,11 @@ export function drawTriangles(ctx: Ctx, src: CanvasImageSource, t: Float32Array,
     const E = d0x - A * s0x - C * s0y;
     const F = d0y - B * s0x - D * s0y;
     const cx = (d0x + d1x + d2x) / 3, cy = (d0y + d1y + d2y) / 3;
-    const grow = (x: number, y: number): [number, number] => {
-      const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1;
-      return [x + (dx / len) * 0.5, y + (dy / len) * 0.5];
-    };
-    const [g0x, g0y] = grow(d0x, d0y), [g1x, g1y] = grow(d1x, d1y), [g2x, g2y] = grow(d2x, d2y);
+    // each corner pushed half a pixel away from the centre
+    const l0 = Math.hypot(d0x - cx, d0y - cy) || 1, l1 = Math.hypot(d1x - cx, d1y - cy) || 1, l2 = Math.hypot(d2x - cx, d2y - cy) || 1;
+    const g0x = d0x + ((d0x - cx) / l0) * 0.5, g0y = d0y + ((d0y - cy) / l0) * 0.5;
+    const g1x = d1x + ((d1x - cx) / l1) * 0.5, g1y = d1y + ((d1y - cy) / l1) * 0.5;
+    const g2x = d2x + ((d2x - cx) / l2) * 0.5, g2y = d2y + ((d2y - cy) / l2) * 0.5;
     const minX = Math.max(0, Math.floor(Math.min(s0x, s1x, s2x) - 1)), minY = Math.max(0, Math.floor(Math.min(s0y, s1y, s2y) - 1));
     const maxX = Math.ceil(Math.max(s0x, s1x, s2x) + 1), maxY = Math.ceil(Math.max(s0y, s1y, s2y) + 1);
     ctx.save();

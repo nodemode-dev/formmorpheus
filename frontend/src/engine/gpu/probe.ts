@@ -3,6 +3,7 @@
 import { content, newMovie, track } from '../model';
 import type { BlendMode, Content, KeyLane, Movie } from '../types';
 import type { GpuCompositor } from './compositor';
+import { liveSet, type LiveSet } from './live';
 
 /** The slice of Renderer the probe drives (render.ts passes a constructor so this file does not import it). */
 export interface ProbeRenderer {
@@ -122,6 +123,8 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
   const blob = await picture();
   const r = make();
   const res: ProbeResult = { ok: true, scenes: [], cpuMs: 0, gpuMs: 0, fast: false };
+  const list = scenes();
+  const heavy = heavyScene();
   try {
     await r.preload(new Map([['probe', blob], ['big', await bigPicture()]]));
     const cpu = new OffscreenCanvas(W, H), dev = new OffscreenCanvas(W, H);
@@ -129,7 +132,7 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
     const dc = dev.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     const view = { scale: 1, ox: 0, oy: 0, width: W, height: H };
     const opts = { backstage: false, background: '#202020', transparentChecker: null };
-    for (const s of scenes()) {
+    for (const s of list) {
       r.useGpu(false);
       r.drawFrame(cc, s.movie, 0, view, opts);
       if (!r.useGpu(true, gpu)) { res.ok = false; break; }
@@ -143,7 +146,6 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
       if (mean > meanLimit || max > maxLimit) res.ok = false;
     }
     if (res.ok) {
-      const heavy = heavyScene();
       const bc = new OffscreenCanvas(BW, BH), bx = bc.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
       const bview = { scale: 1, ox: 0, oy: 0, width: BW, height: BH };
       const time = (on: boolean): number => {
@@ -168,6 +170,12 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
     res.ok = false;
   }
   r.forget();
-  gpu.forget();
+  // only the probe's own textures go: the compositor may already hold the open movie's
+  const mine: LiveSet = { contents: new Set(), assets: new Set(['probe', 'big']) };
+  for (const m of [...list.map((s) => s.movie), heavy]) {
+    const l = liveSet(m);
+    l.contents.forEach((id) => mine.contents.add(id));
+  }
+  gpu.dropLive(mine);
   return res;
 }

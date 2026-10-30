@@ -181,6 +181,18 @@ export class GpuCompositor {
     for (const key of [...this.textSig.keys()]) if (!live.contents.has(key.slice(2))) this.textSig.delete(key);
   }
 
+  /** Releases only the textures of the given pictures and contents (the probe's scenes), leaving everything else cached. */
+  dropLive(live: { contents: Set<string>; assets: Set<string> }): void {
+    if (!this.ready) return;
+    this.cache.forget((k) => {
+      const id = k.slice(2);
+      if (k.startsWith('b:')) return !live.assets.has(id);
+      if (k.startsWith('v:') || k.startsWith('t:') || k.startsWith('r:')) return !live.contents.has(id);
+      return true;
+    });
+    for (const key of [...this.textSig.keys()]) if (live.contents.has(key.slice(2))) this.textSig.delete(key);
+  }
+
   forgetOne(id: string): void {
     if (!this.ready) return;
     this.cache.forget((k) => k !== 'b:' + id);

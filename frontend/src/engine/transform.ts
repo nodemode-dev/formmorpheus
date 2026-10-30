@@ -141,6 +141,12 @@ function levelFrame(e: Entry, frame: number): number {
   return e.container ? levelFrame(e.container, frame) - e.container.c.start + e.container.c.offset : frame;
 }
 
+/** The frame a content's own `start` is counted against: the movie frame for a top-level content, the group-local frame inside groups. */
+export function levelFrameOf(movie: Movie, c: Content, frame: number): number {
+  const e = indexOf(movie).byId.get(c.id);
+  return e ? levelFrame(e, frame) : frame;
+}
+
 /** Matrix of an entry from its own picture space to the space of the movie (camera not included). */
 function chainTop(movie: Movie, idx: Index, e: Entry, frame: number, a: Animated | undefined, depth: number): Mat {
   const own = ownMatrix(a ?? animate(e.c, levelFrame(e, frame) - e.c.start), movie);

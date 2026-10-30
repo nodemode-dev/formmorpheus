@@ -55,9 +55,10 @@ export function reverseRefs(c: Content, refs: readonly KeyRef[]): Content {
     const channels: Record<string, Key[]> = {};
     for (const id in lane.channels) {
       const mirrored = flipped.channels[id] ?? [];
-      const taken = new Set(mirrored.map((k) => k.frame));
-      const keep = lane.channels[id].filter((k) => !frames.has(k.frame) && !taken.has(k.frame));
-      channels[id] = [...keep, ...mirrored].sort((a, b) => a.frame - b.frame);
+      // keys not chosen always stay; a mirrored key landing on one of them yields to it
+      const keep = lane.channels[id].filter((k) => !frames.has(k.frame));
+      const held = new Set(keep.map((k) => k.frame));
+      channels[id] = [...keep, ...mirrored.filter((k) => !held.has(k.frame))].sort((a, b) => a.frame - b.frame);
     }
     const next: KeyLane = { ...lane, channels };
     out = { ...out, keys: out.keys.map((l) => (l.kind === kind ? next : l)) };

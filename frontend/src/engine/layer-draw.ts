@@ -5,20 +5,27 @@ import { SurfacePool, drawTree, maskAlphaCanvas } from '../paint/layer-tree';
 import type { TreeHooks } from '../paint/layer-tree';
 import type { DrawingLayer } from './types';
 
-let pool: SurfacePool | null = null;
+/** A few pools by size (most recent last), so drawing at two sizes in turn (a thumbnail and the Stage, a flat Warp surface) does not rebuild the scratch surfaces each time. */
+const pools: SurfacePool[] = [];
+const POOLS_KEPT = 3;
 
 function poolFor(w: number, h: number): SurfacePool {
-  if (!pool || pool.width !== w || pool.height !== h) {
-    pool?.dispose();
-    pool = new SurfacePool(w, h);
+  const at = pools.findIndex((p) => p.width === w && p.height === h);
+  if (at >= 0) {
+    const [p] = pools.splice(at, 1);
+    pools.push(p);
+    return p;
   }
-  return pool;
+  const p = new SurfacePool(w, h);
+  pools.push(p);
+  while (pools.length > POOLS_KEPT) pools.shift()?.dispose();
+  return p;
 }
 
 /** Frees the scratch surfaces (a movie closed or resized). */
 export function releaseLayerPool(): void {
-  pool?.dispose();
-  pool = null;
+  for (const p of pools) p.dispose();
+  pools.length = 0;
 }
 
 /** Draws the layers onto ctx in movie pixels; ctx's alpha and blend are the base, as for the plain layer loop. */

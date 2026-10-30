@@ -292,6 +292,9 @@ export interface Movie {
   addKeyAtStart: boolean;
   /** Playback loops only the part of the movie the Timeline shows. Absent in older files. */
   loopVisible?: boolean;
+  /** An explicit loop range (first and last frame, inclusive); playback stays inside it. Written only once set. */
+  loopFrom?: number;
+  loopTo?: number;
   /** How visible content outside the Stage is on the Stage view, 0 to 1. Absent: the default (0.2). */
   backstage?: number;
   /** The Stage shows its Timecode. Absent: it does. */

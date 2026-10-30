@@ -43,7 +43,7 @@ export function withCanvas(c: Content, movie: Pick<Movie, 'width' | 'height'>, n
   if (full) delete out.canvas; else out.canvas = { ...next };
   const now = canvasCentreOffset(out, movie);
   const p = c.pivot ?? { x: 0, y: 0 };
-  const atCentre = Math.abs(p.x - was.x) < 0.5 && Math.abs(p.y - was.y) < 0.5 && !c.keys.some((l) => l.kind === 'move' && (l.channels.px?.length || l.channels.py?.length));
+  const atCentre = Math.abs(p.x - was.x) < 0.5 && Math.abs(p.y - was.y) < 0.5 && !(c.keys ?? []).some((l) => l.kind === 'move' && (l.channels.px?.length || l.channels.py?.length));
   if (atCentre) {
     if (Math.abs(now.x) < 0.5 && Math.abs(now.y) < 0.5) delete out.pivot; else out.pivot = { x: Math.round(now.x * 100) / 100, y: Math.round(now.y * 100) / 100 };
   }

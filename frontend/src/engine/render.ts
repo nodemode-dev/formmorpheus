@@ -46,6 +46,17 @@ export interface View {
   height: number;
 }
 
+/** Largest side and area (pixels) of the flat surface a Warp, Distort or bones content is drawn on before it is re-projected. */
+const FLAT_SIDE = 8192;
+const FLAT_AREA = 48 * 1024 * 1024;
+
+/** Pixels per movie pixel of the flat surface: the view's scale, lowered only when the surface would pass the caps (a deep zoom). */
+function flatScale(movie: Movie, view: View): number {
+  const w = Math.max(1, movie.width * view.scale), h = Math.max(1, movie.height * view.scale);
+  const k = Math.min(1, FLAT_SIDE / Math.max(w, h), Math.sqrt(FLAT_AREA / (w * h)));
+  return view.scale * k;
+}
+
 export function fitView(movie: Movie, width: number, height: number, margin = 0.06): View {
   const room = 1 - margin * 2;
   const scale = Math.min((width * room) / movie.width, (height * room) / movie.height);
@@ -70,6 +81,10 @@ export class Renderer {
   private gpuOn = false;
   private gpuHostObj: GpuHost | null = null;
   private prunedFor: Movie | null = null;
+  private noCamFor: Movie | null = null;
+  private noCam: Movie | null = null;
+  /** The compositor belongs to someone else (the probe borrows the main one): this renderer neither prunes nor disposes it. */
+  private gpuShared = false;
   /** While an export runs the GPU switch holds still: what was asked for meanwhile lands afterwards. */
   private gpuPin: { want: boolean | null; shared?: GpuCompositor } | null = null;
   /** What the last probe measured; null before the first probe. */
@@ -87,9 +102,10 @@ export class Renderer {
     if (this.gpuPin) { this.gpuPin.want = on; this.gpuPin.shared = shared; return this.gpuOn; }
     if (!on) {
       if (this.gpuOn) { this.gpuOn = false; this.onReady(); }
+      this.freeGpu();
       return false;
     }
-    if (shared) this.gpu = shared;
+    if (shared) { this.gpu = shared; this.gpuShared = true; }
     if (!this.gpu) {
       this.gpu = GpuCompositor.create();
       if (this.gpu) this.gpu.onRestore = () => { this.onReady(); };
@@ -97,6 +113,14 @@ export class Renderer {
     if (!this.gpu) return false;
     if (!this.gpuOn) { this.gpuOn = true; if (!shared) this.onReady(); }
     return true;
+  }
+
+  /** Releases the WebGL context, programs and pooled surfaces of a compositor this renderer owns; it is made again when GPU is next asked for. */
+  private freeGpu(): void {
+    if (this.gpuShared) return;
+    this.gpu?.dispose();
+    this.gpu = null;
+    this.prunedFor = null;
   }
 
   /** Holds the GPU state as it is until the returned function is called, so an export never mixes GPU and CPU frames. */
@@ -120,7 +144,11 @@ export class Renderer {
     if (!this.gpu) return false;
     const gpu = this.gpu;
     this.gpuProbe = await probeGpu(() => new Renderer(() => undefined, () => {}), gpu);
-    if (!this.gpuProbe.ok || (!force && !this.gpuProbe.fast)) return false;
+    if (!this.gpuProbe.ok || (!force && !this.gpuProbe.fast)) {
+      // failed or slow: the context is not kept alive for nothing
+      if (this.gpu === gpu && !this.gpuOn) this.freeGpu();
+      return false;
+    }
     return this.useGpu(true);
   }
 
@@ -184,25 +212,40 @@ export class Renderer {
   private gpuCompose(movie: Movie, frame: number, view: View): OffscreenCanvas | null {
     if (!this.gpuOn || !this.gpu || !this.gpu.ready) return null;
     // a new movie object: textures of deleted contents and pictures go (the live set is cheap next to a frame)
-    if (movie !== this.prunedFor) { this.prunedFor = movie; this.gpu.prune(liveSet(movie)); }
+    // (a borrowed compositor holds the owner's textures: never pruned from here)
+    if (movie !== this.prunedFor) { this.prunedFor = movie; if (!this.gpuShared) this.gpu.prune(liveSet(movie)); }
     return this.gpu.compose(this.gpuHost(), movie.tracks, frame, view, movie);
   }
 
   /** `keep`: pictures of a movie being swapped in stay decoded. */
   forget(keep?: Set<string>): void {
-    this.gpu?.forget(keep);
+    if (!this.gpuShared) this.gpu?.forget(keep);
     for (const [id, b] of [...this.bitmaps]) {
       if (keep?.has(id)) continue;
       b?.close();
       this.bitmaps.delete(id);
     }
     this.pending.clear();
+    // decodes already started belong to the old set: they are dropped when they land, unless `keep` names them
+    this.forgetGen++;
+    this.lastKeep = keep ?? null;
+  }
+
+  /** Counts forget() calls; a decode that started before one is stale when it finishes. */
+  private forgetGen = 0;
+  private lastKeep: Set<string> | null = null;
+
+  /** Stores a finished decode, or closes it when a forget() came in between and did not keep that picture. */
+  private settle(id: string, bmp: ImageBitmap | null, gen: number): void {
+    if (gen !== this.forgetGen && !this.lastKeep?.has(id)) { bmp?.close(); return; }
+    this.keep(id, bmp);
   }
 
   async preload(blobs: Map<string, Blob>): Promise<void> {
     await Promise.all(Array.from(blobs, async ([id, blob]) => {
       if (this.bitmaps.has(id) || !blob.type.startsWith('image/')) return;
-      try { this.keep(id, await createImageBitmap(blob)); } catch { this.keep(id, null); }
+      const gen = this.forgetGen;
+      try { this.settle(id, await createImageBitmap(blob), gen); } catch { this.settle(id, null, gen); }
     }));
   }
 
@@ -220,7 +263,8 @@ export class Renderer {
       const blob = this.blobOf(id);
       if (!blob) return null;
       this.pending.add(id);
-      createImageBitmap(blob).then((bmp) => { this.keep(id, bmp); }, () => { this.keep(id, null); }).finally(() => { this.pending.delete(id); this.onReady(); });
+      const gen = this.forgetGen;
+      createImageBitmap(blob).then((bmp) => { this.settle(id, bmp, gen); }, () => { this.settle(id, null, gen); }).finally(() => { if (gen === this.forgetGen) this.pending.delete(id); this.onReady(); });
     }
     return null;
   }
@@ -241,9 +285,11 @@ export class Renderer {
     }
   }
 
-  private surface(): Surface {
-    const s = this.pool.pop() ?? new OffscreenCanvas(this.pw, this.ph);
-    if (s.width !== this.pw || s.height !== this.ph) { s.width = this.pw; s.height = this.ph; }
+  /** A cleared scratch surface; `w` x `h` default to the view's size, but a blend onto a flat Warp surface needs that surface's own size. */
+  private surface(w = this.pw, h = this.ph): Surface {
+    const at = this.pool.findIndex((p) => p.width === w && p.height === h);
+    const s = (at >= 0 ? this.pool.splice(at, 1)[0] : this.pool.pop()) ?? new OffscreenCanvas(w, h);
+    if (s.width !== w || s.height !== h) { s.width = w; s.height = h; }
     // CPU surfaces are read back by the live filters, masks and the GPU hand-off: keep them in system memory
     const c = s.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -261,7 +307,11 @@ export class Renderer {
   drawFrame(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean; noCamera?: boolean }): void {
     // `noCamera`: the Stage's Camera mode shows the world as the camera sees it from outside
     let mv = movie;
-    if (opts.noCamera && movie.camera) { const { camera: _camera, ...rest } = movie; mv = rest as Movie; }
+    if (opts.noCamera && movie.camera) {
+      // one camera-less copy per movie object, so the GPU's per-movie bookkeeping and caches see a stable movie
+      if (this.noCamFor !== movie) { const { camera: _camera, ...rest } = movie; this.noCamFor = movie; this.noCam = rest as Movie; }
+      mv = this.noCam as Movie;
+    }
     this.frameNow = frame;
     this.nest.length = 0;
     this.flat = null;
@@ -418,7 +468,10 @@ export class Renderer {
     const t = anim ?? animate(c, local);
     if (t.bones && c.rig) {
       // bones first: drawn flat, skinned to the posed bones; Warp / Distort then bend that result (bones.ts)
-      const fw = Math.max(1, Math.ceil(movie.width * view.scale)), fh = Math.max(1, Math.ceil(movie.height * view.scale));
+      const fs = flatScale(movie, view);
+      const fw = Math.max(1, Math.ceil(movie.width * fs)), fh = Math.max(1, Math.ceil(movie.height * fs));
+      const fview: View = { ...view, scale: fs, ox: 0, oy: 0 };
+      const dview = { scale: view.scale, ox: view.ox, oy: view.oy, srcScale: fs };
       const rect = contentRect(c, movie);
       const take = (): OffscreenCanvasRenderingContext2D => {
         const s = this.warpPool.pop() ?? new OffscreenCanvas(fw, fh);
@@ -429,43 +482,48 @@ export class Renderer {
         return sc;
       };
       const fc = take();
+      let sk: OffscreenCanvasRenderingContext2D | null = null;
       const was = this.flat;
-      this.flat = c;
-      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, px: 0, py: 0, warp: null, distort: null, bones: null });
-      this.flat = was;
-      if (t.warp || t.distort) {
-        const sk = take();
-        drawTriangles(sk, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, null), { scale: view.scale, ox: 0, oy: 0 });
-        setStagePost(this.postFor(movie, c, local));
-        drawWarped(ctx, sk.canvas, t, view, movie.width, movie.height, rect);
+      try {
+        this.flat = c;
+        try { this.drawContent(fc, c, local, fview, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, px: 0, py: 0, warp: null, distort: null, bones: null }); } finally { this.flat = was; }
+        if (t.warp || t.distort) {
+          sk = take();
+          drawTriangles(sk, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, null), { scale: fs, ox: 0, oy: 0 });
+          setStagePost(this.postFor(movie, c, local));
+          drawWarped(ctx, sk.canvas, t, dview, movie.width, movie.height, rect);
+        } else {
+          setStagePost(this.postFor(movie, c, local));
+          drawTriangles(ctx, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, t), dview);
+        }
+      } finally {
         setStagePost(null);
-        this.warpPool.push(sk.canvas as OffscreenCanvas);
-      } else {
-        setStagePost(this.postFor(movie, c, local));
-        drawTriangles(ctx, fc.canvas, boneQuads(c.rig, t.bones, rect, movie.width, movie.height, t), view);
-        setStagePost(null);
+        if (sk) this.warpPool.push(sk.canvas as OffscreenCanvas);
+        this.warpPool.push(fc.canvas as OffscreenCanvas);
       }
-      this.warpPool.push(fc.canvas as OffscreenCanvas);
       return;
     }
     if (t.warp || t.distort) {
       // drawn flat on a surface, then re-projected through the Warp / Distort (warp-draw.ts)
       // sized to the whole movie at this scale, not to the view: a zoomed Stage or a group member's unit view
-      // would otherwise crop the content before it is warped
-      const fw = Math.max(1, Math.ceil(movie.width * view.scale)), fh = Math.max(1, Math.ceil(movie.height * view.scale));
+      // would otherwise crop the content before it is warped; capped (flatScale) and re-projected from that density
+      const fs = flatScale(movie, view);
+      const fw = Math.max(1, Math.ceil(movie.width * fs)), fh = Math.max(1, Math.ceil(movie.height * fs));
       const flat = this.warpPool.pop() ?? new OffscreenCanvas(fw, fh);
       if (flat.width !== fw || flat.height !== fh) { flat.width = fw; flat.height = fh; }
       const fc = flat.getContext('2d') as OffscreenCanvasRenderingContext2D;
       fc.setTransform(1, 0, 0, 1, 0, 0);
       fc.clearRect(0, 0, fw, fh);
       const was = this.flat;
-      this.flat = c;
-      this.drawContent(fc, c, local, { ...view, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, warp: null, distort: null, bones: null });
-      this.flat = was;
-      setStagePost(this.postFor(movie, c, local));
-      drawWarped(ctx, flat, t, view, movie.width, movie.height, contentRect(c, movie));
-      setStagePost(null);
-      this.warpPool.push(flat);
+      try {
+        this.flat = c;
+        try { this.drawContent(fc, c, local, { ...view, scale: fs, ox: 0, oy: 0 }, movie, { ...t, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, warp: null, distort: null, bones: null }); } finally { this.flat = was; }
+        setStagePost(this.postFor(movie, c, local));
+        drawWarped(ctx, flat, t, { scale: view.scale, ox: view.ox, oy: view.oy, srcScale: fs }, movie.width, movie.height, contentRect(c, movie));
+      } finally {
+        setStagePost(null);
+        this.warpPool.push(flat);
+      }
       return;
     }
     ctx.save();
@@ -587,7 +645,7 @@ export class Renderer {
       const bmp = this.bitmap(l.pixels);
       if (!bmp) continue;
       if (isPixelBlend(l.blend)) {
-        const s = this.surface();
+        const s = this.surface(ctx.canvas.width, ctx.canvas.height);
         const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
         sc.setTransform(ctx.getTransform());
         sc.drawImage(bmp, rect.x, rect.y, rect.w, rect.h);
@@ -607,7 +665,7 @@ export class Renderer {
     const rect = canvasOf(c, movie);
     if (hasRowMask(c)) {
       drawMaskedRows({
-        surface: () => this.surface(), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie, rect),
+        surface: () => this.surface(ctx.canvas.width, ctx.canvas.height), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie, rect),
         mask: (a, b, m, inv) => this.applyMask(a, b, m, inv), blendOp: (b) => BLEND_OP[b],
         blendInto: (g, s, b, alpha) => { if (!isPixelBlend(b)) return false; blendCanvasOnto(g, s, b, alpha); return true; },
       }, ctx, c, local);
@@ -619,7 +677,7 @@ export class Renderer {
       const index = flipIndexAt(t, local);
       if (index < 0) continue;
       if (isPixelBlend(t.blend)) {
-        const s = this.surface();
+        const s = this.surface(ctx.canvas.width, ctx.canvas.height);
         const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
         sc.setTransform(ctx.getTransform());
         this.drawLayers(sc, t.frames[index].layers, movie, rect);
@@ -686,19 +744,23 @@ export class Renderer {
         if (t.hidden) continue;
         const c = t.content.find((x) => local >= x.start && local < end(x));
         if (!c || c.opacity <= 0) continue;
+        const a = animate(c, local - c.start);
+        if (a.opacity <= 0) continue;
+        // opacity multiplies down the chain of groups (and keyed opacity counts), a normal member keeps the group's blend
+        const alpha = ctx.globalAlpha * a.opacity;
         if (isPixelBlend(c.blend)) {
-          const s = this.surface();
+          const s = this.surface(ctx.canvas.width, ctx.canvas.height);
           const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
           sc.setTransform(ctx.getTransform());
-          this.drawContent(sc, c, local - c.start, unit, movie);
-          blendCanvasOnto(ctx, s, c.blend, c.opacity);
+          this.drawContent(sc, c, local - c.start, unit, movie, a);
+          blendCanvasOnto(ctx, s, c.blend, alpha);
           this.release(s);
           continue;
         }
         ctx.save();
-        ctx.globalAlpha = c.opacity;
-        ctx.globalCompositeOperation = BLEND_OP[c.blend];
-        this.drawContent(ctx, c, local - c.start, unit, movie);
+        ctx.globalAlpha = alpha;
+        if (c.blend !== 'normal' && c.blend !== 'passthrough') ctx.globalCompositeOperation = BLEND_OP[c.blend];
+        this.drawContent(ctx, c, local - c.start, unit, movie, a);
         ctx.restore();
       }
     } finally {
@@ -707,10 +769,15 @@ export class Renderer {
   }
 
   thumb(ctx: CanvasRenderingContext2D, movie: Movie, c: Content, local: number, w: number, h: number, toCanvas = false): void {
-    this.pw = Math.max(1, Math.round(w));
-    this.ph = Math.max(1, Math.round(h));
-    const s = this.surface();
-    const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    // its own small surface: the shared pool and the view size it is cut to stay as the frame draw left them
+    const tw = Math.max(1, Math.round(w)), th = Math.max(1, Math.round(h));
+    const s = this.thumbSurf ?? (this.thumbSurf = new OffscreenCanvas(tw, th));
+    if (s.width !== tw || s.height !== th) { s.width = tw; s.height = th; }
+    const sc = s.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+    sc.setTransform(1, 0, 0, 1, 0, 0);
+    sc.globalAlpha = 1;
+    sc.globalCompositeOperation = 'source-over';
+    sc.clearRect(0, 0, tw, th);
     let view = fitView(movie, w, h, 0);
     if (toCanvas && c.canvas) {
       // frame the Drawing's own canvas instead of the Stage
@@ -719,6 +786,7 @@ export class Renderer {
     }
     this.drawContent(sc, c, local, view, movie);
     ctx.drawImage(s, 0, 0);
-    this.release(s);
   }
+
+  private thumbSurf: OffscreenCanvas | null = null;
 }

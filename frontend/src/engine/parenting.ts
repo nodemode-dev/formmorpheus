@@ -2,7 +2,7 @@
 import { animate } from './keys';
 import * as keyOps from './key-ops';
 import { OpError } from './ops';
-import { decompose, findContent, invert, mul, parentProblem, parentWorld, worldMatrix } from './transform';
+import { decompose, findContent, invert, levelFrameOf, mul, parentProblem, parentWorld, worldMatrix } from './transform';
 import type { Content, Movie, Track } from './types';
 
 function mapContent(tracks: Track[], id: string, fn: (c: Content) => Content): Track[] {
@@ -43,7 +43,8 @@ export function unparent(movie: Movie, childId: string, frame: number): Movie {
 /** Rewrites the child's Move / Scale in `next` (its parent already changed) so it shows where it did in `movie` at `frame`. */
 function keepPose(movie: Movie, next: Movie, childId: string, frame: number): Movie {
   const child = findContent(movie, childId) as Content;
-  const local = Math.round(frame) - child.start;
+  // a group member's start counts group-local frames, as the renderer's levelFrame does
+  const local = Math.round(levelFrameOf(movie, child, frame)) - child.start;
   const a = animate(child, local);
   const free = next;
   // the pose it shows now, then expressed inside what it will sit in (camera, parents, groups)
@@ -60,7 +61,7 @@ function keepPose(movie: Movie, next: Movie, childId: string, frame: number): Mo
     const { stretchX: _sx, stretchY: _sy, ...rest } = c.transform;
     const tr = { ...rest, x: t.x, y: t.y, scale: t.scale, rotation: t.rotation, flipH: d.flipH, flipV: false, ...(Math.abs(stretchY - 1) > 1e-6 ? { stretchY } : {}) };
     let out: Content = { ...c, transform: tr };
-    if (c.keys.some((l) => l.kind === 'move')) {
+    if ((c.keys ?? []).some((l) => l.kind === 'move')) {
       const at = Math.max(0, Math.min(c.duration - 1, local));
       out = keyOps.setKeys(out, 'move', at, { x: t.x, y: t.y, scaleX: t.scale, scaleY: t.scale, rotation: t.rotation });
     }

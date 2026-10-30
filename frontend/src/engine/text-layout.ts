@@ -20,6 +20,8 @@ export interface TextLayout {
 }
 
 const SMALL_CAP_SCALE = 0.8;
+// Per-glyph fallback for scripts Inter lacks; the faces load lazily (media/font-bundle.ts)
+const SCRIPT_FALLBACK = '"Noto Sans", "Noto Sans Arabic", "Noto Sans JP", "Noto Sans SC", "Noto Sans KR", "Noto Sans Thai", "Noto Sans Devanagari"';
 const GENERIC = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui']);
 
 /** Bumped when a font finishes loading so cached text pictures are drawn again. */
@@ -29,7 +31,7 @@ export function bumpFontEpoch(): void { epoch++; }
 
 export function fontCss(s: TextStyle, size: number = s.size): string {
   const fam = GENERIC.has(s.font) ? s.font : JSON.stringify(s.font);
-  return `${s.italic ? 'italic ' : ''}${s.weight} ${size}px ${fam}, Inter, sans-serif`;
+  return `${s.italic ? 'italic ' : ''}${s.weight} ${size}px ${fam}, Inter, ${SCRIPT_FALLBACK}, sans-serif`;
 }
 
 let mctx: OffscreenCanvasRenderingContext2D | null | undefined;
@@ -142,25 +144,53 @@ const BREAKS = new RegExp(`[^\\s${CJK}]+|[${CJK}]|\\s+`, 'g');
 function wrap(c: Ctx, s: TextStyle, para: string, max: number): string[] {
   const out: string[] = [];
   let cur = '';
-  const flush = (): void => { out.push(cur.replace(/\s+$/, '')); cur = ''; };
+  // width of `cur` as drawn (trailing spaces included), kept by adding each piece's own width: a piece is measured once, not the whole line again
+  let curW = 0;
+  const track = trackPx(s);
+  const flush = (): void => { out.push(cur.replace(/\s+$/, '')); cur = ''; curW = 0; };
   for (const piece of para.match(BREAKS) ?? ['']) {
-    if (!cur && /^\s+$/.test(piece)) continue;
-    if (!cur || widthOf(c, s, (cur + piece).replace(/\s+$/, '')) <= max) { cur += piece; }
-    else { flush(); if (/^\s+$/.test(piece)) continue; cur = piece; }
-    while (cur.length > 1 && widthOf(c, s, cur) > max) {
-      const chars = Array.from(cur);
-      let n = chars.length - 1;
-      while (n > 1 && widthOf(c, s, chars.slice(0, n).join('')) > max) n--;
-      out.push(chars.slice(0, n).join(''));
-      cur = chars.slice(n).join('');
+    const blank = /^\s+$/.test(piece);
+    if (!cur && blank) continue;
+    const pw = widthOf(c, s, piece);
+    // trailing spaces never count against the line
+    const fits = !cur || blank || curW + pw + track <= max;
+    if (fits) { curW = cur ? curW + pw + track : pw; cur += piece; }
+    else { flush(); cur = piece; curW = pw; }
+    if (curW > max && cur.length > 1) {
+      // an over-long word breaks between letters: the longest prefix that fits, found by halving
+      while (cur.length > 1 && widthOf(c, s, cur) > max) {
+        const chars = Array.from(cur);
+        let lo = 1, hi = chars.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (widthOf(c, s, chars.slice(0, mid).join('')) <= max) lo = mid; else hi = mid - 1;
+        }
+        out.push(chars.slice(0, lo).join(''));
+        cur = chars.slice(lo).join('');
+      }
+      curW = widthOf(c, s, cur);
     }
   }
   if (cur || !out.length) flush();
   return out;
 }
 
-/** Where every run of the Text sits in movie pixels. */
+/** Layouts kept per style + text + movie size + font load count (a few hundred bytes each); a layout is read-only for its callers. */
+const layoutCache = new Map<string, TextLayout>();
+const LAYOUT_CAP = 64;
+
+/** Where every run of the Text sits in movie pixels (cached per style, text and movie size until a font loads). */
 export function layoutText(s: TextStyle, movie: Movie): TextLayout {
+  const key = `${epoch}|${movie.width}x${movie.height}|${JSON.stringify(s)}`;
+  const have = layoutCache.get(key);
+  if (have) { layoutCache.delete(key); layoutCache.set(key, have); return have; }
+  const lay = layoutNow(s, movie);
+  layoutCache.set(key, lay);
+  if (layoutCache.size > LAYOUT_CAP) layoutCache.delete(layoutCache.keys().next().value as string);
+  return lay;
+}
+
+function layoutNow(s: TextStyle, movie: Movie): TextLayout {
   const c = measurer();
   const W = movie.width, H = movie.height;
   const lh = lineHeight(s), shift = s.baseline ?? 0;

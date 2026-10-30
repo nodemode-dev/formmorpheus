@@ -90,7 +90,8 @@ export interface FrameRef { track: string; frames: string[] }
 
 const isBlank = (f: FlipbookFrame): boolean => f.layers.every((l) => l.pixels === null && !l.group);
 
-function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[]) => FlipbookFrame[] | null): Content {
+/** `fn` gets the row as it stands after earlier refs (two refs may name the same row), not as it was in `c`. */
+function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[], cur: FlipTrack) => FlipbookFrame[] | null): Content {
   let out = c;
   for (const ref of refs) {
     const row = out.flip.findIndex((t) => t.id === ref.track);
@@ -98,7 +99,7 @@ function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[]) 
     const set = new Set(ref.frames);
     const idx = out.flip[row].frames.flatMap((f, i) => (set.has(f.id) ? [i] : []));
     if (!idx.length) continue;
-    const next = fn(row, idx);
+    const next = fn(row, idx, out.flip[row]);
     if (next) out = frames(out, row, () => next);
   }
   return fit(out);
@@ -130,25 +131,25 @@ export function fillFrame(c: Content, row: number, index: number): Content {
 
 /** Sets the hold of every named frame: an absolute number, or a change when `relative`. */
 export function setHolds(c: Content, refs: FrameRef[], hold: number, relative = false): Content {
-  return eachRef(c, refs, (row, idx) => {
+  return eachRef(c, refs, (_row, idx, cur) => {
     const set = new Set(idx);
-    return c.flip[row].frames.map((x, i) => (set.has(i) ? { ...x, hold: Math.max(1, Math.min(999, Math.round(relative ? Math.max(1, x.hold) + hold : hold))) } : x));
+    return cur.frames.map((x, i) => (set.has(i) ? { ...x, hold: Math.max(1, Math.min(999, Math.round(relative ? Math.max(1, x.hold) + hold : hold))) } : x));
   });
 }
 
 /** Deletes the named frames; a row keeps at least one (blank) frame. */
 export function deleteFrames(c: Content, refs: FrameRef[]): Content {
-  return eachRef(c, refs, (row, idx) => {
+  return eachRef(c, refs, (_row, idx, cur) => {
     const set = new Set(idx);
-    const left = c.flip[row].frames.filter((_, i) => !set.has(i));
-    return left.length ? left : [{ ...c.flip[row].frames[0], hold: 1, layers: [drawingLayer()] }];
+    const left = cur.frames.filter((_, i) => !set.has(i));
+    return left.length ? left : [{ ...cur.frames[0], hold: 1, layers: [drawingLayer()] }];
   });
 }
 
 /** Reverses the order of the named frames within each row (their holds travel with them). */
 export function flipFrames(c: Content, refs: FrameRef[]): Content {
-  return eachRef(c, refs, (row, idx) => {
-    const src = c.flip[row].frames;
+  return eachRef(c, refs, (_row, idx, cur) => {
+    const src = cur.frames;
     const out = [...src];
     idx.forEach((slot, k) => { out[slot] = src[idx[idx.length - 1 - k]]; });
     return out;
@@ -181,7 +182,9 @@ export function moveFrames(c: Content, refs: FrameRef[], toTrack: string | null,
   } else {
     list = bare.map((t) => {
       if (t.id !== toTrack) return t;
-      const at = anchor ? t.frames.findIndex((f) => f.id === anchor) : -1;
+      // a missing anchor (the index was past the row) appends; only an explicit -1 inserts at the start
+      const found = anchor ? t.frames.findIndex((f) => f.id === anchor) : -1;
+      const at = found >= 0 ? found : after >= 0 ? t.frames.length - 1 : -1;
       return { ...t, frames: [...t.frames.slice(0, at + 1), ...taken, ...t.frames.slice(at + 1)] };
     });
   }

@@ -57,7 +57,7 @@ type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
 let scratch: OffscreenCanvas | null = null;
 
-/** Blends the canvas `src` (same pixel size as `dst`'s canvas, identity placement) onto `dst` at `alpha`; the transform of `dst` is ignored. */
+/** Blends the canvas `src` (identity placement at the origin, its own size; callers pass `dst`-sized surfaces) onto `dst` at `alpha`; the transform of `dst` is ignored. */
 export function blendCanvasOnto(dst: Ctx, src: CanvasImageSource, mode: BlendMode, alpha: number): void {
   const w = dst.canvas.width, h = dst.canvas.height;
   if (w < 1 || h < 1 || alpha <= 0) return;
@@ -67,7 +67,8 @@ export function blendCanvasOnto(dst: Ctx, src: CanvasImageSource, mode: BlendMod
   sx.setTransform(1, 0, 0, 1, 0, 0);
   sx.globalAlpha = 1;
   sx.globalCompositeOperation = 'copy';
-  sx.drawImage(src, 0, 0, w, h);
+  // placed at its own size (identity), never stretched: a source of another size lines up at the origin
+  sx.drawImage(src, 0, 0);
   sx.globalCompositeOperation = 'source-over';
   const a = sx.getImageData(0, 0, w, h);
   const b = dst.getImageData(0, 0, w, h);

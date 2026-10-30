@@ -2,7 +2,7 @@
 // weights, forward kinematics from per-bone rotations, and linear blend skinning to deformed vertices.
 // The output triangles use warpQuads's layout (12 numbers each: 3 source corners, 3 destination corners) so
 // warp-draw's triangle drawer renders them. Bones run first, then Warp / Distort (render.ts). Pure, no DOM.
-import { localToStage, type Rect } from './warp-draw';
+import { grab, localToStage, type Rect } from './warp-draw';
 import type { Animated } from './keys';
 import type { Bone, Content, Rig } from './types';
 
@@ -242,8 +242,8 @@ export function skinPoints(skin: Skin, mats: Float64Array, out?: Float32Array): 
  */
 export function boneQuads(rig: Rig, rot: Record<string, number> | null, rect: Rect, w: number, h: number, stage: Animated | null): Float32Array {
   const skin = skinOf(rig, rect);
-  const pts = skinPoints(skin, boneMatrices(rig, rot));
   const nv = skin.rx.length;
+  const pts = skinPoints(skin, boneMatrices(rig, rot), grab('bone-pts', nv * 2));
   if (stage) {
     const s = [0, 0];
     for (let v = 0; v < nv; v++) {
@@ -253,7 +253,7 @@ export function boneQuads(rig: Rig, rot: Record<string, number> | null, rect: Re
     }
   }
   const { cols, rows } = skin;
-  const out = new Float32Array(cols * rows * 24);
+  const out = grab('bone-quads', cols * rows * 24);
   let p = 0;
   const tri = (a: number, b: number, c: number): void => {
     out[p++] = skin.rx[a]; out[p++] = skin.ry[a];
@@ -290,7 +290,7 @@ export function deleteBone(c: Content, id: string): Content {
     for (const b of rig.bones) if (b.parent !== undefined && gone.has(b.parent) && !gone.has(b.id)) { gone.add(b.id); grew = true; }
   }
   const bones = rig.bones.filter((b) => !gone.has(b.id));
-  const keys = c.keys.flatMap((lane) => {
+  const keys = (c.keys ?? []).flatMap((lane) => {
     if (lane.kind !== 'bones') return [lane];
     const channels: typeof lane.channels = {};
     for (const ch in lane.channels) if (!gone.has(ch) && lane.channels[ch].length) channels[ch] = lane.channels[ch];

@@ -246,6 +246,10 @@ export class Engine extends Emitter<EngineEvents> {
   playSpan(): { lo: number; last: number } {
     const m = this.movie;
     const whole = { lo: 0, last: Math.max(0, (m?.duration ?? 1) - 1) };
+    if (m && m.loopFrom !== undefined && m.loopTo !== undefined && m.loopTo >= m.loopFrom) {
+      const lo = Math.max(0, Math.min(whole.last, Math.floor(m.loopFrom)));
+      return { lo, last: Math.max(lo, Math.min(whole.last, Math.floor(m.loopTo))) };
+    }
     const r = m?.loopVisible ? this.region?.() : null;
     if (!r) return whole;
     const lo = Math.max(0, Math.min(whole.last, Math.floor(r.from)));
@@ -257,7 +261,7 @@ export class Engine extends Emitter<EngineEvents> {
     const m = this.movie;
     if (!m || this.playing) return;
     const span = this.playSpan();
-    if (m.loopVisible && (this.frame < span.lo || this.frame > span.last)) this.seek(span.lo);
+    if ((m.loopVisible || m.loopFrom !== undefined) && (this.frame < span.lo || this.frame > span.last)) this.seek(span.lo);
     else if (m.playback === 'oneshot' && this.frame >= span.last) this.seek(span.lo);
     this.playing = true;
     this.direction = 1;

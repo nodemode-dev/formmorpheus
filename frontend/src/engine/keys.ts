@@ -615,6 +615,14 @@ export function hasKeyAt(lane: KeyLane, frame: number, channel?: string): boolea
 
 export function easeAt(lane: KeyLane, frame: number, channel?: string): Ease | null {
   if (channel) return (lane.channels[channel] ?? []).find((k) => k.frame === frame)?.ease ?? null;
+  // bones lanes have one channel per bone, not the kind's fixed list
+  if (lane.kind === 'bones') {
+    for (const id in lane.channels) {
+      const k = lane.channels[id].find((q) => q.frame === frame);
+      if (k) return k.ease;
+    }
+    return null;
+  }
   for (const spec of kindSpec(lane.kind).channels) {
     const k = (lane.channels[spec.id] ?? []).find((q) => q.frame === frame);
     if (k) return k.ease;

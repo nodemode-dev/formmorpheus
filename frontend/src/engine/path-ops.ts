@@ -5,7 +5,7 @@ import { handlesOf, laneSegments, pathNodes, smoothPathOn, type PathNode, type P
 const r1 = (n: number): number => Math.round(n * 10) / 10;
 
 function moveLane(c: Content): KeyLane | null {
-  return c.keys.find((l) => l.kind === 'move') ?? null;
+  return (c.keys ?? []).find((l) => l.kind === 'move') ?? null;
 }
 
 function withMove(c: Content, lane: KeyLane): Content {
