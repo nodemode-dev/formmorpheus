@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.3.0
-Last updated: 2026-10-30 · phases 1 to 3 (shell, movie model & history, Timeline in Compose)
+Current build version: v0.4.0
+Last updated: 2026-10-30 · phases 4 to 6 (Draw & Paint, Flipbook & onion skins, Keyframes)
 
 ---
 
@@ -32,7 +32,19 @@ frontend/
     │   ├── history.ts          snapshot undo w/ merge tags, recovery points, shared-node packing
     │   ├── engine.ts           Engine: run/undo/redo, selection, Playhead, modes, playback, jobs
     │   ├── events.ts           typed emitter
-    │   └── render.ts           Canvas 2D compositor: tracks, blends, masks, groups, thumbnails
+    │   ├── flip-ops.ts         Flipbook rows & frames, holds, split, conversion to & from tracks
+    │   ├── keys.ts             keyframe kinds & channels, temporal Bezier eases, animate()
+    │   ├── key-ops.ts          pure key edits: lanes, keys, eases, reverse, copy & paste, shift, scale
+    │   └── render.ts           Canvas 2D compositor: tracks, blends, masks, groups, flipbook rows, keys & live filters, thumbnails
+    ├── paint/                  the paint core, no DOM (OffscreenCanvas only in doc.ts)
+    │   ├── types.ts            contract: Raster, Mask, PixelPatch, PenSample, Brush, StrokeSettings, PaintLayer
+    │   ├── tips.ts, dynamics.ts, brushes.ts   tip shapes & grain, pressure curve & tilt, the starter library
+    │   ├── stroke.ts           dab engine: paint, smudge, erase, opacity cap, alpha lock, selection, tile snapshots
+    │   ├── input.ts            PointerEvents to PenSamples: coalesced & predicted points, streamline
+    │   ├── preview.ts          brush stroke previews for the panel
+    │   ├── doc.ts, history.ts  PaintDoc layers, compositing w/ clipping, encode & load, paint undo
+    │   ├── fill.ts, select.ts, transform.ts   color drop & fills, masks & outlines, affine / quad / mesh resampling
+    │   └── filters.ts          blur, sharpen, noise, HSB, lens blur (Draw & Paint & Keyframe live filters)
     ├── io/
     │   ├── api.ts              engine service client (library, capabilities, service state)
     │   ├── disk.ts             path helpers
@@ -52,13 +64,21 @@ frontend/
     │   ├── prefs.ts            formmorpheus.prefs store, font size, scale, system theme
     │   ├── icons-morph.ts      animation icons merged into ICONS
     │   ├── brand.ts            brand mark
+    │   ├── paint-view.ts       Draw & Paint: canvas, top bar, sidebar, strokes, frames, onion skins, saving
+    │   ├── paint-tools.ts      Select, Transform & Filters capsule & interactions
+    │   ├── paint-settings.ts   Settings popover (Add, Canvas, Onions, Prefs) & the pressure curve
+    │   ├── brush-panel.ts, layers-panel.ts, colour-panel.ts, flip-strip.ts   Draw & Paint panels
+    │   ├── key-lanes.ts        keyframe lane layout, drawing & hit tests
+    │   ├── action-menu.ts      Action menu, Motion & Live Filters lists, parameter cards, lane menus
     │   └── (from formvis)      dom, themes, icons, i18n, i18n/langs, commands, menu, native-menu,
     │                           caption-buttons, home, home-files, jobs-list, toast, dialogs,
     │                           dialog-history, dropdown, number-fields, command-palette, panels/controls
     └── styles/
         ├── tokens.css, fonts.css, shell.css, panels.css, dialogs.css, light-mode.css, scrollbars.css   (from formvis)
         ├── morpheus.css        Stage over Timeline layout & timeline tokens
-        └── popovers.css        popover, content, track, movie settings, new movie styles
+        ├── popovers.css        popover, content, track, movie settings, new movie styles
+        ├── paint.css           Draw & Paint view, sidebar, tools capsule
+        └── paint-panels.css, paint-settings.css, colour.css, flip-strip.css, keyframes.css
 ```
 
 ---
@@ -314,3 +334,95 @@ Three doc comments that named formvis were removed; their content: native menus 
 - logged: v0.3.0 · 2026-10-30
 
 Copied whole from formvis 1.98.4; most selectors (rail, options bar, layers, tiles, video timeline, plugins, assistant) are unused here. Prune by selector in a dedicated, approved pass; `morpheus.css` overrides the grid for the Stage over Timeline layout.
+
+---
+
+## src/paint (Phase 4) {#src-paint}
+
+### src/paint · provenance
+- refers-to: src/paint :: every file
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+A self-contained CPU paint core on plain straight-alpha RGBA rasters (ImageData layout, so a raster moves to a canvas w/o conversion). formvis's stroke engine is tied to tiled rasters, GPU dabs & its document, so the dab placement, opacity cap, smudge & pressure dynamics were adapted rather than copied whole; fill, select, transform & filters were written fresh against `types.ts`. The brush library, tip shapes & palettes are original.
+
+### src/paint/stroke.ts · Stroke
+- refers-to: src/paint/stroke.ts :: Stroke
+- kind: warning-context
+- logged: v0.4.0 · 2026-10-30
+
+The stroke opacity cap holds per stroke through a coverage buffer; tile snapshots (64 px) are taken on first touch so `finish()` returns one exact patch. The first dab waits for the second sample so a stroke-following dab knows its angle. `predicted` samples are ignored here (drawing them is the view's job; the view does not draw them yet). Mouse pressure is a fixed 0.5 and does not go through the pressure curve. Measured: one 2,000 sample stroke at 120 px on 3840x2160 about 490 ms in node (0.6 ms a dab).
+
+### src/paint/doc.ts · composite
+- refers-to: src/paint/doc.ts :: composite
+- kind: warning-context
+- logged: v0.4.0 · 2026-10-30
+
+Composites every visible layer each call; the view clips to the dirty rectangle before calling it (measured in headless software rendering: 20 layers at 4K, 90 to 190 ms clipped vs 410 to 540 ms unclipped). A clipped layer w/ a non-normal blend is exact over an opaque base & approximate at soft edges.
+
+### src/paint/doc.ts · encode
+- refers-to: src/paint/doc.ts :: encode
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Layers are stored as PNG pixel assets, one per changed layer, so a saved Drawing is ordinary pictures in the `.fmo` & the movie history only records asset ids. `convertToBlob` took about one second for a 1080p layer in headless Chromium, which is why the view saves Flipbook frames in the background (see paint-view).
+
+## src/ui/paint-view.ts {#src-ui-paint-view}
+
+### src/ui/paint-view.ts · commitDoc, parked
+- refers-to: src/ui/paint-view.ts :: commitDoc, encodeDoc, loadDoc, parked, saving
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Moving to another Flipbook frame parks the open PaintDoc & encodes it on a promise chain; the frame is found again by its id when the encode lands (frames can move meanwhile), the parked doc is reused if the person returns before it lands, & onion skins & strip thumbnails draw parked docs live. Done & strip edits wait for the whole chain. Frame moves pressed while a load runs are queued (`pendingNav`), never dropped.
+
+### src/ui/paint-view.ts · drawOnions, ghosts
+- refers-to: src/ui/paint-view.ts :: drawOnions, ghosts
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Tinted onion frames are built once per frame & setting & cached (24 kept); rebuilding them on every repaint made strokes on a Flipbook stall. Ghosts fade w/ distance from the current frame. Onion settings are the movie's unless the Flipbook has its own (`content.onion`).
+
+### src/ui/paint-view.ts · redraw
+- refers-to: src/ui/paint-view.ts :: redraw, paint, cursorBox
+- kind: warning-context
+- logged: v0.4.0 · 2026-10-30
+
+Pixel changes repaint only their screen rectangle (plus the old brush outline box); view changes repaint everything. Keep that split: a full repaint per pointer move is too slow at 4K.
+
+### src/ui/paint-tools.ts · lift, commitFloat
+- refers-to: src/ui/paint-tools.ts :: lift, commitFloat, dropFloat
+- kind: warning-context
+- logged: v0.4.0 · 2026-10-30
+
+Transform lifts the selection (or every pixel w/ alpha) into a float & keeps a full copy of the layer; Done writes one patch over the union of the source & destination rectangles, Cancel restores the copy. Freeform & Uniform preview through the canvas transform (fast); Distort & Warp preview by real resampling on pointer up.
+
+## src/engine (Phases 5 & 6) {#src-engine-p56}
+
+### src/engine/types.ts · FlipTrack, KeyLane
+- refers-to: src/engine/types.ts :: FlipTrack, Key, KeyLane, OnionSettings
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Flipbooks hold rows (`flip`), each a list of frames w/ holds that loop; `frames` on Content was replaced before any file shipped. Keys are stored per channel in content-local frames, w/ the ease of the span leaving each key; `options` carries the non-animated lane settings (Noise style). Onion settings count back & forward frames separately (0 turns a side off).
+
+### src/engine/keys.ts · evalChannel
+- refers-to: src/engine/keys.ts :: evalChannel, easeCurve
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Ported from formvfx's temporal Bezier (speed & influence, Newton then bisection); the presets use speed 0 & 33 percent influence on the eased end(s). Binary search, no allocation: about 71 ns a call on a 200 key channel.
+
+### src/engine/ops.ts · trimContent, splitContent, patchMovie
+- refers-to: src/engine/ops.ts :: trimContent, splitContent, patchMovie
+- kind: rationale
+- logged: v0.4.0 · 2026-10-30
+
+Trimming the start or splitting shifts keys so they stay at the same movie time; a frame rate change scales key times & Flipbook holds by the same ratio as content starts & durations.
+
+### src/engine/render.ts · applyFilters
+- refers-to: src/engine/render.ts :: applyFilters
+- kind: todo
+- logged: v0.4.0 · 2026-10-30
+
+Live filters run on the content's whole view-sized surface w/ getImageData, so a blur costs 100 ms or more a frame in software rendering. Limit the work to the content's bounds & move it to a worker (or the GPU compositor) before Phase 9 export.
