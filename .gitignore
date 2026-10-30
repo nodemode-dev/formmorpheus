@@ -3,6 +3,7 @@ frontend/dist/
 backend/venv/
 backend/build/
 backend/dist/
+backend/dist-engine/
 backend/*.spec
 __pycache__/
 *.pyc

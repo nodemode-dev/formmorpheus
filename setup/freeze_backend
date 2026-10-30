@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -e
+source "$(dirname "$0")/lib.sh"
+fm_venv
+python -c "import PyInstaller" 2>/dev/null || fm_die "PyInstaller missing, run ./formmorpheus install and pip install -r backend/requirements_desktop.txt"
+if [ -n "${FORMMORPHEUS_TARGET:-}" ]; then
+  triple="$FORMMORPHEUS_TARGET"
+else
+  command -v rustc >/dev/null 2>&1 || fm_die "rustc not found; install Rust or set FORMMORPHEUS_TARGET"
+  triple="$(rustc -vV | awk '/^host:/ {print $2}')"
+fi
+[ -f "$FM_ROOT/frontend/dist/index.html" ] || "$FM_ROOT/setup/build_frontend"
+cd "$FM_ROOT/backend"
+sep=":"
+[ "$(fm_os)" = windows ] && sep=";"
+ext=""
+[ "$(fm_os)" = windows ] && ext=".exe"
+extra=()
+[ -z "${FORMMORPHEUS_PYI_ARCH:-}" ] || extra+=(--target-arch "$FORMMORPHEUS_PYI_ARCH")
+mode=--onefile
+if [ "$(fm_os)" = macos ]; then
+  mode=--onedir
+  [ -z "${APPLE_SIGNING_IDENTITY:-}" ] || extra+=(--codesign-identity "$APPLE_SIGNING_IDENTITY" --osx-entitlements-file "$FM_ROOT/src-tauri/entitlements.plist")
+fi
+rm -rf build/pyinstaller dist-engine
+pyinstaller --noconfirm --clean "$mode" --name formmorpheus-engine \
+  --distpath dist-engine --workpath build/pyinstaller --specpath build/pyinstaller \
+  --add-data "$FM_ROOT/frontend/dist${sep}frontend_dist" \
+  --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring \
+  "${extra[@]}" \
+  "$FM_ROOT/backend/formmorpheus_engine.py"
+if [ "$mode" = --onedir ]; then
+  out="$FM_ROOT/src-tauri/engine"
+  rm -rf "$out"
+  cp -R dist-engine/formmorpheus-engine "$out"
+  "$out/formmorpheus-engine" --selfcheck
+  fm_say "engine folder ready: $out"
+  exit 0
+fi
+mkdir -p "$FM_ROOT/src-tauri/binaries"
+out="$FM_ROOT/src-tauri/binaries/formmorpheus-engine-${triple}${ext}"
+cp "dist-engine/formmorpheus-engine${ext}" "$out"
+"$out" --selfcheck
+fm_say "sidecar ready: $out"

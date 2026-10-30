@@ -1,0 +1,8 @@
+const APP_COMMANDS: &[&str] = &["app_ready", "set_window_title", "text_edit", "take_pending_opens"];
+
+fn main() {
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(APP_COMMANDS)),
+    )
+    .expect("failed to run the Tauri build step");
+}
