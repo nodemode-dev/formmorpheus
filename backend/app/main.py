@@ -1,9 +1,11 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core import config
-from app.routers import exports, library, system
+from app.routers import exports, files, jobs, library, recovery, system, trash
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=config.window_origins(), allow_methods=["*"], allow_headers=["*"])
@@ -11,6 +13,17 @@ app.add_middleware(CORSMiddleware, allow_origins=config.window_origins(), allow_
 app.include_router(system.router, prefix="/api")
 app.include_router(library.router, prefix="/api/library")
 app.include_router(exports.router, prefix="/api/exports")
+app.include_router(jobs.router, prefix="/api/jobs")
+app.on_event("startup")(jobs.sweep)
+app.include_router(files.router, prefix="/api/files")
+app.include_router(trash.router, prefix="/api/trash")
+app.include_router(recovery.router, prefix="/api/recovery")
+
+
+@app.on_event("startup")
+async def _start_trash_sweep() -> None:
+    # sweeps now, then once a day while the engine runs
+    app.state.trash_sweep = asyncio.create_task(trash.sweep_daily())
 
 _dist = config.dist_dir()
 if _dist is not None:

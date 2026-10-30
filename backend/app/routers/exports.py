@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from app.core import config
+from app.routers import trash
 
 router = APIRouter()
 
@@ -97,4 +98,5 @@ def delete_export(name: str) -> dict:
         raise HTTPException(404, "No export by that name.")
     dst = config.trash_dir() / f"{src.stem} {time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000_000:09d}{src.suffix}"
     os.replace(src, dst)
+    trash.record(dst, src.name, "export")
     return {"deleted": src.name, "kept": str(dst)}

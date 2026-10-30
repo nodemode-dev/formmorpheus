@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.core import config
+from app.routers import trash
 
 router = APIRouter()
 
@@ -120,4 +121,5 @@ def delete_project(name: str) -> dict:
         raise HTTPException(404, "No project by that name.")
     dst = config.trash_dir() / f"{src.stem} {time.strftime('%Y%m%d-%H%M%S')}{config.PROJECT_EXT}"
     os.replace(src, dst)
+    trash.record(dst, src.name, "movie")
     return {"deleted": src.stem, "kept": str(dst)}

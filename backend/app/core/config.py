@@ -11,6 +11,11 @@ BACKEND_PORT = 9494
 PROJECT_EXT = ".fmo"
 MAX_PROJECT_BYTES = 4 * 1024 * 1024 * 1024
 MAX_EXPORT_BYTES = 2 * 1024 * 1024 * 1024
+MAX_JOB_FRAMES = 36000
+MAX_JOB_SIDE = 8192
+MAX_JOB_FRAME_BYTES = 256 * 1024 * 1024
+MAX_JOB_AUDIO_BYTES = 1024 * 1024 * 1024
+JOB_MAX_AGE_SECONDS = 24 * 3600
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_DIR = BACKEND_DIR.parent
 
@@ -61,6 +66,10 @@ def library_dir() -> Path:
 
 def exports_dir() -> Path:
     return _ensure(data_dir() / "Exports")
+
+
+def jobs_dir() -> Path:
+    return _ensure(data_dir() / "Jobs")
 
 
 def trash_dir() -> Path:
