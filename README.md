@@ -7,7 +7,7 @@
 <p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.5.0-f97316" alt="version v0.5.0" />
+  <img src="https://img.shields.io/badge/version-v0.6.0-f97316" alt="version v0.6.0" />
   <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
@@ -17,7 +17,7 @@
 
 formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.5.0, phases 1 to 9 of 12
+**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.6.0, phases 1 to 12 of 12
 
 ## Highlights
 
@@ -32,6 +32,10 @@ formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in 
 - **Perform** drag a block on the Stage while the movie plays & your gesture becomes keys at the movie's frame rate (lift to pause, drag to resume), w/ motion filtering that thins the keys, pen barrel roll, & card sliders that record filters
 - **Video & sound** import video, sound, animated GIFs (as Flipbooks), TIFF & fonts; frame-accurate video, waveforms & filmstrips on the Timeline, sound locked to the picture by the audio clock, scrubbing, volume & Volume keys, separate audio from video
 - **Export** MP4, WebM (w/ transparency), MOV, animated GIF w/ its own palette & dithering, PNG, JPG or WebP frames, the current frame, ranges & ping pong; exports are kept on the Home screen's Exports page
+- **Engine export** ProRes 422 HQ, ProRes 4444 w/ transparency & HEVC through the ffmpeg you have installed, run by the engine as a separate program, w/ progress & cancel
+- **Safe by default** Recently Deleted keeps deleted movies & exports for 30 days w/ restore; crash recovery snapshots unsaved work every minute & offers it back after a crash
+- **In your language** the interface in 30 languages, right to left included; an in-app manual (F1) w/ search
+- **Desktop apps** `./build_app` makes the macOS app & dmg, Windows msi & installer, Linux deb & AppImage; `.fmo` files open in the running app & join the OS recent list
 - **Keyframes** Move & Scale plus live filters (opacity, Gaussian blur, sharpen, noise, hue saturation brightness, lens blur) keyed on lanes under each block, easing (linear, ease in, ease out, ease in & out, hold), expanded per-channel rows, copy, paste & reverse
 - **The form family shell** the same splash & reveal, title bar, menus (in the window or the macOS menu bar), Home screen, Preferences & status bar as formvis, w/ 28 shared themes & zero flash on load
 
@@ -78,6 +82,8 @@ formmorpheus.bat
 | `FORMMORPHEUS_LIBRARY_DIR` | a different folder for the movie library |
 | `FORMMORPHEUS_PORT` | the backend port (desktop app: 0, a free port) |
 | `FORMMORPHEUS_DEV_URL` | debug desktop builds only: load this interface URL instead of the engine's |
+| `FORMMORPHEUS_FFMPEG` | the ffmpeg program for ProRes & HEVC export (default: beside the engine, then `PATH`) |
+| `APPLE_SIGNING_IDENTITY`, `WINDOWS_CERT_THUMBPRINT` | optional: sign the desktop build made by `./build_app` |
 
 Set them in the shell. No `.env` is read or committed.
 
@@ -94,15 +100,19 @@ formmorpheus/
 │   ├── src/io/            the engine service client & the .fmo format
 │   ├── src/app/app.ts     wiring: commands, menus, keys, save & open
 │   └── src/styles/        tokens & stylesheets (tokens only, z-index from the scale)
-├── backend/               the engine service (FastAPI): library of .fmo movies, kept exports, capabilities
-├── src-tauri/             the desktop shell (Tauri 2): splash, reveal, title bar, engine sidecar
-├── setup/                 install, boot, freeze & desktop scripts behind ./formmorpheus
+├── backend/               the engine service (FastAPI): library of .fmo movies, kept exports, export jobs, Recently Deleted, crash recovery
+├── src-tauri/             the desktop shell (Tauri 2): splash, reveal, title bar, engine sidecar, single instance, recent documents
+├── setup/                 install, boot, freeze, desktop & lint scripts behind ./formmorpheus
+├── docs/MANUAL.md         the user manual (also the in-app Help)
+├── .docs/wiki/            the GitHub wiki pages
+├── .github/workflows/     CI: typecheck, build, engine import, cargo check, text lint
+├── build_app              the desktop build, start to finish
 └── assets/                repo-level art (not wired into the build)
 ```
 
 ## Status
 
-Phases 1 to 9 of the plan have landed: the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, & export. Next are engine jobs & desktop distribution (ProRes & HEVC through ffmpeg, signed builds, translations), the stability gate, & the iPad edition MorpheusMobile after it. The desktop shell compiles on Linux; macOS & Windows builds are untested here.
+All 12 phases of the plan have landed: the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work (performance budgets, memory caps, crash recovery, CI) & the documentation. The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
 
 ## Development
 

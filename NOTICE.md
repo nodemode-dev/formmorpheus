@@ -14,5 +14,7 @@ formmorpheus is licensed under the Apache License 2.0 (`LICENSE`). It includes o
 | FastAPI, Starlette, Uvicorn | the engine service | MIT (FastAPI), BSD-3-Clause (Starlette, Uvicorn) |
 | PyInstaller (build only, `backend/requirements_desktop.txt`) | freezes the engine for the desktop app | GPL-2.0 with the bootloader exception: the frozen program is not covered by the GPL |
 | Vite, TypeScript, Tauri API, CLI and plugins (shell, dialog, single instance) | build and desktop | MIT, Apache-2.0, MIT OR Apache-2.0 |
+| gtk-rs `gtk` 0.18 (Linux desktop only, already in the tree through Tauri) | the OS recent documents list | MIT |
+| ffmpeg (not included) | ProRes and HEVC export jobs run the copy the person installed, as a separate program; formmorpheus never ships or links it, so its license (LGPL or GPL, as built) stays theirs | not distributed |
 
 formmorpheus is not affiliated with the makers of any other animation software. Its movie format is its own (`.fmo`).
