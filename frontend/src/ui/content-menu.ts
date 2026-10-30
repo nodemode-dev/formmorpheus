@@ -9,7 +9,9 @@ import { icon } from './icons';
 import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
 import { BoilMake } from './boil-make';
+import { canConvert } from './flip-convert';
 import { ParentPicker } from './parent-picker';
+import { TransformRows } from './stage-box-menu';
 
 const MASKS: Array<[MaskMode, string]> = [['none', 'None'], ['clipping', 'Clipping'], ['alpha', 'Alpha'], ['luminance', 'Luminance']];
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -43,6 +45,8 @@ export class ContentMenu {
   private readonly lip: PopRow;
   /** Opens the lip-sync dialog for the selection (set by the app). */
   onLipsync: (() => void) | null = null;
+  /** Converts the selection to a Flipbook (bakes non-Drawing content first); set by the app. */
+  onConvert: ((ids: string[]) => void) | null = null;
   private readonly formvis: PopRow;
   onEditInFormvis: ((id: string) => void) | null = null;
   private readonly group: PopRow;
@@ -50,6 +54,7 @@ export class ContentMenu {
   private readonly del: PopRow;
   private readonly track: TrackMenu;
   private readonly parents: ParentPicker;
+  private readonly xform: TransformRows;
 
   constructor(private readonly engine: Engine) {
     this.pop = new Popover('fm-cm', 264);
@@ -151,7 +156,8 @@ export class ContentMenu {
     this.toFlip = popRow('flipbook', 'Convert to Flipbook');
     this.toFlip.el.addEventListener('click', () => {
       const ids = this.ids;
-      this.engine.run('Convert to Flipbook', (m) => { const r = flipOps.tracksToFlipbook(m, ids); return { movie: r.movie, select: [r.id] }; });
+      if (this.onConvert) this.onConvert(ids);
+      else this.engine.run('Convert to Flipbook', (m) => { const r = flipOps.tracksToFlipbook(m, ids); return { movie: r.movie, select: [r.id] }; });
       this.pop.hide();
     });
     this.boilMake = new BoilMake(engine);
@@ -204,7 +210,8 @@ export class ContentMenu {
     this.track.embed(this.pop, trackRow.el, () => this.trackOf());
 
     this.parents = new ParentPicker(engine, this.pop);
-    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, popSep(),
+    this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
+    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows, popSep(),
       this.toFlip.el, this.toBoil.el, this.toTracks.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
@@ -294,7 +301,7 @@ export class ContentMenu {
     const bl = BLEND_MODES.find((b) => b.id === (first?.blend ?? 'normal')) ?? BLEND_MODES[0];
     this.blend.ico.textContent = bl.short;
     setClass(this.blend.ico, 'is-glyph', true);
-    for (const [id, r] of this.blendRows) r.setChecked(id === bl.id);
+    for (const [id, r] of this.blendRows) { r.setChecked(id === bl.id); if (id === 'passthrough') setClass(r.el, 'is-gone', !sel.some((c) => c.kind === 'group')); }
     const mk = first?.mask ?? 'none';
     for (const [id, r] of this.maskRows) r.setChecked(id === mk);
     this.invert.setChecked(!!first?.maskInvert);
@@ -305,7 +312,7 @@ export class ContentMenu {
     setClass(this.reverse.el, 'is-gone', this.engine.mode !== 'keyframe');
     this.reverse.setDisabled(!sel.some((c) => c.keys.length > 0));
     this.fill.setDisabled(none);
-    setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => c.kind === 'drawing'));
+    setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => canConvert(c)));
     setClass(this.toBoil.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     setClass(this.toTracks.el, 'is-gone', !(sel.length === 1 && first.kind === 'flipbook'));
     const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
@@ -314,6 +321,7 @@ export class ContentMenu {
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);
     this.parents.patch(this.ids);
+    this.xform.patch();
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     this.del.setDisabled(none);
   }

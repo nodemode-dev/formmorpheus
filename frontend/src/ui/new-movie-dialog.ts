@@ -36,6 +36,8 @@ export class NewMovieDialog extends Dialog {
   private readonly seconds = el<HTMLInputElement>('<input class="cv-input" type="number" min="1" max="3600" step="1" value="10" aria-label="Duration in seconds">');
   private readonly starts: HTMLButtonElement[] = [];
   private state: Saved = load();
+  /** Called with the id of the Flipbook a "Flipbook" start made, so the editor can open at once. */
+  onFlipbook: ((contentId: string) => void) | null = null;
 
   constructor(private readonly engine: Engine) {
     super('New Movie', 560);
@@ -150,5 +152,7 @@ export class NewMovieDialog extends Dialog {
       flipbook: this.state.start === 'flipbook',
     });
     this.close();
+    const made = this.state.start === 'flipbook' ? this.engine.movie?.tracks[0]?.content[0]?.id : undefined;
+    if (made) this.onFlipbook?.(made);
   }
 }

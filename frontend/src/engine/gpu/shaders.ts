@@ -91,6 +91,15 @@ vec3 blendFn(vec3 b, vec3 s) {
     case 13: return setLum(setSat(b, sat(s)), lum(b));
     case 14: return setLum(s, lum(b));
     case 15: return setLum(b, lum(s));
+    case 17: return clamp(b + s - 1.0, 0.0, 1.0);
+    case 18: return lum(s) < lum(b) ? s : b;
+    case 19: return lum(s) < lum(b) ? b : s;
+    case 20: return vec3(s.r <= 0.5 ? burn(b.r, 2.0 * s.r) : dodge(b.r, 2.0 * (s.r - 0.5)), s.g <= 0.5 ? burn(b.g, 2.0 * s.g) : dodge(b.g, 2.0 * (s.g - 0.5)), s.b <= 0.5 ? burn(b.b, 2.0 * s.b) : dodge(b.b, 2.0 * (s.b - 0.5)));
+    case 21: return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);
+    case 22: return vec3(s.r <= 0.5 ? min(b.r, 2.0 * s.r) : max(b.r, 2.0 * s.r - 1.0), s.g <= 0.5 ? min(b.g, 2.0 * s.g) : max(b.g, 2.0 * s.g - 1.0), s.b <= 0.5 ? min(b.b, 2.0 * s.b) : max(b.b, 2.0 * s.b - 1.0));
+    case 23: return vec3(b.r + s.r >= 1.0 ? 1.0 : 0.0, b.g + s.g >= 1.0 ? 1.0 : 0.0, b.b + s.b >= 1.0 ? 1.0 : 0.0);
+    case 24: return clamp(b - s, 0.0, 1.0);
+    case 25: return vec3(s.r <= 0.0 ? (b.r <= 0.0 ? 0.0 : 1.0) : min(1.0, b.r / s.r), s.g <= 0.0 ? (b.g <= 0.0 ? 0.0 : 1.0) : min(1.0, b.g / s.g), s.b <= 0.0 ? (b.b <= 0.0 ? 0.0 : 1.0) : min(1.0, b.b / s.b));
   }
   return s;
 }
@@ -113,7 +122,7 @@ uniform int uInvert;
 out vec4 o;
 void main() {
   vec4 m = texelFetch(uMask, ivec2(gl_FragCoord.xy), 0);
-  float v = uKind == 1 ? dot(m.rgb, vec3(0.2126, 0.7152, 0.0722)) : m.a;
+  float v = uKind == 1 ? dot(m.rgb, vec3(0.299, 0.587, 0.114)) : m.a;
   if (uInvert == 1) v = 1.0 - v;
   o = vec4(clamp(v, 0.0, 1.0));
 }`;

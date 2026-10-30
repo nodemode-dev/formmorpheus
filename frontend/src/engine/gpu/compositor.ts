@@ -37,6 +37,7 @@ export type Mat = [number, number, number, number, number, number];
 const MODE: Record<BlendMode, number> = {
   normal: 0, multiply: 1, screen: 2, overlay: 3, darken: 4, lighten: 5, 'color-dodge': 6, 'color-burn': 7, 'hard-light': 8,
   'soft-light': 9, difference: 10, exclusion: 11, hue: 12, saturation: 13, color: 14, luminosity: 15, add: 16, passthrough: 0,
+  'linear-burn': 17, 'darker-color': 18, 'lighter-color': 19, 'vivid-light': 20, 'linear-light': 21, 'pin-light': 22, 'hard-mix': 23, subtract: 24, divide: 25,
 };
 const ADD = 16;
 

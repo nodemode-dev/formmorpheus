@@ -1,12 +1,16 @@
 // The floating Flipbook frame strip (Phase 5): rows of frame cells under a ruler, bottom centre of the Draw & Paint view.
 // Built once; refresh() patches rows and cells in place by key and never rebuilds a mounted subtree.
-import { addFlipTrack, clearFrame, deleteFlipTrack, deleteFrame, duplicateFrame, insertFrame, moveFlipTrack, pasteFrames, patchFlipTrack, setHold } from '../engine/flip-ops';
+import {
+  addFlipTrack, clearFrame, cloneFlipTrack, deleteFlipTrack, deleteFrame, deleteFrames, duplicateFrame, fillFrame, flipFrames, insertFlipTrack, insertFrame, moveFlipTrack, moveFrames,
+  pasteFrames, patchFlipTrack, pullFrame, pushFrame, setHold, setHolds, splitFrame, type FrameRef,
+} from '../engine/flip-ops';
 import { flipLength, flipStartOf } from '../engine/model';
 import { isMaskRow } from '../engine/flip-draw';
 import { flipDuration } from '../engine/flip-ops';
 import { FlipPreview } from './flip-preview';
+import { FlipSelect, Lasso } from './flip-select';
 import { loadPrefs } from './prefs';
-import type { Content, FlipTrack, FlipbookFrame } from '../engine/types';
+import { BLEND_MODES, HIGHLIGHTS, type BlendMode, type Content, type FlipTrack, type FlipbookFrame, type Highlight } from '../engine/types';
 import { el, patchList, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { icon } from './icons';
 import { Popover, popField, popRow, popSep } from './popover';
@@ -24,6 +28,8 @@ export interface StripHost {
   /** The mini preview: the movie size, and a loop frame drawn (live frame included) into a scaled context. */
   movieSize(): { w: number; h: number } | null;
   drawPreview(ctx: CanvasRenderingContext2D, w: number, h: number, local: number): void;
+  /** The movie fps loop frame the open flipbook shows during playback (for the Mini Flipbook). */
+  playAt?(): number;
 }
 
 const COL = 36;
@@ -34,6 +40,9 @@ const LONG_PRESS = 500;
 
 /** Shared across strips: copied frames stay until the next copy. */
 let clipboard: FlipbookFrame[] = [];
+/** Copied or cut row, for Paste on a track. */
+let trackClip: FlipTrack | null = null;
+const HL_LABEL = (h: Highlight): string => h.charAt(0).toUpperCase() + h.slice(1);
 
 const svg = (body: string, extra = ''): string =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${body}</svg>`;
@@ -45,6 +54,9 @@ const ICO = {
   preview: svg('<rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="M10 9.4v5.2l4.4-2.6z" fill="currentColor"/>'),
   tracks: svg('<rect x="3" y="4" width="18" height="4.4" rx="1.4"/><rect x="3" y="10" width="18" height="4.4" rx="1.4"/><rect x="3" y="16" width="18" height="4.4" rx="1.4"/>'),
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>',
+  multi: svg('<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8" stroke-dasharray="2.4 2.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8" stroke-dasharray="2.4 2.4"/><path d="M14.5 17l2.2 2.2 4-4.4"/>'),
+  chev: svg('<path d="M7 10l5 5 5-5"/>'),
+  mini: svg('<rect x="3" y="14" width="18" height="6" rx="2"/><path d="M12 11V4m-3 3 3-3 3 3"/>'),
 };
 const glyph = (s: string, size = 16): string => `<span class="icon" style="width:${size}px;height:${size}px" aria-hidden="true">${s}</span>`;
 
@@ -69,6 +81,10 @@ export class FlipStrip {
   private lastSel = '';
   private cellTarget: { track: string; frame: string } | null = null;
   private rowTarget: string | null = null;
+  private cellXY = { x: 0, y: 0 };
+  private cellOff = 0;
+  private reloadTimer = 0;
+  private reloaded = false;
   private pressTimer = 0;
   private suppressClick = false;
   private ro: ResizeObserver | null = null;
@@ -77,23 +93,47 @@ export class FlipStrip {
   private readonly cm: {
     cut: ReturnType<typeof tile>; copy: ReturnType<typeof tile>; paste: ReturnType<typeof tile>; dup: ReturnType<typeof tile>;
     hold: ReturnType<typeof popField>; clear: ReturnType<typeof popRow>; del: ReturnType<typeof popRow>; ins: ReturnType<typeof popRow>;
+    split: ReturnType<typeof popRow>; fill: ReturnType<typeof popRow>; flip: ReturnType<typeof popRow>; opts: ReturnType<typeof popRow>;
   };
   private readonly rm: {
     rename: ReturnType<typeof popRow>; toggle: ReturnType<typeof popRow>; up: ReturnType<typeof popRow>; down: ReturnType<typeof popRow>; del: ReturnType<typeof popRow>;
     range: HTMLInputElement; pct: HTMLElement;
-    maskNone: ReturnType<typeof popRow>; maskAlpha: ReturnType<typeof popRow>; maskLuma: ReturnType<typeof popRow>; invert: ReturnType<typeof popRow>;
+    maskNone: ReturnType<typeof popRow>; maskClip: ReturnType<typeof popRow>; maskAlpha: ReturnType<typeof popRow>; maskLuma: ReturnType<typeof popRow>; invert: ReturnType<typeof popRow>;
+    cut: ReturnType<typeof tile>; copy: ReturnType<typeof tile>; paste: ReturnType<typeof tile>; dup: ReturnType<typeof tile>;
+    hlRows: Map<Highlight, ReturnType<typeof popRow>>; blendRows: Map<BlendMode, ReturnType<typeof popRow>>; hl: ReturnType<typeof popRow>; blend: ReturnType<typeof popRow>;
   };
+  private readonly subPanels: HTMLElement[] = [];
+  readonly sel = new FlipSelect();
+  private readonly lasso: Lasso;
+  private readonly dropLine: HTMLElement;
+  private readonly multiBtn: HTMLElement;
+  private readonly body: HTMLElement;
+  /** Cells into the open frame's hold the playhead sits at (a click inside a held cell). */
+  private within = 0;
+  private withinKey = '';
+  /** Called when the Mini Flipbook toggle is pressed. */
+  onMini: (() => void) | null = null;
+  /** Called after every paint; `true` when the thumbnails were thrown away (the Mini Flipbook redraws its own). */
+  onPaint: ((invalid: boolean) => void) | null = null;
+  private miniBtn: HTMLElement | null = null;
 
   constructor(private readonly host: StripHost) {
     this.root = el<HTMLElement>(
       `<div class="fm-fs" tabindex="0" role="group" aria-label="Flipbook frames">` +
         `<div class="fm-fs-head"><button class="fm-fs-play" type="button"><span class="fm-fs-play-ico"></span><span class="fm-fs-play-lab">Play</span></button>` +
         `<span class="fm-fs-grip" aria-hidden="true"></span>` +
+        `<button class="fm-fs-ib" data-act="mini" type="button" title="Mini Flipbook" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}</button>` +
         `<button class="fm-fs-ib" data-act="preview" type="button" title="Mini preview" aria-label="Mini preview">${glyph(ICO.preview, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="track"type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}</button>` +
         `<button class="fm-fs-ib" data-act="frame" type="button" title="Add frame" aria-label="Add frame">${icon('plus', 18)}</button></div>` +
         `<div class="fm-fs-body"><div class="fm-fs-rulerrow"><div class="fm-fs-corner"></div><div class="fm-fs-ruler"><div class="fm-fs-ruler-in"></div></div></div>` +
-        `<div class="fm-fs-rows"></div></div></div>`);
+        `<div class="fm-fs-rows"></div><div class="fm-fs-drop" hidden></div></div></div>`);
+    this.body = q(this.root, '.fm-fs-body');
+    this.lasso = new Lasso(this.body);
+    this.dropLine = q(this.root, '.fm-fs-drop');
+    this.multiBtn = q(this.root, '[data-act="multi"]');
+    this.miniBtn = q(this.root, '[data-act="mini"]');
     this.head = q(this.root, '.fm-fs-head');
     this.playBtn = q(this.root, '.fm-fs-play');
     this.playIco = q(this.root, '.fm-fs-play-ico');
@@ -124,6 +164,7 @@ export class FlipStrip {
   invalidate(): void {
     for (const n of Array.from(this.rows.querySelectorAll<HTMLElement>('.fm-fs-cell'))) delete n.dataset.sig;
     this.refresh();
+    this.onPaint?.(true);
   }
 
   refresh(): void { this.paint(); }
@@ -136,6 +177,7 @@ export class FlipStrip {
     this.rowMenu.hide();
     this.cellMenu.el.remove();
     this.rowMenu.el.remove();
+    for (const p of this.subPanels) p.remove();
     this.root.remove();
   }
 
@@ -154,6 +196,7 @@ export class FlipStrip {
   private paint(): void {
     const c = this.host.content();
     const list = c?.flip ?? [];
+    if (c) this.sel.prune(c);
     const ar = this.host.row();
     const ai = this.host.index();
     this.cols = list.reduce((m, t) => Math.max(m, flipLength(t)), 0);
@@ -198,15 +241,19 @@ export class FlipStrip {
       update: (node, it) => this.updateRow(node, it, ar, ai),
     });
     setClass(this.rows, 'is-scroll', list.length > 3);
+    setClass(this.multiBtn, 'is-on', this.sel.multi);
+    setClass(this.root, 'is-multi', this.sel.multi);
     setHidden(this.root, !c);
     if (this.previewBtn) setClass(this.previewBtn, 'is-on', this.preview.isOn());
     this.preview.sync(!!c);
+    this.onPaint?.(false);
   }
 
   private createRow(_it: RowItem): HTMLElement {
     return el<HTMLElement>(
       `<div class="fm-fs-row"><div class="fm-fs-label"><input class="fm-fs-vis" type="checkbox" aria-label="Visible">` +
-        `<span class="fm-fs-name"></span><input class="fm-fs-rename" type="text" spellcheck="false" hidden></div>` +
+        `<span class="fm-fs-name"></span><button class="fm-fs-opts" type="button" tabindex="-1" title="Track options" aria-label="Track options">${glyph(ICO.chev, 12)}</button>` +
+        `<input class="fm-fs-rename" type="text" spellcheck="false" hidden></div>` +
         `<div class="fm-fs-lane"><div class="fm-fs-lane-in"></div></div></div>`);
   }
 
@@ -219,6 +266,8 @@ export class FlipStrip {
     setClass(label, 'is-active', r === ar);
     setClass(node, 'is-hidden', t.hidden);
     setClass(node, 'is-mask', isMaskRow(t));
+    setClass(node, 'is-clip', t.mask === 'clipping');
+    setClass(node, 'is-blend', t.blend !== 'normal');
     if (label.dataset.hl !== t.highlight) label.dataset.hl = t.highlight;
     const inner = q<HTMLElement>(node, '.fm-fs-lane-in');
     const lo = Math.floor(this.sx / COL) - 6;
@@ -234,13 +283,14 @@ export class FlipStrip {
       setStyleVar(cell, 'width', `${hold * COL - 2}px`);
       setClass(cell, 'is-cur', c.r === ar && c.i === ai);
       setClass(cell, 'is-held', hold > 1);
+      setClass(cell, 'is-sel', this.sel.has(t.id, c.f.id));
       if ((cell.dataset.name ?? '') !== (c.f.name ?? '')) { if (c.f.name) { cell.dataset.name = c.f.name; cell.title = c.f.name; } else { delete cell.dataset.name; cell.removeAttribute('title'); } }
       setText(q(cell, '.fm-fs-hold'), hold > 1 ? `×${hold}` : '');
       if (c.start + hold >= lo && c.start <= hi) this.drawCell(cell, c);
     };
     patchList(inner, cells, {
       key: (c) => c.f.id,
-      create: (c) => { const n = el<HTMLElement>(`<div class="fm-fs-cell"><span class="fm-fs-hold"></span></div>`); upd(n, c); return n; },
+      create: (c) => { const n = el<HTMLElement>(`<div class="fm-fs-cell"><span class="fm-fs-hold"></span><span class="fm-fs-trim" title="Drag to change how long the frame is held"></span></div>`); upd(n, c); return n; },
       update: upd,
     });
   }
@@ -303,9 +353,25 @@ export class FlipStrip {
     this.host.select(row, Math.max(0, Math.min(c.flip[row].frames.length - 1, i)));
   }
 
-  private addFrame(): void {
+  /** Cells into the open frame's hold the playhead was put at; 0 once the open frame changed by other means. */
+  private curWithin(): number {
+    const t = this.host.content()?.flip[this.host.row()];
+    return this.withinKey === `${t?.id ?? ''}:${this.host.index()}` ? this.within : 0;
+  }
+
+  /** Add Frame: inside a hold it ends the hold at the playhead (Alt keeps the hold and adds after it); on the last frame of a row it adds to every row. */
+  private addFrame(alt = false): void {
+    const c = this.host.content();
     const r = this.host.row(), i = this.host.index();
-    this.host.run('Add frame', (c) => insertFrame(c, r, i));
+    const t = c?.flip[r];
+    const f = t?.frames[i];
+    if (!c || !t || !f) return;
+    const w = this.curWithin();
+    if (!alt && f.hold > 1 && w < f.hold - 1) {
+      this.host.run('Add frame', (x) => insertFrame(setHold(x, r, i, w + 1), r, i));
+    } else if (i === t.frames.length - 1 && c.flip.length > 1) {
+      this.host.run('Add frame', (x) => x.flip.reduce((acc, row, k) => insertFrame(acc, k, row.frames.length - 1), x));
+    } else this.host.run('Add frame', (x) => insertFrame(x, r, i));
     this.clampSel(r, i + 1);
   }
 
@@ -324,12 +390,56 @@ export class FlipStrip {
   }
 
   /** Index the active frame ends up at after the frame list of the active row changed at `at`. */
-  private cellAction(kind: 'cut' | 'copy' | 'paste' | 'dup' | 'ins' | 'clear' | 'del'): void {
+  /** The frames of a set, row by row from the top, each row in time order. */
+  private framesOf(refs: FrameRef[]): FlipbookFrame[] {
+    const c = this.host.content();
+    if (!c) return [];
+    const out: FlipbookFrame[] = [];
+    for (const t of c.flip) {
+      const ref = refs.find((x) => x.track === t.id);
+      if (ref) for (const f of t.frames) if (ref.frames.includes(f.id)) out.push(f);
+    }
+    return out;
+  }
+
+  /** Cut, Copy, Duplicate, Flip, Clear and Delete over the whole selection; true when handled. */
+  private multiAction(kind: string): boolean {
+    const refs = this.sel.refs();
+    const c = this.host.content();
+    if (!c) return false;
+    const act = this.host.index();
+    const keep = (): void => this.clampSel(this.host.row(), act);
+    switch (kind) {
+      case 'copy': clipboard = this.framesOf(refs); return true;
+      case 'cut': clipboard = this.framesOf(refs); this.host.run('Cut frames', (x) => deleteFrames(x, refs)); keep(); return true;
+      case 'del': this.host.run('Delete frames', (x) => deleteFrames(x, refs)); keep(); return true;
+      case 'flip': this.host.run('Flip frames', (x) => flipFrames(x, refs)); return true;
+      case 'clear': this.host.run('Clear frames', (x) => refs.reduce((acc, ref) => {
+        const row = acc.flip.findIndex((t) => t.id === ref.track);
+        return acc.flip[row].frames.reduce((a, f, i) => (ref.frames.includes(f.id) ? clearFrame(a, row, i) : a), acc);
+      }, x)); return true;
+      case 'dup': this.host.run('Duplicate frames', (x) => refs.reduce((acc, ref) => {
+        const row = acc.flip.findIndex((t) => t.id === ref.track);
+        const t = acc.flip[row];
+        const own = t.frames.filter((f) => ref.frames.includes(f.id));
+        const last = t.frames.findIndex((f) => f.id === own[own.length - 1].id);
+        return pasteFrames(acc, row, last, own);
+      }, x)); return true;
+      default: return false;
+    }
+  }
+
+  private cellAction(kind: 'cut' | 'copy' | 'paste' | 'dup' | 'ins' | 'clear' | 'del' | 'split' | 'fill' | 'flip' | 'opts'): void {
     const tg = this.cellTarget;
     const hit = tg ? this.find(tg.track, tg.frame) : null;
     this.cellMenu.hide();
-    if (!hit || hit.i < 0) return;
+    if (!hit || hit.i < 0 || !tg) return;
+    if (this.sel.count > 0 && this.sel.has(tg.track, tg.frame) && this.multiAction(kind)) return;
     const { r, i, t } = hit;
+    if (kind === 'flip') return;
+    if (kind === 'opts') { this.openRowMenu(tg.track, this.cellXY.x, this.cellXY.y); return; }
+    if (kind === 'split') { this.host.run('Split content', (c) => splitFrame(c, r, i, Math.max(1, this.cellOff))); return; }
+    if (kind === 'fill') { this.host.run('Fill duration', (c) => fillFrame(c, r, i)); return; }
     const onRow = r === this.host.row();
     const act = this.host.index();
     const frame = t.frames[i];
@@ -365,6 +475,7 @@ export class FlipStrip {
     const n = parseInt(this.cm.hold.input.value, 10);
     this.cellMenu.hide();
     if (!hit || hit.i < 0 || !Number.isFinite(n)) return;
+    if (tg && this.sel.count > 0 && this.sel.has(tg.track, tg.frame)) { const refs = this.sel.refs(); this.host.run('Frame duration', (c) => setHolds(c, refs, n)); return; }
     this.host.run('Frame duration', (c) => setHold(c, hit.r, hit.i, n));
     this.host.select(this.host.row(), this.host.index());
   }
@@ -448,8 +559,16 @@ export class FlipStrip {
     clear.el.addEventListener('click', () => this.cellAction('clear'));
     const del = popRow('delete', 'Delete frame', { danger: true });
     del.el.addEventListener('click', () => this.cellAction('del'));
-    this.cellMenu.body.append(tiles, popSep(), ins.el, hold.el, clear.el, popSep(), del.el);
-    return { cut, copy, paste, dup, hold, clear, del, ins };
+    const split = popRow('split', 'Split content');
+    split.el.addEventListener('click', () => this.cellAction('split'));
+    const fill = popRow('fillDuration', 'Fill duration');
+    fill.el.addEventListener('click', () => this.cellAction('fill'));
+    const flip = popRow('flipbook', 'Flip frames');
+    flip.el.addEventListener('click', () => this.cellAction('flip'));
+    const opts = popRow('sliders', 'Track options');
+    opts.el.addEventListener('click', () => this.cellAction('opts'));
+    this.cellMenu.body.append(tiles, popSep(), ins.el, split.el, fill.el, flip.el, hold.el, opts.el, popSep(), clear.el, del.el);
+    return { cut, copy, paste, dup, hold, clear, del, ins, split, fill, flip, opts };
   }
 
   private buildRowMenu(): FlipStrip['rm'] {
@@ -477,7 +596,7 @@ export class FlipStrip {
     const del = popRow('delete', 'Delete track', { danger: true });
     del.el.addEventListener('click', () => this.rowAction('del'));
     // a masking row cuts the row below it and is not drawn itself
-    const setMask = (mask: 'none' | 'alpha' | 'luminance'): void => {
+    const setMask = (mask: 'none' | 'clipping' | 'alpha' | 'luminance'): void => {
       const id = this.rowTarget;
       const hit = id ? this.find(id) : null;
       this.rowMenu.hide();
@@ -485,6 +604,8 @@ export class FlipStrip {
     };
     const maskNone = popRow(null, 'No mask', { check: true });
     maskNone.el.addEventListener('click', () => setMask('none'));
+    const maskClip = popRow(null, 'Clipping mask', { check: true });
+    maskClip.el.addEventListener('click', () => setMask('clipping'));
     const maskAlpha = popRow(null, 'Alpha mask', { check: true });
     maskAlpha.el.addEventListener('click', () => setMask('alpha'));
     const maskLuma = popRow(null, 'Luminance mask', { check: true });
@@ -496,17 +617,97 @@ export class FlipStrip {
       this.rowMenu.hide();
       if (hit) this.host.run('Invert row mask', (c) => patchFlipTrack(c, hit.r, { maskInvert: !hit.t.maskInvert }));
     });
-    this.rowMenu.body.append(rename.el, op, toggle.el, popSep(), maskNone.el, maskAlpha.el, maskLuma.el, invert.el, popSep(), up.el, down.el, popSep(), del.el);
-    return { rename, toggle, up, down, del, range, pct, maskNone, maskAlpha, maskLuma, invert };
+    // Cut / Copy / Paste / Duplicate of the whole row
+    const tiles = el<HTMLElement>('<div class="fm-cm-tiles"></div>');
+    const rowOp = (kind: 'cut' | 'copy' | 'paste' | 'dup'): void => this.trackAction(kind);
+    const cut = tile(ICO.cut, 'Cut', () => rowOp('cut'));
+    const copy = tile(ICO.copy, 'Copy', () => rowOp('copy'));
+    const paste = tile(ICO.paste, 'Paste', () => rowOp('paste'));
+    const dup = tile(ICO.dup, 'Duplicate', () => rowOp('dup'));
+    tiles.append(cut.el, copy.el, paste.el, dup.el);
+    // Highlight (eight colors) and Blend mode, as submenus
+    const hl = popRow('highlight', 'Highlight', { sub: true });
+    const hlPanel = Popover.panel('fm-pop fm-cm-sub fm-pop-sub');
+    this.subPanels.push(hlPanel);
+    const hlRows = new Map<Highlight, ReturnType<typeof popRow>>();
+    for (const h of HIGHLIGHTS) {
+      const r = popRow(null, HL_LABEL(h), { check: true });
+      r.ico.appendChild(el<HTMLElement>(`<span class="fm-cm-dot" data-hl="${h}"></span>`));
+      r.el.addEventListener('click', () => {
+        const id = this.rowTarget;
+        const hit = id ? this.find(id) : null;
+        this.rowMenu.hide();
+        if (hit) this.host.run('Track highlight', (c) => patchFlipTrack(c, hit.r, { highlight: h }));
+      });
+      hlRows.set(h, r);
+      hlPanel.appendChild(r.el);
+    }
+    this.rowMenu.attachSub(hl.el, hlPanel);
+    const blend = popRow('blendN', 'Blend mode', { sub: true });
+    const blendPanel = Popover.panel('fm-pop fm-cm-sub fm-cm-blend fm-pop-sub');
+    this.subPanels.push(blendPanel);
+    const blendRows = new Map<BlendMode, ReturnType<typeof popRow>>();
+    for (const b of BLEND_MODES) {
+      const r = popRow(null, b.label, { check: true });
+      r.setValue(b.short);
+      r.el.addEventListener('click', () => {
+        const id = this.rowTarget;
+        const hit = id ? this.find(id) : null;
+        this.rowMenu.hide();
+        if (hit) this.host.run('Track blend mode', (c) => patchFlipTrack(c, hit.r, { blend: b.id }));
+      });
+      blendRows.set(b.id, r);
+      blendPanel.appendChild(r.el);
+    }
+    this.rowMenu.attachSub(blend.el, blendPanel);
+    this.rowMenu.body.append(tiles, popSep(), rename.el, op, toggle.el, hl.el, blend.el, popSep(), maskNone.el, maskClip.el, maskAlpha.el, maskLuma.el, invert.el, popSep(), up.el, down.el, popSep(), del.el);
+    return { rename, toggle, up, down, del, range, pct, maskNone, maskClip, maskAlpha, maskLuma, invert, cut, copy, paste, dup, hlRows, blendRows, hl, blend };
   }
 
-  private openCellMenu(tg: { track: string; frame: string }, x: number, y: number): void {
+  /** Row clipboard: Cut, Copy, Paste and Duplicate; a pasted or duplicated row lands directly above the row it was made from. */
+  private trackAction(kind: 'cut' | 'copy' | 'paste' | 'dup'): void {
+    const id = this.rowTarget;
+    const hit = id ? this.find(id) : null;
+    this.rowMenu.hide();
+    if (!hit) return;
+    const { r, t } = hit;
+    const activeId = this.host.content()?.flip[this.host.row()]?.id ?? '';
+    const follow = (): void => {
+      const c = this.host.content();
+      const nr = c ? c.flip.findIndex((x) => x.id === activeId) : -1;
+      if (nr >= 0) this.clampSel(nr, this.host.index());
+    };
+    switch (kind) {
+      case 'copy': trackClip = cloneFlipTrack(t); break;
+      case 'cut':
+        if (hit.c.flip.length <= 1) return;
+        trackClip = cloneFlipTrack(t);
+        this.host.run('Cut track', (c) => deleteFlipTrack(c, r));
+        follow();
+        break;
+      case 'paste': { const clip = trackClip; if (!clip) return; this.host.run('Paste track', (c) => insertFlipTrack(c, r, clip)); follow(); break; }
+      case 'dup': this.host.run('Duplicate track', (c) => insertFlipTrack(c, r, t)); follow(); break;
+    }
+  }
+
+  private openCellMenu(tg: { track: string; frame: string }, x: number, y: number, off = 0): void {
     const hit = this.find(tg.track, tg.frame);
     if (!hit || hit.i < 0) return;
     this.rowMenu.hide();
     this.cellTarget = tg;
+    this.cellXY = { x, y };
+    this.cellOff = off;
+    // a right-click on a frame outside the selection leaves multi-select; inside it the menu works on the whole set
+    if (this.sel.count > 0 && !this.sel.has(tg.track, tg.frame)) { this.sel.clear(); this.paint(); }
+    const many = this.sel.count > 1 && this.sel.has(tg.track, tg.frame);
+    const held = Math.max(1, hit.t.frames[hit.i].hold) > 1;
+    setClass(this.cm.ins.el, 'is-gone', many);
+    setClass(this.cm.split.el, 'is-gone', many || !held);
+    setClass(this.cm.fill.el, 'is-gone', many);
+    setClass(this.cm.flip.el, 'is-gone', !many);
+    setClass(this.cm.opts.el, 'is-gone', many);
     this.cm.hold.set(String(Math.max(1, hit.t.frames[hit.i].hold)));
-    this.cm.paste.setDisabled(!clipboard.length);
+    this.cm.paste.setDisabled(!clipboard.length || many);
     this.cellMenu.showAt(x, y);
   }
 
@@ -522,14 +723,251 @@ export class FlipStrip {
     this.rm.toggle.setLabel(hit.t.hidden ? 'Show' : 'Hide');
     const mk = hit.t.mask ?? 'none';
     this.rm.maskNone.setChecked(mk === 'none');
+    this.rm.maskClip.setChecked(mk === 'clipping');
     this.rm.maskAlpha.setChecked(mk === 'alpha');
     this.rm.maskLuma.setChecked(mk === 'luminance');
     this.rm.invert.setChecked(!!hit.t.maskInvert);
-    this.rm.invert.setDisabled(mk === 'none');
-    this.rm.up.setDisabled(hit.r === 0);
+    this.rm.invert.setDisabled(mk === 'none' || mk === 'clipping');
+    for (const [h, r] of this.rm.hlRows) r.setChecked(h === hit.t.highlight);
+    for (const [b, r] of this.rm.blendRows) r.setChecked(b === hit.t.blend);
+    this.rm.hl.setValue(HL_LABEL(hit.t.highlight));
+    this.rm.paste.setDisabled(!trackClip);
+    this.rm.cut.setDisabled(hit.c.flip.length <= 1);    this.rm.up.setDisabled(hit.r === 0);
     this.rm.down.setDisabled(hit.r === hit.c.flip.length - 1);
     this.rm.del.setDisabled(hit.c.flip.length <= 1);
     this.rowMenu.showAt(x, y);
+  }
+
+  // ---- gestures ----
+
+  private track(win: (m: PointerEvent) => void, done: (m: PointerEvent | null) => void): void {
+    const up = (m: PointerEvent): void => { off(); done(m); };
+    const cancel = (): void => { off(); done(null); };
+    const off = (): void => {
+      window.removeEventListener('pointermove', win);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    window.addEventListener('pointermove', win);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+  }
+
+  private eat(): void {
+    this.suppressClick = true;
+    window.setTimeout(() => { this.suppressClick = false; }, 80);
+  }
+
+  private cellEls(): HTMLElement[] { return Array.from(this.rows.querySelectorAll<HTMLElement>('.fm-fs-cell')); }
+
+  private rowEls(): HTMLElement[] { return Array.from(this.rows.querySelectorAll<HTMLElement>('.fm-fs-row')); }
+
+  /** The set a gesture on this cell works on: the whole selection when the cell belongs to it. */
+  private setFor(tg: { track: string; frame: string }): FrameRef[] {
+    return this.sel.count > 0 && this.sel.has(tg.track, tg.frame) ? this.sel.refs() : [{ track: tg.track, frames: [tg.frame] }];
+  }
+
+  private gesture(e: PointerEvent, cancelPress: () => void): void {
+    if (e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('.fm-fs-rename, .fm-fs-vis, .fm-fs-opts')) return;
+    if (t.classList.contains('fm-fs-trim')) { this.startTrim(e, t); return; }
+    const nameEl = t.closest<HTMLElement>('.fm-fs-name');
+    if (nameEl) { this.startRowDrag(e, nameEl.closest<HTMLElement>('.fm-fs-row')?.dataset.key ?? ''); return; }
+    const tg = this.cellAt(t);
+    const hit = tg ? this.find(tg.track, tg.frame) : null;
+    if (!tg || !hit || hit.i < 0) {
+      if (t.closest('.fm-fs-lane')) this.startLasso(e, e.shiftKey || e.ctrlKey || e.metaKey);
+      return;
+    }
+    const x0 = e.clientX, y0 = e.clientY;
+    const selected = this.sel.has(tg.track, tg.frame);
+    if (e.altKey || (this.sel.multi && !selected)) { this.startLasso(e, e.shiftKey || e.ctrlKey || e.metaKey); return; }
+    const s = loadPrefs().scrubSpeed;
+    const k = s === 'precise' ? 0.4 : s === 'fast' ? 2 : 1;
+    const r = hit.r, i0 = hit.i;
+    let mode: '' | 'scrub' | 'drag' = '';
+    let last = i0;
+    const drag = this.makeDrag(tg);
+    this.track((m) => {
+      const dx = m.clientX - x0, dy = m.clientY - y0;
+      if (!mode) {
+        if (Math.hypot(dx, dy) < 5) return;
+        mode = (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) || (this.sel.multi && selected) ? 'drag' : 'scrub';
+        this.suppressClick = true;
+        cancelPress();
+        if (mode === 'scrub' && this.sel.clear()) this.paint();
+        if (mode === 'drag') drag.begin();
+      }
+      if (mode === 'drag') { drag.move(m); return; }
+      const row = this.host.content()?.flip[r];
+      if (!row) return;
+      const to = Math.max(0, Math.min(row.frames.length - 1, i0 + Math.round((dx * k) / COL)));
+      if (to !== last) { last = to; this.host.select(r, to); }
+    }, (m) => {
+      if (mode === 'drag') drag.end(m);
+      if (mode) this.eat();
+    });
+  }
+
+  /** Dragging frames to another row, to a spot in a row, or between rows (a new row); a drop line shows where. */
+  private makeDrag(tg: { track: string; frame: string }): { begin(): void; move(m: PointerEvent): void; end(m: PointerEvent | null): void } {
+    const refs = this.setFor(tg);
+    const moving = new Set(refs.flatMap((x) => x.frames));
+    type Drop = { track: string | null; after: number; newAt: number } | null;
+    let drop: Drop = null;
+    const place = (x: number, y: number, w: number, h: number): void => {
+      const b = this.body.getBoundingClientRect();
+      setStyleVar(this.dropLine, 'left', `${x - b.left}px`);
+      setStyleVar(this.dropLine, 'top', `${y - b.top}px`);
+      setStyleVar(this.dropLine, 'width', `${w}px`);
+      setStyleVar(this.dropLine, 'height', `${h}px`);
+      setHidden(this.dropLine, false);
+    };
+    const find = (m: PointerEvent): Drop => {
+      const rows = this.rowEls();
+      const box = this.rows.getBoundingClientRect();
+      if (m.clientY < box.top - 8 || m.clientY > box.bottom + 8) return null;
+      for (let r = 0; r < rows.length; r++) {
+        const rb = rows[r].getBoundingClientRect();
+        const lane = q<HTMLElement>(rows[r], '.fm-fs-lane').getBoundingClientRect();
+        // the strip between two rows (and above the first, below the last) makes a new row
+        if (Math.abs(m.clientY - rb.top) <= 3) { place(lane.left, rb.top - 1, lane.width, 3); return { track: null, after: -1, newAt: r }; }
+        if (r === rows.length - 1 && Math.abs(m.clientY - rb.bottom) <= 3) { place(lane.left, rb.bottom - 1, lane.width, 3); return { track: null, after: -1, newAt: r + 1 }; }
+        if (m.clientY >= rb.top && m.clientY < rb.bottom) {
+          const cells = Array.from(rows[r].querySelectorAll<HTMLElement>('.fm-fs-cell'));
+          let after = -1, px = lane.left;
+          cells.forEach((c, i) => {
+            const cb = c.getBoundingClientRect();
+            if (cb.left + cb.width / 2 < m.clientX && !moving.has(c.dataset.key ?? '')) { after = i; px = cb.right + 1; }
+          });
+          place(px - 1, rb.top + 2, 3, rb.height - 4);
+          return { track: rows[r].dataset.key ?? null, after, newAt: 0 };
+        }
+      }
+      return null;
+    };
+    return {
+      begin: () => { this.root.classList.add('is-moving'); },
+      move: (m) => { drop = find(m); if (!drop) setHidden(this.dropLine, true); },
+      end: (m) => {
+        this.root.classList.remove('is-moving');
+        setHidden(this.dropLine, true);
+        const d = drop;
+        if (!m || !d) return;
+        this.host.run('Move frames', (c) => moveFrames(c, refs, d.track, d.after, d.newAt));
+      },
+    };
+  }
+
+  /** Free trim: a handle at the right edge of a cell; the drag changes the hold of the cell, or of every selected cell together. */
+  private startTrim(e: PointerEvent, handle: HTMLElement): void {
+    const cell = handle.closest<HTMLElement>('.fm-fs-cell');
+    const tg = this.cellAt(handle);
+    if (!cell || !tg) return;
+    e.preventDefault();
+    const refs = this.setFor(tg);
+    const ids = new Set(refs.flatMap((x) => x.frames));
+    const live = this.cellEls().filter((c) => ids.has(c.dataset.key ?? ''));
+    const base = live.map((c) => ({ c, hold: Math.max(1, Math.round((parseFloat(c.style.width) + 2) / COL)) }));
+    const x0 = e.clientX;
+    let delta = 0;
+    this.root.classList.add('is-trimming');
+    this.suppressClick = true;
+    this.track((m) => {
+      delta = Math.round((m.clientX - x0) / COL);
+      for (const b of base) {
+        const h = Math.max(1, Math.min(999, b.hold + delta));
+        setStyleVar(b.c, 'width', `${h * COL - 2}px`);
+        setText(q(b.c, '.fm-fs-hold'), h > 1 ? `×${h}` : '');
+      }
+    }, (m) => {
+      this.root.classList.remove('is-trimming');
+      this.eat();
+      if (m && delta !== 0) this.host.run('Frame duration', (c) => setHolds(c, refs, delta, true));
+      else this.paint();
+    });
+  }
+
+  /** Lasso: a box dragged over the lanes selects the cells it touches; Shift or Ctrl adds. */
+  private startLasso(e: PointerEvent, additive: boolean): void {
+    const onCell = !!this.cellAt(e.target as HTMLElement);
+    const base = additive ? this.sel.refs() : [];
+    const x0 = e.clientX, y0 = e.clientY;
+    let moved = false;
+    this.track((m) => {
+      if (!moved) {
+        if (Math.hypot(m.clientX - x0, m.clientY - y0) < 4) return;
+        moved = true;
+        this.suppressClick = true;
+        this.lasso.begin(x0, y0);
+      }
+      const box = this.lasso.move(m.clientX, m.clientY);
+      const refs = new Map<string, Set<string>>(base.map((b) => [b.track, new Set(b.frames)]));
+      for (const row of this.rowEls()) {
+        const lane = q<HTMLElement>(row, '.fm-fs-lane').getBoundingClientRect();
+        for (const c of Array.from(row.querySelectorAll<HTMLElement>('.fm-fs-cell'))) {
+          const cb = c.getBoundingClientRect();
+          const hitX = cb.right > box.left && cb.left < box.right && cb.right > lane.left && cb.left < lane.right;
+          if (hitX && cb.bottom > box.top && cb.top < box.bottom) {
+            const tid = row.dataset.key ?? '';
+            let s = refs.get(tid);
+            if (!s) refs.set(tid, (s = new Set()));
+            s.add(c.dataset.key ?? '');
+          }
+        }
+      }
+      this.sel.set(Array.from(refs, ([track, s]) => ({ track, frames: Array.from(s) })));
+      this.sel.multi = true;
+      for (const row of this.rowEls()) {
+        const s = refs.get(row.dataset.key ?? '');
+        for (const c of Array.from(row.querySelectorAll<HTMLElement>('.fm-fs-cell'))) setClass(c, 'is-sel', !!s?.has(c.dataset.key ?? ''));
+      }
+    }, () => {
+      this.lasso.end();
+      // a plain click on empty lane space clears; a click on a cell is left to the click handler
+      if (!moved && !additive && !onCell && this.sel.clear()) this.paint();
+      else if (moved) { this.paint(); this.eat(); }
+    });
+  }
+
+  /** Drag a row by its name to reorder it. */
+  private startRowDrag(e: PointerEvent, id: string): void {
+    const y0 = e.clientY;
+    let active = false;
+    let to = -1;
+    this.track((m) => {
+      if (!active) {
+        if (Math.abs(m.clientY - y0) < 6) return;
+        active = true;
+        this.suppressClick = true;
+      }
+      const rows = this.rowEls();
+      let idx = rows.length - 1;
+      for (let r = 0; r < rows.length; r++) if (m.clientY < rows[r].getBoundingClientRect().bottom) { idx = r; break; }
+      to = idx;
+      const rb = rows[idx].getBoundingClientRect();
+      const lane = q<HTMLElement>(rows[idx], '.fm-fs-lane').getBoundingClientRect();
+      const b = this.body.getBoundingClientRect();
+      const from = rows.findIndex((x) => x.dataset.key === id);
+      const y = idx >= from ? rb.bottom : rb.top;
+      setStyleVar(this.dropLine, 'left', `${rb.left - b.left}px`);
+      setStyleVar(this.dropLine, 'top', `${y - b.top - 1}px`);
+      setStyleVar(this.dropLine, 'width', `${lane.right - rb.left}px`);
+      setStyleVar(this.dropLine, 'height', '3px');
+      setHidden(this.dropLine, false);
+    }, (m) => {
+      setHidden(this.dropLine, true);
+      this.eat();
+      if (!m || !active || to < 0) return;
+      const hit = this.find(id);
+      if (!hit || hit.r === to) return;
+      const activeId = this.host.content()?.flip[this.host.row()]?.id ?? '';
+      this.host.run('Move track', (c) => moveFlipTrack(c, hit.r, to));
+      const c = this.host.content();
+      const nr = c ? c.flip.findIndex((x) => x.id === activeId) : -1;
+      if (nr >= 0) this.clampSel(nr, this.host.index());
+    });
   }
 
   // ---- input ----
@@ -539,9 +977,27 @@ export class FlipStrip {
     this.head.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
       if (act === 'preview') this.preview.toggle();
-      else if (act === 'frame') this.addFrame();
+      else if (act === 'frame') this.addFrame(e.altKey);
       else if (act === 'track') this.addTrack();
+      else if (act === 'mini') this.onMini?.();
+      else if (act === 'multi') {
+        if (this.reloaded) { this.reloaded = false; return; }
+        this.sel.multi = !this.sel.multi;
+        if (!this.sel.multi) this.sel.clear();
+        this.paint();
+      }
     });
+    // press and hold Multi-select brings the previous selection back
+    this.multiBtn.addEventListener('pointerdown', () => {
+      window.clearTimeout(this.reloadTimer);
+      this.reloadTimer = window.setTimeout(() => {
+        const c = this.host.content();
+        if (c && this.sel.reload(c)) { this.sel.multi = true; this.reloaded = true; this.paint(); }
+      }, LONG_PRESS);
+    });
+    const stopReload = (): void => window.clearTimeout(this.reloadTimer);
+    this.multiBtn.addEventListener('pointerup', stopReload);
+    this.multiBtn.addEventListener('pointerleave', stopReload);
 
     this.rows.addEventListener('click', (e) => {
       if (this.suppressClick) { this.suppressClick = false; return; }
@@ -553,11 +1009,29 @@ export class FlipStrip {
         return;
       }
       if (t.classList.contains('fm-fs-rename')) return;
+      const optsBtn = t.closest<HTMLElement>('.fm-fs-opts');
+      if (optsBtn) {
+        const id = optsBtn.closest<HTMLElement>('.fm-fs-row')?.dataset.key;
+        const r = optsBtn.getBoundingClientRect();
+        if (id) this.openRowMenu(id, r.left, r.bottom + 4);
+        return;
+      }
       const tg = this.cellAt(t);
       if (tg) {
         const hit = this.find(tg.track, tg.frame);
-        if (hit && hit.i >= 0) this.host.select(hit.r, hit.i);
         this.root.focus({ preventScroll: true });
+        if (!hit || hit.i < 0) return;
+        if (e.shiftKey) { this.sel.range(hit.c, tg.track, tg.frame); this.paint(); return; }
+        if (e.ctrlKey || e.metaKey || this.sel.multi) { this.sel.toggle(tg.track, tg.frame); this.paint(); return; }
+        if (this.sel.clear()) this.paint();
+        const cell = t.closest<HTMLElement>('.fm-fs-cell');
+        const rect = cell?.getBoundingClientRect();
+        // a click inside a hold puts the playhead there (for Split content); Alt-click jumps to the end of the hold
+        const held = Math.max(1, hit.t.frames[hit.i].hold);
+        this.within = rect ? Math.max(0, Math.min(held - 1, Math.floor((e.clientX - rect.left) / COL))) : 0;
+        if (e.altKey) this.within = held - 1;
+        this.withinKey = `${tg.track}:${hit.i}`;
+        this.host.select(hit.r, hit.i);
         return;
       }
       if (t.closest('.fm-fs-label')) {
@@ -571,7 +1045,12 @@ export class FlipStrip {
     this.rows.addEventListener('contextmenu', (e) => {
       const t = e.target as HTMLElement;
       const tg = this.cellAt(t);
-      if (tg) { e.preventDefault(); this.openCellMenu(tg, e.clientX, e.clientY); return; }
+      if (tg) {
+        e.preventDefault();
+        const rect = t.closest<HTMLElement>('.fm-fs-cell')?.getBoundingClientRect();
+        this.openCellMenu(tg, e.clientX, e.clientY, rect ? Math.floor((e.clientX - rect.left) / COL) : 0);
+        return;
+      }
       const lab = t.closest('.fm-fs-label');
       const id = lab?.closest<HTMLElement>('.fm-fs-row')?.dataset.key;
       if (id) { e.preventDefault(); this.openRowMenu(id, e.clientX, e.clientY); }
@@ -591,38 +1070,7 @@ export class FlipStrip {
     });
     const cancel = (): void => window.clearTimeout(this.pressTimer);
     // drag across the frame cells to scrub through frames; the Scrub speed setting scales frames per distance
-    this.rows.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      const tg = this.cellAt(e.target as HTMLElement);
-      const hit = tg ? this.find(tg.track, tg.frame) : null;
-      if (!hit || hit.i < 0) return;
-      const s = loadPrefs().scrubSpeed;
-      const k = s === 'precise' ? 0.4 : s === 'fast' ? 2 : 1;
-      const r = hit.r, i0 = hit.i, x0 = e.clientX;
-      let moved = false, last = i0;
-      const move = (m: PointerEvent): void => {
-        const dx = m.clientX - x0;
-        if (!moved) {
-          if (Math.abs(dx) < 5) return;
-          moved = true;
-          this.suppressClick = true;
-          cancel();
-        }
-        const t = this.host.content()?.flip[r];
-        if (!t) return;
-        const to = Math.max(0, Math.min(t.frames.length - 1, i0 + Math.round((dx * k) / COL)));
-        if (to !== last) { last = to; this.host.select(r, to); }
-      };
-      const up = (): void => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
-        window.removeEventListener('pointercancel', up);
-        window.setTimeout(() => { this.suppressClick = false; }, 60);
-      };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
-      window.addEventListener('pointercancel', up);
-    });
+    this.rows.addEventListener('pointerdown', (e) => this.gesture(e, cancel));
     this.rows.addEventListener('pointerup', cancel);
     this.rows.addEventListener('pointercancel', cancel);
     this.rows.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) cancel(); });
@@ -685,8 +1133,45 @@ export class FlipStrip {
       if (tag === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowLeft' || e.key === ',') { e.preventDefault(); this.step(-1); }
       else if (e.key === 'ArrowRight' || e.key === '.') { e.preventDefault(); this.step(1); }
+      else if (this.handleKey(e)) { e.preventDefault(); e.stopPropagation(); }
+    });
+    this.head.addEventListener('dblclick', (e) => { if (!(e.target as HTMLElement).closest('button')) this.onMini?.(); });
+    this.rows.addEventListener('dblclick', (e) => {
+      const t = e.target as HTMLElement;
+      if (!t.classList.contains('fm-fs-vis')) return;
+      const id = t.closest<HTMLElement>('.fm-fs-row')?.dataset.key;
+      if (id) this.openRowMenu(id, e.clientX, e.clientY);
     });
   }
+
+  /** Delete, Extend, Contract, Push, Pull, Contract to one frame and Fill duration on the open frame or the selection. */
+  handleKey(e: KeyboardEvent): boolean {
+    const c = this.host.content();
+    const row = this.host.row(), idx = this.host.index();
+    const t = c?.flip[row];
+    const cur = t?.frames[idx];
+    if (!c || !t || !cur) return false;
+    const refs: FrameRef[] = this.sel.count > 0 ? this.sel.refs() : [{ track: t.id, frames: [cur.id] }];
+    switch (e.key) {
+      case 'Delete': case 'Backspace':
+        this.host.run('Delete frames', (x) => deleteFrames(x, refs));
+        this.clampSel(row, idx);
+        return true;
+      case ']': this.host.run('Extend frame', (x) => setHolds(x, refs, 1, true)); return true;
+      case '[': this.host.run('Contract frame', (x) => setHolds(x, refs, -1, true)); return true;
+      case '\\': this.host.run('Contract to one frame', (x) => setHolds(x, refs, 1)); return true;
+      case '}': this.host.run('Push frame', (x) => pushFrame(x, row, idx)); this.clampSel(row, idx + 1); return true;
+      case '{': this.host.run('Pull frame', (x) => pullFrame(x, row, idx)); return true;
+      case 'f': case 'F': this.host.run('Fill duration', (x) => fillFrame(x, row, idx)); return true;
+      case 'Escape':
+        if (this.sel.multi || this.sel.count) { this.sel.multi = false; this.sel.clear(); this.paint(); return true; }
+        return false;
+      default: return false;
+    }
+  }
+
+  /** Cells into the open frame's hold the playhead sits at. */
+  playheadWithin(): number { return this.curWithin(); }
 }
 
 function tile(svgStr: string, label: string, on: () => void): { el: HTMLButtonElement; setDisabled(v: boolean): void } {

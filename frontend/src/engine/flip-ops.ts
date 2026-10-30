@@ -64,9 +64,142 @@ export function pasteFrames(c: Content, row: number, after: number, items: Flipb
   return fit(frames(c, row, (f) => [...f.slice(0, after + 1), ...items.map(copyFrame), ...f.slice(after + 1)]));
 }
 
-export function addFlipTrack(c: Content, fps: number): Content {
+/** A new row goes in at `at` (above the row that sat there; the top by default). */
+export function addFlipTrack(c: Content, fps: number, at = 0): Content {
   const count = Math.max(1, Math.min(flipDuration(c) || Math.round(fps), 2000));
-  return { ...c, flip: [flipTrack(`Track ${c.flip.length + 1}`, count), ...c.flip] };
+  const list = [...c.flip];
+  list.splice(Math.max(0, Math.min(list.length, at)), 0, flipTrack(`Track ${c.flip.length + 1}`, count));
+  return { ...c, flip: list };
+}
+
+/** A copy of a row with fresh ids, for the row clipboard. */
+export function cloneFlipTrack(t: FlipTrack): FlipTrack {
+  return { ...t, id: uid('ft'), frames: t.frames.map((f) => ({ ...copyFrame(f), ...(f.name ? { name: f.name } : {}) })) };
+}
+
+/** Puts a row (a pasted or duplicated one) at `at`, directly above the row that sat there. */
+export function insertFlipTrack(c: Content, at: number, t: FlipTrack): Content {
+  const list = [...c.flip];
+  list.splice(Math.max(0, Math.min(list.length, at)), 0, cloneFlipTrack(t));
+  return fit({ ...c, flip: list });
+}
+
+// ---- frame sets: a selection names frames by track id and frame id, so it survives other edits ----
+
+export interface FrameRef { track: string; frames: string[] }
+
+const isBlank = (f: FlipbookFrame): boolean => f.layers.every((l) => l.pixels === null && !l.group);
+
+function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[]) => FlipbookFrame[] | null): Content {
+  let out = c;
+  for (const ref of refs) {
+    const row = out.flip.findIndex((t) => t.id === ref.track);
+    if (row < 0) continue;
+    const set = new Set(ref.frames);
+    const idx = out.flip[row].frames.flatMap((f, i) => (set.has(f.id) ? [i] : []));
+    if (!idx.length) continue;
+    const next = fn(row, idx);
+    if (next) out = frames(out, row, () => next);
+  }
+  return fit(out);
+}
+
+/** Splits a hold: the earlier part keeps `at` cells, the later part is a copy sharing the same pixels. */
+export function splitFrame(c: Content, row: number, index: number, at: number): Content {
+  return frames(c, row, (f) => {
+    const x = f[index];
+    if (!x || x.hold < 2) return f;
+    const first = Math.max(1, Math.min(x.hold - 1, Math.round(at)));
+    return [...f.slice(0, index), { ...x, hold: first }, { ...copyFrame(x), hold: x.hold - first }, ...f.slice(index + 1)];
+  });
+}
+
+/** Extends a frame to the next frame that has content, or to the content's end; blank frames in between are absorbed. */
+export function fillFrame(c: Content, row: number, index: number): Content {
+  const len = flipDuration(c);
+  return fit(frames(c, row, (f) => {
+    if (!f[index]) return f;
+    let stop = index + 1;
+    while (stop < f.length && isBlank(f[stop])) stop++;
+    const start = f.slice(0, index).reduce((s, x) => s + Math.max(1, x.hold), 0);
+    const target = stop < f.length ? start + f.slice(index, stop).reduce((s, x) => s + Math.max(1, x.hold), 0) : Math.max(len, start + Math.max(1, f[index].hold));
+    const hold = Math.min(999, Math.max(Math.max(1, f[index].hold), target - start));
+    return [...f.slice(0, index), { ...f[index], hold }, ...f.slice(stop)];
+  }));
+}
+
+/** Sets the hold of every named frame: an absolute number, or a change when `relative`. */
+export function setHolds(c: Content, refs: FrameRef[], hold: number, relative = false): Content {
+  return eachRef(c, refs, (row, idx) => {
+    const set = new Set(idx);
+    return c.flip[row].frames.map((x, i) => (set.has(i) ? { ...x, hold: Math.max(1, Math.min(999, Math.round(relative ? Math.max(1, x.hold) + hold : hold))) } : x));
+  });
+}
+
+/** Deletes the named frames; a row keeps at least one (blank) frame. */
+export function deleteFrames(c: Content, refs: FrameRef[]): Content {
+  return eachRef(c, refs, (row, idx) => {
+    const set = new Set(idx);
+    const left = c.flip[row].frames.filter((_, i) => !set.has(i));
+    return left.length ? left : [{ ...c.flip[row].frames[0], hold: 1, layers: [drawingLayer()] }];
+  });
+}
+
+/** Reverses the order of the named frames within each row (their holds travel with them). */
+export function flipFrames(c: Content, refs: FrameRef[]): Content {
+  return eachRef(c, refs, (row, idx) => {
+    const src = c.flip[row].frames;
+    const out = [...src];
+    idx.forEach((slot, k) => { out[slot] = src[idx[idx.length - 1 - k]]; });
+    return out;
+  });
+}
+
+/** Pulls the named frames out of their rows and sets them into row `toTrack` after frame index `after` (-1: at the start). `toTrack` null makes a new row at `newAt`. */
+export function moveFrames(c: Content, refs: FrameRef[], toTrack: string | null, after: number, newAt = 0): Content {
+  const taken: FlipbookFrame[] = [];
+  const order = new Map<string, number>();
+  c.flip.forEach((t, r) => t.frames.forEach((f, i) => order.set(f.id, r * 100000 + i)));
+  const ids = new Set(refs.flatMap((r) => r.frames));
+  const pickedAll: FlipbookFrame[] = [];
+  for (const t of c.flip) for (const f of t.frames) if (ids.has(f.id)) pickedAll.push(f);
+  pickedAll.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  taken.push(...pickedAll);
+  if (!taken.length) return c;
+  // the target row's anchor frame must stay where it is, so remember its id
+  const anchor = toTrack && after >= 0 ? c.flip.find((t) => t.id === toTrack)?.frames[after]?.id : undefined;
+  if (anchor && ids.has(anchor)) return c;
+  const bare = c.flip.map((t) => {
+    const keep = t.frames.filter((f) => !ids.has(f.id));
+    return keep.length === t.frames.length ? t : { ...t, frames: keep.length ? keep : [flipFrame()] };
+  });
+  let list = bare;
+  if (toTrack === null) {
+    const nt = { ...flipTrack(`Track ${c.flip.length + 1}`, 1), frames: taken };
+    list = [...bare];
+    list.splice(Math.max(0, Math.min(list.length, newAt)), 0, nt);
+  } else {
+    list = bare.map((t) => {
+      if (t.id !== toTrack) return t;
+      const at = anchor ? t.frames.findIndex((f) => f.id === anchor) : -1;
+      return { ...t, frames: [...t.frames.slice(0, at + 1), ...taken, ...t.frames.slice(at + 1)] };
+    });
+  }
+  return fit({ ...c, flip: list });
+}
+
+/** Push: a blank frame before the named frame, so it and the ones after it move one frame later. */
+export function pushFrame(c: Content, row: number, index: number): Content {
+  return fit(frames(c, row, (f) => [...f.slice(0, index), flipFrame(), ...f.slice(index)]));
+}
+
+/** Pull: closes one frame of the blank space before the named frame. */
+export function pullFrame(c: Content, row: number, index: number): Content {
+  return frames(c, row, (f) => {
+    const p = f[index - 1];
+    if (!p || !isBlank(p)) return f;
+    return p.hold > 1 ? f.map((x, i) => (i === index - 1 ? { ...x, hold: x.hold - 1 } : x)) : f.filter((_, i) => i !== index - 1);
+  });
 }
 
 export function deleteFlipTrack(c: Content, row: number): Content {

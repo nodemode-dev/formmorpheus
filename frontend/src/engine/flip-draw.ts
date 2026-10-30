@@ -12,19 +12,26 @@ export interface FlipHost {
   layers(ctx: G, layers: DrawingLayer[]): void;
   mask(target: OffscreenCanvas, mask: OffscreenCanvas, mode: 'alpha' | 'luminance', invert: boolean): void;
   blendOp(b: BlendMode): GlobalCompositeOperation;
+  /** Pixel-maths modes the canvas has no operation for: true when handled (the surface is blended onto ctx). */
+  blendInto?(ctx: G, s: OffscreenCanvas, b: BlendMode, alpha: number): boolean;
 }
 
 export function isMaskRow(t: { mask?: string }): boolean {
   return t.mask === 'alpha' || t.mask === 'luminance';
 }
 
-/** True when any visible row is a mask over another visible row. */
+/** A clipping row is drawn, but only where the row below it has pixels. */
+export function isClipRow(t: { mask?: string }): boolean {
+  return t.mask === 'clipping';
+}
+
+/** True when any visible row is a mask or a clipping row over another visible row. */
 export function hasRowMask(c: Content): boolean {
   let below = false;
   for (let i = c.flip.length - 1; i >= 0; i--) {
     const t = c.flip[i];
     if (t.hidden) continue;
-    if (below && isMaskRow(t)) return true;
+    if (below && (isMaskRow(t) || isClipRow(t))) return true;
     below = true;
   }
   return false;
@@ -42,7 +49,7 @@ export function drawMaskedRows(host: FlipHost, ctx: G, c: Content, local: number
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = baseAlpha * held.opacity;
     ctx.globalCompositeOperation = held.blend === 'normal' ? baseOp : host.blendOp(held.blend);
-    ctx.drawImage(held.s, 0, 0);
+    if (!(held.blend !== 'normal' && host.blendInto?.(ctx, held.s, held.blend, baseAlpha * held.opacity))) ctx.drawImage(held.s, 0, 0);
     ctx.restore();
     host.release(held.s);
     held = null;
@@ -64,6 +71,8 @@ export function drawMaskedRows(host: FlipHost, ctx: G, c: Content, local: number
       continue;
     }
     if (t.opacity <= 0) { host.release(s); continue; }
+    // clip to the pixels of the row below, which is still held (a mask row above it has already cut it)
+    if (isClipRow(t) && held) host.mask(s, (held as { s: OffscreenCanvas }).s, 'alpha', false);
     commit();
     held = { s, opacity: t.opacity, blend: t.blend };
   }
