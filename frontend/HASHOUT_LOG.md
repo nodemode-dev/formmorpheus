@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.5.0
-Last updated: 2026-10-30 · phases 7 to 9 (Perform, media & audio, export)
+Current build version: v0.6.0
+Last updated: 2026-10-30 · phases 10 to 12 (engine jobs, distribution, stability, docs)
 
 ---
 
@@ -112,6 +112,7 @@ frontend/
 - [src/ui/timeline.ts](#src-ui-timeline)
 - [src/ui (copied from formvis)](#src-ui-copied)
 - [src/styles](#src-styles)
+- [Phases 10 to 12 (v0.6.0)](#p1012)
 
 ---
 
@@ -492,3 +493,63 @@ Export renders on the main thread through the same renderer, frame by frame w/ `
 - logged: v0.5.0 · 2026-10-30
 
 A take keeps one key per touched frame (skipped frames bridged linearly), then a zero-phase Gaussian (sigma 3 x filtering frames) & Ramer-Douglas-Peucker w/ a tolerance from the channel's range. While the pen is down the unfiltered take is applied under one merge tag, & on lift the filtered take replaces it under the same tag, so a performance is one undo step. Same-kind keys inside the take's range are replaced; other kinds stay (layering).
+
+---
+
+## Phases 10 to 12 (v0.6.0) {#p1012}
+
+### src/media/video.ts · per-block lanes (whole-file rewrite)
+- refers-to: src/media/video.ts :: VideoPool, VideoSource (frame, exact, prefetch w/ lane), release, stage, forgetExcept
+- kind: rationale
+- logged: v0.6.0 · 2026-10-30
+
+Each block of a video asset decodes on its own lane (up to 4 per asset; the block's content id is the lane), so two blocks at different times no longer seek one decoder back and forth (7 seeks and 99 wrong checks before, 2 and 0 after). Scrubbing shows the nearest key frame at once and refines to the exact frame when the scrub rests. exact() takes the frame whose span covers the wanted time and caps its loop (a variable frame rate file hung before); the end clamp stays 4 ms inside the clip. The decoded-frame cap is 768 MB in bytes. Process note: this file was rewritten whole by its builder instead of edited region by region, against SEDO, because the lane change touched nearly every method; the lead kept it after review and records it here.
+
+### src/media/plan.ts, thumb-cache.ts · nothing half-built
+- refers-to: src/media/plan.ts :: planPrefetch, firstFrames, firstPictures; src/media/thumb-cache.ts; src/app/app.ts :: prepareOpen, importOne
+- kind: fix
+- logged: v0.6.0 · 2026-10-30
+
+Import awaits the block's first picture before the engine op adds it, and every open path (library, file, recovery) awaits the first frames at the Playhead before the old movie is dropped; waits cap at 5 s so a stuck decoder cannot block an open. The loop prefetch starts 1.5 s before the end on its own `~wrap` lane, released 2 s after the turn. Filmstrip thumbnails are kept in IndexedDB (64 MB, LRU, every call in try/catch) and fill visible tiles first, then the rest while idle. GIFs stream one picture at a time and stop at 1,000 pictures or 512 MB w/ a warning.
+
+### src/engine/render.ts · direct() and the bitmap byte cap
+- refers-to: src/engine/render.ts :: composeTracks, direct, BITMAP_CAP_BYTES
+- kind: rationale
+- logged: v0.6.0 · 2026-10-30
+
+Plain content (normal blend, opacity 1, no mask, no filter, and no mask on the content above it) is drawn straight onto the output instead of through a temporary surface: 200 tracks of full-frame drawings went from 1.2 to about 10 fps in software-rendered Chromium. The bitmap cache is capped at 1 GB in bytes; bitmaps drawn in the last two frames are never evicted.
+
+### src/paint/history.ts · tiles and a budget
+- refers-to: src/paint/history.ts :: tilePatch, PaintHistory(budget)
+- kind: rationale
+- logged: v0.6.0 · 2026-10-30
+
+A stroke's undo keeps only the 128 px tiles it touched (a diagonal across a 4K layer: 63 MB to 6.3 MB). Total paint history is capped at 1 GB by default; the oldest steps drop w/ a toast. A Preferences field is not wired yet.
+
+### src/ui/i18n.ts · 29 tables
+- refers-to: src/ui/i18n.ts :: LOADERS; src/ui/i18n/[code].ts
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+One chunk per language, loaded on demand; es-MX and fr-CA hold only regional differences and fall back to es and fr. Keys are the English labels w/o a trailing "..." or ":"; key names, format codes, fonts and theme names stay English. Words drawn on canvases are not translated. Where formvis had the same key its wording was reused so the family reads alike.
+
+### src/io/recovery.ts · crash recovery
+- refers-to: src/io/recovery.ts :: Recovery; backend/app/routers/recovery.py
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+Every 60 s while the movie has unsaved changes a snapshot (no history, no poster) goes to the engine's Recovery folder; it is deleted on save, close, replace, a return to unmodified and on `pagehide`. The engine holds one movie, so Recover opens the newest snapshot as the unsaved movie and saves any others to the library as "[name] (Recovered)".
+
+### src/export/engine-jobs.ts · ProRes and HEVC through the engine
+- refers-to: src/export/engine-jobs.ts :: startEngineExport, encodeWav, jobCapabilities; src/ui/export-dialog.ts
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+Frames render as in the browser export, go up as PNGs (4 at a time) w/ a 16-bit WAV mixdown, and the engine runs ffmpeg. The dialog greys out formats the installed ffmpeg cannot make and says why. About 8 frames a second at 1080p.
+
+### src/ui/help-view.ts · Help
+- refers-to: src/ui/help-view.ts :: HelpView, renderMarkdown; docs/MANUAL.md
+- kind: explainer
+- logged: v0.6.0 · 2026-10-30
+
+The manual is bundled w/ `?raw` and rendered once into DOM nodes (no innerHTML); each `##` heading is a section; search filters sections. F1 opens it, also on the Home screen.

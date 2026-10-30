@@ -1,6 +1,7 @@
 // Contract of the exporter (Phase 9): what the Export dialog asks for and what a running job reports.
 
-export type ExportFormat = 'mp4' | 'webm' | 'mov' | 'gif' | 'png-frames' | 'jpg-frames' | 'webp-frames' | 'png-still';
+export type ExportFormat = 'mp4' | 'webm' | 'mov' | 'gif' | 'png-frames' | 'jpg-frames' | 'webp-frames' | 'png-still'
+  | 'prores-mov' | 'prores4444-mov' | 'hevc-mp4';
 
 export interface ExportOptions {
   format: ExportFormat;
@@ -35,6 +36,8 @@ export interface ExportResult {
   mime: string;
   /** Things the exporter changed on the way (a codec fallback, sound left out, alpha not supported). */
   warnings: string[];
+  /** The engine already keeps the file in Exports (engine jobs), so the window must not save it again. */
+  kept?: boolean;
 }
 
 export interface ExportJob {

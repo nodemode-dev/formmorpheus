@@ -1,7 +1,9 @@
 import { api, openOutput } from '../io/api';
 import { baseName, isDiskPath } from '../io/disk';
 import { el, patchList, q, setClass, setHidden, setText, setTitle, swapMedia } from './dom';
+import { confirmAction } from './dialogs';
 import { icon } from './icons';
+import { toast } from './toast';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
  *  thumbnail grid or a list with name, kind, size and when it changed; filter, sort, open on click, and Remove from
@@ -106,6 +108,13 @@ export class HomeFiles {
     this.chrome();
   }
 
+  /** Moves a movie or export to Recently Deleted after a confirmation, then re-reads the page. */
+  private async trashIt(label: string, act: () => Promise<void>): Promise<void> {
+    if (!(await confirmAction('Delete?', `${label} moves to Recently Deleted, where it stays for 30 days.`, 'Delete', true))) return;
+    try { await act(); } catch (err) { toast((err as Error).message, 'error'); }
+    void this.refresh();
+  }
+
   private save(): void {
     if (this.opts.fixed) { this.prefs.tab = this.opts.fixed; }
     try { const keep = readPrefs(); localStorage.setItem(PREFS, JSON.stringify({ ...keep, sort: this.prefs.sort, view: this.opts.compact ? keep.view : this.prefs.view, tab: this.opts.fixed ? keep.tab : this.prefs.tab })); } catch { /* the choice lasts this session */ }
@@ -124,12 +133,12 @@ export class HomeFiles {
     const run = ++this.run, tab = this.prefs.tab;
     let items: Item[] = [];
     if (tab === 'projects') {
-      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, open: () => this.d.openRecent(i.name), remove: null }));
+      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, open: () => this.d.openRecent(i.name), remove: () => { void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
     } else if (tab === 'outputs') {
       const engine = await api.outputs(), seen = new Set(engine.map((o) => o.path)), extra = storedOutputs().filter((p) => !seen.has(p));
       const stats = await api.stat(extra);
       items = [...engine.map((o) => ({ path: o.path, size: o.size, when: o.modified, missing: false })), ...stats.filter((s) => s.exists).map((s) => ({ path: s.path, size: s.size, when: s.modified, missing: false }))]
-        .map((o) => ({ key: `out:${o.path}`, name: baseName(o.path), kind: kindOf(o.path), size: o.size, when: o.when, missing: o.missing, where: o.path, thumb: PICTURE.test(o.path) || PROJECT.test(o.path) ? { path: o.path, project: PROJECT.test(o.path) } : null, open: () => { void openOutput(o.path).then((done) => { if (!done) this.d.openPath(o.path); }); }, remove: null }));
+        .map((o) => ({ key: `out:${o.path}`, name: baseName(o.path), kind: kindOf(o.path), size: o.size, when: o.when, missing: o.missing, where: o.path, thumb: PICTURE.test(o.path) || PROJECT.test(o.path) ? { path: o.path, project: PROJECT.test(o.path) } : null, open: () => { void openOutput(o.path).then((done) => { if (!done) this.d.openPath(o.path); }); }, remove: () => { void this.trashIt(`"${baseName(o.path)}"`, () => api.deleteOutput(baseName(o.path))); } }));
     } else {
       const names = this.d.recent(), lib = new Map((await api.library().catch(() => [])).map((i) => [i.name, i])), stats = new Map((await api.stat(names.filter(isDiskPath))).map((s) => [s.path, s]));
       items = names.map((n) => {
@@ -176,6 +185,9 @@ export class HomeFiles {
     setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : i.where);
     setClass(n, 'is-missing', i.missing);
     setHidden(q(n, '.cv-hf-remove'), !i.remove);
+    const rm = this.prefs.tab === 'recent' ? 'Remove from Recent' : 'Delete';
+    setTitle(q(n, '.cv-hf-remove'), rm);
+    if (q(n, '.cv-hf-remove').getAttribute('aria-label') !== rm) q(n, '.cv-hf-remove').setAttribute('aria-label', rm);
     const tk = i.thumb ? `${'name' in i.thumb ? `n:${i.thumb.name}` : `p:${i.thumb.path}`}|${i.when}` : '';
     if (n.dataset.thumb === tk) return;
     n.dataset.thumb = tk;

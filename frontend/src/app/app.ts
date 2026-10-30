@@ -5,10 +5,12 @@ import { Renderer } from '../engine/render';
 import type { Asset, Content } from '../engine/types';
 import { api, capabilities, onServiceChange } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
+import { Recovery } from '../io/recovery';
 import { AudioEngine } from '../media/audio';
 import { registerFonts } from '../media/fonts';
 import { importMedia } from '../media/import';
 import { VideoPool } from '../media/video';
+import { firstFrames, firstPictures, planPrefetch } from '../media/plan';
 import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
@@ -18,6 +20,7 @@ import { ContentMenu } from '../ui/content-menu';
 import { anyDialogOpen, confirmAction, promptName } from '../ui/dialogs';
 import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../ui/dom';
 import { enhanceAllSelects } from '../ui/dropdown';
+import { HelpView } from '../ui/help-view';
 import { HomeScreen } from '../ui/home';
 import { t } from '../ui/i18n';
 import { icon } from '../ui/icons';
@@ -83,16 +86,8 @@ export function startApp(): void {
     const m = engine.movie;
     if (!m) return;
     if (!engine.playing) { audio.scrub(m, f); return; }
-    // near the end of a looping movie the start is decoded ahead too, so the picture after the wrap is ready
-    const wrapAt = m.playback === 'loop' && f + m.fps >= m.duration ? 0 : -1;
-    for (const t of m.tracks) {
-      if (t.hidden) continue;
-      for (const c of t.content) {
-        if (c.kind !== 'video' || !c.asset) continue;
-        if (f >= c.start - m.fps && f < c.start + c.duration) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, f - c.start), m), 2);
-        else if (wrapAt >= 0 && c.start <= wrapAt + m.fps) video.prefetch(c.asset, Renderer.videoSeconds(c, Math.max(0, wrapAt - c.start), m), 1);
-      }
-    }
+    // decode ahead; near the end of a looping movie the start too, so the picture after the wrap is ready
+    planPrefetch(video, m, f);
   });
   engine.on('projects', () => { if (!engine.movie) { renderer.forget(); video.forget(); audio.forget(); } });
   stage = new StageView(q(root, '.fm-stage-wrap'), engine, renderer);
@@ -151,6 +146,7 @@ export function startApp(): void {
     home.sync();
     scheduleAutosave();
   });
+  let helpView: HelpView | null = null;
   const menus: MenuDef[] = [];
   const palette = new CommandPalette(commands, () => menus);
 
@@ -163,17 +159,32 @@ export function startApp(): void {
     return true;
   };
 
+  /** Everything the first picture needs (fonts, pictures, each visible video's first frame) is decoded while the old movie or Home stays shown; then the old movie's media is dropped. */
+  async function prepareOpen(data: Awaited<ReturnType<typeof unpackMovie>>): Promise<void> {
+    engine.stop();
+    await registerFonts(data.movie, (id) => data.assets.get(id));
+    await renderer.preload(data.assets);
+    video.stage(data.assets);
+    try {
+      await firstFrames(video, data.movie, 0);
+    } catch (e) {
+      // the open fails: drop what was staged for the new movie, keep the current one's decoders
+      video.stage(null);
+      video.forgetExcept(new Set(engine.movie ? Object.keys(engine.movie.assets) : []));
+      throw e;
+    }
+    const keep = new Set(data.assets.keys());
+    renderer.forget(keep);
+    video.forgetExcept(keep);
+    audio.forget();
+  }
+
   async function openFromLibrary(name: string): Promise<void> {
     if (!(await askToKeep())) return;
     const job = engine.startJob(`Open ${name}`, 1);
     try {
       const file = await unpackMovie(await api.readMovie(name));
-      engine.stop();
-      renderer.forget();
-      video.forget();
-      audio.forget();
-      await registerFonts(file.movie, (id) => file.assets.get(id));
-      await renderer.preload(file.assets);
+      await prepareOpen(file);
       engine.open(file.movie, name, file.assets, file.past, file.recovery);
       remember(name);
     } catch (e) {
@@ -187,16 +198,30 @@ export function startApp(): void {
     if (!(await askToKeep())) return;
     try {
       const data = await unpackMovie(file);
-      engine.stop();
-      renderer.forget();
-      video.forget();
-      audio.forget();
-      await registerFonts(data.movie, (id) => data.assets.get(id));
-      await renderer.preload(data.assets);
+      await prepareOpen(data);
       engine.open(data.movie, null, data.assets, data.past, data.recovery);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'The movie could not be opened.', 'error');
     }
+  }
+
+  // Desktop only: the system's recent list, and files the system hands the app (double-click, a second launch).
+  function noteRecentDocument(path: string): void {
+    if ('__TAURI_INTERNALS__' in window) void import('@tauri-apps/api/core').then((m) => m.invoke('note_recent_document', { path })).catch(() => undefined);
+  }
+  async function openFromPath(path: string): Promise<void> {
+    if (!/\.fmo$/i.test(path)) return;
+    try {
+      await openFile(new File([await api.readFile(path)], path.split(/[\\/]/).pop() ?? 'movie.fmo'));
+      noteRecentDocument(path);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The movie could not be opened.', 'error');
+    }
+  }
+  if ('__TAURI_INTERNALS__' in window) {
+    const openAll = async (paths: string[]): Promise<void> => { for (const p of paths) await openFromPath(p); };
+    void import('@tauri-apps/api/event').then((ev) => ev.listen<string[]>('formmorpheus://open-paths', (e) => { void openAll(e.payload); }))
+      .then(() => import('@tauri-apps/api/core')).then((m) => m.invoke<string[]>('take_pending_opens')).then((paths) => openAll(paths)).catch(() => undefined);
   }
 
   async function save(asNew: boolean): Promise<boolean> {
@@ -215,6 +240,7 @@ export function startApp(): void {
       const saved = await api.writeMovie(name, blob);
       engine.markSaved(saved.name);
       remember(saved.name);
+      noteRecentDocument(saved.path);
       return true;
     } catch (e) {
       toast(e instanceof Error ? e.message : 'The movie could not be saved.', 'error');
@@ -246,6 +272,20 @@ export function startApp(): void {
   }
   scheduleAutosave();
 
+  const recovery = new Recovery({
+    engine,
+    pack: async () => (engine.movie ? packMovie(engine.movie, [], [], engine.assets, null, false) : null),
+    openRecovered: async (blob, name) => {
+      const data = await unpackMovie(blob);
+      await prepareOpen(data);
+      engine.open(data.movie, null, data.assets, data.past, data.recovery);
+      engine.modified = true;
+      engine.nameMovie(name);
+    },
+    saveRecovered: async (blob, name) => { await api.writeMovie(name, blob); home.sync(); },
+  });
+  void recovery.offer();
+
   async function importFiles(files: File[]): Promise<void> {
     const m = engine.movie;
     if (!m) { toast('Open or create a movie first.'); return; }
@@ -265,6 +305,8 @@ export function startApp(): void {
       const blobs = new Map<string, Blob>();
       for (const { asset, blob } of r.assets) { engine.assets.set(asset.id, blob); if (asset.kind === 'image' || asset.kind === 'pixels') blobs.set(asset.id, blob); }
       await renderer.preload(blobs);
+      // a video block and its box appear together with their first picture, never before it
+      await firstPictures(video, m, r.contents);
       if (r.assets.some((a) => a.asset.kind === 'font')) await registerFonts({ ...m, assets: { ...m.assets, ...Object.fromEntries(r.assets.map((a) => [a.asset.id, a.asset])) } }, (id) => engine.assets.get(id));
       const ti = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
       engine.run(`Add ${f.name.replace(/\.[^.]+$/, '')}`, (mv) => {
@@ -360,7 +402,7 @@ export function startApp(): void {
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
     { id: 'menus-in-window', label: 'Menus in Window', enabled: () => '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.platform), checked: menusInWindow, run: () => { const on = !menusInWindow(); store(MENUS_IN_WINDOW_KEY, on ? '1' : '0'); toast(on ? 'The menus stay in the window from the next start.' : 'The menus go to the menu bar from the next start.'); } },
     { id: 'custom-title-bar', label: 'Custom Title Bar', enabled: wantsCustomTitleBar, checked: () => stored(CUSTOM_TITLE_KEY) === '1', run: () => { store(CUSTOM_TITLE_KEY, stored(CUSTOM_TITLE_KEY) === '1' ? '0' : '1'); captions.sync(); } },
-    { id: 'help', label: 'formmorpheus Help', keys: ['F1'], run: () => toast(`formmorpheus ${VERSION} · Compose: drag content, trim edges, right-click for options. Space plays.`) },
+    { id: 'help', label: 'formmorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView(); helpView.show(); } },
     { id: 'about', label: 'About formmorpheus', run: () => toast(`formmorpheus ${VERSION} by NodeMode · Apache-2.0`) },
   ];
   commands.add(...add);
@@ -445,7 +487,7 @@ export function startApp(): void {
     }
     const target = e.target instanceof Element ? e.target : null;
     if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
-    if (home.isShown && e.key !== 'Escape' && !(e.metaKey || e.ctrlKey)) return;
+    if (home.isShown && e.key !== 'Escape' && e.key !== 'F1' && !(e.metaKey || e.ctrlKey)) return;
     const cmd = commands.forEvent(e);
     if (!cmd) return;
     e.preventDefault();

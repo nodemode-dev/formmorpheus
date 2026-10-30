@@ -1,6 +1,7 @@
 import type { ShellModel } from './shell-model';
 import { el, setClass, setHidden, setText } from './dom';
 import { HomeFiles } from './home-files';
+import { HomeTrash } from './home-trash';
 import { icon } from './icons';
 
 export interface HomeDeps {
@@ -21,8 +22,10 @@ export class HomeScreen {
   private page: Page = 'start';
   private forced = false;
   private lastCount = 0;
+  private lastId: string | null = null;
   private hadDocument = false;
   private back!: HTMLElement;
+  private readonly trash: HomeTrash;
 
   /** Home (1.87.3): a navigation column (Start, Recent, Projects, Outputs with counts; Create; Preferences and Help at
    *  its foot) beside a main area. Start has a greeting with Open and New document, a drop zone listing what opens, a
@@ -36,14 +39,14 @@ export class HomeScreen {
     const sizes = PRESETS.map((p, i) => `<button class="cv-home-size" type="button" data-size="${i}"><span class="cv-home-size-box"><span style="aspect-ratio: ${p.w} / ${p.h}"></span></span><span class="cv-home-size-name">${p.name}</span><span class="cv-home-size-meta">${p.w} x ${p.h} px · ${p.fps} fps</span></button>`).join('');
     this.root.innerHTML = `<nav class="cv-home-nav" aria-label="Home">
       <div class="cv-home-brand">formmorpheus <span>by NodeMode</span></div>
-      ${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}
+      ${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
       <div class="cv-home-nav-sep"></div>
       <div class="cv-home-nav-title">Create</div>
       ${cmdItem('new', 'newFile', 'New movie')}${cmdItem('new-flipbook', 'flipbook', 'New flipbook')}${cmdItem('open', 'folderOpen', 'Open')}
       <div class="cv-home-nav-foot"><button class="cv-home-nav-item cv-home-back" type="button" data-back hidden>${icon('chevronLeft', 16)}<span>Back to Movie</span></button>${cmdItem('settings', 'settings', 'Preferences')}${cmdItem('help', 'info', 'Help')}</div>
     </nav>
     <div class="cv-home-main">
-      <div class="cv-home-narrow">${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}</div>
+      <div class="cv-home-narrow">${navItem('start', 'film', 'Start')}${navItem('recent', 'history', 'Recent')}${navItem('projects', 'folder', 'Movies')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}</div>
       <div class="cv-home-page" data-page="start">
         <div class="cv-home-head"><div><h1 class="cv-home-title"></h1><p class="cv-home-sub">Open a movie, or start a new movie or flipbook.</p></div></div>
         <div class="cv-home-hero">
@@ -63,15 +66,18 @@ export class HomeScreen {
       <div class="cv-home-page" data-page="recent" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Recent</h1><p class="cv-home-sub">Movies you opened or saved, newest first.</p></div></div><div class="cv-home-slot" data-slot="recent"></div></div>
       <div class="cv-home-page" data-page="projects" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Movies</h1><p class="cv-home-sub">Everything in the movie library folder.</p></div></div><div class="cv-home-slot" data-slot="projects"></div></div>
       <div class="cv-home-page" data-page="outputs" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Exports</h1><p class="cv-home-sub">Videos, GIFs and frames you exported, newest first.</p></div></div><div class="cv-home-slot" data-slot="outputs"></div></div>
+      <div class="cv-home-page" data-page="trash" hidden><div class="cv-home-head"><div><h1 class="cv-home-title">Recently Deleted</h1><p class="cv-home-sub">Deleted movies and exports, kept for 30 days.</p></div></div><div class="cv-home-slot" data-slot="trash"></div></div>
     </div>`;
     this.back = this.root.querySelector('[data-back]') as HTMLElement;
     const deps = { recent: d.recent, openRecent: d.openRecent, openPath: d.openPath, removeRecent: d.removeRecent };
-    const count = (v: Page) => (n: number): void => { for (const c of Array.from(this.root.querySelectorAll(`[data-v="${v}"] .cv-home-count`))) setText(c, String(n)); };
+    const count = (v: Page | 'trash') => (n: number): void => { for (const c of Array.from(this.root.querySelectorAll(`[data-v="${v}"] .cv-home-count`))) setText(c, String(n)); };
     const mount = (slot: Page, files: HomeFiles): void => { (this.root.querySelector(`[data-slot="${slot}"]`) as HTMLElement).appendChild(files.root); this.pages.set(slot, files); };
     mount('start', new HomeFiles(deps, { fixed: 'recent', limit: 8, compact: true, onCount: count('recent') }));
     mount('recent', new HomeFiles(deps, { fixed: 'recent', onCount: count('recent') }));
     mount('projects', new HomeFiles(deps, { fixed: 'projects', onCount: count('projects') }));
     mount('outputs', new HomeFiles(deps, { fixed: 'outputs', onCount: count('outputs') }));
+    this.trash = new HomeTrash(count('trash'), () => this.fill());
+    (this.root.querySelector('[data-slot="trash"]') as HTMLElement).appendChild(this.trash.root);
     this.root.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-back]')) { this.forced = false; this.sync(); return; }
@@ -100,6 +106,7 @@ export class HomeScreen {
   /** Reads the files of the page shown and the counts of the others. */
   private fill(): void {
     void this.pages.get(this.page)?.refresh();
+    void this.trash.refresh();
     for (const [p, f] of this.pages) if (p !== this.page && p !== 'start' && !(p === 'recent' && this.page === 'start')) void f.refresh();
   }
 
@@ -116,8 +123,12 @@ export class HomeScreen {
    *  after a document has been open when "when the last document closes" is on. */
   sync(): void {
     const n = this.d.engine.projects.length;
-    if (n > this.lastCount) this.forced = false;
+    // a document opening hides a forced Home, also when it replaces the open one (the count stays 1)
+    const first = this.d.engine.projects[0] as { id?: string } | undefined;
+    const id = first?.id ?? null;
+    if (n > this.lastCount || (id !== null && id !== this.lastId)) this.forced = false;
     this.lastCount = n;
+    this.lastId = id;
     if (n > 0) this.hadDocument = true;
     const on = this.forced || (n === 0 && (this.hadDocument ? this.d.afterClose() : this.d.autoShow()));
     if (on && this.root.hidden) { this.paint(); this.fill(); }
@@ -126,7 +137,7 @@ export class HomeScreen {
   }
 }
 
-type Page = 'start' | 'recent' | 'projects' | 'outputs';
+type Page = 'start' | 'recent' | 'projects' | 'outputs' | 'trash';
 
 const PRESETS: Array<{ name: string; w: number; h: number; fps: number }> = [
   { name: 'Wide screen 4K', w: 3840, h: 2160, fps: 24 },

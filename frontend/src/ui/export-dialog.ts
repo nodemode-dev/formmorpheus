@@ -2,6 +2,7 @@ import type { Engine } from '../engine/engine';
 import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import { startExport } from '../export/run';
+import { jobCapabilities, startEngineExport, type EngineTarget, type JobCapabilities } from '../export/engine-jobs';
 import type { ExportFormat, ExportJob, ExportOptions, ExportProgress } from '../export/types';
 import { parseTime, timecode } from '../engine/time';
 import { downloadBlob } from '../io/api';
@@ -33,14 +34,17 @@ interface Saved {
 const FORMATS: { id: ExportFormat; label: string }[] = [
   { id: 'mp4', label: 'MP4 video' }, { id: 'webm', label: 'WebM video' }, { id: 'mov', label: 'MOV video' }, { id: 'gif', label: 'Animated GIF' },
   { id: 'png-frames', label: 'PNG frames' }, { id: 'jpg-frames', label: 'JPG frames' }, { id: 'webp-frames', label: 'WebP frames' }, { id: 'png-still', label: 'PNG still' },
+  { id: 'prores-mov', label: 'ProRes 422 HQ (engine)' }, { id: 'prores4444-mov', label: 'ProRes 4444 w/ alpha (engine)' }, { id: 'hevc-mp4', label: 'HEVC (engine)' },
 ];
 const PRESETS: { id: Preset; label: string }[] = [
   { id: 'movie', label: 'Movie size' }, { id: '720', label: '720p' }, { id: '1080', label: '1080p' }, { id: '2160', label: '4K' }, { id: 'square', label: 'Square 1080' }, { id: 'custom', label: 'Custom' },
 ];
 const QUALITIES: { id: Quality; label: string }[] = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }, { id: 'very-high', label: 'Very high' }];
-const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov'];
-const ALPHA: ExportFormat[] = ['webm', 'png-frames', 'webp-frames', 'png-still', 'gif'];
-const LOSSY: ExportFormat[] = ['mp4', 'webm', 'mov', 'jpg-frames', 'webp-frames'];
+/** Formats the engine's ffmpeg encodes (the browser cannot). */
+const ENGINE: Partial<Record<ExportFormat, EngineTarget>> = { 'prores-mov': 'prores', 'prores4444-mov': 'prores4444', 'hevc-mp4': 'hevc' };
+const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov', 'prores-mov', 'prores4444-mov', 'hevc-mp4'];
+const ALPHA: ExportFormat[] = ['webm', 'png-frames', 'webp-frames', 'png-still', 'gif', 'prores4444-mov'];
+const LOSSY: ExportFormat[] = ['mp4', 'webm', 'mov', 'jpg-frames', 'webp-frames', 'hevc-mp4'];
 const STAGES: Record<ExportProgress['stage'], string> = { frames: 'Drawing frames', audio: 'Mixing sound', encoding: 'Encoding', finishing: 'Finishing' };
 
 const DEFAULTS: Saved = {
@@ -165,10 +169,35 @@ export class ExportDialog {
     if (!this.deps.engine.movie) { toast('Open or create a movie first.'); return; }
     if (!this.busy) this.hydrate();
     this.setTab(tab ?? this.state.tab);
+    void this.refreshEngine();
     this.dlg.open(this.state.tab === 'share' ? this.shareBox.querySelector<HTMLElement>('button') : this.format);
   }
 
   close(): void { this.dlg.close(); }
+
+  /** Enables or disables the three engine formats from what the engine's ffmpeg can encode (patched in place). */
+  private async refreshEngine(): Promise<void> {
+    const caps: JobCapabilities | null = await jobCapabilities();
+    for (const opt of Array.from(this.format.options)) {
+      const target = ENGINE[opt.value as ExportFormat];
+      if (!target) continue;
+      const base = FORMATS.find((f) => f.id === opt.value)?.label ?? opt.value;
+      const info = caps?.targets[target];
+      const ok = info?.available === true;
+      const reason = ok ? '' : caps ? info?.reason ?? 'Not available' : 'The engine is not running';
+      opt.disabled = !ok;
+      opt.title = reason;
+      const text = ok ? base : `${base} (${reason.replace(/\.$/, '')})`;
+      if (opt.textContent !== text) opt.textContent = text;
+    }
+    const sel = this.state.format;
+    const target = ENGINE[sel];
+    if (target && caps?.targets[target]?.available !== true) {
+      this.state.format = 'mp4';
+      this.format.value = 'mp4';
+    }
+    this.sync();
+  }
 
   // Advanced form ------------------------------------------------------------------------------
 
@@ -386,7 +415,9 @@ export class ExportDialog {
     const ej = this.deps.engine.startJob(label, 1);
     this.engineJob = ej;
     const off = this.deps.engine.on('progress', () => { if (ej.cancelled) job.cancel(); });
-    const job = startExport({ movie, renderer: this.deps.renderer, audio: this.deps.audio() }, opts);
+    const target = ENGINE[opts.format];
+    const deps = { movie, renderer: this.deps.renderer, audio: this.deps.audio() };
+    const job = target ? startEngineExport(deps, { ...opts, target }) : startExport(deps, opts);
     this.job = job;
     job.onProgress((p) => {
       ej.total = Math.max(1, p.total);
@@ -396,7 +427,7 @@ export class ExportDialog {
     void job.result.then(async (res) => {
       downloadBlob(res.blob, res.name);
       let kept = true;
-      try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; }
+      if (!res.kept) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
       const lines = [...res.warnings];
       if (!kept) lines.push('The file was downloaded, but it could not be kept in Exports.');
       this.finish(off, ej);

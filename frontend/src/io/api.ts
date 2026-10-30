@@ -11,6 +11,7 @@ export interface Capabilities {
 
 export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number }
 export interface OutputItem { name: string; path: string; modified: number; size: number; kind: string }
+export interface TrashItem { id: string; name: string; original: string; kind: 'movie' | 'export'; deleted: number; size: number; daysLeft: number }
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -88,12 +89,26 @@ export const api = {
   async deleteOutput(name: string): Promise<void> {
     await request(`/exports/${encodeURIComponent(name)}`, { method: 'DELETE' });
   },
+  async trash(): Promise<TrashItem[]> {
+    return ((await (await request('/trash')).json()) as { items: TrashItem[] }).items;
+  },
+  async restoreTrash(id: string): Promise<void> {
+    await request(`/trash/${encodeURIComponent(id)}/restore`, { method: 'POST' });
+  },
+  /** Deletes one item for good, or empties Recently Deleted when no id is given. */
+  async purgeTrash(id?: string): Promise<void> {
+    await request(id === undefined ? '/trash' : `/trash/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
   async stat(paths: string[]): Promise<Array<{ path: string; exists: boolean; size: number; modified: number }>> {
     return paths.map((path) => ({ path, exists: false, size: 0, modified: 0 }));
   },
   async thumbnail(by: { name?: string; path?: string }): Promise<Blob | null> {
     if (!by.name) return null;
     try { return await (await request(`${lib(by.name)}/poster`)).blob(); } catch { return null; }
+  },
+  /** A .fmo from an absolute path the operating system handed the app (double-click, Open With). */
+  async readFile(path: string): Promise<Blob> {
+    return (await request(`/files/read?path=${encodeURIComponent(path)}`)).blob();
   },
   async readPath(path: string): Promise<Blob | null> {
     const name = exportName(path);
