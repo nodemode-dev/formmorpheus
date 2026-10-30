@@ -28,6 +28,10 @@ export interface Prefs {
   dialogValues: Record<string, Record<string, DialogValue>>;
   recent: string[];
   undoDepth: number;
+  /** Percent of the undo steps kept one by one; the older rest is thinned. */
+  recentUndo: number;
+  /** Undo and Redo buttons beside the Stage timecode. */
+  stageUndoButtons: boolean;
   autosaveSeconds: number;
   stageShare: number;
   scrubSpeed: ScrubSpeed;
@@ -40,7 +44,7 @@ export interface Prefs {
 export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
-  shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 50, autosaveSeconds: 30,
+  shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 250, recentUndo: 100, stageUndoButtons: true, autosaveSeconds: 30,
   stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, confirmDelete: false, gpu: true,
 };
 
@@ -116,6 +120,8 @@ export function loadPrefs(): Prefs {
       dialogValues: cleanDialogValues(r.dialogValues),
       recent: strings(r.recent, 30, 1000),
       undoDepth: Math.round(num(r.undoDepth, 0, 1000, d.undoDepth)),
+      recentUndo: Math.round(num(r.recentUndo, 10, 100, d.recentUndo)),
+      stageUndoButtons: flag(r.stageUndoButtons, d.stageUndoButtons),
       autosaveSeconds: Math.round(num(r.autosaveSeconds, 0, 600, d.autosaveSeconds)),
       stageShare: num(r.stageShare, 0.25, 0.8, d.stageShare),
       scrubSpeed: scrub === 'precise' || scrub === 'fast' ? scrub : 'medium',

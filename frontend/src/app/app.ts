@@ -2,6 +2,7 @@ import { Engine } from '../engine/engine';
 import { content as makeContent, uid } from '../engine/model';
 import * as ops from '../engine/ops';
 import { Renderer } from '../engine/render';
+import { convertToFlipbook } from '../ui/flip-convert';
 import type { Asset, Content } from '../engine/types';
 import { api, capabilities, onServiceChange } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
@@ -36,11 +37,16 @@ import { applyShellPrefs, loadPrefs, updatePrefs, type Prefs } from '../ui/prefs
 import { SettingsDialog } from '../ui/settings-dialog';
 import { PaintView } from '../ui/paint-view';
 import { StageView } from '../ui/stage-view';
+import { stageHovered } from '../ui/stage-nav';
+import { StageOptions } from '../ui/stage-options';
 import { CameraLane } from '../ui/camera-lane';
 import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
 import { GraphEditor } from '../ui/graph-editor';
 import { TitleTools } from '../ui/titlebar-tools';
+import { ShortcutsDialog } from '../ui/shortcuts-dialog';
+import { RecoveryDialog } from '../ui/recovery-dialog';
+import { ckCommands } from './ck-commands';
 import { toast } from '../ui/toast';
 import { TrackMenu } from '../ui/track-menu';
 import { VERSION } from '../version';
@@ -74,7 +80,8 @@ export function startApp(): void {
   const engine = new Engine();
   engine.setTicker({ now: () => performance.now(), request: (fn) => requestAnimationFrame(fn), cancel: (id) => cancelAnimationFrame(id) });
   let prefs = loadPrefs();
-  engine.setUndoDepth(prefs.undoDepth);
+  engine.setUndoDepth(prefs.undoDepth, prefs.recentUndo);
+  document.body.classList.toggle('fm-no-stage-undo', !prefs.stageUndoButtons);
 
   let stage: StageView | null = null;
   let timeline: TimelineView | null = null;
@@ -110,9 +117,14 @@ export function startApp(): void {
   const contentMenu = new ContentMenu(engine);
   const lipsyncDialog = new LipsyncDialog(engine, () => audio);
   contentMenu.onLipsync = () => lipsyncDialog.show();
+  contentMenu.onConvert = (ids) => { void convertToFlipbook(engine, renderer, ids); };
   contentMenu.onEditInFormvis = (id) => { void roundTripOut('drawing', id); };
   const trackMenu = new TrackMenu(engine);
-  const movieSettings = new MovieSettings(engine);
+  const stageOptions = new StageOptions(engine);
+  const movieSettings = new MovieSettings(engine, stageOptions.picker);
+  const stageAt = (): { x: number; y: number } => { const r = q(root, '.fm-stage').getBoundingClientRect(); return { x: r.right - 360, y: r.top + 24 }; };
+  const stageMenu = new PopupMenu(commands, null, true);
+  stage.nav.onContext = (x, y) => { stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
   const createMenu = new PopupMenu(commands, null, true);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
@@ -142,6 +154,7 @@ export function startApp(): void {
     renderer,
     onOpenChange: (open) => { root.classList.toggle('is-painting', open); if (!open) { stage?.schedule(); timeline?.refreshThumbs(); } },
   });
+  newMovie.onFlipbook = (id) => { void paint.open(id); };
   const status = new StatusBar(q(root, '.cv-status'), engine);
   engine.on('notice', (n) => { if (n.kind === 'error') toast(n.text, 'error'); });
 
@@ -166,7 +179,8 @@ export function startApp(): void {
     prefs = p;
     syncGpu(p.gpu);
     applyShellPrefs(p);
-    engine.setUndoDepth(p.undoDepth);
+    engine.setUndoDepth(p.undoDepth, p.recentUndo);
+    document.body.classList.toggle('fm-no-stage-undo', !p.stageUndoButtons);
     home.sync();
     scheduleAutosave();
   });
@@ -445,8 +459,8 @@ export function startApp(): void {
     { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.some((c) => c.kind === 'group'), run: () => { const g = engine.selected.find((c) => c.kind === 'group'); if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
     { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
-    { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { engine.insert('drawing'); } },
-    { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { engine.insert('flipbook'); } },
+    { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { const id = engine.insert('drawing'); if (id) void paint.open(id); } },
+    { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { const id = engine.insert('flipbook'); if (id) void paint.open(id); } },
     { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { void (async () => { const value = await promptName('New Text', 'Text', 'Add'); if (!value) return; engine.insert('text', { name: value.split('\n')[0].slice(0, 40), text: { text: value, font: 'Inter', size: 160, weight: 600, color: '#ffffff', align: 'center' } }); })(); } },
     { id: 'add-track', label: 'Track', icon: 'track', keys: ['Shift+Mod+T'], enabled: has, run: () => { const m = engine.movie; if (!m) return; const at = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0; engine.run('Add Track', (mv) => ops.addTrack(mv, at).movie); } },
     { id: 'play', label: () => (engine.playing ? 'Pause' : 'Play'), keys: ['Space'], enabled: has, run: () => engine.togglePlay() },
@@ -458,10 +472,22 @@ export function startApp(): void {
     { id: 'mode-perform', label: 'Perform', keys: ['Mod+2'], enabled: has, checked: () => engine.mode === 'perform', run: () => engine.setMode('perform') },
     { id: 'mode-keyframe', label: 'Keyframe', keys: ['Mod+3'], enabled: has, checked: () => engine.mode === 'keyframe', run: () => engine.setMode('keyframe') },
     { id: 'multi-select', label: 'Multi-select', keys: ['Shift+M'], enabled: has, run: () => timeline?.toggleMulti() },
-    { id: 'timeline-in', label: 'Zoom Timeline In', keys: ['Mod+='], enabled: has, run: () => timeline?.zoomBy(1.4) },
-    { id: 'timeline-out', label: 'Zoom Timeline Out', keys: ['Mod+-'], enabled: has, run: () => timeline?.zoomBy(1 / 1.4) },
-    { id: 'timeline-fit', label: 'Fit Timeline', keys: ['Mod+0'], enabled: has, run: () => timeline?.fit() },
-    { id: 'graph-editor', label: 'Graph Editor', keys: ['Mod+Shift+G'], enabled: has, run: () => graphEditor.toggle() },
+    // Ctrl/Cmd + = - 0 go to whichever of the Stage and the Timeline the pointer rests over
+    { id: 'timeline-in', label: 'Zoom Timeline In', keys: ['Mod+='], enabled: has, run: () => { if (stageHovered()) stage?.nav.zoomBy(1.25); else timeline?.zoomBy(1.4); } },
+    { id: 'timeline-out', label: 'Zoom Timeline Out', keys: ['Mod+-'], enabled: has, run: () => { if (stageHovered()) stage?.nav.zoomBy(0.8); else timeline?.zoomBy(1 / 1.4); } },
+    { id: 'timeline-fit', label: 'Fit Timeline', keys: ['Mod+0'], enabled: has, run: () => { if (stageHovered()) stage?.nav.fit(); else timeline?.fit(); } },
+    { id: 'stage-zoom-in', label: 'Zoom Stage In', keys: ['Alt+Mod+='], enabled: has, run: () => stage?.nav.zoomBy(1.25) },
+    { id: 'stage-zoom-out', label: 'Zoom Stage Out', keys: ['Alt+Mod+-'], enabled: has, run: () => stage?.nav.zoomBy(0.8) },
+    { id: 'stage-fit', label: 'Fit Stage', keys: ['Alt+Mod+0'], enabled: has, run: () => stage?.nav.fit() },
+    { id: 'stage-zoom-100', label: 'Stage at 100%', keys: ['Alt+Mod+1'], enabled: has, run: () => stage?.nav.zoomTo(1) },
+    { id: 'stage-rotate-left', label: 'Rotate Stage Left', keys: ['Alt+Mod+Left'], enabled: has, run: () => stage?.nav.rotateStep(-1) },
+    { id: 'stage-rotate-right', label: 'Rotate Stage Right', keys: ['Alt+Mod+Right'], enabled: has, run: () => stage?.nav.rotateStep(1) },
+    { id: 'stage-rotate-reset', label: 'Reset Stage Rotation', enabled: has, run: () => stage?.nav.resetRotation() },
+    { id: 'stage-fullscreen', label: 'Stage Full Screen', keys: ['Shift+Mod+F'], enabled: has, run: () => stage?.nav.togglePreview() },
+    { id: 'stage-options', label: 'Stage Options...', keys: ['Shift+Mod+J'], enabled: has, run: () => stageOptions.show(stageAt()) },
+    { id: 'stage-background', label: 'Background Color...', enabled: has, run: () => stageOptions.pickBackground(stageAt()) },
+    { id: 'stage-timecode', label: 'Timecode', enabled: has, checked: () => engine.movie?.timecode !== false, run: () => engine.run('Timecode', (m) => ops.patchMovie(m, { timecode: m.timecode === false })) },
+    { id: 'graph-editor', label: 'Graph Editor', keys: ['Alt+Mod+G'], enabled: has, run: () => graphEditor.toggle() },
     { id: 'movie-settings', label: 'Movie Settings...', keys: ['Mod+J'], enabled: has, run: () => movieSettings.toggle(q(root, '[data-act="settings"]')) },
     { id: 'fit-to-content', label: 'Fit Duration to Content', enabled: has, run: () => engine.run('Fit to Content', (m) => ops.fitToContent(m)) },
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
@@ -470,15 +496,48 @@ export function startApp(): void {
     { id: 'help', label: 'formmorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView(); helpView.show(); } },
     { id: 'about', label: 'About formmorpheus', run: () => toast(`formmorpheus ${VERSION} by NodeMode · Apache-2.0`) },
   ];
-  commands.add(...add);
+  const groupOfCommand = (id: string): string => {
+    const find = (items: ReadonlyArray<unknown>, path: string): string => {
+      for (const it of items) {
+        if (it === id) return path;
+        if (it && typeof it === 'object' && 'items' in it) {
+          const d = it as MenuDef;
+          const hit = find(typeof d.items === 'function' ? d.items() : d.items, d.label);
+          if (hit) return hit;
+        }
+      }
+      return '';
+    };
+    for (const m of menus) { const hit = find(typeof m.items === 'function' ? m.items() : m.items, m.label); if (hit) return hit; }
+    return '';
+  };
+  const shortcutsDialog = new ShortcutsDialog(commands, groupOfCommand, () => { prefs = updatePrefs({ shortcuts: commands.overrides() }); });
+  const recoveryDialog = new RecoveryDialog(engine);
+  document.addEventListener('fm:open-shortcuts', () => shortcutsDialog.show());
+  const mid = (): { x: number; y: number } => { const r = q(root, '.fm-stage-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  commands.add(
+    ...add,
+    ...paint.paintCommands(),
+    ...ckCommands({
+      engine,
+      nudge: (dx, dy) => stage?.nudge(dx, dy),
+      centerPlayhead: () => timeline?.centerOnPlayhead(),
+      openOptions: () => { const p = mid(); contentMenu.open(p.x, p.y); },
+      openCreate: () => { const p = mid(); createMenu.setItems(['add-drawing', 'add-flipbook', 'add-text', '-', 'add-track', 'import-media']); createMenu.openAt(p.x, p.y); },
+      edit: (c) => { void editContent(c); },
+    }),
+    { id: 'shortcuts', label: 'Keyboard Shortcuts...', run: () => shortcutsDialog.show() },
+    { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
+  );
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
+  paint.useCommands(commands);
 
   menus.push(
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
-    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', '-', 'settings'] },
+    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', '-', 'shortcuts', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', 'add-text', 'add-track', 'import-media'] }, '-', 'split', 'fill-duration', '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', 'graph-editor', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-fit', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help', 'about'] },
   );
   const syncRecentCommands = (): void => {

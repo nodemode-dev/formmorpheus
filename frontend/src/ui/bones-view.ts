@@ -17,6 +17,7 @@ import { BonesCard } from './bones-card';
 import { newKeyState } from './action-menu';
 import { perform } from './perform-ui';
 import '../styles/bones.css';
+import { stageLocal } from './stage-nav';
 
 export type BonesTool = 'rig' | 'pose';
 type Listener = () => void;
@@ -247,8 +248,8 @@ export class BonesOverlay {
   private toLocal(e: PointerEvent, c: Content): [number, number] | null {
     const m = this.engine.movie, v = this.view;
     if (!m || !v) return null;
-    const r = this.svg.getBoundingClientRect();
-    const sx = (e.clientX - r.left - v.ox) / v.scale, sy = (e.clientY - r.top - v.oy) / v.scale;
+    const [lx, ly] = stageLocal(e);
+    const sx = (lx - v.ox) / v.scale, sy = (ly - v.oy) / v.scale;
     const out = [0, 0];
     stageToLocal(animate(c, this.engine.frame - c.start), m.width, m.height, sx, sy, out);
     return [out[0], out[1]];

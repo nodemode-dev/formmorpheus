@@ -18,6 +18,7 @@ function setHidden(node: Element, hidden: boolean): void {
 import { ensureLane, newKeyState } from './action-menu';
 import { perform } from './perform-ui';
 import '../styles/warp.css';
+import { stageLocal } from './stage-nav';
 
 export type WarpKind = 'warp' | 'distort';
 
@@ -205,8 +206,8 @@ export class WarpOverlay {
     if (!d || !m || !v || e.pointerId !== d.pointer) return;
     const found = this.engine.selected.find((c) => c.id === d.id);
     if (!found) return;
-    const r = this.root.getBoundingClientRect();
-    const sx = (e.clientX - r.left - v.ox) / v.scale, sy = (e.clientY - r.top - v.oy) / v.scale;
+    const [lx, ly] = stageLocal(e);
+    const sx = (lx - v.ox) / v.scale, sy = (ly - v.oy) / v.scale;
     const a = animate(found, this.engine.frame - found.start);
     const p = [0, 0];
     stageToLocal(a, m.width, m.height, sx, sy, p);

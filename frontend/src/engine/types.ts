@@ -3,22 +3,32 @@ export const FORMAT_VERSION = 1;
 export type BlendMode =
   | 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten'
   | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference'
-  | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity' | 'add' | 'passthrough';
+  | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity' | 'add' | 'passthrough'
+  | 'linear-burn' | 'darker-color' | 'lighter-color' | 'vivid-light' | 'linear-light' | 'pin-light' | 'hard-mix' | 'subtract' | 'divide';
 
 export const BLEND_MODES: { id: BlendMode; label: string; short: string }[] = [
   { id: 'normal', label: 'Normal', short: 'N' },
-  { id: 'multiply', label: 'Multiply', short: 'M' },
   { id: 'darken', label: 'Darken', short: 'D' },
+  { id: 'multiply', label: 'Multiply', short: 'M' },
   { id: 'color-burn', label: 'Color Burn', short: 'Cb' },
-  { id: 'screen', label: 'Screen', short: 'S' },
+  { id: 'linear-burn', label: 'Linear Burn', short: 'Lb' },
+  { id: 'darker-color', label: 'Darker Color', short: 'Dc' },
   { id: 'lighten', label: 'Lighten', short: 'L' },
+  { id: 'screen', label: 'Screen', short: 'S' },
   { id: 'color-dodge', label: 'Color Dodge', short: 'Cd' },
   { id: 'add', label: 'Add', short: 'A' },
+  { id: 'lighter-color', label: 'Lighter Color', short: 'Lc' },
   { id: 'overlay', label: 'Overlay', short: 'O' },
   { id: 'soft-light', label: 'Soft Light', short: 'Sl' },
   { id: 'hard-light', label: 'Hard Light', short: 'Hl' },
+  { id: 'vivid-light', label: 'Vivid Light', short: 'Vl' },
+  { id: 'linear-light', label: 'Linear Light', short: 'Ll' },
+  { id: 'pin-light', label: 'Pin Light', short: 'Pl' },
+  { id: 'hard-mix', label: 'Hard Mix', short: 'Hm' },
   { id: 'difference', label: 'Difference', short: 'Di' },
   { id: 'exclusion', label: 'Exclusion', short: 'E' },
+  { id: 'subtract', label: 'Subtract', short: 'Sb' },
+  { id: 'divide', label: 'Divide', short: 'Dv' },
   { id: 'hue', label: 'Hue', short: 'H' },
   { id: 'saturation', label: 'Saturation', short: 'Sa' },
   { id: 'color', label: 'Color', short: 'C' },
@@ -44,6 +54,9 @@ export interface Transform {
   rotation: number;
   flipH: boolean;
   flipV: boolean;
+  /** One-axis stretch from a Stage side node, multiplying `scale` along that axis (1 when absent). */
+  stretchX?: number;
+  stretchY?: number;
 }
 
 export interface DrawingLayer {
@@ -91,7 +104,7 @@ export interface FlipTrack {
   maskInvert?: boolean;
 }
 
-export type FlipMask = 'none' | 'alpha' | 'luminance';
+export type FlipMask = 'none' | 'clipping' | 'alpha' | 'luminance';
 
 /** Easing of the span that leaves a key; 'hold' keeps the value until the next key. */
 export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold' | 'custom';
@@ -249,6 +262,10 @@ export interface Movie {
   addKeyAtStart: boolean;
   /** Playback loops only the part of the movie the Timeline shows. Absent in older files. */
   loopVisible?: boolean;
+  /** How visible content outside the Stage is on the Stage view, 0 to 1. Absent: the default (0.2). */
+  backstage?: number;
+  /** The Stage shows its Timecode. Absent: it does. */
+  timecode?: boolean;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
   camera?: { keys: KeyLane[] };
   onion: OnionSettings;

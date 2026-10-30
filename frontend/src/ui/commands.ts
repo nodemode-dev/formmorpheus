@@ -41,6 +41,17 @@ export function comboOf(e: KeyboardEvent): string {
   return (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (mod ? 'Mod+' : '') + key;
 }
 
+/** One spelling for a combo, whatever order its parts were written in: Alt, Shift, Mod, then the key ('Mod+Shift+G' and 'Shift+Mod+G' are the same keys). */
+export function canonCombo(combo: string): string {
+  const plus = combo.endsWith('++');
+  const parts = (plus ? combo.slice(0, -2) : combo).split('+').filter((p) => p.length > 0);
+  let key = plus ? '+' : (parts.pop() ?? '');
+  if (plus && parts.length && parts[parts.length - 1] === '') parts.pop();
+  const has = (n: string): boolean => parts.includes(n);
+  if (/^[a-z]$/.test(key)) key = key.toUpperCase();
+  return (has('Alt') ? 'Alt+' : '') + (has('Shift') ? 'Shift+' : '') + (has('Mod') ? 'Mod+' : '') + key;
+}
+
 /** Glyphs for the Apple menu style. */
 const GLYPHS: Record<string, string> = {
   Mod: '⌘', Shift: '⇧', Alt: '⌥', Backspace: '⌫', Delete: '⌦', Enter: '↩',
@@ -64,9 +75,14 @@ export class Commands {
   add(...cmds: Command[]): void {
     for (const cmd of cmds) {
       if (this.map.has(cmd.id)) throw new Error(`duplicate command: ${cmd.id}`);
+      if (cmd.keys) cmd.keys = Array.from(new Set(cmd.keys.map(canonCombo)));
       this.map.set(cmd.id, cmd);
       this.defaults.set(cmd.id, [...(cmd.keys ?? [])]);
-      for (const k of cmd.keys ?? []) this.byKey.set(k, cmd);
+      for (const k of cmd.keys ?? []) {
+        const had = this.byKey.get(k);
+        if (had && had !== cmd) console.warn(`shortcut ${k} is the default of both ${had.id} and ${cmd.id}`);
+        this.byKey.set(k, cmd);
+      }
     }
     this.onChange?.();
   }
@@ -78,6 +94,7 @@ export class Commands {
   setKeys(id: string, keys: string[]): void {
     const cmd = this.map.get(id);
     if (!cmd) return;
+    keys = Array.from(new Set(keys.map(canonCombo)));
     for (const k of cmd.keys ?? []) if (this.byKey.get(k) === cmd) this.byKey.delete(k);
     for (const k of keys) {
       const had = this.byKey.get(k);
@@ -88,7 +105,7 @@ export class Commands {
   }
 
   /** The command that has `combo`, if any. */
-  forCombo(combo: string): Command | undefined { return this.byKey.get(combo); }
+  forCombo(combo: string): Command | undefined { return this.byKey.get(canonCombo(combo)); }
 
   /** A command's keys as defined, before any rebinding. */
   defaultKeys(id: string): string[] { return [...(this.defaults.get(id) ?? [])]; }

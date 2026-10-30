@@ -10,10 +10,12 @@ import * as ops from '../engine/ops';
 import { locate } from '../engine/model';
 import { animate, evalLane, laneOf } from '../engine/keys';
 import { laneSegments, smoothPathOn, type PathNode } from '../engine/path';
-import type { Content } from '../engine/types';
+import type { Content, Movie } from '../engine/types';
+import { apply, invert, mul, postMatrix, viewMat, type Mat } from '../engine/transform';
 import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setDisabled } from './dom';
 import '../styles/path.css';
+import { stageLocal } from './stage-nav';
 
 const NS = 'http://www.w3.org/2000/svg';
 const MAX_DOTS = 3000;
@@ -80,7 +82,11 @@ export class PathView {
   constructor(host: HTMLElement, private readonly engine: Engine) {
     host.append(this.root, this.pivotRoot, this.bar);
     for (const r of [this.root, this.pivotRoot]) {
-      r.addEventListener('pointerdown', (e) => this.down(e));
+      r.addEventListener('pointerdown', (e) => {
+        // the Stage keeps keyboard focus (arrow nudges) when the press lands on the pivot or a path node
+        (host.closest('[tabindex="0"]') as HTMLElement | null)?.focus({ preventScroll: true });
+        this.down(e);
+      });
       r.addEventListener('pointermove', (e) => this.move(e));
       r.addEventListener('pointerup', (e) => this.up(e));
       r.addEventListener('pointercancel', (e) => this.up(e));
@@ -112,6 +118,7 @@ export class PathView {
       return;
     }
     this.view = view;
+    this.placePost(m, c, view);
     const keyed = mode !== 'compose';
     const local = this.engine.frame - c.start;
     const b = basis(c, keyed, local);
@@ -228,8 +235,23 @@ export class PathView {
   }
 
   private local(e: PointerEvent): [number, number] {
-    const r = this.root.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    const p = stageLocal(e);
+    // the overlays are drawn in the content's own (unparented) space and moved by `post`: map the pointer back into it
+    const inv = this.post ? invert(this.post) : null;
+    return inv ? apply(inv, p[0], p[1]) : p;
+  }
+
+  /** Stage pixels to Stage pixels: the parents' and the camera's transform around this content, or null. */
+  private post: Mat | null = null;
+
+  private placePost(m: Movie, c: Content, view: View): void {
+    const pm = postMatrix(m, c, this.engine.frame, false, 0);
+    const vm = viewMat(view), vi = invert(vm);
+    this.post = pm && vi ? mul(mul(vm, pm), vi) : null;
+    const css = this.post ? `matrix(${this.post.map((v) => v.toFixed(5)).join(',')})` : '';
+    for (const s of [this.root, this.pivotRoot] as unknown as HTMLElement[]) {
+      if (s.style.transform !== css) { s.style.transformOrigin = '0 0'; s.style.transform = css; }
+    }
   }
 
   private action(a: string): void {

@@ -1,0 +1,55 @@
+/* Stage navigation (ui/stage-nav.ts) and Stage options (ui/stage-options.ts). */
+:root { --fm-stage-outline: var(--text-muted); }
+
+.fm-stage-space { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 50% 50%; }
+.fm-stage-space > .fm-stage-canvas { inset: 0; }
+.fm-stage.is-hand, .fm-stage.is-hand .fm-stage-canvas { cursor: grab; }
+.fm-stage.is-grabbing, .fm-stage.is-grabbing * { cursor: grabbing !important; }
+
+.fm-nav {
+  position: absolute; right: var(--space-3); bottom: var(--space-3); z-index: var(--z-chrome);
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  color: var(--text-primary);
+}
+.fm-nav-btn, .fm-nav-zoom {
+  display: inline-flex; align-items: center; justify-content: center; height: 26px; border: 0; border-radius: var(--radius-pill);
+  background: transparent; color: inherit; font: inherit; cursor: default;
+}
+.fm-nav-btn { width: 26px; }
+.fm-nav-btn[hidden] { display: none; }
+.fm-nav-zoom { min-width: 48px; padding: 0 var(--space-2); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-nav-btn:hover, .fm-nav-zoom:hover { background: var(--surface-raised); }
+.fm-nav-btn:disabled { opacity: 0.4; pointer-events: none; }
+
+/* Play preview: the Stage alone */
+.fm-stage-wrap.is-preview { position: fixed; inset: 0; z-index: var(--z-modal); padding: 0; background: #000; }
+.fm-stage-wrap.is-preview .fm-stage { border-radius: 0; background: #000; box-shadow: none; }
+.fm-stage-wrap.is-preview .fm-nav, .fm-stage-wrap.is-preview .fm-tc-bar, .fm-stage-wrap.is-preview .fm-stage-box { display: none; }
+.fm-stage-wrap.is-preview.is-idle .fm-stage { cursor: none; }
+.fm-pv {
+  position: absolute; left: 50%; bottom: var(--space-4); z-index: var(--z-chrome); transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--space-2); width: min(640px, calc(100% - 2 * var(--space-4))); padding: 4px var(--space-2);
+  background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+  color: var(--text-primary); transition: opacity 0.2s;
+}
+.fm-pv[hidden] { display: none; }
+.fm-pv.is-idle { opacity: 0; pointer-events: none; }
+.fm-pv-scrub { flex: 1; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-pv-time { flex: none; min-width: 72px; text-align: right; font-size: var(--fs-12); font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+/* Stage options */
+.fm-so { padding: var(--space-2); }
+.fm-so-sec { display: grid; gap: var(--space-1); }
+.fm-so-sec + .fm-so-sec { margin-top: var(--space-2); }
+.fm-so-head { padding: var(--space-1) var(--space-3); color: var(--text-muted); font-size: var(--fs-12); }
+.fm-so-bg { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 34px; padding: var(--space-1) var(--space-3); border-radius: var(--radius-lg); background: var(--surface-raised); color: var(--text-secondary); font-size: var(--fs-13); }
+.fm-so-bg.is-off .fm-so-swatch { opacity: 0.4; }
+.fm-so-swatch { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 var(--space-2) 0 4px; border: 1px solid var(--line-2); border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); font-variant-numeric: tabular-nums; cursor: default; }
+.fm-so-swatch:hover { background: var(--surface-field); }
+.fm-so-chip { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--fm-so-bg, #fff); }
+.fm-so .cv-field { padding-inline: var(--space-3); border-radius: var(--radius-lg); background: var(--surface-raised); }

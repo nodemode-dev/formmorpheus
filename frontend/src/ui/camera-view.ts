@@ -8,6 +8,7 @@ import type { View } from '../engine/render';
 import { el } from './dom';
 import { newKeyState } from './action-menu';
 import '../styles/camera.css';
+import { stageLocal } from './stage-nav';
 
 type Listener = () => void;
 
@@ -116,8 +117,7 @@ export class CameraOverlay {
   }
 
   private local(e: PointerEvent): [number, number] {
-    const r = this.root.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return stageLocal(e);
   }
 
   private down(e: PointerEvent): void {

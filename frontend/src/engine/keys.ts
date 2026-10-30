@@ -238,7 +238,7 @@ export function channelSpec(kind: KeyKind, id: string): ChannelSpec | undefined 
 }
 
 export function laneOf(c: Content, kind: KeyKind): KeyLane | null {
-  const keys = c.keys;
+  const keys = c.keys ?? [];   // movies saved before keyframes (v0.3.0) have no `keys`
   for (let i = 0; i < keys.length; i++) if (keys[i].kind === kind) return keys[i];
   return null;
 }
@@ -467,8 +467,8 @@ export function animate(c: Content, local: number): Animated {
     y: t.y,
     px: c.pivot?.x ?? 0,
     py: c.pivot?.y ?? 0,
-    scaleX: t.scale,
-    scaleY: t.scale,
+    scaleX: t.scale * (t.stretchX ?? 1),
+    scaleY: t.scale * (t.stretchY ?? 1),
     rotation: t.rotation,
     flipH: t.flipH,
     flipV: t.flipV,
@@ -484,7 +484,7 @@ export function animate(c: Content, local: number): Animated {
     distort: null,
     bones: null,
   };
-  const lanes = c.keys;
+  const lanes = c.keys ?? [];
   const n = lanes.length;
   if (n === 0) return a;
   for (let i = 0; i < n; i++) {
@@ -500,8 +500,8 @@ export function animate(c: Content, local: number): Animated {
         }
         a.px = chv(lane, 'px', local, c.pivot?.x ?? 0);
         a.py = chv(lane, 'py', local, c.pivot?.y ?? 0);
-        a.scaleX = chv(lane, 'scaleX', local, t.scale);
-        a.scaleY = chv(lane, 'scaleY', local, t.scale);
+        a.scaleX = chv(lane, 'scaleX', local, t.scale) * (t.stretchX ?? 1);
+        a.scaleY = chv(lane, 'scaleY', local, t.scale) * (t.stretchY ?? 1);
         a.rotation = chv(lane, 'rotation', local, t.rotation);
         break;
       case 'warp': {

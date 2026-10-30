@@ -184,7 +184,8 @@ export class Engine extends Emitter<EngineEvents> {
     this.pruneSelection();
   }
 
-  setUndoDepth(depth: number): void {
+  setUndoDepth(depth: number, recentPercent = this.history.recentPercent): void {
+    this.history.recentPercent = Math.max(10, Math.min(100, Math.round(recentPercent)));
     this.history.setDepth(depth);
     this.emit('history', undefined);
   }

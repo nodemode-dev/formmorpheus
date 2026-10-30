@@ -1,0 +1,125 @@
+// Keyboard Shortcuts: every command with its keys; search, add a key by pressing it, remove, reset one or all.
+// A key already taken is moved to the command being edited and the status line says whose it was.
+import { canonCombo, comboOf, formatKeys, type Command, type Commands } from './commands';
+import { Dialog, confirmAction } from './dialogs';
+import { el, patchList, q, setClass, setHidden, setText, setTitle } from './dom';
+import { icon } from './icons';
+import { t } from './i18n';
+import '../styles/shortcuts.css';
+
+interface Row { id: string; label: string; group: string; keys: string[]; changed: boolean }
+
+export class ShortcutsDialog extends Dialog {
+  private readonly list = el('<div class="fm-sc-list" role="list"></div>');
+  private readonly search = el<HTMLInputElement>('<input class="cv-input fm-sc-search" type="text" placeholder="Search commands or keys" spellcheck="false" aria-label="Search commands or keys">');
+  private readonly status = el('<div class="fm-sc-status" aria-live="polite"></div>');
+  private readonly empty = el('<p class="cv-note fm-sc-empty" hidden>No command matches.</p>');
+  private recording: string | null = null;
+  private rows: Row[] = [];
+
+  /** `groupOf` names the menu a command sits in; `changed` is called after every edit so the app can keep the bindings. */
+  constructor(private readonly commands: Commands, private readonly groupOf: (id: string) => string, private readonly changed: () => void) {
+    super('Keyboard Shortcuts', 720);
+    this.body.append(this.search, el('<div class="fm-sc-head"><span>Command</span><span>Menu</span><span>Keys</span><span></span></div>'), this.list, this.empty, this.status);
+    this.search.addEventListener('input', () => this.render());
+    this.list.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const id = target.closest<HTMLElement>('.fm-sc-row')?.dataset.key;
+      if (!id) return;
+      const rm = target.closest<HTMLElement>('[data-rm]');
+      if (rm) { this.set(id, this.keysOf(id).filter((k) => k !== rm.dataset.rm)); return; }
+      if (target.closest('[data-rec]')) { this.record(this.recording === id ? null : id); return; }
+      if (target.closest('[data-reset]')) this.set(id, this.commands.defaultKeys(id));
+    });
+    this.scrim.addEventListener('keydown', (e) => this.keydown(e), true);
+    this.button('Reset All', 'ghost', () => { void this.resetAll(); });
+    this.button('Done', 'primary', () => this.close());
+    this.onClose = () => this.record(null);
+  }
+
+  show(): void {
+    this.search.value = '';
+    setText(this.status, '');
+    this.render();
+    this.open(this.search);
+  }
+
+  private cmds(): Command[] {
+    return this.commands.all().filter((c) => !c.id.startsWith('recent:'));
+  }
+
+  private keysOf(id: string): string[] { return [...(this.commands.get(id)?.keys ?? [])]; }
+
+  private set(id: string, keys: string[]): void {
+    const moved: string[] = [];
+    for (const k of keys) {
+      const owner = this.commands.forCombo(k);
+      if (owner && owner.id !== id) moved.push(`${formatKeys(k)} ${t('moved from')} ${this.commands.label(owner)}`);
+    }
+    this.commands.setKeys(id, keys);
+    this.changed();
+    this.render();
+    setText(this.status, moved.join('; '));
+  }
+
+  private record(id: string | null): void {
+    this.recording = id;
+    for (const n of Array.from(this.list.children) as HTMLElement[]) setClass(n, 'is-recording', n.dataset.key === id);
+    if (id) {
+      const c = this.commands.get(id);
+      setText(this.status, `${t('Press the keys for')} ${c ? this.commands.label(c) : ''} (${t('Esc cancels')})`);
+    }
+  }
+
+  private keydown(e: KeyboardEvent): void {
+    if (!this.recording) return;
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta' || e.key === 'CapsLock') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = this.recording;
+    if (e.key === 'Escape' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) { this.record(null); setText(this.status, ''); return; }
+    const combo = canonCombo(comboOf(e));
+    this.record(null);
+    const have = this.keysOf(id);
+    if (!have.includes(combo)) this.set(id, [...have, combo]);
+    else setText(this.status, '');
+  }
+
+  private async resetAll(): Promise<void> {
+    if (!(await confirmAction('Reset Keyboard Shortcuts', 'Set every command back to its default keys?', 'Reset', true))) return;
+    this.commands.resetKeys();
+    this.changed();
+    this.render();
+    setText(this.status, t('Every command is back to its default keys.'));
+  }
+
+  private render(): void {
+    const words = this.search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const all: Row[] = this.cmds().map((c) => {
+      const keys = c.keys ?? [], d = this.commands.defaultKeys(c.id);
+      return { id: c.id, label: this.commands.label(c).replace(/\.\.\.$/, ''), group: this.groupOf(c.id), keys: [...keys], changed: keys.join('|') !== d.join('|') };
+    });
+    this.rows = all.filter((r) => !words.length || words.every((w) => `${r.label} ${r.group} ${r.keys.map(formatKeys).join(' ')}`.toLowerCase().includes(w)));
+    const fillRow = (n: HTMLElement, r: Row): void => {
+      setText(q(n, '.fm-sc-label'), r.label);
+      setText(q(n, '.fm-sc-group'), r.group);
+      patchList(q(n, '.fm-sc-keys'), r.keys, {
+        key: (k) => k,
+        create: (k) => { const c = el(`<span class="fm-sc-chip"><span></span><button type="button" title="Remove this key" aria-label="Remove this key">${icon('close', 10)}</button></span>`); fillChip(c, k); return c; },
+        update: fillChip,
+      });
+      setClass(n, 'is-changed', r.changed);
+      setClass(n, 'is-recording', this.recording === r.id);
+      const reset = q<HTMLButtonElement>(n, '[data-reset]');
+      setTitle(reset, r.changed ? t('Back to the default keys') : t('Already the default'));
+      if (reset.disabled !== !r.changed) reset.disabled = !r.changed;
+    };
+    const fillChip = (c: HTMLElement, k: string): void => { setText(c.firstElementChild, formatKeys(k)); (c.lastElementChild as HTMLElement).dataset.rm = k; };
+    patchList(this.list, this.rows, {
+      key: (r) => r.id,
+      create: (r) => { const n = el(`<div class="fm-sc-row" role="listitem"><span class="fm-sc-label"></span><span class="fm-sc-group"></span><span class="fm-sc-keys"></span><span class="fm-sc-acts"><button class="cv-icon-btn" type="button" data-rec title="Add a key: press the keys">${icon('plus', 13)}</button><button class="cv-icon-btn" type="button" data-reset title="Back to the default keys">${icon('undo', 13)}</button></span></div>`); fillRow(n, r); return n; },
+      update: fillRow,
+    });
+    setHidden(this.empty, this.rows.length > 0);
+  }
+}

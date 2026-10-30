@@ -17,6 +17,8 @@ export class Popover {
   private readonly down = (e: PointerEvent): void => {
     const t = e.target as Node | null;
     if (!t || this.el.contains(t) || this.anchor?.contains(t)) return;
+    // the Color panel opened from a popover is part of it
+    if (t instanceof Element && t.closest('.fm-col')) return;
     for (const p of this.subs.keys()) if (p.contains(t)) return;
     this.hide();
   };

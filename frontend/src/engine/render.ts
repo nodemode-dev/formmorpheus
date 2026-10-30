@@ -9,6 +9,7 @@ import { boil } from '../paint/boil';
 import type { Raster } from '../paint/types';
 import { hasTree } from '../paint/layer-tree';
 import { drawLayerTree } from './layer-draw';
+import { blendCanvasOnto, isPixelBlend } from './blend';
 import type { VideoSource } from '../media/types';
 import type { BlendMode, Content, Movie, Track } from './types';
 import { GpuCompositor, type GpuHost } from './gpu/compositor';
@@ -22,12 +23,17 @@ const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   'color-dodge': 'color-dodge', 'color-burn': 'color-burn', 'hard-light': 'hard-light', 'soft-light': 'soft-light',
   difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
   add: 'lighter', passthrough: 'source-over',
+  'linear-burn': 'source-over', 'darker-color': 'source-over', 'lighter-color': 'source-over', 'vivid-light': 'source-over', 'linear-light': 'source-over',
+  'pin-light': 'source-over', 'hard-mix': 'source-over', subtract: 'source-over', divide: 'source-over',
 };
 
 /** Decoded pictures may hold this many bytes; the ones drawn in the last two frames always stay. */
 const BITMAP_CAP_BYTES = 1024 * 1024 * 1024;
 /** Canvas filters (blur) where the browser has them; others take the CPU path in paint/filters. */
 const CANVAS_FILTER = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'filter' in OffscreenCanvasRenderingContext2D.prototype;
+
+/** Backstage visibility when a movie does not set its own. */
+export const BACKSTAGE_DEFAULT = 0.2;
 
 export interface View {
   scale: number;
@@ -278,8 +284,9 @@ export class Renderer {
     const mw = movie.width * view.scale, mh = movie.height * view.scale;
     const layer = gpu ?? this.surface();
     if (!gpu) this.composeTracks(layer.getContext('2d') as OffscreenCanvasRenderingContext2D, movie.tracks, frame, view, movie);
-    if (opts.backstage) {
-      ctx.globalAlpha = 0.28;
+    const back = movie.backstage ?? BACKSTAGE_DEFAULT;
+    if (opts.backstage && back > 0) {
+      ctx.globalAlpha = back;
       ctx.drawImage(layer, 0, 0);
       ctx.globalAlpha = 1;
     }
@@ -304,6 +311,7 @@ export class Renderer {
     let held: { layer: Surface; c: Content; opacity: number } | null = null;
     const commit = (): void => {
       if (!held) return;
+      if (isPixelBlend(held.c.blend)) { blendCanvasOnto(out, held.layer, held.c.blend, held.opacity); this.release(held.layer); held = null; return; }
       out.globalAlpha = held.opacity;
       out.globalCompositeOperation = BLEND_OP[held.c.blend];
       out.drawImage(held.layer, 0, 0);
@@ -347,8 +355,18 @@ export class Renderer {
 
   /** True when content `c` (track `i`) may skip its own surface: opaque, normal blend, no mask or filter, and the next content above does not mask it. */
   private direct(c: Content, a: Animated, tracks: Track[], i: number, frame: number): boolean {
-    if (c.mask !== 'none' || c.blend !== 'normal' || a.opacity < 1) return false;
-    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens || a.boil) return false;
+    // a Passthrough group has no surface of its own: its members blend with the tracks beneath
+    const through = c.kind === 'group' && c.blend === 'passthrough';
+    if (c.mask !== 'none' || (c.blend !== 'normal' && !through) || a.opacity < 1) return false;
+    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens || a.boil || a.warp || a.distort || a.bones) return false;
+    if (through) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (tracks[j].hidden) continue;
+        const n = tracks[j].content.find((x) => frame >= x.start && frame < end(x));
+        if (n && n.opacity > 0 && animate(n, frame - n.start).opacity > 0) return n.mask === 'none';
+      }
+      return true;
+    }
     if (c.kind === 'drawing') { if (c.layers.some((l) => l.blend !== 'normal' || l.opacity < 1)) return false; }
     else if (c.kind !== 'image' && c.kind !== 'text' && c.kind !== 'video') return false;
     for (let j = i - 1; j >= 0; j--) {
@@ -372,7 +390,7 @@ export class Renderer {
     const img = mc.getImageData(0, 0, mask.width, mask.height);
     const d = img.data;
     for (let p = 0; p < d.length; p += 4) {
-      let a = mode === 'luminance' ? ((d[p] * 0.2126 + d[p + 1] * 0.7152 + d[p + 2] * 0.0722) * d[p + 3]) / 255 : d[p + 3];
+      let a = mode === 'luminance' ? ((d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114) * d[p + 3]) / 255 : d[p + 3];
       if (invert) a = 255 - a;
       d[p + 3] = a;
     }
@@ -548,6 +566,15 @@ export class Renderer {
       if (!l.visible || l.opacity <= 0) continue;
       const bmp = this.bitmap(l.pixels);
       if (!bmp) continue;
+      if (isPixelBlend(l.blend)) {
+        const s = this.surface();
+        const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+        sc.setTransform(ctx.getTransform());
+        sc.drawImage(bmp, 0, 0, movie.width, movie.height);
+        blendCanvasOnto(ctx, s, l.blend, baseAlpha * l.opacity);
+        this.release(s);
+        continue;
+      }
       ctx.globalAlpha = baseAlpha * l.opacity;
       ctx.globalCompositeOperation = l.blend === 'normal' ? baseOp : BLEND_OP[l.blend];
       ctx.drawImage(bmp, 0, 0, movie.width, movie.height);
@@ -561,6 +588,7 @@ export class Renderer {
       drawMaskedRows({
         surface: () => this.surface(), release: (s) => this.release(s), layers: (g, l) => this.drawLayers(g, l, movie),
         mask: (a, b, m, inv) => this.applyMask(a, b, m, inv), blendOp: (b) => BLEND_OP[b],
+        blendInto: (g, s, b, alpha) => { if (!isPixelBlend(b)) return false; blendCanvasOnto(g, s, b, alpha); return true; },
       }, ctx, c, local);
       return;
     }
@@ -569,6 +597,15 @@ export class Renderer {
       if (t.hidden || t.opacity <= 0) continue;
       const index = flipIndexAt(t, local);
       if (index < 0) continue;
+      if (isPixelBlend(t.blend)) {
+        const s = this.surface();
+        const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+        sc.setTransform(ctx.getTransform());
+        this.drawLayers(sc, t.frames[index].layers, movie);
+        blendCanvasOnto(ctx, s, t.blend, ctx.globalAlpha * t.opacity);
+        this.release(s);
+        continue;
+      }
       ctx.save();
       ctx.globalAlpha *= t.opacity;
       ctx.globalCompositeOperation = BLEND_OP[t.blend];
@@ -635,6 +672,15 @@ export class Renderer {
         if (t.hidden) continue;
         const c = t.content.find((x) => local >= x.start && local < end(x));
         if (!c || c.opacity <= 0) continue;
+        if (isPixelBlend(c.blend)) {
+          const s = this.surface();
+          const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+          sc.setTransform(ctx.getTransform());
+          this.drawContent(sc, c, local - c.start, unit, movie);
+          blendCanvasOnto(ctx, s, c.blend, c.opacity);
+          this.release(s);
+          continue;
+        }
         ctx.save();
         ctx.globalAlpha = c.opacity;
         ctx.globalCompositeOperation = BLEND_OP[c.blend];

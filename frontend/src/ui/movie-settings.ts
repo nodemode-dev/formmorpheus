@@ -5,6 +5,7 @@ import type { PlaybackMode } from '../engine/types';
 import { el, q, setChecked, setClass, setHidden, setText } from './dom';
 import { toggleOf } from './panels/controls';
 import { Popover } from './popover';
+import { StageOptionsBody, type BackgroundPicker } from './stage-options';
 
 const TABS = ['Project', 'Stage', 'Timeline'] as const;
 const PLAYBACK: Array<[PlaybackMode, string]> = [['loop', 'Loop'], ['pingpong', 'Ping Pong'], ['oneshot', 'One Shot']];
@@ -40,14 +41,14 @@ export class MovieSettings {
   private readonly fpsCustomRow: HTMLElement;
   private readonly duration = input('text');
   private readonly frames: HTMLElement;
-  private readonly bg = input('color', 'fm-ms-color');
-  private readonly clear = input('checkbox');
+  private readonly stage: StageOptionsBody;
   private readonly playback = select(PLAYBACK);
   private readonly addKey = input('checkbox');
   private readonly loopVisible = input('checkbox');
   private forceCustom = false;
 
-  constructor(private readonly engine: Engine) {
+  constructor(private readonly engine: Engine, picker: BackgroundPicker) {
+    this.stage = new StageOptionsBody(engine, picker);
     this.pop = new Popover('fm-ms', 380);
     const strip = el<HTMLElement>('<div class="fm-ms-tabs" role="tablist"></div>');
     TABS.forEach((label, i) => {
@@ -75,9 +76,7 @@ export class MovieSettings {
     this.fpsCustomRow = row('Custom rate', this.fpsCustom);
     this.panes[0].append(row('Name', this.name), row('Resolution', size), row('Frame rate', this.fps), this.fpsCustomRow, row('Duration', durWrap), row('', fitBtn));
 
-    const swatch = el<HTMLElement>('<div class="fm-ms-pair"></div>');
-    swatch.appendChild(this.bg);
-    this.panes[1].append(row('Background', swatch), row('Transparent background', toggleOf(this.clear)));
+    this.panes[1].append(this.stage.el);
     this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)));
 
     this.pop.body.append(strip, ...this.panes);
@@ -91,12 +90,24 @@ export class MovieSettings {
     if (!this.engine.movie) return;
     this.forceCustom = false;
     this.patch(true);
-    this.pop.showFor(anchor, 'below');
+    this.anchor = anchor;
+    this.place();
+  }
+
+  private anchor: HTMLElement | null = null;
+
+  /** Opens on the side of the anchor w/ more room (the Timeline bar sits low), and again after a tab changes the height. */
+  private place(): void {
+    const a = this.anchor;
+    if (!a) return;
+    const r = a.getBoundingClientRect();
+    this.pop.showFor(a, r.top > window.innerHeight - r.bottom ? 'above' : 'below');
   }
 
   private tab(at: number): void {
     this.tabs.forEach((b, i) => { setClass(b, 'is-active', i === at); b.setAttribute('aria-selected', String(i === at)); });
     this.panes.forEach((p, i) => setHidden(p, i !== at));
+    if (this.pop.isOpen) this.place();
   }
 
   private run(label: string, patch: ops.MoviePatch): void {
@@ -126,9 +137,6 @@ export class MovieSettings {
       if (frames !== null && frames > 0) this.run('Duration', { duration: frames });
       else this.patch(true);
     });
-    this.bg.addEventListener('input', () => this.engine.run('Background', (m) => ops.patchMovie(m, { background: this.bg.value }), 'movie-background'));
-    this.bg.addEventListener('change', () => this.engine.endGesture());
-    this.clear.addEventListener('change', () => this.run('Transparent Background', { transparent: this.clear.checked }));
     this.playback.addEventListener('change', () => this.run('Playback', { playback: this.playback.value as PlaybackMode }));
     this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
@@ -152,9 +160,7 @@ export class MovieSettings {
     this.put(this.fpsCustom, String(m.fps), force);
     this.put(this.duration, durationLabel(m.duration, m.fps), force);
     setText(this.frames, `${m.duration} f`);
-    this.put(this.bg, m.background, true);
-    setChecked(this.clear, m.transparent);
-    setClass(this.bg.parentElement, 'is-off', m.transparent);
+    this.stage.sync();
     this.put(this.playback, m.playback, true);
     setChecked(this.addKey, m.addKeyAtStart);
     setChecked(this.loopVisible, !!m.loopVisible);

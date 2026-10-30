@@ -22,7 +22,10 @@ export class History {
   recovery: RecoveryPoint[] = [];
   private merge: string | null = null;
 
-  constructor(public depth = 50) {}
+  /** Share of the steps kept one by one; older steps beyond it are thinned so undo reaches further back (100: no thinning). */
+  recentPercent = 100;
+
+  constructor(public depth = 250) {}
 
   get canUndo(): boolean {
     return this.past.length > 0;
@@ -88,9 +91,25 @@ export class History {
     this.recovery = this.recovery.filter((r) => r.id !== id);
   }
 
-  private trim(): void {
-    if (this.depth > 0 && this.past.length > this.depth) this.past.splice(0, this.past.length - this.depth);
+  setRecentPercent(p: number): void {
+    this.recentPercent = Math.max(10, Math.min(100, Math.round(p)));
+    this.trim();
   }
+
+  private trim(): void {
+    if (this.depth <= 0 || this.past.length <= this.depth) return;
+    const recent = Math.max(1, Math.round((this.depth * this.recentPercent) / 100));
+    if (recent >= this.depth) { this.past.splice(0, this.past.length - this.depth); return; }
+    // the newest `recent` steps stay as they are; from the older ones a step is dropped at a spread-out place each time
+    // (golden-ratio stepping), so what survives is spaced out over the whole past instead of piled at one end
+    while (this.past.length > this.depth) {
+      const older = this.past.length - recent;
+      this.thinned += 0.6180339887;
+      this.past.splice(Math.floor((this.thinned % 1) * older), 1);
+    }
+  }
+
+  private thinned = 0;
 }
 
 type Ref = { r: number };

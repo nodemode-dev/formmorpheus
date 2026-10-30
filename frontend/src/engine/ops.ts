@@ -313,6 +313,8 @@ export interface MoviePatch {
   playback?: PlaybackMode;
   addKeyAtStart?: boolean;
   loopVisible?: boolean;
+  backstage?: number;
+  timecode?: boolean;
 }
 
 export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
@@ -344,6 +346,9 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
   if (patch.playback !== undefined) next.playback = patch.playback;
   if (patch.addKeyAtStart !== undefined) next.addKeyAtStart = patch.addKeyAtStart;
   if (patch.loopVisible !== undefined) next.loopVisible = patch.loopVisible;
+  if (patch.backstage !== undefined) next.backstage = Math.min(1, Math.max(0, patch.backstage));
+  // the Timecode is on unless turned off, so only "off" is written
+  if (patch.timecode !== undefined) { if (patch.timecode) delete next.timecode; else next.timecode = false; }
   return next;
 }
 

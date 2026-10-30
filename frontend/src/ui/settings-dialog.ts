@@ -45,6 +45,9 @@ export class SettingsDialog extends Dialog {
   private readonly noticeRow = selectRow('Notice time', NOTICE_CHOICES, (v) => this.change({ noticeSeconds: Number(v) }));
   private readonly undoRow = selectRow('Undo steps', UNDO_CHOICES, (v) => this.change({ undoDepth: Number(v) }));
   private readonly scrubRow = selectRow('Scrub speed', SCRUB_SPEEDS, (v) => this.change({ scrubSpeed: v as ScrubSpeed }));
+  private readonly recentRow = sliderRow('Recent undo steps (%)', 10, 100, 5, (v) => this.change({ recentUndo: v }));
+  private readonly stageUndoRow = checkRow('Undo and Redo buttons on the Stage', (v) => this.change({ stageUndoButtons: v }));
+  private readonly keysBtn = el<HTMLButtonElement>('<button class="cv-btn" type="button">Keyboard Shortcuts...</button>');
   private readonly gesturesRow = checkRow('Two-finger tap undoes and three-finger tap redoes', (v) => this.change({ undoGestures: v }));
   private readonly confirmDeleteRow = checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
 
@@ -113,7 +116,8 @@ export class SettingsDialog extends Dialog {
       grp('Motion and Notices', this.animationsRow.el, this.noticeRow.el),
       grp('Performance', this.gpuRow.el, nt('Draws the Stage and exports on the graphics card when it gives the same picture as the processor. Off, or without WebGL 2, everything is drawn on the processor.')));
     add('Timeline',
-      grp('History', this.undoRow.el, nt('Undo steps are saved inside the movie file, so more steps make the file larger.')),
+      grp('History', this.undoRow.el, nt('Undo steps are saved inside the movie file, so more steps make the file larger.'), this.recentRow.el, nt('The newest share of the steps stays one by one; the older rest is thinned so Undo reaches further back. 100% keeps every step.'), this.stageUndoRow.el),
+      grp('Keyboard', this.keysBtn, nt('See every command with its keys, change them, and set them back.')),
       grp('Playhead', this.scrubRow.el),
       grp('Gestures', this.gesturesRow.el),
       grp('Editing', this.confirmDeleteRow.el));
@@ -156,6 +160,7 @@ export class SettingsDialog extends Dialog {
     new ResizeObserver(() => this.queueWire()).observe(frame);
     window.addEventListener('resize', () => this.queueWire());
     this.button('Done', 'primary', () => this.close());
+    this.keysBtn.addEventListener('click', () => document.dispatchEvent(new CustomEvent('fm:open-shortcuts')));
     this.grid.addEventListener('contextmenu', (e) => {
       const id = (e.target as HTMLElement).closest<HTMLElement>('[data-theme-id]')?.dataset.themeId;
       if (!id) return;
@@ -190,6 +195,8 @@ export class SettingsDialog extends Dialog {
     this.gpuRow.set(p.gpu);
     this.noticeRow.set(String(p.noticeSeconds));
     this.undoRow.set(String(p.undoDepth));
+    this.recentRow.set(p.recentUndo);
+    this.stageUndoRow.set(p.stageUndoButtons);
     this.scrubRow.set(p.scrubSpeed);
     this.gesturesRow.set(p.undoGestures);
     this.confirmDeleteRow.set(p.confirmDelete);
