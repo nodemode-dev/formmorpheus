@@ -38,6 +38,10 @@ export interface VideoSource {
 /** One sounding block for the audio engine: where it plays in the movie and which asset seconds it reads. */
 export interface AudioClip {
   contentId: string;
+  /** The top-level track this sound belongs to (a group's sound belongs to the group's track). */
+  trackId?: string;
+  /** Effects of the block itself (already checked by activeFx); absent: none. */
+  fx?: import('../engine/audio-fx').AudioFx;
   assetId: string;
   /** Movie seconds where the clip starts and ends. */
   start: number;

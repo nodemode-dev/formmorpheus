@@ -6,11 +6,16 @@ import {
   type AudioCodec, type Quality, type VideoCodec,
 } from 'mediabunny';
 import { Zip, ZipPassThrough } from 'fflate';
-import type { Movie } from '../engine/types';
+import type { Content, Movie } from '../engine/types';
 import type { Renderer, View } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import { GifWriter, quantize } from './gif';
 import { encodeRaw, pictureHasAlpha, pictureMime, type RawPicture } from './still-formats';
+import { bitrateForSize, frameName, movieFrameAt, outFps, stepsFor, viewFor } from './delivery';
+import { drawDelivery, loadWatermark, type ReadyWatermark } from './reframe';
+import { ApngWriter, APNG_MAX_BYTES, SizeOver, WebpAnimWriter } from './anim-image';
+import { encodePsdLayer, writePsdEncoded, PSD_MAX_BYTES, type PsdEncodedLayer } from './psd';
+import { animate } from '../engine/keys';
 import type { ExportJob, ExportOptions, ExportProgress, ExportResult, PictureExt } from './types';
 /** A finished sound mixdown as planar PCM (an AudioBuffer fits; a worker has no AudioBuffer, so it gets plain arrays). */
 export interface PcmMix {
@@ -19,7 +24,7 @@ export interface PcmMix {
   length: number;
   getChannelData(channel: number): Float32Array;
 }
-export type MixSource = Pick<AudioEngine, 'mixdown'> | { mixdown(movie: Movie, from: number, to: number): Promise<PcmMix | null> };
+export type MixSource = Pick<AudioEngine, 'mixdown'> | { mixdown(movie: Movie, from: number, to: number, sampleRate?: number, only?: string, lufs?: number): Promise<PcmMix | null> };
 export type Deps = { movie: Movie; renderer: Renderer; audio: MixSource | null };
 
 const QUALITY: Record<ExportOptions['quality'], Quality> = {
@@ -53,17 +58,6 @@ function yieldTurn(): Promise<void> {
     ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
     ch.port2.postMessage(0);
   });
-}
-
-/** Movie frame of output step `i`: forward through [from, to), then back down to from + 1 for ping pong. */
-function frameAt(i: number, from: number, to: number): number {
-  const n = to - from;
-  return i < n ? from + i : to - 2 - (i - n);
-}
-
-function stepCount(o: ExportOptions): number {
-  const n = Math.max(1, o.to - o.from);
-  return o.pingpong && n >= 3 ? n + (n - 2) : n;
 }
 
 /** Exports on this thread (also what runs inside the export worker, and the fallback of export/worker-host.ts). */
@@ -112,10 +106,9 @@ export class Run {
   ) {
     const { movie } = deps;
     this.canvas = new OffscreenCanvas(o.width, o.height);
-    const gif = o.format === 'gif' || /^(tiff|tga|bmp)-frames$/.test(o.format) || o.picture === 'tiff' || o.picture === 'tga' || o.picture === 'bmp';
+    const gif = o.format === 'gif' || o.format === 'apng' || o.format === 'psd' || /^(tiff|tga|bmp)-frames$/.test(o.format) || o.picture === 'tiff' || o.picture === 'tga' || o.picture === 'bmp';
     this.ctx = this.canvas.getContext('2d', gif ? { willReadFrequently: true } : undefined) as OffscreenCanvasRenderingContext2D;
-    const scale = Math.min(o.width / movie.width, o.height / movie.height);
-    this.view = { scale, ox: (o.width - movie.width * scale) / 2, oy: (o.height - movie.height * scale) / 2, width: o.width, height: o.height };
+    this.view = viewFor(o, movie.width, movie.height);
     this.keepAlpha = o.alpha && pictureHasAlpha(this.ext());
   }
 
@@ -141,16 +134,67 @@ export class Run {
   private async render(f: number): Promise<void> {
     const { movie, renderer } = this.deps;
     await renderer.prepareFrame(movie, f);
-    renderer.drawFrame(this.ctx, movie, f, this.view, {
-      backstage: false, background: movie.background, transparentChecker: null, keepAlpha: this.keepAlpha, exact: true,
-    });
+    if (!this.wmLoaded) { this.wm = await loadWatermark(this.o.watermark); this.wmLoaded = true; }
+    drawDelivery(renderer, this.ctx, movie, f, this.o, this.keepAlpha, this.wm);
   }
+  private wm: ReadyWatermark | null = null;
+  private wmLoaded = false;
 
   private name(ext: string): string {
     return `${safeName(this.deps.movie.name)}.${ext}`;
   }
 
+  /** Output frame count at the output rate, and the movie frame shown by output frame `i`. */
+  private steps(): number { return stepsFor(this.o, this.deps.movie.fps); }
+  private at(i: number): number { return movieFrameAt(i, this.o, this.deps.movie.fps); }
+  private bitrateUsed = 0;
+
+  /** Runs once; when a target size is set, runs again with a smaller (or larger) bitrate or picture until the file fits. */
   async go(): Promise<ExportResult> {
+    const o = this.o;
+    const limit = o.targetBytes;
+    const sized = !!limit && (o.format === 'mp4' || o.format === 'webm' || o.format === 'mov' || o.format === 'gif' || o.format === 'apng' || o.format === 'webp-anim');
+    // a pass that stops early as far over the target reports its projected size instead of a file
+    const attempt = async (r: Run): Promise<{ res: ExportResult | null; size: number }> => {
+      try { const out = await r.once(); return { res: out, size: out.blob.size }; } catch (e) {
+        if (sized && e instanceof SizeOver) return { res: null, size: e.estimate };
+        throw e;
+      }
+    };
+    const first = await attempt(this);
+    if (!sized || !limit) return first.res as ExportResult;
+    let res = first.res, size = first.size;
+    const video = o.format === 'mp4' || o.format === 'webm' || o.format === 'mov';
+    let cur: ExportOptions = o, bitrate = this.bitrateUsed;
+    // the best file so far: the largest one that is not over the target
+    let best: ExportResult | null = res && size <= limit ? res : null;
+    for (let pass = 0; pass < (video ? 3 : 6); pass++) {
+      const ratio = limit / Math.max(1, size);
+      // within 8 % under the target is close enough; a picture also stops at the size that was asked for
+      if (ratio >= 1 && (ratio <= 1.08 || (!video && cur.width >= o.width))) break;
+      if (video) {
+        bitrate = Math.max(30_000, Math.round(bitrate * ratio * 0.98));
+        cur = { ...cur, videoBitrate: bitrate };
+      } else {
+        const k = Math.sqrt(ratio) * (ratio < 1 ? 0.95 : 0.99);
+        const w = Math.min(o.width, Math.max(16, Math.round(cur.width * k)));
+        cur = { ...cur, width: w, height: Math.min(o.height, Math.max(16, Math.round((cur.height * w) / cur.width))) };
+      }
+      const next = new Run(this.deps, cur, this.progress, this.isCancelled, this.setCancel);
+      next.warnings.push(...this.warnings);
+      const a = await attempt(next);
+      res = a.res;
+      size = a.size;
+      bitrate = next.bitrateUsed || bitrate;
+      if (res && size <= limit && (!best || size > best.blob.size)) best = res;
+    }
+    if (best) return best;
+    if (!res) throw new SizeOver(size, 'The picture could not be made small enough for the size you asked for.');
+    if (size > limit * 1.001) res.warnings.push('The file could not be made small enough for the size you asked for.');
+    return res;
+  }
+
+  private async once(): Promise<ExportResult> {
     const fmt = this.o.format;
     // the GPU switch holds still for the whole export, so no frame is composed by the other path
     const unpin = this.deps.renderer.pinGpu();
@@ -160,6 +204,8 @@ export class Run {
       if (fmt === 'mp4' || fmt === 'webm' || fmt === 'mov') r = await this.video(fmt);
       else if (fmt === 'gif') r = await this.gif();
       else if (fmt === 'png-still') r = await this.still();
+      else if (fmt === 'apng' || fmt === 'webp-anim') r = await this.animated(fmt);
+      else if (fmt === 'psd') r = await this.psd();
       else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4' || fmt === 'hevc-mov' || fmt === 'h264-mov' || fmt === 'h264-mp4') throw new Error('This format is encoded by the engine, not in the window.');
       else r = await this.sequence(fmt);
       return { ...r, warnings: this.warnings };
@@ -197,7 +243,8 @@ export class Run {
   private async video(fmt: 'mp4' | 'webm' | 'mov'): Promise<Omit<ExportResult, 'warnings'>> {
     const { movie, audio } = this.deps;
     const o = this.o;
-    const total = stepCount(o);
+    const total = this.steps();
+    const fps = outFps(o, movie.fps);
     const format = fmt === 'mp4' ? new Mp4OutputFormat() : fmt === 'mov' ? new MovOutputFormat() : new WebMOutputFormat();
     const picked = await this.pickVideoCodec(fmt, format.getSupportedVideoCodecs());
     if (!picked) throw new Error(`This browser cannot encode ${fmt.toUpperCase()} video at ${o.width} x ${o.height}.`);
@@ -210,12 +257,12 @@ export class Run {
     let audioCodec: AudioCodec | null = null;
     if (o.includeAudio && audio) {
       this.progress('audio', 0, 1);
-      const forward = await audio.mixdown(movie, o.from, o.to);
+      const forward = await audio.mixdown(movie, o.from, o.to, 48000, undefined, o.loudness);
       this.progress('audio', 1, 1);
       this.check();
       if (forward) {
         audioCodec = await this.pickAudioCodec(fmt, format.getSupportedAudioCodecs(), forward);
-        if (audioCodec) mix = o.pingpong && total > o.to - o.from ? padSilence(forward, total / movie.fps) : forward;
+        if (audioCodec) mix = o.pingpong && total > ((o.to - o.from) * fps) / movie.fps ? padSilence(forward, total / fps) : forward;
         else this.warnings.push('No audio encoder is available in this browser, so the sound was left out.');
       }
     }
@@ -223,10 +270,14 @@ export class Run {
     const target = new BufferTarget();
     const output = new Output({ format, target });
     this.setCancel(() => { void output.cancel().catch(() => {}); });
+    // a target size becomes a constant bitrate; an explicit bitrate stays variable
+    const bits = o.videoBitrate ?? (o.targetBytes ? bitrateForSize(o.targetBytes, total / fps, mix !== null && audioCodec !== null) : 0);
+    this.bitrateUsed = bits;
     const source = new CanvasSource(this.canvas, {
-      codec: picked.codec, quality: QUALITY[o.quality], alpha: picked.alpha ? 'keep' : 'discard',
+      codec: picked.codec, alpha: picked.alpha ? 'keep' : 'discard',
+      ...(bits > 0 ? { bitrate: bits, bitrateMode: o.targetBytes ? ('constant' as const) : ('variable' as const) } : { quality: QUALITY[o.quality] }),
     });
-    output.addVideoTrack(source, { frameRate: movie.fps });
+    output.addVideoTrack(source, { frameRate: fps });
     let asource: AudioSampleSource | null = null;
     if (mix && audioCodec) {
       asource = new AudioSampleSource({ codec: audioCodec, quality: QUALITY[o.quality] });
@@ -237,10 +288,10 @@ export class Run {
       // Not awaited until the picture is done: awaiting it here could wait on a track that has not started.
       const audioDone = asource && mix ? addPcm(asource, mix) : Promise.resolve();
       audioDone.catch(() => {});
-      const dt = 1 / movie.fps;
+      const dt = 1 / fps;
       for (let i = 0; i < total; i++) {
         this.check();
-        await this.render(frameAt(i, o.from, o.to));
+        await this.render(this.at(i));
         this.check();
         await source.add(i * dt, dt);
         this.progress('frames', i + 1, total);
@@ -286,7 +337,7 @@ export class Run {
   private async gif(): Promise<Omit<ExportResult, 'warnings'>> {
     const { movie } = this.deps;
     const o = this.o;
-    const total = stepCount(o);
+    const total = this.steps();
     const n = o.to - o.from;
     const bytes = o.width * o.height * 4;
     const keep = n * bytes < GIF_MEMORY_LIMIT;
@@ -317,11 +368,11 @@ export class Run {
 
     const writer = new GifWriter(o.width, o.height, o.gif.loop);
     writer.setOrdered(o.gif.smoothness ?? 2, o.gif.intensity ?? 50);
-    const ideal = 100 / movie.fps;
+    const ideal = 100 / outFps(o, movie.fps);
     let emitted = 0;
     for (let i = 0; i < total; i++) {
       this.check();
-      const f = frameAt(i, o.from, o.to);
+      const f = this.at(i);
       let px = cache.get(f - o.from);
       if (!px) {
         await this.render(f);
@@ -345,6 +396,109 @@ export class Run {
     const data = writer.finish();
     this.progress('finishing', 1, 1);
     return { blob: new Blob([data as BlobPart], { type: 'image/gif' }), name: this.name('gif'), mime: 'image/gif' };
+  }
+
+  // Animated pictures and layered files ------------------------------------------------------------
+
+  private async animated(fmt: 'apng' | 'webp-anim'): Promise<Omit<ExportResult, 'warnings'>> {
+    const { movie } = this.deps;
+    const o = this.o;
+    const total = this.steps();
+    const fps = outFps(o, movie.fps);
+    const loops = Math.max(0, Math.round(o.loops ?? 0));
+    if (fmt === 'apng') {
+      // the delay is 1 / fps seconds, kept exact inside the 16 bit fraction
+      const [dn, dd] = fps <= 65 ? [1000, Math.round(fps * 1000)] : [1, Math.max(1, Math.round(fps))];
+      // with a target size, a pass that is clearly over (4x) stops early instead of finishing a huge file
+      const w = new ApngWriter(o.width, o.height, this.keepAlpha, total, loops, dn, dd, o.targetBytes ? Math.min(APNG_MAX_BYTES, o.targetBytes * 4) : APNG_MAX_BYTES);
+      for (let i = 0; i < total; i++) {
+        this.check();
+        await this.render(this.at(i));
+        w.addFrame(this.grab());
+        this.progress('frames', i + 1, total);
+        await yieldTurn();
+      }
+      this.progress('finishing', 0, 1);
+      const blob = w.finish();
+      this.progress('finishing', 1, 1);
+      return { blob, name: this.name('png'), mime: 'image/png' };
+    }
+    const w = new WebpAnimWriter(o.width, o.height);
+    const q = o.lossless ? 1 : Math.min(0.97, JPEG_QUALITY[o.quality]);
+    let at = 0;
+    for (let i = 0; i < total; i++) {
+      this.check();
+      await this.render(this.at(i));
+      const blob = await this.canvas.convertToBlob({ type: 'image/webp', quality: q });
+      // frame times are rounded on the running total, so 30 fps does not drift to 30.3
+      const next = Math.round(((i + 1) * 1000) / fps);
+      w.addFrame(new Uint8Array(await blob.arrayBuffer()), next - at);
+      at = next;
+      this.progress('frames', i + 1, total);
+      await yieldTurn();
+    }
+    this.progress('finishing', 0, 1);
+    const data = w.finish(loops);
+    this.progress('finishing', 1, 1);
+    return { blob: new Blob([data as BlobPart], { type: 'image/webp' }), name: this.name('webp'), mime: 'image/webp' };
+  }
+
+  /** One layer per visible track at the first frame, with the block's blend mode and opacity; the flattened picture beside them. */
+  private async psd(): Promise<Omit<ExportResult, 'warnings'>> {
+    const { movie, renderer } = this.deps;
+    const o = this.o;
+    const f = o.from;
+    const live = (c: Content): boolean => f >= c.start && f < c.start + c.duration;
+    const tracks = movie.tracks.filter((t) => !t.hidden && t.content.some(live));
+    const total = tracks.length + 1;
+    this.progress('frames', 0, total);
+    await this.render(f);
+    const merged = new Uint8ClampedArray(this.grab());
+    this.progress('frames', 1, total);
+    // each layer is encoded as soon as it is drawn and its pixels dropped: only the compressed layers pile up
+    const layers: PsdEncodedLayer[] = [];
+    let held = 0;
+    const keep = (l: PsdEncodedLayer): void => {
+      held += l.rec.length + l.dat.length;
+      if (held > PSD_MAX_BYTES / 2) throw new Error('These layers are too large for one PSD file (about 2 GB). Export fewer tracks or a smaller size.');
+      layers.push(l);
+    };
+    if (!this.keepAlpha) {
+      const px = new OffscreenCanvas(1, 1).getContext('2d') as OffscreenCanvasRenderingContext2D;
+      px.fillStyle = movie.background;
+      px.fillRect(0, 0, 1, 1);
+      const c = px.getImageData(0, 0, 1, 1).data;
+      const fill = new Uint8ClampedArray(o.width * o.height * 4);
+      for (let i = 0; i < fill.length; i += 4) { fill[i] = c[0]; fill[i + 1] = c[1]; fill[i + 2] = c[2]; fill[i + 3] = 255; }
+      keep(encodePsdLayer(o.width, o.height, { name: 'Background', rgba: fill, opacity: 1, blend: 'normal' }));
+    }
+    // bottom of the Timeline first, as a PSD lists its layers
+    for (let n = tracks.length - 1; n >= 0; n--) {
+      this.check();
+      const tr = tracks[n];
+      const active = tr.content.filter(live);
+      const top = active[active.length - 1];
+      // the layer carries the opacity and blend mode, so the pixels are drawn plain (other tracks hidden keep parents working)
+      const plain = (c: Content): Content => {
+        const k: Content = { ...c, opacity: 1, blend: 'normal', keys: c.keys.filter((l) => l.kind !== 'opacity') };
+        delete k.transition;
+        return k;
+      };
+      const shadow: Movie = { ...movie, transparent: true, tracks: movie.tracks.map((t) => (t === tr ? { ...t, content: t.content.map(plain) } : { ...t, hidden: true })) };
+      await renderer.prepareFrame(shadow, f);
+      renderer.drawFrame(this.ctx, shadow, f, this.view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: true, exact: true });
+      // grab() is the shared readback buffer: encode straight from it, no copy of the pixels is kept
+      keep(encodePsdLayer(o.width, o.height, {
+        name: tr.name || top.name || `Track ${movie.tracks.indexOf(tr) + 1}`, rgba: this.grab(),
+        opacity: Math.max(0, Math.min(1, animate(top, f - top.start).opacity)), blend: top.blend,
+      }));
+      this.progress('frames', layers.length + (this.keepAlpha ? 1 : 0), total);
+      await yieldTurn();
+    }
+    this.progress('finishing', 0, 1);
+    const data = writePsdEncoded(o.width, o.height, layers, merged, this.keepAlpha);
+    this.progress('finishing', 1, 1);
+    return { blob: new Blob([data as BlobPart], { type: 'image/vnd.adobe.photoshop' }), name: this.name('psd'), mime: 'image/vnd.adobe.photoshop' };
   }
 
   // Pictures -------------------------------------------------------------------------------------
@@ -371,9 +525,11 @@ export class Run {
 
   private async sequence(_fmt: ExportOptions['format']): Promise<Omit<ExportResult, 'warnings'>> {
     const o = this.o;
-    const total = stepCount(o);
+    const total = this.steps();
     const ext = this.ext();
     const base = safeName(this.deps.movie.name);
+    const fps = this.deps.movie.fps;
+    const used = new Set<string>();
     const parts: BlobPart[] = [];
     let failure: Error | null = null;
     const zip = new Zip((err, chunk) => {
@@ -383,9 +539,14 @@ export class Run {
     const digits = Math.max(5, String(total).length);
     for (let i = 0; i < total; i++) {
       this.check();
-      await this.render(frameAt(i, o.from, o.to));
+      const mf = this.at(i);
+      await this.render(mf);
       const blob = await this.toBlob(ext);
-      const entry = new ZipPassThrough(`${base}/${base}_${String(i + 1).padStart(digits, '0')}.${ext}`);
+      let stem = frameName(o.namePattern ?? '', base, i + 1, digits, mf, fps);
+      // a pattern without {n} can repeat (a ping pong, a slower rate): keep every file
+      for (let k = 2; used.has(stem); k++) stem = `${frameName(o.namePattern ?? '', base, i + 1, digits, mf, fps)}_${k}`;
+      used.add(stem);
+      const entry = new ZipPassThrough(`${base}/${stem}.${ext}`);
       zip.add(entry);
       entry.push(new Uint8Array(await blob.arrayBuffer()), true);
       if (failure) throw failure;

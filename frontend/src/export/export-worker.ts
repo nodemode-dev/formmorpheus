@@ -1,8 +1,10 @@
 // The export worker: renders (OffscreenCanvas, the same Renderer as the window) and encodes off the main thread.
 // 'file' mode runs the ordinary exporter (run.ts) here; 'frames' mode sends one PNG per frame for the engine jobs.
-// Sound is mixed on the page and arrives as PCM. Video blocks are never sent here (the page keeps those exports).
-import { Renderer, type View } from '../engine/render';
+// Sound is mixed on the page and arrives as PCM. Video is decoded here too (worker-video.ts).
+import { Renderer } from '../engine/render';
+import { WorkerVideo } from './worker-video';
 import { Run, type PcmMix } from './run';
+import { drawDelivery, loadWatermark } from './reframe';
 import type { FaceRule, FromWorker, StartMsg, ToWorker } from './worker-protocol';
 
 const scope = self as unknown as {
@@ -67,14 +69,19 @@ function pcmOf(a: NonNullable<StartMsg['audio']>): PcmMix | null {
   return { numberOfChannels: ch.length, sampleRate: a.sampleRate, length: ch[0].length, getChannelData: (c) => ch[c] };
 }
 
-async function runFile(m: StartMsg, renderer: Renderer): Promise<void> {
+async function runFile(m: StartMsg, renderer: Renderer, video: WorkerVideo): Promise<void> {
   const pcm = m.audio ? pcmOf(m.audio) : null;
   const audio = m.audio?.present ? { mixdown: async (): Promise<PcmMix | null> => pcm } : null;
   const run = new Run({ movie: m.movie, renderer, audio }, m.opts,
     (stage, done, total) => post({ t: 'progress', p: { stage, done, total } }),
     () => cancelled, (fn) => { onCancel = fn; });
   const r = await run.go();
-  post({ t: 'done', blob: r.blob, name: r.name, mime: r.mime, warnings: r.warnings });
+  const warnings = [...r.warnings];
+  if (video.failed.size) {
+    const names = [...video.failed].map((id) => m.movie.assets[id]?.name ?? 'a video').join(', ');
+    warnings.push(`This browser could not decode ${names}, so those pictures are missing from the file.`);
+  }
+  post({ t: 'done', blob: r.blob, name: r.name, mime: r.mime, warnings });
 }
 
 async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
@@ -82,8 +89,7 @@ async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
   const movie = m.movie;
   const canvas = new OffscreenCanvas(o.width, o.height);
   const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
-  const scale = Math.min(o.width / movie.width, o.height / movie.height);
-  const view: View = { scale, ox: (o.width - movie.width * scale) / 2, oy: (o.height - movie.height * scale) / 2, width: o.width, height: o.height };
+  const wm = await loadWatermark(o.watermark);
   const unpin = renderer.pinGpu();
   try {
     const list = m.frameList ?? [];
@@ -92,7 +98,7 @@ async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
       while (i >= consumed + 4 && !cancelled) await new Promise<void>((res) => { wake = res; });
       if (cancelled) throw new DOMException('Export cancelled', 'AbortError');
       await renderer.prepareFrame(movie, list[i]);
-      renderer.drawFrame(ctx, movie, list[i], view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: m.keepAlpha === true, exact: true });
+      drawDelivery(renderer, ctx, movie, list[i], o, m.keepAlpha === true, wm);
       post({ t: 'frame', index: i, blob: await canvas.convertToBlob({ type: 'image/png' }) });
     }
   } finally { unpin(); }
@@ -101,10 +107,14 @@ async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
 async function start(m: StartMsg): Promise<void> {
   const blobs = new Map(Object.entries(m.blobs));
   const renderer = new Renderer((id) => blobs.get(id), () => undefined);
+  const video = new WorkerVideo((id) => blobs.get(id));
+  renderer.setVideo(video);
   if (m.gpu && !renderer.useGpu(true)) { post({ t: 'error', message: 'No GPU in the worker.', abort: false, fallback: true }); return; }
   await setupFonts(m);
   post({ t: 'ready' });
-  if (m.mode === 'frames') await runFrames(m, renderer); else await runFile(m, renderer);
+  try {
+    if (m.mode === 'frames') await runFrames(m, renderer); else await runFile(m, renderer, video);
+  } finally { video.dispose(); }
 }
 
 scope.onmessage = (e: MessageEvent<ToWorker>) => {

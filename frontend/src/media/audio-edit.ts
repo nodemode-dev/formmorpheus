@@ -50,6 +50,26 @@ export function setLevel(m: Movie, id: string, level: number): Movie {
 }
 
 /**
+ * Scales the block's level (and every key of its Level lane) so the part it plays reaches a target loudness.
+ * `measured` is the integrated LUFS of the raw asset over that part; the loudest level key stands for the block.
+ */
+export function normalizeLoudness(m: Movie, id: string, measured: number, target: number): Movie {
+  if (!Number.isFinite(measured)) throw new OpError('This sound is too quiet to measure, so there is nothing to normalize.');
+  return updateContent(m, id, (c) => {
+    const lane = laneOf(c, 'volume');
+    const keyed = lane?.channels.level?.length ? Math.max(...lane.channels.level.map((k) => k.value)) : c.volume;
+    const now = measured + 20 * Math.log10(Math.max(0.0001, keyed));
+    const ratio = Math.pow(10, (target - now) / 20);
+    const next: Content = { ...c, volume: clamp(c.volume * ratio, 0, MAX_LEVEL) };
+    if (lane?.channels.level?.length) {
+      const channels = { ...lane.channels, level: lane.channels.level.map((k) => ({ ...k, value: clamp(k.value * ratio, 0, MAX_LEVEL) })) };
+      next.keys = c.keys.map((l) => (l === lane ? { ...lane, channels } : l));
+    }
+    return next;
+  });
+}
+
+/**
  * Scales the block's level (and every key of its Level lane) so the loudest sample it plays reaches the target.
  * `peak` is the loudest raw sample of the asset over the part the block plays.
  */

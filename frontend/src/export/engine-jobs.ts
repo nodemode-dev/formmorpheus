@@ -5,6 +5,7 @@ import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import type { ExportJob, ExportOptions, ExportProgress, ExportResult } from './types';
 import { openPngFrames } from './worker-host';
+import { movieFrameAt, outFps, stepsFor } from './delivery';
 
 type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
 export type EngineTarget = 'prores' | 'prores4444' | 'hevc' | 'h264';
@@ -43,10 +44,6 @@ function yieldTurn(): Promise<void> {
   });
 }
 
-function frameAt(i: number, from: number, to: number): number {
-  const n = to - from;
-  return i < n ? from + i : to - 2 - (i - n);
-}
 
 /** 16 bit PCM WAV of `buf`, followed by silence up to `length` sample frames. */
 export function encodeWav(buf: AudioBuffer, length: number): Blob {
@@ -121,8 +118,8 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     const o = opts;
     const width = Math.max(2, Math.round(o.width) & ~1), height = Math.max(2, Math.round(o.height) & ~1);
     const from = Math.max(0, Math.round(o.from)), to = Math.max(from + 1, Math.round(o.to));
-    const n = to - from;
-    const total = o.pingpong && n >= 3 ? n + (n - 2) : n;
+    const rate = outFps(o, movie.fps);
+    const total = stepsFor({ from, to, pingpong: o.pingpong, fps: o.fps }, movie.fps);
     const warnings: string[] = [];
     const profile = o.proresProfile ?? (o.target === 'prores4444' ? '4444' : 'hq');
     const carries = (o.target === 'prores' || o.target === 'prores4444') && (profile === '4444' || profile === '4444xq');
@@ -134,16 +131,16 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     let wav: Blob | null = null;
     if (o.includeAudio && audio) {
       progress('audio', 0, 1);
-      const forward = await audio.mixdown(movie, from, to);
+      const forward = await audio.mixdown(movie, from, to, 48000, undefined, o.loudness);
       progress('audio', 1, 1);
       check();
-      if (forward) wav = encodeWav(forward, Math.round((total / movie.fps) * forward.sampleRate));
+      if (forward) wav = encodeWav(forward, Math.round((total / rate) * forward.sampleRate));
     }
 
     const made = await (await call('/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        target: o.target, fps: movie.fps, width, height, frames: total, has_audio: wav !== null, alpha: keepAlpha,
+        target: o.target, fps: rate, width, height, frames: total, has_audio: wav !== null, alpha: keepAlpha,
         quality: o.quality, container: o.format === 'hevc-mov' || o.format === 'h264-mov' ? 'mov' : 'mp4', name: safeName(movie.name),
         audio_codec: o.audioCodec ?? 'aac', profile: o.target === 'prores' || o.target === 'prores4444' ? profile : '',
       }),
@@ -152,7 +149,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     check();
 
     // frames are drawn in the export worker where the content allows (worker-host.ts), otherwise here
-    const frames = await openPngFrames(deps, { width, height, frames: Array.from({ length: total }, (_, i) => frameAt(i, from, to)), keepAlpha });
+    const frames = await openPngFrames(deps, { width, height, frames: Array.from({ length: total }, (_, i) => movieFrameAt(i, { from, to, pingpong: o.pingpong, fps: o.fps }, movie.fps)), keepAlpha, fit: o.fit, focus: o.focus, watermark: o.watermark });
     closeFrames = () => { frames.close(); };
 
     // render in order, upload up to UPLOADS PNGs at once (convertToBlob copies the canvas when called)

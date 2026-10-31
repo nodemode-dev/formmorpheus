@@ -2,14 +2,14 @@
 // keeps the old main-thread exporter as the fallback. Worker exports use the same Renderer and the same Run
 // code, so a file comes out byte for byte as it would on this thread.
 //
-// Stays on this thread (fallback): a movie with Video blocks (frames are decoded by the page's video pool, which
-// needs the document), a browser without Worker or OffscreenCanvas, a movie the worker cannot be handed, a
+// Stays on this thread (fallback): a browser without Worker or OffscreenCanvas, a movie the worker cannot be handed, a
 // GPU-composed page whose worker cannot get WebGL2, and a worker that fails to start.
 import type { Content, Movie, Track } from '../engine/types';
 import { loadTextFonts } from '../media/fonts';
 import { scriptFamilies } from '../media/font-bundle';
 import { normalise, startExport, type Deps } from './run';
-import type { ExportJob, ExportOptions, ExportProgress, ExportResult } from './types';
+import { drawDelivery, loadWatermark, type ReadyWatermark } from './reframe';
+import type { ExportJob, ExportOptions, ExportProgress, ExportResult, Watermark } from './types';
 import type { FaceRule, FontLoad, FromWorker, StartMsg, ToWorker } from './worker-protocol';
 
 function abortError(): Error {
@@ -23,9 +23,7 @@ function eachContent(tracks: Track[], fn: (c: Content) => void): void {
 /** Why a movie cannot render in the worker, or '' when it can. */
 export function workerBlocker(movie: Movie): string {
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return 'no worker';
-  let video = false;
-  eachContent(movie.tracks, (c) => { if (c.kind === 'video') video = true; });
-  return video ? 'video' : '';
+  return '';
 }
 
 /** The page's own @font-face rules for the families a movie's Text can draw in. */
@@ -62,7 +60,7 @@ async function prepare(deps: Deps): Promise<Pick<StartMsg, 'movie' | 'blobs' | '
   await loadTextFonts(movie).catch(() => undefined);
   const blobs: Record<string, Blob> = {};
   for (const a of Object.values(movie.assets)) {
-    if (a.kind !== 'image' && a.kind !== 'pixels' && a.kind !== 'font') continue;
+    if (a.kind !== 'image' && a.kind !== 'pixels' && a.kind !== 'font' && a.kind !== 'video') continue;
     const b = renderer.assetBlob(a.id);
     if (b) blobs[a.id] = b;
   }
@@ -118,7 +116,7 @@ export function startExportAuto(deps: Deps, opts: ExportOptions): ExportJob {
     const transfer: Transferable[] = [];
     if (video && o.includeAudio && deps.audio) {
       emit({ stage: 'audio', done: 0, total: 1 });
-      const mix = await deps.audio.mixdown(deps.movie, o.from, o.to);
+      const mix = await deps.audio.mixdown(deps.movie, o.from, o.to, 48000, undefined, o.loudness);
       emit({ stage: 'audio', done: 1, total: 1 });
       if (cancelled) throw abortError();
       const channels = mix ? Array.from({ length: mix.numberOfChannels }, (_, c) => mix.getChannelData(c).slice()) : null;
@@ -161,20 +159,20 @@ export function startExportAuto(deps: Deps, opts: ExportOptions): ExportJob {
 /** One PNG per frame, in order: from the worker where the content allows, otherwise drawn on this thread. */
 export interface PngFrames { blob(i: number): Promise<Blob>; close(): void }
 
-export async function openPngFrames(deps: Deps, o: { width: number; height: number; frames: number[]; keepAlpha: boolean }): Promise<PngFrames> {
+export async function openPngFrames(deps: Deps, o: { width: number; height: number; frames: number[]; keepAlpha: boolean; fit?: 'contain' | 'cover' | 'blur'; focus?: { x: number; y: number }; watermark?: Watermark }): Promise<PngFrames> {
   const { movie, renderer } = deps;
   const localFrames = (): PngFrames => {
     const canvas = new OffscreenCanvas(o.width, o.height);
     const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    const scale = Math.min(o.width / movie.width, o.height / movie.height);
-    const view = { scale, ox: (o.width - movie.width * scale) / 2, oy: (o.height - movie.height * scale) / 2, width: o.width, height: o.height };
+    let wm: ReadyWatermark | null = null, wmDone = false;
     return {
       async blob(i) {
         await renderer.prepareFrame(movie, o.frames[i]);
-        renderer.drawFrame(ctx, movie, o.frames[i], view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: o.keepAlpha, exact: true });
+        if (!wmDone) { wm = await loadWatermark(o.watermark); wmDone = true; }
+        drawDelivery(renderer, ctx, movie, o.frames[i], o, o.keepAlpha, wm);
         return canvas.convertToBlob({ type: 'image/png' });
       },
-      close() { /* nothing held */ },
+      close() { wm?.close(); },
     };
   };
   if (workerBlocker(movie)) return localFrames();
@@ -210,7 +208,7 @@ export async function openPngFrames(deps: Deps, o: { width: number; height: numb
   });
   try {
     w.postMessage({
-      t: 'start', mode: 'frames', ...base, opts: { width: o.width, height: o.height } as ExportOptions, keepAlpha: o.keepAlpha, frameList: o.frames,
+      t: 'start', mode: 'frames', ...base, opts: { width: o.width, height: o.height, fit: o.fit, focus: o.focus, watermark: o.watermark } as ExportOptions, keepAlpha: o.keepAlpha, frameList: o.frames,
     } satisfies StartMsg);
   } catch { w.terminate(); return localFrames(); }
   if (!(await ready)) { w.terminate(); return localFrames(); }
