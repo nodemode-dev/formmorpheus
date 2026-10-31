@@ -4,6 +4,7 @@ import type { Asset, Content, FlipTrack, FlipbookFrame, Movie } from '../engine/
 import { content, drawingLayer, identity, uid } from '../engine/model';
 import { formvfxToTracks, formvisToDrawing, sniffRoundTrip } from '../io/round-trip';
 import { registerFont } from './fonts';
+import { importScale } from './import-size';
 import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
 import { decodeTga, isTga } from './tga-decode';
@@ -69,13 +70,9 @@ function sniff(file: File, b: Uint8Array, tail?: Uint8Array): Sniff {
 
 const baseName = (n: string): string => n.replace(/\.[^.]+$/, '') || n;
 
-/** Scale that fits a picture inside the movie without enlarging it (as a dropped Image does). */
-function fit(m: Movie, w: number, h: number): number {
-  return Math.round(Math.min(1, m.width / w, m.height / h) * 1000) / 1000;
-}
 
 function place(m: Movie, w: number, h: number): Content['transform'] {
-  return { ...identity(), scale: fit(m, w, h) };
+  return { ...identity(), scale: importScale(m.width, m.height, w, h) };
 }
 
 // ---- pictures

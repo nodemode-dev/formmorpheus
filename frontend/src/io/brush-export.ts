@@ -26,6 +26,8 @@
 import { zipSync, zlibSync } from 'fflate';
 import { writeBinaryPlist, Uid, type PlistValue } from './bplist-write';
 import { getTip } from '../paint/tips';
+import { libTipImage } from '../paint/tips-lib';
+import { grainTile256 } from '../paint/grains-lib';
 import type { Brush } from '../paint/types';
 
 const SHAPE_SIDE = 256;
@@ -119,7 +121,52 @@ export function brushSettings(b: Brush): Record<string, number | boolean | strin
   if (b.wet) {
     put('wetDilution', b.wet.dilution); put('wetCharge', b.wet.charge); put('wetAttack', b.wet.attack);
     put('wetPull', b.wet.pull); put('wetGrade', b.wet.grade);
+    // our own names, chosen so the importer's loose patterns for wet mix do not read them as something else
+    if (finite(b.wet.blur) && b.wet.blur > 0) put('fmWetSpread', b.wet.blur);
+    if (finite(b.wet.blurJitter) && b.wet.blurJitter > 0) put('fmWetSpreadJitter', b.wet.blurJitter);
+    if (finite(b.wet.wetJitter) && b.wet.wetJitter > 0) put('fmWetnessJitter', b.wet.wetJitter);
   }
+  // Brush Studio fields: our own key names (prefix fm), written only when not default
+  const pos = (k: string, v: number | undefined): void => { if (finite(v) && v > 0) put(k, v); };
+  const nz = (k: string, v: number | undefined): void => { if (finite(v) && v !== 0) put(k, v); };
+  pos('fmPathJitter', b.pathJitter); pos('fmPressureSmooth', b.pressureSmooth);
+  pos('fmTaperPenStart', b.pTaper); pos('fmTaperPenEnd', b.pTaperEnd);
+  if (finite(b.taperSize)) put('fmTaperMinSize', b.taperSize);
+  pos('fmTaperFade', b.taperOpacity);
+  if (finite(b.taperTip)) put('fmTaperPoint', b.taperTip);
+  if (b.flipX) put('fmFlipX', true);
+  if (b.flipY) put('fmFlipY', true);
+  if (b.tipSharp) put('fmTipSharp', true);
+  pos('fmGrainZoom', b.grainZoom); nz('fmGrainTurn', b.grainRot); pos('fmGrainOffsetJitter', b.grainOffsetJitter);
+  if (b.grainBlend && b.grainBlend !== 'multiply') put('fmGrainBlend', b.grainBlend);
+  nz('fmGrainBright', b.grainBright); nz('fmGrainContrast', b.grainContrast);
+  pos('fmBurntEdges', b.burntEdges);
+  if (b.blend && b.blend !== 'normal') put('fmBrushBlend', b.blend);
+  pos('fmLumBlend', b.lumBlend);
+  pos('fmPressureEdgeSoft', b.pressureBleed); pos('fmPressureOpacityRamp', b.pressureOpacity);
+  pos('fmTiltThreshold', b.tiltAngle); nz('fmTiltOpacity', b.tiltOpacity); pos('fmTiltGradation', b.tiltGradation);
+  pos('fmTiltEdgeSoft', b.tiltBleed); nz('fmTiltSize', b.tiltSize);
+  // pen response and shape dynamics (our own names): curves as "x,y,x,y@speed"
+  if (b.curves) {
+    const names: [keyof NonNullable<Brush['curves']>, string][] = [['size', 'fmCurveSize'], ['opacity', 'fmCurveOpacity'], ['flow', 'fmCurveFlow'], ['bleed', 'fmCurveBleed'], ['roundness', 'fmCurveRoundness'], ['tilt', 'fmCurveTilt']];
+    for (const [k, name] of names) {
+      const c = b.curves[k];
+      if (c && c.pts.length >= 4 && c.pts.every((v) => Number.isFinite(v))) put(name, c.pts.map((v) => Math.round(v * 1e4) / 1e4).join(',') + (finite(c.speed) && c.speed < 1 ? `@${Math.round(c.speed * 1e3) / 1e3}` : ''));
+    }
+  }
+  nz('fmRollSize', b.rollSize); nz('fmRollOpacity', b.rollOpacity); pos('fmRollEdgeSoft', b.rollBleed);
+  if (b.rollRelative) put('fmRollRelative', true);
+  nz('fmPressureRound', b.pressureRoundness); pos('fmTiltRound', b.tiltRoundness);
+  pos('fmRoundJitterH', b.roundJitterH); pos('fmRoundJitterV', b.roundJitterV);
+  pos('fmCountJitter', b.countJitter); pos('fmSpacingJitter', b.spacingJitter); pos('fmJitterLinear', b.jitterLinear); nz('fmSpeedSpacing', b.speedSpacing);
+  if (b.orientScreen) put('fmOrientScreen', true);
+  if (finite(b.previewSize) && b.previewSize !== 1) put('fmPreviewSize', b.previewSize);
+  if (finite(b.minOpacity) && b.minOpacity > 0) put('fmMinOpacity', b.minOpacity);
+  if (finite(b.maxOpacity) && b.maxOpacity < 1) put('fmMaxOpacity', b.maxOpacity);
+  if (b.author) put('fmAuthor', b.author.slice(0, 80));
+  if (finite(b.created)) put('fmCreated', b.created);
+  if (b.signature && b.signature.length < 60000) put('fmSignature', b.signature);
+  pos('fmColorStampSecondary', b.colorDyn?.stampSecondary); pos('fmColorStrokeSecondary', b.colorDyn?.strokeSecondary);
   const cd = b.colorDyn;
   if (cd) {
     const names: [keyof typeof cd, string][] = [
@@ -149,6 +196,8 @@ export function brushArchive(b: Brush): Uint8Array {
 
 /** The tip as a grey picture: the sampled pixels, or the procedural shape drawn once at a fixed size. */
 function shapePng(b: Brush): Uint8Array | null {
+  const lib = b.tipId ? libTipImage(b.tipId) : undefined;
+  if (lib) return encodeGreyPng(lib.w, lib.h, lib.data);
   if (b.tipImage) return encodeGreyPng(b.tipImage.w, b.tipImage.h, b.tipImage.data);
   if (b.tip === 'sampled') return null;
   const t = getTip(b.tip, SHAPE_SIDE, b.softness, 1, 0);
@@ -163,7 +212,9 @@ function brushFiles(b: Brush, dir: string, out: Record<string, Uint8Array>, thum
   if (thumb) out[`${dir}QuickLook/Thumbnail.png`] = thumb;
   const shape = shapePng(b);
   if (shape) out[`${dir}Shape.png`] = shape;
-  if (b.grainImage && b.grainImage.length === GRAIN_SIDE * GRAIN_SIDE) out[`${dir}Grain.png`] = encodeGreyPng(GRAIN_SIDE, GRAIN_SIDE, b.grainImage);
+  const lg = b.grainId ? grainTile256(b.grainId) : null;
+  if (lg && lg.length === GRAIN_SIDE * GRAIN_SIDE) out[`${dir}Grain.png`] = encodeGreyPng(GRAIN_SIDE, GRAIN_SIDE, Uint8Array.from(lg, (v) => Math.round(v * 255)));
+  else if (b.grainImage && b.grainImage.length === GRAIN_SIDE * GRAIN_SIDE) out[`${dir}Grain.png`] = encodeGreyPng(GRAIN_SIDE, GRAIN_SIDE, b.grainImage);
 }
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

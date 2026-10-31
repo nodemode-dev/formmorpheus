@@ -3,6 +3,7 @@
 // sits in, and the movie camera (Movie.camera). Matrices are [a, b, c, d, e, f] like a canvas transform:
 // x' = a x + c y + e, y' = b x + d y + f. Stage space is movie pixels. Pure, no DOM.
 import { animate, evalChannel, type Animated } from './keys';
+import { srcFrame } from './retime';
 import type { Content, KeyLane, Movie, Track } from './types';
 
 export type Mat = [number, number, number, number, number, number];
@@ -138,7 +139,7 @@ function parentOf(idx: Index, e: Entry): Entry | null {
 const MAX_DEPTH = 64;
 
 function levelFrame(e: Entry, frame: number): number {
-  return e.container ? levelFrame(e.container, frame) - e.container.c.start + e.container.c.offset : frame;
+  return e.container ? srcFrame(e.container.c, levelFrame(e.container, frame) - e.container.c.start) : frame;
 }
 
 /** The frame a content's own `start` is counted against: the movie frame for a top-level content, the group-local frame inside groups. */

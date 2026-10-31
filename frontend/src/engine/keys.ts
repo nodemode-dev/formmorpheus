@@ -216,7 +216,7 @@ export const KEY_KINDS: KindSpec[] = [
     label: 'Volume',
     group: 'audio',
     icon: ICONS.volume,
-    channels: [ch('level', 'Level', 'Level', 0, 2, 0.01, '%', 100, 1)],
+    channels: [ch('level', 'Level', 'Level', 0, 4, 0.01, '%', 100, 1), ch('pan', 'Pan', 'Pan', -1, 1, 0.01, '%', 100, 0)],
   },
 ];
 
@@ -257,6 +257,7 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
   }
   if (kind === 'volume') {
     out.level = c.volume;
+    out.pan = c.pan ?? 0;
     return out;
   }
   const spec = kindSpec(kind);
@@ -331,6 +332,27 @@ export function bezierSeg(u: number, y0: number, y1: number, x1: number, x2: num
   return v * v * v * y0 + 3 * v * v * s * yy1 + 3 * v * s * s * yy2 + s * s * s * y1;
 }
 
+/** Settling curves (0 to 1 at u = 0 and 1): a ball that lands and bounces, a spring, a push past the target and back. */
+function bounceOut(u: number): number {
+  const n = 7.5625, d = 2.75;
+  if (u < 1 / d) return n * u * u;
+  if (u < 2 / d) { const v = u - 1.5 / d; return n * v * v + 0.75; }
+  if (u < 2.5 / d) { const v = u - 2.25 / d; return n * v * v + 0.9375; }
+  const v = u - 2.625 / d;
+  return n * v * v + 0.984375;
+}
+
+function elasticOut(u: number): number {
+  if (u <= 0) return 0;
+  if (u >= 1) return 1;
+  return Math.pow(2, -10 * u) * Math.sin(((u * 10 - 0.75) * 2 * Math.PI) / 3) + 1;
+}
+
+function overshootOut(u: number): number {
+  const c1 = 1.70158, c3 = c1 + 1, v = u - 1;
+  return 1 + c3 * v * v * v + c1 * v * v;
+}
+
 /** Value across a span for a given ease at normalised position u in 0..1 (y0 to y1). */
 function spanValue(ease: Ease, u: number, y0: number, y1: number): number {
   switch (ease) {
@@ -342,6 +364,12 @@ function spanValue(ease: Ease, u: number, y0: number, y1: number): number {
       return bezierSpan(u, y0, y1, true, false);
     case 'inout':
       return bezierSpan(u, y0, y1, true, true);
+    case 'bounce':
+      return y0 + (y1 - y0) * bounceOut(u);
+    case 'elastic':
+      return y0 + (y1 - y0) * elasticOut(u);
+    case 'overshoot':
+      return y0 + (y1 - y0) * overshootOut(u);
     default:
       return y0 + (y1 - y0) * u;
   }
@@ -440,6 +468,8 @@ export interface Animated {
   /** Boil in movie px; `seed` is the redraw this frame shows. */
   boil: { amount: number; scale: number; seed: number } | null;
   volume: number;
+  /** Sound stereo position -1..1 (0: centre). */
+  pan: number;
   /** Warp mesh offsets (n x n nodes, row by row, content-space px) or null. */
   warp: { n: number; dx: number[]; dy: number[] } | null;
   /** Distort corner offsets tl, tr, br, bl as x, y pairs (content-space px) or null. */
@@ -498,6 +528,7 @@ function animateRaw(c: Content, local: number): Animated {
     lens: null,
     boil: null,
     volume: c.volume,
+    pan: c.pan ?? 0,
     warp: null,
     distort: null,
     bones: null,
@@ -599,6 +630,7 @@ function animateRaw(c: Content, local: number): Animated {
       }
       case 'volume':
         a.volume = chv(lane, 'level', local, c.volume);
+        a.pan = chv(lane, 'pan', local, c.pan ?? 0);
         break;
     }
   }

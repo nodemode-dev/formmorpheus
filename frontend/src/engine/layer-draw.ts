@@ -31,9 +31,11 @@ export function releaseLayerPool(): void {
 /** Draws the layers onto ctx in movie pixels; ctx's alpha and blend are the base, as for the plain layer loop. */
 export function drawLayerTree(
   ctx: OffscreenCanvasRenderingContext2D, layers: readonly DrawingLayer[], w: number, h: number, bitmap: (id: string | null) => ImageBitmap | null,
+  /** The layer pictures, when they may be decoded smaller than the masks (masks always need their full size). */
+  pic: (id: string | null) => ImageBitmap | null = bitmap,
 ): void {
   const hooks: TreeHooks<DrawingLayer> = {
-    image: (l) => (l.group ? null : bitmap(l.pixels)),
+    image: (l) => (l.group ? null : pic(l.pixels)),
     mask: (l) => {
       if (!l.mask || l.maskOn === false) return null;
       const b = bitmap(l.mask);

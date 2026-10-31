@@ -1,9 +1,10 @@
 // Engine exports (Phase 10): formats the browser cannot encode. Each frame is drawn offscreen, sent to the
 // engine as a PNG with the sound as a WAV, and the engine's own ffmpeg turns them into ProRes or HEVC.
 import type { Movie } from '../engine/types';
-import type { Renderer, View } from '../engine/render';
+import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import type { ExportJob, ExportOptions, ExportProgress, ExportResult } from './types';
+import { openPngFrames } from './worker-host';
 
 type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
 export type EngineTarget = 'prores' | 'prores4444' | 'hevc' | 'h264';
@@ -82,10 +83,12 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
   const abort = new AbortController();
   let cancelled = false;
   let jobId = '';
+  let closeFrames: (() => void) | null = null;
   const job: ExportJob = {
     onProgress: (cb) => { listeners.push(cb); },
     cancel: () => {
       cancelled = true;
+      closeFrames?.();
       abort.abort();
       // the engine kills ffmpeg and removes its temp files
       if (jobId) void fetch(`${BASE}/${jobId}`, { method: 'DELETE' }).catch(() => {});
@@ -148,10 +151,9 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     jobId = made.id;
     check();
 
-    const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    const scale = Math.min(width / movie.width, height / movie.height);
-    const view: View = { scale, ox: (width - movie.width * scale) / 2, oy: (height - movie.height * scale) / 2, width, height };
+    // frames are drawn in the export worker where the content allows (worker-host.ts), otherwise here
+    const frames = await openPngFrames(deps, { width, height, frames: Array.from({ length: total }, (_, i) => frameAt(i, from, to)), keepAlpha });
+    closeFrames = () => { frames.close(); };
 
     // render in order, upload up to UPLOADS PNGs at once (convertToBlob copies the canvas when called)
     const inflight = new Set<Promise<void>>();
@@ -160,9 +162,8 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     for (let i = 0; i < total; i++) {
       check();
       if (failure) throw failure;
-      await renderer.prepareFrame(movie, frameAt(i, from, to));
-      renderer.drawFrame(ctx, movie, frameAt(i, from, to), view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha, exact: true });
-      const blobP = canvas.convertToBlob({ type: 'image/png' });
+      const blobP = frames.blob(i);
+      blobP.catch(() => {});
       const index = i;
       const p: Promise<void> = blobP
         .then((blob) => call(`/${jobId}/frames/${index}`, { method: 'PUT', body: blob }))
@@ -173,6 +174,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
       await yieldTurn();
     }
     await Promise.all(inflight);
+    closeFrames?.();
     if (failure) throw failure;
     if (wav) await call(`/${jobId}/audio`, { method: 'PUT', body: wav });
 
@@ -198,6 +200,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
   };
 
   const result = go().catch(async (e: unknown) => {
+    closeFrames?.();
     // a failed or stopped job leaves nothing behind in the engine
     if (jobId) await fetch(`${BASE}/${jobId}`, { method: 'DELETE' }).catch(() => {});
     if (cancelled) throw abortError();

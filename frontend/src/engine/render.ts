@@ -18,6 +18,9 @@ import { probeGpu, type ProbeResult } from './gpu/probe';
 import { liveSet } from './gpu/live';
 import { layoutText, paintText } from './text-layout';
 import { SparseIndex } from './sparse';
+import { srcFrame } from './retime';
+import { transitionAt, tracksHaveTransition } from './transitions';
+import { mixTransition } from './transition-draw';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type Surface = OffscreenCanvas;
@@ -33,6 +36,13 @@ export const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
 
 /** Decoded pictures may hold this many bytes; the ones drawn in the last two frames always stay. */
 const BITMAP_CAP_BYTES = 1024 * 1024 * 1024;
+/** Drawing-layer pictures are decoded at one of these shares of their size (never below the view's); under 1.5 Mpx they stay whole. */
+const DECODE_STEPS = [0.25, 0.375, 0.5, 0.75];
+const DECODE_MIN_AREA = 1.5e6;
+/** Most a movie's pictures decode ahead of its first frame. */
+const PRELOAD_BYTES = 384 * 1024 * 1024;
+/** Pictures decoded at once. */
+const DECODE_LANES = 3;
 /** Canvas filters (blur) where the browser has them; others take the CPU path in paint/filters. */
 const CANVAS_FILTER = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'filter' in OffscreenCanvasRenderingContext2D.prototype;
 
@@ -70,6 +80,10 @@ export class Renderer {
   /** Draw counter and the draw each picture was last used in (byte-cap eviction spares recent ones). */
   private gen = 0;
   private readonly used = new Map<string, number>();
+  /** Share of full size each decoded picture was made at (absent: whole). */
+  private readonly bscale = new Map<string, number>();
+  /** Assets of the movie being drawn: a picture's full size, to decode it smaller. */
+  private assets: Movie['assets'] | null = null;
   private readonly pool: Surface[] = [];
   /** Movie-sized flat surfaces for Warp / Distort (a stack, since a warped group may hold warped members). */
   private readonly warpPool: OffscreenCanvas[] = [];
@@ -92,6 +106,9 @@ export class Renderer {
   gpuProbe: ProbeResult | null = null;
 
   constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
+
+  /** The stored file of an asset (the export worker is handed these). */
+  assetBlob(id: string): Blob | undefined { return this.blobOf(id); }
 
   /** Whether frames are composed on the GPU right now. */
   get gpuActive(): boolean {
@@ -186,20 +203,14 @@ export class Renderer {
     return { x, y, w, h };
   }
 
-  /** Content the GPU compositor does not draw itself: Warp and Distort, layer groups and masks, row masks (a group that holds any). */
+  /** Content the GPU compositor does not draw itself (Warp, Distort and bones are meshes there, gpu/mesh.ts). */
   private needsCpu(c: Content, a: Animated, local: number): boolean {
-    if (a.warp || a.distort || a.bones) return true;
     // a canvas wider than a GPU texture can be goes through the CPU
     if (c.canvas && Math.max(c.canvas.w, c.canvas.h) > MAX_CANVAS_SIDE / 2) return true;
     switch (c.kind) {
-      case 'drawing': return hasTree(c.layers);
-      case 'flipbook': {
-        if (hasRowMask(c)) return true;
-        const f = local + c.offset;
-        return c.flip.some((t) => { const i = t.hidden || t.opacity <= 0 ? -1 : flipIndexAt(t, f); return i >= 0 && hasTree(t.frames[i].layers); });
-      }
+      // layer trees and row masks are drawn by the GPU compositor itself (gpu/tree.ts)
       case 'group': {
-        const g = local + c.offset;
+        const g = srcFrame(c, local);
         return c.tracks.some((t) => {
           if (t.hidden) return false;
           const m = t.content.find((x) => g >= x.start && g < end(x));
@@ -213,6 +224,8 @@ export class Renderer {
   /** The GPU's result for this frame as a canvas, or null (off, lost, failed): the caller composes on the CPU. */
   private gpuCompose(movie: Movie, frame: number, view: View): OffscreenCanvas | null {
     if (!this.gpuOn || !this.gpu || !this.gpu.ready) return null;
+    // a transition is mixed by the CPU path (engine/transition-draw.ts), so both paths give the same picture
+    if (tracksHaveTransition(movie.tracks, frame)) return null;
     // a new movie object: textures of deleted contents and pictures go (the live set is cheap next to a frame)
     // (a borrowed compositor holds the owner's textures: never pruned from here)
     if (movie !== this.prunedFor) { this.prunedFor = movie; if (!this.gpuShared) this.gpu.prune(liveSet(movie)); }
@@ -227,8 +240,10 @@ export class Renderer {
       if (keep?.has(id)) continue;
       b?.close();
       this.bitmaps.delete(id);
+      this.bscale.delete(id);
     }
     this.pending.clear();
+    this.queue.length = 0;
     // decodes already started belong to the old set: they are dropped when they land, unless `keep` names them
     this.forgetGen++;
     this.lastKeep = keep ?? null;
@@ -239,20 +254,33 @@ export class Renderer {
   private lastKeep: Set<string> | null = null;
 
   /** Stores a finished decode, or closes it when a forget() came in between and did not keep that picture. */
-  private settle(id: string, bmp: ImageBitmap | null, gen: number): void {
+  private settle(id: string, bmp: ImageBitmap | null, gen: number, k = 1, drawn = true): void {
     if (gen !== this.forgetGen && !this.lastKeep?.has(id)) { bmp?.close(); return; }
-    this.keep(id, bmp);
+    this.keep(id, bmp, k, drawn);
   }
 
-  async preload(blobs: Map<string, Blob>): Promise<void> {
-    await Promise.all(Array.from(blobs, async ([id, blob]) => {
-      if (this.bitmaps.has(id) || !blob.type.startsWith('image/')) return;
-      const gen = this.forgetGen;
-      try { this.settle(id, await createImageBitmap(blob), gen); } catch { this.settle(id, null, gen); }
-    }));
+  /** Decodes a movie's pictures ahead of its first frame, a few at a time (200 whole 4K layers at once are 6.6 GB). Past the cap the oldest are dropped again: nothing here is drawn yet, so nothing is protected. */
+  async preload(blobs: Map<string, Blob>, ahead = false): Promise<void> {
+    const todo = Array.from(blobs).filter(([id, blob]) => !this.bitmaps.has(id) && blob.type.startsWith('image/'));
+    const gen = this.forgetGen;
+    let bytes = 0;
+    const lane = async (): Promise<void> => {
+      // `ahead` (opening a movie): past a few hundred MB the rest decode when a frame asks for them, at the size it needs;
+      // a frame about to be drawn or exported needs every picture, so it is not capped
+      for (let it = todo.shift(); it && (!ahead || bytes < PRELOAD_BYTES); it = todo.shift()) {
+        const [id, blob] = it;
+        try {
+          const bmp = await createImageBitmap(blob);
+          bytes += bmp.width * bmp.height * 4;
+          this.settle(id, bmp, gen, 1, !ahead);
+        } catch { this.settle(id, null, gen, 1, !ahead); }
+      }
+    };
+    await Promise.all(Array.from({ length: DECODE_LANES }, lane));
   }
 
-  bitmap(id: string | null): ImageBitmap | null {
+  /** `k`: the share of the picture's full size the draw needs (1 whole). A smaller copy that is already decoded is drawn as it is; a sharper one is fetched when the view grows. */
+  bitmap(id: string | null, k = 1): ImageBitmap | null {
     if (!id) return null;
     const have = this.bitmaps.get(id);
     if (have !== undefined) {
@@ -261,17 +289,55 @@ export class Renderer {
       this.bitmaps.set(id, have);
       this.used.set(id, this.gen);
       if (have) this.sparse.note(have);
+      if (have && k > (this.bscale.get(id) ?? 1) + 0.001 && !this.pending.has(id)) {
+        this.decode(id, k);
+        this.incomplete = true;
+      }
       return have;
     }
     if (!this.pending.has(id)) {
-      const blob = this.blobOf(id);
-      if (!blob) { this.incomplete = true; return null; }
-      this.pending.add(id);
-      const gen = this.forgetGen;
-      createImageBitmap(blob).then((bmp) => { this.settle(id, bmp, gen); }, () => { this.settle(id, null, gen); }).finally(() => { if (gen === this.forgetGen) this.pending.delete(id); this.onReady(); });
+      if (!this.blobOf(id)) { this.incomplete = true; return null; }
+      this.decode(id, k);
     }
     this.incomplete = true;
     return null;
+  }
+
+  /** Starts decoding a picture at the share `k` of its size (whole when `k` is 1, or when it is small anyway). */
+  private decode(id: string, k: number): void {
+    if (!this.blobOf(id)) return;
+    this.pending.add(id);
+    this.queue.push({ id, k });
+    this.pump();
+  }
+
+  /** Decodes in flight; the rest wait here (a frame of 200 layers asks for all of them at once). */
+  private lanes = 0;
+  private readonly queue: { id: string; k: number }[] = [];
+
+  private pump(): void {
+    while (this.lanes < DECODE_LANES && this.queue.length) {
+      const { id, k } = this.queue.shift()!;
+      const blob = this.blobOf(id);
+      if (!blob) { this.pending.delete(id); continue; }
+      const gen = this.forgetGen;
+      const a = this.assets?.[id];
+      const small = !a || a.width * a.height < DECODE_MIN_AREA;
+      const kk = small || k >= 0.999 ? 1 : k;
+      const opts: ImageBitmapOptions | undefined = kk < 1 && a
+        ? { resizeWidth: Math.max(1, Math.round(a.width * kk)), resizeHeight: Math.max(1, Math.round(a.height * kk)), resizeQuality: 'high' }
+        : undefined;
+      this.lanes++;
+      createImageBitmap(blob, opts).then((bmp) => { this.settle(id, bmp, gen, kk); }, () => { this.settle(id, null, gen, kk); })
+        .finally(() => { this.lanes--; if (gen === this.forgetGen) this.pending.delete(id); this.onReady(); this.pump(); });
+    }
+  }
+
+  /** What a Drawing layer's picture should be decoded at for a view `scale` (movie pixel to surface pixel): the next step up, so it is never softer than shown. Exports draw whole. */
+  private static decodeShare(scale: number, exact: boolean): number {
+    if (exact) return 1;
+    for (const s of DECODE_STEPS) if (s >= scale) return s;
+    return 1;
   }
 
   /** Set when a draw used a picture still decoding or a video frame; such a frame must not be cached. */
@@ -285,19 +351,27 @@ export class Renderer {
   }
 
   /** Decoded pictures are capped (each 4K layer is about 33 MB); the least recently drawn are closed and decode again on demand. */
-  private keep(id: string, bmp: ImageBitmap | null): void {
+  private keep(id: string, bmp: ImageBitmap | null, k = 1, drawn = true): void {
+    const old = this.bitmaps.get(id);
+    // a sharper copy replaces a softer one; a failed sharper decode leaves the soft one
+    if (bmp === null && old) return;
     this.bitmaps.set(id, bmp);
+    this.bscale.set(id, k);
+    if (old && old !== bmp) old.close();
     if (bmp) this.sparse.note(bmp);
-    this.used.set(id, this.gen);
+    // a picture decoded for the draw in progress is protected from eviction; one decoded ahead of time is not
+    if (drawn) this.used.set(id, this.gen);
+    else if (!this.used.has(id)) this.used.set(id, -10);
     let sum = 0;
     for (const b of this.bitmaps.values()) if (b) sum += b.width * b.height * 4;
     if (sum <= BITMAP_CAP_BYTES) return;
-    for (const [k, b] of Array.from(this.bitmaps)) {
+    for (const [key, b] of Array.from(this.bitmaps)) {
       if (sum <= BITMAP_CAP_BYTES) break;
-      if ((this.used.get(k) ?? 0) >= this.gen - 1) continue;
+      if ((this.used.get(key) ?? 0) >= this.gen - 1) continue;
       if (b) { sum -= b.width * b.height * 4; b.close(); }
-      this.bitmaps.delete(k);
-      this.used.delete(k);
+      this.bitmaps.delete(key);
+      this.used.delete(key);
+      this.bscale.delete(key);
     }
   }
 
@@ -426,6 +500,12 @@ export class Renderer {
       if (!c || c.opacity <= 0) continue;
       const a = animate(c, frame - c.start);
       if (a.opacity <= 0) continue;
+      const tx = tracks === movie.tracks && t.content.length > 1 ? transitionAt(t.content, frame) : null;
+      if (tx) {
+        commit();
+        held = { layer: this.transitionLayer(tx, view, movie), c: tx.b, opacity: 1 };
+        continue;
+      }
       if (this.direct(c, a, tracks, i, frame)) {
         // plain content nothing above masks: drawn straight onto the output, no surface to clear and composite
         commit();
@@ -450,6 +530,24 @@ export class Renderer {
       held = { layer, c, opacity: a.opacity };
     }
     commit();
+  }
+
+  /** Both sides of a running transition drawn on surfaces and mixed onto a third (engine/transition-draw.ts). */
+  private transitionLayer(tx: import('./transitions').ActiveTransition, view: View, movie: Movie): Surface {
+    const side = (c: Content, local: number): { s: Surface; o: number } => {
+      const a = animate(c, local);
+      const s = this.surface();
+      this.drawContent(s.getContext('2d') as OffscreenCanvasRenderingContext2D, c, local, view, movie, a);
+      this.applyFilters(s, a, view, movie);
+      return { s, o: Math.max(0, Math.min(1, a.opacity)) };
+    };
+    const A = side(tx.a, tx.aLocal);
+    const B = side(tx.b, tx.bLocal);
+    const out = this.surface();
+    mixTransition(out.getContext('2d') as OffscreenCanvasRenderingContext2D, A.s, B.s, A.o, B.o, tx, { x: view.ox, y: view.oy, w: movie.width * view.scale, h: movie.height * view.scale });
+    this.release(A.s);
+    this.release(B.s);
+    return out;
   }
 
   /** True when content `c` (track `i`) may skip its own surface: opaque, normal blend, no mask or filter, and the next content above does not mask it. */
@@ -573,9 +671,9 @@ export class Renderer {
       case 'image': this.drawImageContent(ctx, c, movie); break;
       case 'video': this.drawVideoContent(ctx, c, local, movie); break;
       case 'drawing': this.drawLayers(ctx, c.layers, movie, canvasOf(c, movie)); break;
-      case 'flipbook': this.drawFlipbook(ctx, c, local + c.offset, movie); break;
+      case 'flipbook': this.drawFlipbook(ctx, c, srcFrame(c, local), movie); break;
       case 'text': this.drawText(ctx, c, movie); break;
-      case 'group': this.drawGroup(ctx, c, local + c.offset, movie); break;
+      case 'group': this.drawGroup(ctx, c, srcFrame(c, local), movie); break;
       default: break;
     }
     ctx.restore();
@@ -590,7 +688,7 @@ export class Renderer {
 
   /** Seconds into the video asset shown at a content-local frame. */
   static videoSeconds(c: Content, local: number, movie: Movie): number {
-    return Math.max(0, (local + c.offset) / movie.fps);
+    return Math.max(0, srcFrame(c, local) / movie.fps);
   }
 
   private drawVideoContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, movie: Movie): void {
@@ -612,7 +710,7 @@ export class Renderer {
         const c = t.content.find((x) => f >= x.start && f < end(x));
         if (!c) continue;
         if (c.kind === 'video' && c.asset) out.push({ asset: c.asset, lane: c.id, seconds: Renderer.videoSeconds(c, f - c.start, movie) });
-        if (c.kind === 'group') visit(c.tracks, f - c.start + c.offset);
+        if (c.kind === 'group') visit(c.tracks, srcFrame(c, f - c.start));
       }
     };
     visit(movie.tracks, frame);
@@ -635,13 +733,18 @@ export class Renderer {
         if (t.hidden) continue;
         const c = t.content.find((x) => f >= x.start && f < end(x));
         if (!c) continue;
-        const local = f - c.start;
         const want = (id: string | null): void => { if (id && !this.bitmaps.get(id)) { const b = this.blobOf(id); if (b) blobs.set(id, b); } };
-        if (c.kind === 'image') want(c.asset);
-        if (c.kind === 'drawing') c.layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); });
-        if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, local + c.offset); if (i >= 0) row.frames[i].layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); }); }
-        if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie), c.id));
-        if (c.kind === 'group') visit(c.tracks, local + c.offset);
+        const prep = (c: Content, local: number): void => {
+          if (c.kind === 'image') want(c.asset);
+          if (c.kind === 'drawing') c.layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); });
+          if (c.kind === 'flipbook') for (const row of c.flip) { const i = flipIndexAt(row, srcFrame(c, local)); if (i >= 0) row.frames[i].layers.forEach((l) => { want(l.pixels); want(l.mask ?? null); }); }
+          if (c.kind === 'video' && c.asset && this.video) waits.push(this.video.exact(c.asset, Renderer.videoSeconds(c, local, movie), c.id));
+          if (c.kind === 'group') visit(c.tracks, srcFrame(c, local));
+        };
+        prep(c, f - c.start);
+        // the other side of a running transition is drawn too: it must be decoded for this frame
+        const tx = tracks === movie.tracks ? transitionAt(t.content, f) : null;
+        if (tx) { if (c === tx.a) prep(tx.b, tx.bLocal); else prep(tx.a, tx.aLocal); }
       }
     };
     visit(movie.tracks, frame);
@@ -665,12 +768,21 @@ export class Renderer {
     this.drawLayers(ctx, layers, movie, size ? { x: 0, y: 0, w: size.w, h: size.h } : undefined);
   }
 
+  /** Share of a Drawing layer's picture this draw needs: the scale `ctx` puts it on the surface at (a 4K layer on a small Stage is decoded small, so 200 of them fit). */
+  private picShare(ctx: OffscreenCanvasRenderingContext2D, id: string | null, w: number): number {
+    const a = id && !this.exact ? this.assets?.[id] : undefined;
+    if (!a || a.width < 1) return 1;
+    const t = ctx.getTransform();
+    return Renderer.decodeShare(Math.hypot(t.a, t.b) * w / a.width, false);
+  }
+
   /** Layer opacity multiplies the caller's alpha (a Flipbook row, a group member); a normal layer keeps the caller's blend. */
   private drawLayers(ctx: OffscreenCanvasRenderingContext2D, layers: Content['layers'], movie: Movie, rect: CanvasRect = { x: 0, y: 0, w: movie.width, h: movie.height }): void {
+    this.assets = movie.assets;
     if (hasTree(layers)) {
       ctx.save();
       ctx.translate(rect.x, rect.y);
-      drawLayerTree(ctx, layers, rect.w, rect.h, (id) => this.bitmap(id));
+      drawLayerTree(ctx, layers, rect.w, rect.h, (id) => this.bitmap(id), (id) => this.bitmap(id, this.picShare(ctx, id, rect.w)));
       ctx.restore();
       return;
     }
@@ -678,7 +790,7 @@ export class Renderer {
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
       if (!l.visible || l.opacity <= 0) continue;
-      const bmp = this.bitmap(l.pixels);
+      const bmp = this.bitmap(l.pixels, this.picShare(ctx, l.pixels, rect.w));
       if (!bmp) continue;
       const src = bmp;
       if (isPixelBlend(l.blend)) {

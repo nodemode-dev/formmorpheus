@@ -106,9 +106,14 @@ function onion(o: Obj): Obj {
   };
 }
 
+/** Tracks already filled in: history states share most tracks, and each is done once (the sharing survives opening a file). */
+const done = new WeakSet<object>();
+
 function trackList(v: unknown): Obj[] {
   return arr(v).map((t, i) => {
     if (!isObj(t)) return null;
+    if (done.has(t)) return t;
+    done.add(t);
     fillId(t, 't');
     t.name = str(t.name, `Track ${i + 1}`);
     t.hidden = bool(t.hidden, false);

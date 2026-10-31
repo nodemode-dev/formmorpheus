@@ -1,6 +1,7 @@
 // Flipbook edits (Phase 5). Pure: each returns a new Content or Movie and never mutates.
 import { content as makeContent, drawingLayer, end, flipFrame, flipIndexAt, flipLength, flipTrack, track as makeTrack, uid } from './model';
 import { shiftKeys } from './key-ops';
+import { srcFrame } from './retime';
 import { OpError, deleteContent, placeContent } from './ops';
 import type { Content, DrawingLayer, FlipTrack, FlipbookFrame, Movie, Track } from './types';
 
@@ -251,9 +252,9 @@ export function flipbookToTracks(movie: Movie, id: string): { movie: Movie; ids:
     // walk the movie frames the content shows (its offset included) and emit one Drawing per run of the same frame
     let at = 0;
     while (at < fb.duration) {
-      const fi = flipIndexAt(t, at + fb.offset);
+      const fi = flipIndexAt(t, srcFrame(fb, at));
       let run = 1;
-      while (at + run < fb.duration && flipIndexAt(t, at + run + fb.offset) === fi) run++;
+      while (at + run < fb.duration && flipIndexAt(t, srcFrame(fb, at + run)) === fi) run++;
       const f = t.frames[fi];
       const d = makeContent('drawing', fb.start + at, run, {
         name: `${t.name} ${fi + 1}`, layers: freshLayers(f.layers), transform: { ...fb.transform }, opacity: fb.opacity * t.opacity,

@@ -107,7 +107,7 @@ export interface FlipTrack {
 export type FlipMask = 'none' | 'clipping' | 'alpha' | 'luminance';
 
 /** Easing of the span that leaves a key; 'hold' keeps the value until the next key. */
-export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold' | 'custom';
+export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'hold' | 'custom' | 'bounce' | 'elastic' | 'overshoot';
 
 /** A Bezier handle of a span as a point in the span's unit square: x is the time fraction (0..1), y the value fraction (may leave 0..1 to overshoot). */
 export type EaseHandle = [number, number];
@@ -118,6 +118,9 @@ export const EASES: { id: Ease; label: string }[] = [
   { id: 'out', label: 'Ease out' },
   { id: 'inout', label: 'Ease in & out' },
   { id: 'hold', label: 'Hold' },
+  { id: 'bounce', label: 'Bounce' },
+  { id: 'elastic', label: 'Elastic' },
+  { id: 'overshoot', label: 'Overshoot' },
 ];
 
 /** A key at a frame local to its content (0 is the content's first frame). */
@@ -229,6 +232,38 @@ export interface Content {
   parent?: string;
   /** Drawing and Flipbook only: the canvas its pictures cover, in movie pixels from the movie's top-left (may reach past the Stage). Absent: the movie rectangle. A Flipbook's frames all share it. */
   canvas?: CanvasRect;
+  /** Sound blocks only: fade in and fade out lengths in movie frames (absent: none), and the stereo position -1..1 (absent: centre). */
+  fadeIn?: number;
+  fadeOut?: number;
+  pan?: number;
+  /** Retime (engine/retime.ts): playback speed 0.25 to 4 (0 freezes on `offset`), played backward when `reverse`. Absent: normal. */
+  speed?: number;
+  reverse?: boolean;
+  /** Sound: the pitch follows the speed instead of being kept. */
+  speedPitch?: boolean;
+  /** Transition into this block from the block that touches its start on the same track (engine/transitions.ts). */
+  transition?: Transition;
+}
+
+export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';
+
+/** Centred on the cut: half of `duration` before it, half after; the outgoing block holds its last frame and the incoming its first. */
+export interface Transition {
+  kind: TransitionKind;
+  /** Frames, at least 2. */
+  duration: number;
+  /** Dip: the colour dipped through (default black). */
+  color?: string;
+  /** Wipe and push: the way the new picture travels (default left to right). */
+  dir?: 'l' | 'r' | 'u' | 'd';
+}
+
+export interface Marker {
+  id: string;
+  frame: number;
+  name: string;
+  /** One of the Highlight colour names, or absent for the default. */
+  color?: string;
 }
 
 export interface CanvasRect { x: number; y: number; w: number; h: number }
@@ -239,6 +274,9 @@ export interface Track {
   hidden: boolean;
   /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
   screen?: true;
+  /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */
+  mute?: true;
+  solo?: true;
   content: Content[];
 }
 
@@ -255,6 +293,8 @@ export interface Asset {
   seconds?: number;
   /** Video: whether the file carries sound (so it can be separated into an audio block). */
   hasAudio?: boolean;
+  /** Sound recorded in the app (a voice-over take): stored as 16-bit PCM WAV; `take` groups the takes made from one start frame. */
+  recorded?: { take: number; start: number };
   /** Fonts: the family name registered for Text content. */
   family?: string;
 }
@@ -303,6 +343,8 @@ export interface Movie {
   author?: string;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
   camera?: { keys: KeyLane[] };
+  /** Named cue points on the ruler. Absent: none. */
+  markers?: Marker[];
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;

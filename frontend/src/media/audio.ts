@@ -5,6 +5,7 @@
 import { Input, BlobSource, ALL_FORMATS, AudioBufferSink } from 'mediabunny';
 import { animate } from '../engine/keys';
 import { end } from '../engine/model';
+import { resample, reversed, stretch } from '../engine/time-stretch';
 import type { Movie, Track } from '../engine/types';
 import type { AudioClip, ClockSource } from './types';
 
@@ -36,6 +37,41 @@ export class AudioEngine implements ClockSource {
   private scrubAt = 0;
   private unlockBound: (() => void) | null = null;
   private disposed = false;
+  private master: GainNode | null = null;
+  private monitor = true;
+  private scrubOn = true;
+
+  /** Plays the movie's sound to the speakers (true) or keeps the clock running silent (false), as while recording a voice-over. */
+  setMonitor(on: boolean): void {
+    this.monitor = on;
+    if (this.master) this.master.gain.value = on ? 1 : 0;
+  }
+
+  /** Audio scrubbing: the short bursts of sound heard while the Playhead is dragged. */
+  setScrub(on: boolean): void {
+    this.scrubOn = on;
+    if (!on) this.silenceScrub();
+  }
+
+  get scrubbing(): boolean { return this.scrubOn; }
+
+  /** Largest absolute sample of a decoded sound between two asset seconds (all channels), or 0 when it is not decoded. */
+  peakIn(assetId: string, from: number, to: number): number {
+    const buf = this.buffers.get(assetId);
+    if (!buf) return 0;
+    const a = Math.max(0, Math.floor(from * buf.sampleRate)), b = Math.min(buf.length, Math.ceil(to * buf.sampleRate));
+    let peak = 0;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = a; i < b; i++) { const v = d[i] < 0 ? -d[i] : d[i]; if (v > peak) peak = v; }
+    }
+    return peak;
+  }
+
+  /** The decoded sound, once decode() has landed. */
+  bufferOf(assetId: string): AudioBuffer | null {
+    return this.buffers.get(assetId) ?? null;
+  }
 
   constructor(private blobOf: (assetId: string) => Blob | undefined, private onPeaks: (assetId: string) => void) {}
 
@@ -48,6 +84,9 @@ export class AudioEngine implements ClockSource {
     if (!this.ctx) {
       try {
         this.ctx = new AudioContext({ latencyHint: 'interactive' });
+        this.master = this.ctx.createGain();
+        this.master.gain.value = this.monitor ? 1 : 0;
+        this.master.connect(this.ctx.destination);
       } catch {
         return null;
       }
@@ -154,14 +193,17 @@ export class AudioEngine implements ClockSource {
   clips(movie: Movie): AudioClip[] {
     const out: AudioClip[] = [];
     const fps = movie.fps;
-    const walk = (tracks: Track[], shift: number, lo: number, hi: number, parent: (s: number) => number): void => {
+    const solo = movie.tracks.some((t) => t.solo);
+    const walk = (tracks: Track[], shift: number, lo: number, hi: number, parent: (s: number) => number, top = true): void => {
       for (const t of tracks) {
-        if (t.hidden) continue;
+        if (t.hidden || t.mute || (top && solo && !t.solo)) continue;
         for (const c of t.content) {
           if (c.kind === 'group') {
+            // sound inside a retimed group is left out: its time is not a straight shift of the movie's
+            if (c.speed !== undefined && c.speed !== 1 || c.reverse) continue;
             const cs = c.start + shift;
             const own = (s: number): number => parent(s) * Math.max(0, animate(c, s * fps - cs).volume);
-            walk(c.tracks, shift + c.start - c.offset, Math.max(lo, cs), Math.min(hi, end(c) + shift), own);
+            walk(c.tracks, shift + c.start - c.offset, Math.max(lo, cs), Math.min(hi, end(c) + shift), own, false);
             continue;
           }
           if (!c.asset) continue;
@@ -176,13 +218,25 @@ export class AudioEngine implements ClockSource {
           const f0 = Math.max(cs, lo);
           const f1 = Math.min(cs + c.duration, hi);
           if (f1 <= f0) continue;
+          // a held frame is silent; a retimed block reads its source faster, slower or backward
+          if (c.speed === 0) continue;
+          const rs = c.speed ?? 1, rev = c.reverse === true;
+          const retimed = rs !== 1 || rev;
           out.push({
             contentId: c.id,
             assetId: c.asset,
             start: f0 / fps,
             end: f1 / fps,
-            offset: (f0 - cs + c.offset) / fps,
+            offset: (retimed ? (rev ? c.offset + (c.duration - (f0 - cs)) * rs : c.offset + (f0 - cs) * rs) : f0 - cs + c.offset) / fps,
+            ...(retimed ? { retime: { speed: rs, reverse: rev, keepPitch: c.speedPitch !== true } } : {}),
             gain: (s) => parent(s) * Math.max(0, animate(c, Math.max(0, s * fps - cs)).volume),
+            ...(c.kind === 'audio' ? {
+              pan: (s: number) => Math.max(-1, Math.min(1, animate(c, Math.max(0, s * fps - cs)).pan)),
+              fadeIn: (c.fadeIn ?? 0) / fps,
+              fadeOut: (c.fadeOut ?? 0) / fps,
+              blockStart: cs / fps,
+              blockEnd: (cs + c.duration) / fps,
+            } : {}),
           });
         }
       }
@@ -235,7 +289,7 @@ export class AudioEngine implements ClockSource {
     if (buf === undefined) { void this.decode(clip.assetId); return; }
     if (buf === null) return;
     const lat = this.latency();
-    const nodes = scheduleClip(ctx, ctx.destination, buf, clip, (t) => s.startCtx + (t - s.pos0) - lat, ctx.currentTime + 0.005, Math.max(s.pos0, clip.start), s.movie.fps);
+    const nodes = scheduleClip(ctx, this.master ?? ctx.destination, buf, clip, (t) => s.startCtx + (t - s.pos0) - lat, ctx.currentTime + 0.005, Math.max(s.pos0, clip.start), s.movie.fps);
     if (nodes) s.nodes.set(clip.contentId + clip.start, nodes);
   }
 
@@ -267,7 +321,7 @@ export class AudioEngine implements ClockSource {
   // ---- scrubbing ----
 
   scrub(movie: Movie, frame: number): void {
-    if (this.session) return;
+    if (this.session || !this.scrubOn) return;
     const t = performance.now();
     if (t - this.scrubAt < SCRUB_MIN_GAP_MS) return;
     const ctx = this.context();
@@ -370,27 +424,74 @@ function scheduleClip(
     when = notBefore;
   }
   const endS = Math.min(clip.end, limitEnd);
-  const off = clip.offset + (startS - clip.start);
+  let off0 = clip.offset;
+  if (clip.retime) {
+    const rt = clip.retime;
+    // the processed sound plays at normal rate in movie time, so offsets are scaled into it
+    off0 = rt.reverse ? (buf.duration - clip.offset) / rt.speed : clip.offset / rt.speed;
+    buf = retimedBuffer(ctx, buf, rt);
+  }
+  const off = off0 + (startS - clip.start);
   const dur = Math.min(endS - startS, buf.duration - off);
   if (!(dur > 0.0005) || off < 0) return null;
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const gain = ctx.createGain();
-  const n = Math.max(2, Math.ceil(dur * fps) + 1);
+  // fades are sampled finer than the frame rate so a short fade is not stepped
+  const fi = clip.fadeIn ?? 0, fo = clip.fadeOut ?? 0;
+  const rate = fi > 0 || fo > 0 ? Math.max(fps, 200) : fps;
+  const bs = clip.blockStart ?? clip.start, be = clip.blockEnd ?? clip.end;
+  const n = Math.max(2, Math.ceil(dur * rate) + 1);
   const values = new Float32Array(n);
   let flat = true;
   for (let i = 0; i < n; i++) {
-    values[i] = clip.gain(Math.min(endS, startS + i / fps));
-    if (values[i] !== values[0]) flat = false;
+    const s = Math.min(endS, startS + i / rate);
+    let v = clip.gain(s);
+    if (fi > 0 && s < bs + fi) v *= Math.max(0, (s - bs) / fi);
+    if (fo > 0 && s > be - fo) v *= Math.max(0, (be - s) / fo);
+    values[i] = v;
+    if (v !== values[0]) flat = false;
   }
   gain.gain.value = values[0];
   if (!flat) {
     try { gain.gain.setValueCurveAtTime(values, when, dur); } catch { /* keep the flat value */ }
   }
   src.connect(gain);
-  gain.connect(dest);
+  let tail: AudioNode = gain;
+  if (clip.pan) {
+    const pv = new Float32Array(Math.max(2, Math.ceil(dur * fps) + 1));
+    let pflat = true;
+    for (let i = 0; i < pv.length; i++) { pv[i] = clip.pan(Math.min(endS, startS + i / fps)); if (pv[i] !== pv[0]) pflat = false; }
+    if (!pflat || Math.abs(pv[0]) > 0.001) {
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = pv[0];
+      if (!pflat) { try { pan.pan.setValueCurveAtTime(pv, when, dur); } catch { /* keep the flat value */ } }
+      gain.connect(pan);
+      tail = pan;
+    }
+  }
+  tail.connect(dest);
   src.start(when, off, dur);
   return { src, gain };
+}
+
+const retimed = new WeakMap<AudioBuffer, Map<string, AudioBuffer>>();
+
+/** The whole sound at another speed and/or backward, made once per source buffer and setting. */
+function retimedBuffer(ctx: BaseAudioContext, buf: AudioBuffer, rt: { speed: number; reverse: boolean; keepPitch: boolean }): AudioBuffer {
+  const key = `${rt.speed}|${rt.reverse ? 1 : 0}|${rt.keepPitch ? 1 : 0}|${ctx.sampleRate}`;
+  let per = retimed.get(buf);
+  if (!per) { per = new Map(); retimed.set(buf, per); }
+  const have = per.get(key);
+  if (have) return have;
+  let chs: Float32Array[] = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+  if (rt.reverse) chs = chs.map(reversed);
+  const out = rt.speed === 1 ? chs : rt.keepPitch ? stretch(chs, rt.speed, buf.sampleRate) : chs.map((c) => resample(c, rt.speed));
+  const made = ctx.createBuffer(out.length, Math.max(1, out[0].length), buf.sampleRate);
+  out.forEach((c, i) => made.getChannelData(i).set(c));
+  per.set(key, made);
+  return made;
 }
 
 function computePeaks(buf: AudioBuffer): Peaks {

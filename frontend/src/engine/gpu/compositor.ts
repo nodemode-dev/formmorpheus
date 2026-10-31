@@ -5,6 +5,7 @@ import { end, flipIndexAt } from '../model';
 import { animate, type Animated } from '../keys';
 import { memberMatrix, topMatrix } from '../transform';
 import { canvasOf } from '../canvas';
+import { srcFrame } from '../retime';
 import type { BlendMode, CanvasRect, Content, DrawingLayer, Movie, Track } from '../types';
 import {
   FS_BOIL, FS_BOOST, FS_BOX, FS_COPY, FS_DOWN, FS_GAUSS, FS_HSB, FS_MASK, FS_NOISE_APPLY, FS_NOISE_GRID, FS_PRESENT, FS_SHARPEN,
@@ -12,6 +13,14 @@ import {
 } from './shaders';
 import { TextureCache, type TexSource } from './textures';
 import { fontEpoch } from '../text-layout';
+import { hasTree } from '../../paint/layer-tree';
+import { hasRowMask } from '../flip-draw';
+import { isPixelBlend } from '../blend';
+import { ATOP, GpuTree } from './tree';
+import { MeshDrawer, flatScaleOf } from './mesh';
+import { contentRect, setStagePost, warpActive, warpQuads } from '../warp-draw';
+import { boneQuads } from '../bones';
+import { postMatrix } from '../transform';
 
 export interface ViewLike {
   scale: number;
@@ -43,7 +52,7 @@ const MODE: Record<BlendMode, number> = {
 };
 const ADD = 16;
 
-interface Surf {
+export interface Surf {
   tex: WebGLTexture;
   fbo: WebGLFramebuffer;
   w: number;
@@ -104,6 +113,8 @@ export class GpuCompositor {
   private readonly progs = new Map<string, Prog>();
   private readonly pool = new Map<string, Surf[]>();
   private scratch: Surf | null = null;
+  private scratchTree: Surf | null = null;
+  private tree!: GpuTree;
   private perm: WebGLTexture | null = null;
   private floatOk = false;
   private lost = false;
@@ -135,6 +146,24 @@ export class GpuCompositor {
     this.gl = gl;
     this.floatOk = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
     this.cache = new TextureCache(gl, TEXTURE_CAP);
+    this.tree = new GpuTree({
+      gl,
+      view: () => ({ w: this.w, h: this.h }),
+      acquire: (w, h) => this.acquire(w, h, 'u8', true),
+      release: (s) => { this.release(s); },
+      quad: (t, tex, m, rx, ry, rw, rh, a, mode) => { this.quad(t, tex, m, rx, ry, rw, rh, a, mode); },
+      mode: (b) => MODE[b],
+      tex: (key, src) => this.cache.get(key, src),
+      layers: (bm, t, ls, m, rect, a, mode) => { this.layers({ bitmap: bm } as GpuHost, t, ls, m, rect, a, mode); },
+      run: (name, fs, target, multiply, setup) => {
+        const p = this.prog(name, fs);
+        gl.useProgram(p.p);
+        setup((n) => p.loc(n), (unit, tex) => { this.bindTex(unit, tex); });
+        if (multiply) { gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR); } else gl.disable(gl.BLEND);
+        this.box(p, target, 0, 0, target.w, target.h);
+        gl.disable(gl.BLEND);
+      },
+    });
     this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.dropAll(true); });
     this.canvas.addEventListener('webglcontextrestored', () => {
       this.floatOk = !!(this.gl.getExtension('EXT_color_buffer_float') || this.gl.getExtension('EXT_color_buffer_half_float'));
@@ -157,10 +186,17 @@ export class GpuCompositor {
     this.progs.clear();
     this.pool.clear();
     this.scratch = null;
+    this.scratchTree = null;
     this.perm = null;
+    this.meshDrawer?.dispose();
+    this.meshDrawer = null;
     this.textSig.clear();
     this.cache.reset();
   }
+
+  /** Warp / Distort / Bones triangle meshes (gpu/mesh.ts), and the flat-draw matrix the next content() takes instead of its own. */
+  private meshDrawer: MeshDrawer | null = null;
+  private flatMat: Mat | null = null;
 
   /** Textures of pictures the renderer no longer holds (its forget). */
   forget(keep?: Set<string>): void {
@@ -285,6 +321,7 @@ export class GpuCompositor {
       if (!list.length) this.pool.delete(key);
     }
     if (this.scratch && (this.scratch.w !== this.w || this.scratch.h !== this.h)) { this.free(this.scratch); this.scratch = null; }
+    if (this.scratchTree) { this.free(this.scratchTree); this.scratchTree = null; }
   }
 
   private bindTex(unit: number, tex: WebGLTexture | null): void {
@@ -419,8 +456,11 @@ export class GpuCompositor {
 
   private content(host: GpuHost, target: Surf, c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, parent: Mat, alpha: number, mode: number): void {
     if (parent === IDENT && host.cpu(c, a, local)) { this.raster(host, target, c, local, view, movie, a, alpha, mode); return; }
+    if (a.warp || a.distort || (a.bones && c.rig)) { this.meshContent(host, target, c, local, view, movie, a, parent, alpha, mode); return; }
     // top level: view, camera, parents and own (engine/transform.ts); a group member: own and same-group parents, inside the group's matrix
-    const m = parent === IDENT ? topMatrix(movie, c, local + c.start, a, view) : mul(parent, memberMatrix(movie, c, local + c.start, a));
+    const fm = this.flatMat;
+    this.flatMat = null;
+    const m = fm ?? (parent === IDENT ? topMatrix(movie, c, local + c.start, a, view) : mul(parent, memberMatrix(movie, c, local + c.start, a)));
     const mw = movie.width, mh = movie.height;
     switch (c.kind) {
       case 'image': {
@@ -441,7 +481,12 @@ export class GpuCompositor {
       }
       case 'drawing': this.layers(host, target, c.layers, m, canvasOf(c, movie), alpha, mode); return;
       case 'flipbook': {
-        const f = local + c.offset;
+        const f = srcFrame(c, local);
+        // row masks, clipping rows and pixel-maths row blends compose each row on a surface first (gpu/tree.ts)
+        if (hasRowMask(c) || c.flip.some((t) => !t.hidden && t.opacity > 0 && isPixelBlend(t.blend) && flipIndexAt(t, f) >= 0)) {
+          this.tree.rows((id) => host.bitmap(id), target, c, f, m, canvasOf(c, movie), alpha, mode);
+          return;
+        }
         for (let i = c.flip.length - 1; i >= 0; i--) {
           const t = c.flip[i];
           if (t.hidden || t.opacity <= 0) continue;
@@ -454,7 +499,7 @@ export class GpuCompositor {
       case 'text': this.text(host, target, c, m, movie, alpha, mode); return;
       case 'group': {
         const unit: ViewLike = { scale: 1, ox: 0, oy: 0, width: mw, height: mh };
-        const g = local + c.offset;
+        const g = srcFrame(c, local);
         for (let i = c.tracks.length - 1; i >= 0; i--) {
           const t = c.tracks[i];
           if (t.hidden) continue;
@@ -486,6 +531,47 @@ export class GpuCompositor {
     if (tex) this.quad(target, tex, IDENT, 0, 0, this.w, this.h, alpha, mode);
   }
 
+  /**
+   * Warp, Distort and Bones: the content is drawn flat (movie size at the view's density, transform removed) on a
+   * surface, re-projected through the triangle list onto a clear layer, and the layer is blended like any picture.
+   * Bones skin first, then a Warp / Distort bends that result, as the CPU raster does (render.ts drawContent).
+   */
+  private meshContent(host: GpuHost, target: Surf, c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, parent: Mat, alpha: number, mode: number): void {
+    const nested = parent !== IDENT;
+    const P: Mat = nested ? parent : [view.scale, 0, 0, view.scale, view.ox, view.oy];
+    const mw = movie.width, mh = movie.height;
+    const fs = flatScaleOf(mw, mh, view.scale);
+    const fw = Math.max(1, Math.ceil(mw * fs)), fh = Math.max(1, Math.ceil(mh * fs));
+    const rect = contentRect(c, movie);
+    const md = this.meshDrawer ?? (this.meshDrawer = new MeshDrawer(this.gl));
+    const flatM: Mat = [fs, 0, 0, fs, 0, 0];
+    const fa: Animated = { ...a, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipH: false, flipV: false, px: 0, py: 0, warp: null, distort: null, bones: null };
+    let flat: Surf | null = null, sk: Surf | null = null, layer: Surf | null = null;
+    try {
+      flat = this.acquire(fw, fh, 'u8', true);
+      this.flatMat = flatM;
+      try { this.content(host, flat, c, local, { scale: fs, ox: 0, oy: 0, width: fw, height: fh }, movie, fa, flatM, 1, 0); } finally { this.flatMat = null; }
+      layer = this.acquire(target.w, target.h, 'u8', true);
+      const warped = warpActive(a);
+      const skinned = !!a.bones && !!c.rig;
+      let src = flat;
+      if (skinned && warped) {
+        sk = this.acquire(fw, fh, 'u8', true);
+        md.draw(sk, flat, boneQuads(c.rig as NonNullable<Content['rig']>, a.bones, rect, mw, mh, null), fs, flatM, undefined);
+        src = sk;
+      }
+      setStagePost(postMatrix(movie, c, local + c.start, nested, local + c.start));
+      const tris = warped ? warpQuads(a, mw, mh, rect) : boneQuads(c.rig as NonNullable<Content['rig']>, a.bones, rect, mw, mh, a);
+      md.draw(layer, src, tris, fs, P, warped ? a.resample : undefined);
+      this.quad(target, layer.tex, IDENT, 0, 0, target.w, target.h, alpha, mode);
+    } finally {
+      setStagePost(null);
+      if (layer) this.release(layer);
+      if (sk) this.release(sk);
+      if (flat) this.release(flat);
+    }
+  }
+
   /** Text is drawn once into a tight picture at the density it shows at, then placed like any picture; kept while unchanged. */
   private text(host: GpuHost, target: Surf, c: Content, m: Mat, movie: Movie, alpha: number, mode: number): void {
     if (!c.text) return;
@@ -504,6 +590,7 @@ export class GpuCompositor {
   }
 
   private layers(host: GpuHost, target: Surf, layers: DrawingLayer[], m: Mat, rect: CanvasRect, alpha: number, mode: number): void {
+    if (hasTree(layers)) { this.tree.draw((id) => host.bitmap(id), target, layers, m, rect, alpha, mode); return; }
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
       if (!l.visible || l.opacity <= 0) continue;
@@ -527,11 +614,18 @@ export class GpuCompositor {
     const x1 = Math.min(target.w, Math.ceil(Math.max(...xs)) + 1), y1 = Math.min(target.h, Math.ceil(Math.max(...ys)) + 1);
     if (x1 <= x0 || y1 <= y0) return;
     const gl = this.gl;
-    const plain = mode === 0 || mode === ADD;
+    const plain = mode === 0 || mode === ADD || mode === ATOP;
     // made before any binding below (creating a surface binds a texture); a backdrop of another size (the probe,
     // a resized Stage, an export at its own size) is replaced here, not at the next periodic trim
-    if (!plain && this.scratch && (this.scratch.w !== this.w || this.scratch.h !== this.h)) { this.free(this.scratch); this.scratch = null; }
-    const sc = plain ? null : this.scratch ?? (this.scratch = this.makeSurf(this.w, this.h, 'u8'));
+    let sc: Surf | null = null;
+    if (!plain) {
+      // a layer tree composes on surfaces of the picture's own size: its backdrop copy has its own slot
+      const own = target.w === this.w && target.h === this.h;
+      const cur = own ? this.scratch : this.scratchTree;
+      if (cur && (cur.w !== target.w || cur.h !== target.h)) this.free(cur);
+      sc = cur && cur.w === target.w && cur.h === target.h ? cur : this.makeSurf(target.w, target.h, 'u8');
+      if (own) this.scratch = sc; else this.scratchTree = sc;
+    }
     const p = plain ? this.prog('plain', FS_SRC_PLAIN, VS_SRC) : this.prog('blend', FS_SRC_BLEND, VS_SRC);
     gl.useProgram(p.p);
     this.bindTex(0, tex);
@@ -543,7 +637,8 @@ export class GpuCompositor {
     gl.uniform1f(p.loc('uAlpha'), alpha);
     if (plain || !sc) {
       gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, mode === ADD ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+      if (mode === ATOP) gl.blendFunc(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      else gl.blendFunc(gl.ONE, mode === ADD ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
     } else {
       // the backdrop under the box, copied aside so the shader can read it
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.fbo);

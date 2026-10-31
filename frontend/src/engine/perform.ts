@@ -5,6 +5,7 @@
 import type { Content, Ease, Key, KeyKind, KeyLane, Movie } from './types';
 import { end, locate, sourceFrames } from './model';
 import { KEY_KINDS, channelSpec, kindSpec, laneOf } from './keys';
+import { growEnd } from './retime';
 
 export interface Take {
   kind: KeyKind;
@@ -188,7 +189,7 @@ export function roomFor(movie: Movie, id: string): number {
   const c = at.content;
   let stop = Math.max(movie.duration, end(c));
   for (const o of at.track.content) if (o.id !== id && o.start >= end(c)) stop = Math.min(stop, o.start);
-  const src = sourceFrames(movie, c) - c.offset;
+  const src = c.duration + growEnd(c, sourceFrames(movie, c));
   return Math.max(c.duration, Math.min(stop - c.start, c.kind === 'video' || c.kind === 'audio' ? src : Number.POSITIVE_INFINITY));
 }
 
@@ -199,8 +200,10 @@ export function applyTake(c: Content, take: Take, ease: Ease = 'linear', room = 
   for (const o of spec.options ?? []) options[o.id] = o.def;
   const channels: Record<string, Key[]> = existing ? { ...existing.channels } : {};
   let changed = false;
+  // a take never keys past its block: the block grows as far as it may (`room`), and keys beyond its last frame are dropped
+  const dur = take.to >= c.duration ? Math.max(c.duration, Math.min(room, Math.floor(take.to) + 1)) : c.duration;
   for (const id in take.channels) {
-    const incoming = take.channels[id];
+    const incoming = take.channels[id].filter((k) => k.frame <= dur - 1);
     if (!incoming.length) continue;
     // each channel replaces only its own recorded span (rotation can join a take late, from a pen twist)
     const lo = incoming[0].frame, hi = incoming[incoming.length - 1].frame;
@@ -216,6 +219,5 @@ export function applyTake(c: Content, take: Take, ease: Ease = 'linear', room = 
   rest.push(lane);
   rest.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0));
   // content the take outruns grows to meet it, as far as the neighbours and the movie allow
-  const duration = take.to >= c.duration ? Math.max(c.duration, Math.min(room, Math.floor(take.to) + 1)) : c.duration;
-  return { ...c, keys: rest, duration };
+  return { ...c, keys: rest, duration: dur };
 }

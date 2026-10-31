@@ -107,7 +107,7 @@ export class Recovery {
     });
     // a window sent to the background may be closed or killed from there: write what is unwritten now
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.later(0); });
-    this.timer = window.setInterval(() => { void this.snapshot(); }, EVERY_MS);
+    this.timer = window.setInterval(() => { host.engine.collectAssets(); void this.snapshot(); }, EVERY_MS);
     // this window's snapshot stays "alive" while the window lives, so another window does not take it for a crash
     const beat = (): void => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); };
     this.beat = window.setInterval(beat, BEAT_MS);

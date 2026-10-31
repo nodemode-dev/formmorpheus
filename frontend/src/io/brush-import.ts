@@ -6,6 +6,7 @@ import { safeUnzipOr } from './safe-unzip';
 import { parseAbr } from './abr';
 import { makePresets } from '../paint/brushes';
 import type { Brush } from '../paint/types';
+import { cleanPoints } from '../paint/curves';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const MAX_TIP_SIDE = 512;
@@ -271,7 +272,7 @@ function mapEngine(m: Map<string, unknown>, b: Brush): void {
   if (wig !== null && wig > 0) b.wiggle = clamp(wig, 0, 1);
 
   const mode = m.get('renderingmode') ?? m.get('rendermode') ?? m.get('blendmode');
-  const modes: NonNullable<Brush['render']>[] = ['light-glaze', 'uniform-glaze', 'intense-glaze', 'heavy-glaze', 'uniform-blending', 'intense-blending'];
+  const modes: NonNullable<Brush['render']>[] = ['light-glaze', 'uniform-glaze', 'intense-glaze', 'heavy-glaze', 'uniform-blending', 'intense-blending', 'heavy-blending'];
   if (typeof mode === 'number' && mode >= 0 && mode < modes.length) b.render = modes[Math.floor(mode)];
   else if (typeof mode === 'string') {
     const s = mode.toLowerCase().replace(/[^a-z]/g, '');
@@ -295,7 +296,76 @@ function mapEngine(m: Map<string, unknown>, b: Brush): void {
   set('strokeHue', /stroke.*hue|hue.*strokejitter/); set('strokeSat', /stroke.*sat|sat.*strokejitter/); set('strokeBri', /stroke.*(bright|lightness)/);
   set('pressureHue', /pressure.*hue/); set('pressureSat', /pressure.*sat/); set('pressureBri', /pressure.*(bright|lightness)/);
   set('tiltHue', /tilt.*hue/); set('tiltSat', /tilt.*sat/); set('tiltBri', /tilt.*(bright|lightness)/);
+  const sec = (k: 'stampSecondary' | 'strokeSecondary', key: string): void => { const v = num(m, key); if (v !== null && v > 0) (cd[k] = clamp(v, 0, 1)); };
+  sec('stampSecondary', 'fmColorStampSecondary'); sec('strokeSecondary', 'fmColorStrokeSecondary');
   if (Object.keys(cd).length) b.colorDyn = cd;
+  mapStudio(m, b);
+}
+
+const BLENDS = ['multiply', 'screen', 'overlay', 'hard-light', 'soft-light', 'darken', 'lighten', 'color-dodge', 'color-burn', 'linear-burn', 'difference', 'exclusion', 'add', 'subtract'];
+
+/** Brush Studio fields, under the key names brush-export writes (all start with fm: ours, not seen in a file from elsewhere). */
+function mapStudio(m: Map<string, unknown>, b: Brush): void {
+  const pos = (key: string, lo: number, hi: number): number | undefined => { const v = num(m, key); return v !== null && v > 0 ? clamp(v, lo, hi) : undefined; };
+  const set = <K extends keyof Brush>(k: K, v: Brush[K] | undefined): void => { if (v !== undefined) b[k] = v; };
+  set('pathJitter', pos('fmPathJitter', 0, 1)); set('pressureSmooth', pos('fmPressureSmooth', 0, 1));
+  set('pTaper', pos('fmTaperPenStart', 0, 1)); set('pTaperEnd', pos('fmTaperPenEnd', 0, 1));
+  const ts = num(m, 'fmTaperMinSize'); if (ts !== null) b.taperSize = clamp(ts, 0, 1);
+  // pen response and shape dynamics
+  const signed = (key: string, lo: number, hi: number): number | undefined => { const v = num(m, key); return v !== null && v !== 0 ? clamp(v, lo, hi) : undefined; };
+  set('rollSize', signed('fmRollSize', -1, 1)); set('rollOpacity', signed('fmRollOpacity', -1, 1)); set('rollBleed', pos('fmRollEdgeSoft', 0, 1));
+  if (m.get('fmrollrelative') === true) b.rollRelative = true;
+  set('pressureRoundness', signed('fmPressureRound', -1, 1)); set('tiltRoundness', pos('fmTiltRound', 0, 1));
+  set('roundJitterH', pos('fmRoundJitterH', 0, 1)); set('roundJitterV', pos('fmRoundJitterV', 0, 1));
+  set('countJitter', pos('fmCountJitter', 0, 1)); set('spacingJitter', pos('fmSpacingJitter', 0, 1)); set('jitterLinear', pos('fmJitterLinear', 0, 1));
+  set('speedSpacing', signed('fmSpeedSpacing', -1, 1));
+  const curves: NonNullable<Brush['curves']> = {};
+  for (const [k, key] of [['size', 'fmcurvesize'], ['opacity', 'fmcurveopacity'], ['flow', 'fmcurveflow'], ['bleed', 'fmcurvebleed'], ['roundness', 'fmcurveroundness'], ['tilt', 'fmcurvetilt']] as const) {
+    const s = m.get(key);
+    if (typeof s !== 'string' || s.length > 400) continue;
+    const [list, sp] = s.split('@');
+    const pts = list.split(',').map(Number);
+    if (pts.length < 4 || pts.length > 12 || pts.length % 2 !== 0 || pts.some((v) => !Number.isFinite(v))) continue;
+    const c: { pts: number[]; speed?: number } = { pts: cleanPoints(pts) };
+    const spd = sp === undefined ? NaN : Number(sp);
+    if (Number.isFinite(spd) && spd >= 0 && spd < 1) c.speed = spd;
+    curves[k] = c;
+  }
+  if (Object.keys(curves).length) b.curves = curves;
+  set('taperOpacity', pos('fmTaperFade', 0, 1));
+  const tp = num(m, 'fmTaperPoint'); if (tp !== null) b.taperTip = clamp(tp, 0, 1);
+  if (m.get('fmflipx') === true) b.flipX = true;
+  if (m.get('fmflipy') === true) b.flipY = true;
+  if (m.get('fmtipsharp') === true) b.tipSharp = true;
+  set('grainZoom', pos('fmGrainZoom', 0, 1)); set('grainOffsetJitter', pos('fmGrainOffsetJitter', 0, 1));
+  const gr = num(m, 'fmGrainTurn'); if (gr !== null && gr !== 0) b.grainRot = gr;
+  const gbl = m.get('fmgrainblend'); if (gbl === 'subtract' || gbl === 'screen') b.grainBlend = gbl;
+  const gbr = num(m, 'fmGrainBright'), gct = num(m, 'fmGrainContrast');
+  if (gbr !== null && gbr !== 0) b.grainBright = clamp(gbr, -1, 1);
+  if (gct !== null && gct !== 0) b.grainContrast = clamp(gct, -1, 1);
+  set('burntEdges', pos('fmBurntEdges', 0, 1));
+  const bl = m.get('fmbrushblend'); if (typeof bl === 'string' && BLENDS.includes(bl)) b.blend = bl as Brush['blend'];
+  set('lumBlend', pos('fmLumBlend', 0, 1));
+  set('pressureBleed', pos('fmPressureEdgeSoft', 0, 1)); set('pressureOpacity', pos('fmPressureOpacityRamp', 0, 1));
+  set('tiltAngle', pos('fmTiltThreshold', 0, 80)); set('tiltGradation', pos('fmTiltGradation', 0, 1)); set('tiltBleed', pos('fmTiltEdgeSoft', 0, 1));
+  const to = num(m, 'fmTiltOpacity'), tsz = num(m, 'fmTiltSize');
+  if (to !== null && to !== 0) b.tiltOpacity = clamp(to, -1, 1);
+  if (tsz !== null && tsz !== 0) b.tiltSize = clamp(tsz, -1, 1);
+  if (m.get('fmorientscreen') === true) b.orientScreen = true;
+  const pv = num(m, 'fmPreviewSize'); if (pv !== null && pv !== 1) b.previewSize = clamp(pv, 0.2, 1);
+  set('minOpacity', pos('fmMinOpacity', 0, 1));
+  const mx = num(m, 'fmMaxOpacity'); if (mx !== null && mx < 1) b.maxOpacity = clamp(mx, 0.05, 1);
+  const au = m.get('fmauthor'); if (typeof au === 'string' && au.trim()) b.author = au.trim().slice(0, 80);
+  const cr = num(m, 'fmCreated'); if (cr !== null && cr > 0) b.created = cr;
+  const sg = m.get('fmsignature'); if (typeof sg === 'string' && sg.startsWith('data:image/png;base64,') && sg.length < 60000) b.signature = sg;
+  const wb = pos('fmWetSpread', 0, 1), wbj = pos('fmWetSpreadJitter', 0, 1), wj = pos('fmWetnessJitter', 0, 1);
+  if (wb !== undefined || wbj !== undefined || wj !== undefined) {
+    const w = b.wet ?? { dilution: 0, charge: 1, attack: 0, pull: 0, grade: 0.5 };
+    if (wb !== undefined) w.blur = wb;
+    if (wbj !== undefined) w.blurJitter = wbj;
+    if (wj !== undefined) w.wetJitter = wj;
+    b.wet = w;
+  }
 }
 
 /** The parameters we can use, from the archive's key names; absent ones keep the plain defaults. */

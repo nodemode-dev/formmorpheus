@@ -1,3 +1,4 @@
+import { strayPixels } from './asset-gc';
 import { Emitter } from './events';
 import { History, type RecoveryPoint } from './history';
 import { content as makeContent, contentEnd, end, flipTrack, kindName, locate, newMovie, type NewMovieOptions } from './model';
@@ -184,6 +185,23 @@ export class Engine extends Emitter<EngineEvents> {
     this.pruneSelection();
   }
 
+  private strays = new Set<string>();
+
+  /**
+   * Lets go of picture blobs no state (movie, undo, redo, recovery points, clipboard) uses. A blob must be unused on two
+   * calls in a row, so one a paint save has just written and not yet linked into the movie is never taken.
+   */
+  collectAssets(): number {
+    const m = this.movie;
+    if (!m) { this.strays.clear(); return 0; }
+    const all = [...this.history.past, ...this.history.future, ...this.history.recovery].map((s) => s.movie);
+    const now = strayPixels(m, all, this.clipboard);
+    const drop = now.filter((id) => this.strays.has(id));
+    this.strays = new Set(now);
+    for (const id of drop) this.assets.delete(id);
+    return drop.length;
+  }
+
   setUndoDepth(depth: number, recentPercent = this.history.recentPercent): void {
     this.history.recentPercent = Math.max(10, Math.min(100, Math.round(recentPercent)));
     this.history.setDepth(depth);
@@ -192,7 +210,14 @@ export class Engine extends Emitter<EngineEvents> {
 
   select(ids: string[], track: string | null = null): void {
     const m = this.movie;
-    const valid = m ? ids.filter((id) => !!locate(m, id)) : [];
+    // many ids (select all) are checked against one pass over the movie, not one search per id
+    let valid: string[] = [];
+    if (m && ids.length > 8) {
+      const have = new Set<string>();
+      const walk = (ts: typeof m.tracks): void => { for (const t of ts) for (const c of t.content) have.add(c.id); };
+      walk(m.tracks);
+      valid = ids.filter((id) => have.has(id));
+    } else if (m) valid = ids.filter((id) => !!locate(m, id));
     const t = track ?? (valid.length && m ? locate(m, valid[valid.length - 1])?.track.id ?? null : this.selection.track);
     const same = valid.length === this.selection.content.length && valid.every((id, i) => id === this.selection.content[i]) && t === this.selection.track;
     if (same) return;
@@ -208,7 +233,12 @@ export class Engine extends Emitter<EngineEvents> {
   private pruneSelection(): void {
     const m = this.movie;
     if (!m) return;
-    const keep = this.selection.content.filter((id) => !!locate(m, id));
+    let keep = this.selection.content;
+    if (keep.length > 8) {
+      const have = new Set<string>();
+      for (const t of m.tracks) for (const c of t.content) have.add(c.id);
+      keep = keep.filter((id) => have.has(id));
+    } else keep = keep.filter((id) => !!locate(m, id));
     const track = this.selection.track && m.tracks.some((t) => t.id === this.selection.track) ? this.selection.track : m.tracks[0]?.id ?? null;
     if (keep.length !== this.selection.content.length || track !== this.selection.track) {
       this.selection = { content: keep, track };

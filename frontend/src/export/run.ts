@@ -1,7 +1,7 @@
 // The exporter: renders movie frames offscreen and hands them to an encoder (mediabunny for video,
 // GifWriter for GIF, a zip for picture sequences). One job per call; cancel() stops within a frame.
 import {
-  AudioBufferSource, BufferTarget, CanvasSource, MovOutputFormat, Mp4OutputFormat, Output, QUALITY_HIGH,
+  AudioSample, AudioSampleSource, BufferTarget, CanvasSource, MovOutputFormat, Mp4OutputFormat, Output, QUALITY_HIGH,
   QUALITY_LOW, QUALITY_MEDIUM, QUALITY_VERY_HIGH, WebMOutputFormat, canEncodeAudio, canEncodeVideo,
   type AudioCodec, type Quality, type VideoCodec,
 } from 'mediabunny';
@@ -12,8 +12,15 @@ import type { AudioEngine } from '../media/audio';
 import { GifWriter, quantize } from './gif';
 import { encodeRaw, pictureHasAlpha, pictureMime, type RawPicture } from './still-formats';
 import type { ExportJob, ExportOptions, ExportProgress, ExportResult, PictureExt } from './types';
-
-type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
+/** A finished sound mixdown as planar PCM (an AudioBuffer fits; a worker has no AudioBuffer, so it gets plain arrays). */
+export interface PcmMix {
+  numberOfChannels: number;
+  sampleRate: number;
+  length: number;
+  getChannelData(channel: number): Float32Array;
+}
+export type MixSource = Pick<AudioEngine, 'mixdown'> | { mixdown(movie: Movie, from: number, to: number): Promise<PcmMix | null> };
+export type Deps = { movie: Movie; renderer: Renderer; audio: MixSource | null };
 
 const QUALITY: Record<ExportOptions['quality'], Quality> = {
   low: QUALITY_LOW, medium: QUALITY_MEDIUM, high: QUALITY_HIGH, 'very-high': QUALITY_VERY_HIGH,
@@ -59,6 +66,7 @@ function stepCount(o: ExportOptions): number {
   return o.pingpong && n >= 3 ? n + (n - 2) : n;
 }
 
+/** Exports on this thread (also what runs inside the export worker, and the fallback of export/worker-host.ts). */
 export function startExport(deps: Deps, opts: ExportOptions): ExportJob {
   const listeners: ((p: ExportProgress) => void)[] = [];
   let cancelled = false;
@@ -79,7 +87,7 @@ export function startExport(deps: Deps, opts: ExportOptions): ExportJob {
   return job;
 }
 
-function normalise(o: ExportOptions): ExportOptions {
+export function normalise(o: ExportOptions): ExportOptions {
   const video = o.format === 'mp4' || o.format === 'webm' || o.format === 'mov';
   let width = Math.max(1, Math.round(o.width)), height = Math.max(1, Math.round(o.height));
   if (video) { width = Math.max(2, width & ~1); height = Math.max(2, height & ~1); }
@@ -88,7 +96,7 @@ function normalise(o: ExportOptions): ExportOptions {
   return { ...o, width, height, from, to };
 }
 
-class Run {
+export class Run {
   private readonly warnings: string[] = [];
   private readonly canvas: OffscreenCanvas;
   private readonly ctx: OffscreenCanvasRenderingContext2D;
@@ -198,7 +206,7 @@ class Run {
     this.check();
 
     // Sound first: the mixdown is a quick offline render, and decides whether an audio track exists.
-    let mix: AudioBuffer | null = null;
+    let mix: PcmMix | null = null;
     let audioCodec: AudioCodec | null = null;
     if (o.includeAudio && audio) {
       this.progress('audio', 0, 1);
@@ -219,15 +227,15 @@ class Run {
       codec: picked.codec, quality: QUALITY[o.quality], alpha: picked.alpha ? 'keep' : 'discard',
     });
     output.addVideoTrack(source, { frameRate: movie.fps });
-    let asource: AudioBufferSource | null = null;
+    let asource: AudioSampleSource | null = null;
     if (mix && audioCodec) {
-      asource = new AudioBufferSource({ codec: audioCodec, quality: QUALITY[o.quality] });
+      asource = new AudioSampleSource({ codec: audioCodec, quality: QUALITY[o.quality] });
       output.addAudioTrack(asource);
     }
     try {
       await output.start();
       // Not awaited until the picture is done: awaiting it here could wait on a track that has not started.
-      const audioDone = asource && mix ? asource.add(mix) : Promise.resolve();
+      const audioDone = asource && mix ? addPcm(asource, mix) : Promise.resolve();
       audioDone.catch(() => {});
       const dt = 1 / movie.fps;
       for (let i = 0; i < total; i++) {
@@ -255,7 +263,7 @@ class Run {
     return { blob: new Blob([buf], { type: mime }), name: this.name(fmt), mime };
   }
 
-  private async pickAudioCodec(fmt: 'mp4' | 'webm' | 'mov', supported: AudioCodec[], buf: AudioBuffer): Promise<AudioCodec | null> {
+  private async pickAudioCodec(fmt: 'mp4' | 'webm' | 'mov', supported: AudioCodec[], buf: PcmMix): Promise<AudioCodec | null> {
     const opts = { numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate, quality: QUALITY[this.o.quality] };
     if (this.o.audioCodec === 'pcm' && fmt === 'mov' && supported.includes('pcm-s16') && await canEncodeAudio('pcm-s16', opts)) return 'pcm-s16';
     const order: AudioCodec[] = fmt === 'webm' ? ['opus', 'vorbis'] : ['aac', 'opus'];
@@ -393,9 +401,21 @@ class Run {
 }
 
 /** The mixdown followed by silence up to `seconds` (the return leg of a ping pong). */
-function padSilence(buf: AudioBuffer, seconds: number): AudioBuffer {
+function padSilence(buf: PcmMix, seconds: number): PcmMix {
   const length = Math.max(buf.length, Math.round(seconds * buf.sampleRate));
-  const out = new AudioBuffer({ length, sampleRate: buf.sampleRate, numberOfChannels: buf.numberOfChannels });
-  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c), c);
-  return out;
+  const data = Array.from({ length: buf.numberOfChannels }, (_, c) => { const d = new Float32Array(length); d.set(buf.getChannelData(c)); return d; });
+  return { numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate, length, getChannelData: (c) => data[c] };
+}
+
+/** Feeds a mixdown to the encoder in planar chunks of at most 5 s of mono 48 kHz (what an AudioBuffer source would do). */
+async function addPcm(source: AudioSampleSource, mix: PcmMix): Promise<void> {
+  const ch = mix.numberOfChannels;
+  const per = Math.floor((48000 * 5) / ch);
+  for (let at = 0; at < mix.length; at += per) {
+    const n = Math.min(per, mix.length - at);
+    const data = new Float32Array(ch * n);
+    for (let c = 0; c < ch; c++) data.set(mix.getChannelData(c).subarray(at, at + n), c * n);
+    const sample = new AudioSample({ format: 'f32-planar', sampleRate: mix.sampleRate, numberOfFrames: n, numberOfChannels: ch, timestamp: at / mix.sampleRate, data });
+    try { await source.add(sample); } finally { sample.close(); }
+  }
 }

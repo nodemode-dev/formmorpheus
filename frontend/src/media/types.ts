@@ -42,10 +42,19 @@ export interface AudioClip {
   /** Movie seconds where the clip starts and ends. */
   start: number;
   end: number;
-  /** Asset seconds read at `start`. */
+  /** Asset seconds read at `start` (for a reversed clip, the upper end of the part that plays, read backward). */
   offset: number;
+  /** Retimed block (engine/retime.ts): speed, direction, and whether the pitch is kept. Absent: normal. */
+  retime?: { speed: number; reverse: boolean; keepPitch: boolean };
   /** Linear gain over movie time (content volume times the Volume lane), sampled by the engine. */
   gain: (movieSeconds: number) => number;
+  /** Stereo position -1..1 over movie time; absent: centre. */
+  pan?: (movieSeconds: number) => number;
+  /** Fade lengths in seconds, and the whole block's span in movie seconds (the clip itself may be cut by a group). */
+  fadeIn?: number;
+  fadeOut?: number;
+  blockStart?: number;
+  blockEnd?: number;
 }
 
 export interface ClockSource {

@@ -2,6 +2,7 @@ import type { BlendMode, Content, Highlight, MaskMode, Movie, PlaybackMode, Trac
 import { clampSide, content as makeContent, end, fits, sourceFrames, sortContent, track as makeTrack, trackName, uid, contentEnd } from './model';
 import { clampFps } from './time';
 import { scaleKeyTimes, shiftKeys } from './key-ops';
+import * as retime from './retime';
 
 export class OpError extends Error {}
 
@@ -31,7 +32,7 @@ export function updateContent(movie: Movie, id: string, fn: (c: Content) => Cont
   return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: tr.content.map((c) => (c.id === id ? fn(c) : c)) }));
 }
 
-function cloneContent(c: Content, start: number): Content {
+export function cloneContent(c: Content, start: number): Content {
   const copy = JSON.parse(JSON.stringify(c)) as Content;
   const ids = new Map<string, string>();
   const fresh = (x: Content): Content => {
@@ -119,7 +120,8 @@ export function moveContent(movie: Movie, ids: string[], deltaFrames: number, to
   if (!moving.length) throw new OpError('That content no longer exists.');
   const minStart = Math.min(...moving.map((x) => x.c.start));
   const dt = Math.max(-minStart, deltaFrames);
-  const tracks = movie.tracks.map((t) => ({ ...t, content: t.content.filter((c) => !idSet.has(c.id)) }));
+  // a track that holds none of the moving content stays the same object (history, packing and diffs share it)
+  const tracks = movie.tracks.map((t) => (t.content.some((c) => idSet.has(c.id)) ? { ...t, content: t.content.filter((c) => !idSet.has(c.id)) } : t));
   for (const { c, from } of moving) {
     const to = Math.max(0, Math.min(tracks.length - 1, from + toTrackDelta));
     const next = { ...c, start: c.start + dt };
@@ -138,9 +140,9 @@ export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', del
   let next: Content;
   if (edge === 'end') {
     const room = ripple ? Number.POSITIVE_INFINITY : (items[idx + 1]?.start ?? Number.POSITIVE_INFINITY) - end(c);
-    const maxGrow = Math.min(room, limit - c.offset - c.duration);
+    const maxGrow = Math.min(room, retime.isRetimed(c) || c.speed === 0 ? retime.growEnd(c, limit) : limit - c.offset - c.duration);
     const d = Math.max(1 - c.duration, Math.min(maxGrow, deltaFrames));
-    next = { ...c, duration: c.duration + d };
+    next = retime.afterTrimEnd(c, d);
     if (ripple) {
       const shifted = items.map((x, i) => (i > idx ? { ...x, start: x.start + d } : i === idx ? next : x));
       return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: shifted }));
@@ -148,11 +150,12 @@ export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', del
   } else {
     const prevEnd = idx > 0 ? end(items[idx - 1]) : 0;
     const roomBack = ripple ? items[0].start : c.start - prevEnd;
-    const sourceBack = Number.isFinite(limit) ? c.offset : Number.POSITIVE_INFINITY;
+    const retimed = retime.isRetimed(c) || c.speed === 0;
+    const sourceBack = retimed ? retime.startBack(c, limit) : Number.isFinite(limit) ? c.offset : Number.POSITIVE_INFINITY;
     const d = Math.max(-Math.min(roomBack, sourceBack), Math.min(c.duration - 1, deltaFrames));
     // keys are local to the content's first frame: shift them back so they stay put in movie time
     // looping or unbounded content (flipbooks, groups, drawings) may take a negative offset, so its frames stay put too
-    next = shiftKeys({ ...c, start: c.start + d, duration: c.duration - d, offset: Number.isFinite(limit) ? Math.max(0, c.offset + d) : c.offset + d }, -d);
+    next = shiftKeys(retimed ? retime.afterTrimStart(c, d, Number.isFinite(limit)) : { ...c, start: c.start + d, duration: c.duration - d, offset: Number.isFinite(limit) ? Math.max(0, c.offset + d) : c.offset + d }, -d);
     if (ripple) {
       const shifted = items.map((x, i) => (i < idx ? { ...x, start: Math.max(0, x.start + d) } : i === idx ? next : x));
       return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: shifted }));
@@ -166,8 +169,16 @@ export function splitContent(movie: Movie, id: string, frame: number): { movie: 
   const c = t.content.find((x) => x.id === id) as Content;
   if (frame <= c.start || frame >= end(c)) throw new OpError('Put the Playhead inside the content to split it.');
   const leftLen = frame - c.start;
-  const right = shiftKeys({ ...cloneContent(c, frame), duration: c.duration - leftLen, offset: c.offset + leftLen, name: c.name }, -leftLen);
-  const left = { ...c, duration: leftLen };
+  const offs = retime.isRetimed(c) || c.speed === 0 ? retime.splitOffsets(c, leftLen) : { left: c.offset, right: c.offset + leftLen };
+  const right = shiftKeys({ ...cloneContent(c, frame), duration: c.duration - leftLen, offset: offs.right, name: c.name }, -leftLen);
+  const left = { ...c, duration: leftLen, offset: offs.left };
+  // a fade belongs to the outer edge of a sound block: the cut is a hard edge
+  if (c.kind === 'audio') {
+    delete left.fadeOut;
+    delete right.fadeIn;
+    if (left.fadeIn) left.fadeIn = Math.min(left.fadeIn, leftLen);
+    if (right.fadeOut) right.fadeOut = Math.min(right.fadeOut, right.duration);
+  }
   const m = replaceTrack(movie, t.id, (tr) => ({ ...tr, content: sortContent(tr.content.map((x) => (x.id === id ? left : x)).concat(right)) }));
   return { movie: m, right: right.id };
 }
@@ -200,8 +211,9 @@ export function fillDuration(movie: Movie, id: string): Movie {
   const c = items[idx];
   const stop = Math.min(items[idx + 1]?.start ?? movie.duration, Math.max(movie.duration, end(c)));
   const limit = sourceFrames(movie, c);
-  const duration = Math.max(c.duration, Math.min(stop - c.start, limit - c.offset));
-  return updateContent(movie, id, (x) => ({ ...x, duration }));
+  const avail = retime.isRetimed(c) || c.speed === 0 ? c.duration + retime.growEnd(c, limit) : limit - c.offset;
+  const duration = Math.max(c.duration, Math.min(stop - c.start, avail));
+  return updateContent(movie, id, (x) => retime.withDuration(x, duration));
 }
 
 export function deleteContent(movie: Movie, ids: string[]): Movie {
