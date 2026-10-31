@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import os
@@ -314,6 +315,55 @@ def read_poster(name: str, v: str | None = None) -> Response:
     return _picture(path, "poster.png", v)
 
 
+@router.put("/{name}/poster")
+async def write_poster(name: str, request: Request) -> dict:
+    """Sets the poster of a movie that has none (a recovered or old file) without touching anything else in it:
+    every other entry is streamed into a new file, which replaces the movie atomically. A movie that already has
+    a poster is left as it is (204), so a poster made by a save is never overwritten by a lazily made one."""
+    path = project_path(name)
+    if not path.is_file():
+        raise HTTPException(404, "No project by that name.")
+    body = await read_limited(request, 8 * 1024 * 1024, "That picture is too large.")
+    if body[:8] != b"\x89PNG\r\n\x1a\n":
+        raise HTTPException(400, "That is not a picture.")
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.part")
+
+    def work() -> dict:
+        # The copy runs in a thread without the lock (a big movie must not stall the engine), then the movie is
+        # checked to be the very file the copy started from: a save that landed meanwhile is newer and wins.
+        try:
+            st0 = path.stat()
+            with zipfile.ZipFile(path) as zin:
+                if "poster.png" in zin.namelist():
+                    return {"ok": True, "written": False}
+                with zipfile.ZipFile(tmp, "w") as zout:
+                    for info in zin.infolist():
+                        out = copy.copy(info)
+                        if info.is_dir():
+                            zout.writestr(out, b"")
+                        else:
+                            with zin.open(info) as fi, zout.open(out, "w", force_zip64=info.file_size > zipfile.ZIP64_LIMIT) as fo:
+                                shutil.copyfileobj(fi, fo, 1024 * 1024)
+                    zout.writestr("poster.png", body)
+            with open(tmp, "rb+") as f:
+                f.flush()
+                os.fsync(f.fileno())
+            with _lock:
+                st = path.stat()
+                if (st.st_mtime_ns, st.st_size) != (st0.st_mtime_ns, st0.st_size):
+                    return {"ok": True, "written": False}
+                # a poster is not an edit: the movie keeps the "modified" time the Theater sorts by
+                os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
+                os.replace(tmp, path)
+            return {"ok": True, "written": True}
+        except (zipfile.BadZipFile, OSError):
+            raise HTTPException(400, "The movie could not be updated.")
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    return await asyncio.to_thread(work)
+
+
 def _picture(path: Path, member: str, v: str | None = None) -> Response:
     # With ?v=<modified time> the address changes whenever the movie does, so the browser may keep it a while.
     # No picture is an empty 204, not a 404, so the browser console stays quiet for movies saved without one.
@@ -346,7 +396,9 @@ async def write_project(name: str, request: Request) -> dict:
             f.write(body)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        # the swap is the only step under the lock, so a poster copy that began on the old file sees it change and backs off
+        with _lock:
+            os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
     return entry(path)

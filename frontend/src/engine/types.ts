@@ -305,6 +305,8 @@ export interface Track {
   id: string;
   name: string;
   hidden: boolean;
+  /** Locked: its content cannot be selected, moved, trimmed, split, pasted onto or deleted. It still plays and renders. */
+  locked?: true;
   /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
   screen?: true;
   /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */

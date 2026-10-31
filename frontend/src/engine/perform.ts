@@ -58,7 +58,8 @@ export class Recorder {
       const smooth = filterMotion(dense, amount);
       const cs = channelSpec(this.kind, id);
       const tol = cs ? toleranceFor(cs.min, cs.max, cs.step, amount, observedRange(dense)) : 0;
-      const keys = reduceKeys(smooth, tol);
+      // filtering 0 records every movement: one key per frame, nothing thinned
+      const keys = amount === 0 ? dense.map((k) => ({ frame: k.frame, value: k.value, ease: 'linear' as const })) : reduceKeys(smooth, tol);
       channels[id] = keys;
       if (keys[0].frame < from) from = keys[0].frame;
       if (keys[keys.length - 1].frame > to) to = keys[keys.length - 1].frame;

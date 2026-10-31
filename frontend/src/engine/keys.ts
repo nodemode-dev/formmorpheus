@@ -118,8 +118,9 @@ export const KEY_KINDS: KindSpec[] = [
     channels: [
       ch('x', 'X', 'X', -20000, 20000, 1, 'px', 1, 0),
       ch('y', 'Y', 'Y', -20000, 20000, 1, 'px', 1, 0),
-      ch('scaleX', 'Scale X', 'SX', 0, 20, 0.01, '%', 100, 1),
-      ch('scaleY', 'Scale Y', 'SY', 0, 20, 0.01, '%', 100, 1),
+      // signed: a negative scale mirrors the content (a side node pulled past the opposite one)
+      ch('scaleX', 'Scale X', 'SX', -20, 20, 0.01, '%', 100, 1),
+      ch('scaleY', 'Scale Y', 'SY', -20, 20, 0.01, '%', 100, 1),
       ch('rotation', 'Rotation', 'R', -3600, 3600, 0.1, 'deg', 1, 0),
       // pivot offset from the movie centre (Content.pivot is its unkeyed value)
       ch('px', 'Pivot X', 'PX', -20000, 20000, 1, 'px', 1, 0),

@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core import config, partsweep
 from app.core.guard import GuardMiddleware
+from app import penlink
 from app.routers import brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION)
@@ -23,6 +24,8 @@ app.include_router(files.router, prefix="/api/files")
 app.include_router(trash.router, prefix="/api/trash")
 app.include_router(recovery.router, prefix="/api/recovery")
 app.include_router(ideas.router, prefix="/api/ideas")
+app.include_router(penlink.router, prefix="/api/penlink")
+app.on_event("shutdown")(penlink.shutdown)
 
 
 @app.on_event("startup")

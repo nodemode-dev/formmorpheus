@@ -119,6 +119,7 @@ export function moveContent(movie: Movie, ids: string[], deltaFrames: number, to
   const moving: { c: Content; from: number }[] = [];
   movie.tracks.forEach((t, ti) => t.content.forEach((c) => { if (idSet.has(c.id)) moving.push({ c, from: ti }); }));
   if (!moving.length) throw new OpError('That content no longer exists.');
+  if (moving.some((x) => movie.tracks[x.from].locked) || movie.tracks.some((t, i) => t.locked && moving.some((x) => Math.max(0, Math.min(movie.tracks.length - 1, x.from + toTrackDelta)) === i))) throw new OpError('Track is locked');
   const minStart = Math.min(...moving.map((x) => x.c.start));
   const dt = Math.max(-minStart, deltaFrames);
   // a track that holds none of the moving content stays the same object (history, packing and diffs share it)
@@ -134,6 +135,7 @@ export function moveContent(movie: Movie, ids: string[], deltaFrames: number, to
 
 export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', deltaFrames: number, ripple = false): Movie {
   const t = findTrackOf(movie, id);
+  if (t.locked) throw new OpError('Track is locked');
   const items = sortContent(t.content);
   const idx = items.findIndex((c) => c.id === id);
   const c = items[idx];
@@ -167,6 +169,7 @@ export function trimContent(movie: Movie, id: string, edge: 'start' | 'end', del
 
 export function splitContent(movie: Movie, id: string, frame: number): { movie: Movie; right: string } {
   const t = findTrackOf(movie, id);
+  if (t.locked) throw new OpError('Track is locked');
   const c = t.content.find((x) => x.id === id) as Content;
   if (frame <= c.start || frame >= end(c)) throw new OpError('Put the Playhead inside the content to split it.');
   const leftLen = frame - c.start;
@@ -219,11 +222,13 @@ export function fillDuration(movie: Movie, id: string): Movie {
 
 export function deleteContent(movie: Movie, ids: string[]): Movie {
   const idSet = new Set(ids);
+  if (movie.tracks.some((t) => t.locked && t.content.some((c) => idSet.has(c.id)))) throw new OpError('Track is locked');
   return withTracks(movie, movie.tracks.map((t) => (t.content.some((c) => idSet.has(c.id)) ? { ...t, content: t.content.filter((c) => !idSet.has(c.id)) } : t)));
 }
 
 export function pasteContent(movie: Movie, items: Content[], frame: number, trackId: string | null): { movie: Movie; ids: string[] } {
   if (!items.length) return { movie, ids: [] };
+  if (trackId && movie.tracks.some((t) => t.id === trackId && t.locked)) throw new OpError('Track is locked');
   const base = Math.min(...items.map((c) => c.start));
   let m = movie;
   const ids: string[] = [];
