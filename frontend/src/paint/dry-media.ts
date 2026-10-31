@@ -8,10 +8,10 @@ import type { Brush } from './types';
 /** Floors by family: the effective flow at the lightest touch, the size share at the lightest touch, the grain floor. */
 interface Floor { flow: number; size: number; gamma: number; grainMin: number }
 
-const GRAPHITE: Floor = { flow: 0.3, size: 0.7, gamma: 0.7, grainMin: 0.3 };
-const COLOURED: Floor = { flow: 0.34, size: 0.72, gamma: 0.72, grainMin: 0.35 };
-const CHARCOAL: Floor = { flow: 0.36, size: 0.62, gamma: 0.7, grainMin: 0.25 };
-const PASTEL: Floor = { flow: 0.38, size: 0.65, gamma: 0.72, grainMin: 0.3 };
+const GRAPHITE: Floor = { flow: 0.28, size: 0.45, gamma: 0.8, grainMin: 0.3 };
+const COLOURED: Floor = { flow: 0.38, size: 0.5, gamma: 0.8, grainMin: 0.35 };
+const CHARCOAL: Floor = { flow: 0.3, size: 0.42, gamma: 0.8, grainMin: 0.25 };
+const PASTEL: Floor = { flow: 0.32, size: 0.5, gamma: 0.8, grainMin: 0.3 };
 
 const FAMILIES: [RegExp, Floor][] = [
   [/color pencil|blue lead|sepia|crayon/, COLOURED],
@@ -35,12 +35,12 @@ export function dryResponse(b: Brush): Brush {
   const f = dryFloor(b);
   if (!f || b.grain <= 0 && !/pencil|graphite|lead|charcoal|chalk|pastel|crayon|conte/i.test(b.name)) return b;
   const out: Brush = { ...b };
-  // a soft curve: light presses register sooner
+  // a soft curve: light presses register sooner, but not so soon that pressure stops mattering
   out.pressureGamma = Math.min(b.pressureGamma ?? 1, f.gamma);
-  out.pressureSize = [Math.max(b.pressureSize[0], f.size), b.pressureSize[1]];
-  // the flow of the lightest touch (flow x pressure flow) never falls under the floor
-  const need = Math.min(1, f.flow / Math.max(0.05, b.flow));
-  out.pressureFlow = [Math.max(b.pressureFlow[0], need), b.pressureFlow[1]];
+  // response table (a press of 0.15 against a full press): the size is 0.5 to 0.6 and the flow 0.25 to 0.45 of full
+  out.pressureSize = [f.size, b.pressureSize[1]];
+  // the flow of the lightest touch is a share of full flow, never so low that the mark is lost
+  out.pressureFlow = [Math.min(1, Math.max(f.flow, 0.07 / Math.max(0.05, b.flow))), b.pressureFlow[1]];
   if (b.grain > 0) out.grainDepthMin = Math.max(b.grainDepthMin ?? 0, f.grainMin);
   return out;
 }

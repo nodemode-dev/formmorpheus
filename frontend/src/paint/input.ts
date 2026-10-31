@@ -2,11 +2,16 @@
 // points, the pressure curve, and lazy-rope streamline smoothing. Touches only
 // the event objects, never the DOM.
 
-import type { PenSample, PointerKind } from './types';
 import { applyPressure } from './dynamics';
 import { MotionFilter } from './feel';
+import { penRuntime, type PenRuntime } from './pen-device';
+import { readPointer, type PenSampleV2 } from './pen-sample';
+
+type PenSample = PenSampleV2;
 
 export interface PenInputOptions {
+  /** Pen settings, device tracker and arbiter; the shared one unless a test pad brings its own. */
+  runtime?: PenRuntime;
   /** Client coordinates to canvas pixels. */
   toCanvas: (clientX: number, clientY: number) => { x: number; y: number };
   /** 0 to 1 streamline amount. */
@@ -34,35 +39,75 @@ export class PenInput {
   private by = 0;
   private lastPen: PenSample | null = null;
   private lastOut: PenSample | null = null;
+  /** A pen touched down saying pressure 0: held until the next sample shows what it meant. */
+  private hold: PenSample | null = null;
+  private missed = 0;
+  readonly runtime: PenRuntime;
 
   constructor(opts: PenInputOptions) {
     this.toCanvas = opts.toCanvas;
     this.smoothing = opts.smoothing ?? 0;
     this.fingerPaints = opts.fingerPaints ?? true;
+    this.runtime = opts.runtime ?? penRuntime;
   }
 
   get isActive(): boolean { return this.active; }
 
-  /** False for touch when fingers are reserved for navigation. */
+  /** False for touch when fingers are reserved for navigation, or a pen is near (palm rejection). */
   paintable(e: PointerEvent): boolean {
-    return !(e.pointerType === 'touch' && !this.fingerPaints);
+    if (e.pointerType !== 'touch') return true;
+    return this.fingerPaints && this.runtime.arbiter.touch(e) === 'paint';
   }
 
-  /** Returns the first sample, or [] when this pointer should not paint. */
+  /** True when this touch is a palm or a resting hand and must do nothing at all; decided once, at its pointerdown. */
+  rejected(e: PointerEvent): boolean {
+    return e.pointerType === 'touch' && this.runtime.arbiter.admit(e) === 'reject';
+  }
+
+  /** Every pointer event on the canvas passes here first, so the arbiter and the device tracker see hover too. */
+  watch(e: PointerEvent, phase: 'down' | 'move' | 'up'): void {
+    const rt = this.runtime;
+    rt.arbiter.note(e, phase);
+    if (!this.active && e.pointerType === 'pen') rt.tracker.observe(e);
+  }
+
+  /** Returns the first sample, or [] when this pointer should not paint (or must wait for its first pressure). */
   down(e: PointerEvent): PenSample[] {
     if (!this.paintable(e)) return [];
     const a = this.toCanvas(0, 0), b = this.toCanvas(1, 0);
     const scale = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     this.rope = Math.max(0, Math.min(1, this.smoothing)) * MAX_ROPE * scale;
     this.filter.reset();
+    this.runtime.smoother.reset();
+    this.missed = 0;
+    this.hold = null;
     const s = this.sample(e);
-    if (this.motion) this.filter.apply(s, this.expression);
     this.active = true;
     this.bx = s.x;
     this.by = s.y;
+    if (s.pressure < 0) {
+      // contact pressure 0 is a missing value, not a light touch: wait for the next sample
+      this.hold = s;
+      this.lastPen = null;
+      this.lastOut = null;
+      return [];
+    }
+    if (this.motion) this.filter.apply(s, this.expression);
     this.lastPen = s;
     this.lastOut = s;
     return [s];
+  }
+
+  /** The held first sample, given the pressure that followed it. */
+  private release(pressure: number, rawPressure: number): PenSample | null {
+    const h = this.hold;
+    if (!h) return null;
+    this.hold = null;
+    const s = { ...h, pressure, rawPressure };
+    if (this.motion) this.filter.apply(s, this.expression);
+    this.lastPen = s;
+    this.lastOut = s;
+    return s;
   }
 
   move(e: PointerEvent): PenSample[] {
@@ -72,7 +117,10 @@ export class PenInput {
     const evs = list.length ? list : [e];
     for (const ev of evs) {
       const raw = this.sample(ev);
-      const s = this.motion ? this.filter.apply(raw, this.expression, this.motionAmount) : raw;
+      if (raw.pressure < 0) continue;
+      const first = this.hold ? this.release(raw.pressure, raw.rawPressure) : null;
+      if (first) out.push(first);
+      const s = (this.motion ? this.filter.apply(raw, this.expression, this.motionAmount) : raw) as PenSample;
       this.lastPen = s;
       const o = this.follow(s);
       if (o) { out.push(o); this.lastOut = o; }
@@ -81,7 +129,8 @@ export class PenInput {
       // Run the rope on a scratch copy so prediction never moves the real state.
       let px = this.bx, py = this.by;
       for (const ev of e.getPredictedEvents()) {
-        const s = this.sample(ev);
+        const s = this.sample(ev, false);
+        if (s.pressure < 0) s.pressure = this.lastPen?.pressure ?? 0.5;
         if (this.rope > 0) {
           const d = Math.hypot(s.x - px, s.y - py);
           if (d <= this.rope) continue;
@@ -99,9 +148,16 @@ export class PenInput {
   up(e: PointerEvent): PenSample[] {
     if (!this.active) return [];
     this.active = false;
-    const end = this.sample(e);
+    const end = this.sample(e, false);
     const out: PenSample[] = [];
+    // the lift event carries pressure 0: the stroke ends at the pressure it had
+    if (this.hold) {
+      const half = this.runtime.effective().apply(0.5);
+      const first = this.release(applyPressure(half), -1);
+      if (first) out.push(first);
+    }
     const last = this.lastOut ?? end;
+    if (end.kind === 'pen' || end.pressure < 0) { end.pressure = last.pressure; end.hover = false; }
     const d = Math.hypot(end.x - this.bx, end.y - this.by);
     if (this.rope > 0 && d > 0.01) {
       const steps = Math.max(1, Math.min(24, Math.ceil(d / 4)));
@@ -134,22 +190,19 @@ export class PenInput {
     return { ...s, x: this.bx, y: this.by };
   }
 
-  private sample(e: PointerEvent): PenSample {
+  /** `advance` false reads without moving the pressure smoother (predicted points, the lift). */
+  private sample(e: PointerEvent, advance = true): PenSample {
     const c = this.toCanvas(e.clientX, e.clientY);
-    const kind: PointerKind = e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse';
-    // a mouse has no pressure: it paints at full strength
-    let pressure = 1;
-    if (kind === 'pen') pressure = applyPressure(e.pressure > 0 ? e.pressure : this.lastPen?.pressure ?? 0.5);
-    else if (kind === 'touch') pressure = applyPressure(e.pressure > 0 ? e.pressure : 0.5);
-    return {
-      x: c.x,
-      y: c.y,
-      pressure,
-      tiltX: kind === 'pen' ? e.tiltX || 0 : 0,
-      tiltY: kind === 'pen' ? e.tiltY || 0 : 0,
-      twist: kind === 'pen' ? e.twist || 0 : 0,
-      time: e.timeStamp,
-      kind,
-    };
+    const rt = this.runtime;
+    const curve = rt.effective();
+    if (advance && e.pointerType === 'pen') rt.tracker.observe(e);
+    // a pen in contact that says 0 is missing; after a few in a row the device has no pressure and gets 0.5
+    const last = rt.smoother.last;
+    const fallback = last >= 0 ? last : this.missed >= 6 ? 0.5 : -1;
+    const s = readPointer(e, c.x, c.y, {
+      tiltAngle: rt.settings.tiltAngle, curve, smoother: rt.smoother, smoothing: rt.smoothing, advance, after: applyPressure, fallback,
+    });
+    if (advance && s.kind === 'pen' && !s.hover) this.missed = s.rawPressure < 0 ? this.missed + 1 : 0;
+    return s;
   }
 }

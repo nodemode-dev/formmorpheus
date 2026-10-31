@@ -143,6 +143,10 @@ export const api = {
     if (!by.name) return null;
     try { return await (await picture(`${lib(by.name)}/poster`, by.v, { el: by.el })).blob(); } catch { return null; }
   },
+  /** Gives a movie that has no poster one (the engine leaves a movie that has one alone). */
+  async writePoster(name: string, data: Blob): Promise<void> {
+    await request(`${lib(name)}/poster`, { method: 'PUT', body: data, headers: { 'Content-Type': 'application/octet-stream' } });
+  },
   /** The hover strip saved in a movie (null when it has none, an empty answer). */
   async preview(name: string, v?: number): Promise<Blob | null> {
     try { const b = await (await picture(`${lib(name)}/preview`, v, { urgent: true })).blob(); return b.size ? b : null; } catch { return null; }

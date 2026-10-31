@@ -18,7 +18,9 @@
 // older exports of ours (wetPickup present, no fmFormat) keep the first meaning of those keys.
 
 import { safeUnzipOr } from './safe-unzip';
-import { parseAbr } from './abr';
+import { parseAbrFile } from './abr';
+import { mapPreset, mapLegacy, mapSample, type MapCtx, type Mapped } from './abr-map';
+import { isNode, textOf } from './abr-desc';
 import { makePresets } from '../paint/brushes';
 import type { Brush } from '../paint/types';
 import { cleanPoints } from '../paint/curves';
@@ -38,6 +40,8 @@ export interface ImportResult {
   setName?: string;
   /** Archive keys (lower case) present in the files but not read, most common first, at most 60. */
   skippedKeys?: string[];
+  /** .abr files: per brush id, the settings that were approximated or not carried (plain English). */
+  notes?: Record<string, string[]>;
 }
 
 /** A key map that remembers which keys were read, so the rest can be reported as skipped. */
@@ -241,22 +245,43 @@ const newId = (): string => `imp-${Date.now().toString(36)}-${(stampCount++).toS
 
 // ---- .abr ------------------------------------------------------------------------
 
-export function brushesFromAbr(buf: ArrayBuffer, base: string): ImportResult {
-  const all = parseAbr(buf, base);
-  const tips = all.slice(0, MAX_BRUSHES);
-  const brushes: Brush[] = [];
-  for (const t of tips) {
-    const s = shrink(t.tip.w, t.tip.h, t.tip.data);
-    const id = newId();
-    const top = clamp(Math.max(t.tip.w, t.tip.h), 12, 400);
-    brushes.push({
-      id, name: t.name.slice(0, 60), set: 'Imported', tip: 'sampled', softness: 0, maxSize: top, minSize: Math.max(2, top * 0.06),
-      spacing: clamp(t.spacing, 0.03, 2), flow: 1, pressureSize: [0.5, 1], pressureFlow: [0.7, 1], tilt: 0, scatter: 0, rotationJitter: 0,
-      followStroke: false, roundness: 1, grain: 0, smoothing: 0.2, pickup: 0.5, presets: makePresets(1),
-      tipImage: { w: s.w, h: s.h, data: s.data, key: id }, custom: true,
-    });
+/** A brush file's presets as brushes (not its tips: a preset is a tip plus its settings). `base` is the file's name without
+ *  its extension; it names the library, the set holding presets that sit in no folder, and presets the file leaves unnamed.
+ *  `applySettings: false` imports tip, size and spacing only. Per-brush notes list what was approximated or left out. */
+export function brushesFromAbr(buf: ArrayBuffer, base: string, opts: { applySettings?: boolean; absoluteSizes?: boolean } = {}): ImportResult {
+  const f = parseAbrFile(buf, base);
+  const ctx: MapCtx = {
+    samples: new Map(f.samples.map((s) => [s.id, s])), patterns: new Map(f.patterns.map((p) => [p.id, p])), newId,
+    applySettings: opts.applySettings !== false, absoluteSizes: !!opts.absoluteSizes,
+  };
+  const mapped: { m: Mapped; folder: string }[] = [];
+  let skipped = 0;
+  const add = (m: Mapped, folder: string): void => { if (mapped.length < MAX_BRUSHES) mapped.push({ m, folder }); else skipped++; };
+  f.presets.forEach((pr, i) => add(mapPreset(pr.node, ctx, i, base), pr.folder.join(' / ')));
+  f.legacy.forEach((l) => add(mapLegacy(l, ctx), ''));
+  // tips no preset names (a file without a usable preset list) still come in, tip only
+  const named = new Set<string>();
+  for (const pr of f.presets) { const t = pr.node.items.get('Brsh'); const n = isNode(t) ? t : pr.node; const s = textOf(n.items.get('sampledData')); if (s) named.add(s.trim()); }
+  let extra = 0;
+  for (const s of f.samples) if (!named.has(s.id)) add(mapSample(s, ctx, extra++, base), '');
+  const sets: { name: string; brushes: Brush[] }[] = [], at = new Map<string, { name: string; brushes: Brush[] }>(), notes: Record<string, string[]> = {}, keyCount = new Map<string, number>();
+  for (const { m, folder } of mapped) {
+    const name = (folder || base).slice(0, 40);
+    let set = at.get(name);
+    if (!set) { set = { name, brushes: [] }; at.set(name, set); sets.push(set); }
+    // a name taken in its set gets a number
+    const taken = new Set(set.brushes.map((b) => b.name));
+    let nm = m.brush.name, n = 2;
+    while (taken.has(nm)) nm = `${m.brush.name.slice(0, 56)} ${n++}`;
+    m.brush.name = nm;
+    set.brushes.push(m.brush);
+    const list = [...m.notes];
+    if (list.length) notes[m.brush.id] = list;
+    for (const k of m.skipped) keyCount.set(k, (keyCount.get(k) ?? 0) + 1);
   }
-  return { brushes, skipped: all.length - tips.length };
+  if (f.warnings.length) for (const b of mapped.slice(0, 1)) notes[b.m.brush.id] = [...(notes[b.m.brush.id] ?? []), ...Array.from(new Set(f.warnings)).slice(0, 5).map((w) => `File: ${w}`)];
+  const skippedKeys = Array.from(keyCount).sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k]) => k);
+  return { brushes: mapped.map((x) => x.m.brush), skipped, sets, libName: base, ...(skippedKeys.length ? { skippedKeys } : {}), ...(Object.keys(notes).length ? { notes } : {}) };
 }
 
 // ---- .brush / .brushset ------------------------------------------------------------

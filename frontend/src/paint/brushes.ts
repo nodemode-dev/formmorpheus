@@ -80,7 +80,7 @@ const RAW_BRUSHES: Brush[] = [
     pressureSize: [0.35, 1], pressureFlow: [0.75, 1], grain: 0.18, smoothing: 0.3, pickup: 0.2,
   }),
   d('graphite-2b', 'Graphite 2B', 'Sketch', 'grain-round', 0.3, 22, 2, 0.06, 0.55, 0.55, 0.2, { tilt: 0.9, grain: 0.85, smoothing: 0.12 }, 0.9),
-  d('hard-4h', 'Hard 4H', 'Sketch', 'grain-round', 0.05, 8, 1, 0.06, 0.5, 0.8, 0.4, { grain: 0.5, smoothing: 0.15 }, 0.8),
+  d('hard-4h', 'Hard 4H', 'Sketch', 'grain-round', 0.05, 8, 1, 0.06, 0.5, 0.8, 0.4, { grain: 0.5, smoothing: 0.15, tilt: 0.4 }, 0.8),
   d('mech-pencil', 'Mechanical', 'Sketch', 'round', 0, 5, 0.8, 0.05, 0.85, 0.9, 0.6, { grain: 0.25, smoothing: 0.25 }),
   d('colored-pencil', 'Color pencil', 'Sketch', 'grain-round', 0.2, 16, 2, 0.05, 0.4, 0.7, 0.2, { tilt: 0.7, grain: 1, grainScale: 0.7, roundness: 0.9 }, 0.9),
   d('hatch-pencil', 'Hatch pencil', 'Sketch', 'hatch', 0.1, 26, 6, 0.12, 0.7, 0.7, 0.4, { followStroke: true, roundness: 0.6, grain: 0.5 }),
@@ -138,8 +138,9 @@ const RAW_BRUSHES: Brush[] = [
     // opaque but still wet at the edges: a stroke over fresh paint takes a little of it along
     render: 'uniform-blending', wet: { dilution: 0.04, charge: 0.9, attack: 0.2, pull: 0.3, grade: 0.55 },
   }),
-  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.05, 1, 0.6, 0.8, { followStroke: true, roundness: 0.9, grain: 0.3, smoothing: 0.35, pickup: 0.7, render: 'heavy-blending', wet: { dilution: 0.2, charge: 0.75, attack: 0.6, pull: 0.85, grade: 0.4 } }),
-  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
+  // a bundle of hairs (paint/bristle.ts): per-hair streaks, pickup of the paint under it, canvas grain that travels
+  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.04, 1, 0.45, 0.5, { followStroke: true, roundness: 0.9, grain: 0.55, grainMode: 'moving', grainMovement: 0.95, grainJitter: 0.19, grainContrast: 0.12, smoothing: 0.35, pickup: 0.7, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, render: 'intense-blending', burntEdges: 0.25, wet: { dilution: 0.4, charge: 0.55, attack: 0.1, pull: 1, grade: 0.25 } }),
+  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.5, 0.7, { bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
   d('fan-paint', 'Fan brush', 'Painting', 'comb', 0.35, 110, 18, 0.07, 0.8, 0.7, 0.7, { followStroke: true, roundness: 0.3, grain: 0.5, pickup: 0.6, rotationJitter: 0.04 }, 0.9),
   d('palette-knife', 'Palette knife', 'Painting', 'chisel', 0.02, 70, 12, 0.03, 1, 0.8, 1, { followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9 }),
   d('acrylic', 'Acrylic', 'Painting', 'round', 0.1, 80, 6, 0.06, 1, 0.55, 0.9, { grain: 0.15, smoothing: 0.35 }),
@@ -266,7 +267,7 @@ const RAW_BRUSHES: Brush[] = [
   d('enamel', 'Glossy enamel', 'Material', 'round', 0.05, 70, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.5, gloss: 0.9, metal: 0 } }),
   d('chrome', 'Chrome', 'Material', 'round', 0.05, 60, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.7, gloss: 0.8, metal: 1 } }),
   d('gold-leaf', 'Gold leaf', 'Material', 'grunge', 0.05, 70, 10, 0.08, 1, 0.8, 1, { rotationJitter: 1, grain: 0.5, grainScale: 0.9, bump: 0.25, shine: { depth: 0.35, gloss: 0.6, metal: 0.9 } }),
-  d('thick-oil', 'Thick oil', 'Material', 'bristle', 0.02, 100, 14, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.6, grain: 0.55, grainScale: 1.5, bump: 0.6, shine: { depth: 1, gloss: 0.5, metal: 0 }, render: 'intense-blending', wet: { dilution: 0.04, charge: 0.8, attack: 0.5, pull: 0.55, grade: 0.3 } }),
+  d('thick-oil', 'Thick oil', 'Material', 'bristle', 0.02, 100, 14, 0.04, 1, 0.5, 0.7, { bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.6, grain: 0.55, grainScale: 1.5, bump: 0.6, shine: { depth: 1, gloss: 0.5, metal: 0 }, render: 'intense-blending', wet: { dilution: 0.04, charge: 0.8, attack: 0.5, pull: 0.55, grade: 0.3 } }),
 
   // Vintage
   d('letterpress', 'Letterpress', 'Vintage', 'grunge', 0, 50, 10, 0.1, 1, 0.9, 1, { grain: 0.5, rotationJitter: 0.5 }),

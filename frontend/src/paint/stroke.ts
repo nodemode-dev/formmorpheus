@@ -17,6 +17,9 @@ import type { WetStamp } from './wet';
 import { RENDER_ALGOS, WET_DEFAULT } from './render-modes';
 import { bakeShine, hasShine } from './shine';
 import { dryWash } from './wet-dry';
+import { Bristle, smoothCov } from './bristle';
+import { wetMark, wetSample } from './wetmap';
+import type { BristleStep } from './bristle';
 
 /** Build-up per mode: scale on a dab's alpha, and whether coverage is capped at the strongest dab. */
 const MODES: Record<RenderMode, { k: number; uniform: boolean; heavy: boolean; wet?: WetMix }> = {
@@ -33,6 +36,8 @@ const NORMAL_MODE = { k: 1, uniform: false, heavy: false };
 // Per-pixel stroke colour (rgb), reused between strokes; only read where coverage is non-zero.
 let poolCol: Uint16Array | null = null;
 let poolColBusy = false;
+let poolEdge: Uint8Array | null = null;
+let poolEdgeBusy = false;
 
 const TILE = 64;
 const TILE_BYTES = TILE * TILE * 4;
@@ -166,6 +171,11 @@ export class Stroke implements StrokeLike {
   private wp: WetPaint | null = null;
   /** Per-channel pressure curves, when the brush has them. */
   private pen: PenResponse | null = null;
+  /** The bristle bundle (paint/bristle.ts) when the brush has one; it replaces the stamp. */
+  private bristle: Bristle | null = null;
+  private bTravel = 0;
+  private bdx = 1; private bdy = 0;
+  private bstep: BristleStep = { cx: 0, cy: 0, dia: 1, dx: 1, dy: 0, pressure: 0, speed: 0, flow: 1, opacity: 1, travel: 0, ds: 0, grain: 0, moving: false, movement: 1, wobble: 0 };
   private rollNow = 0;
   private curDir: number | null = null;
   private readonly hsv0 = [0, 0, 0];
@@ -174,9 +184,14 @@ export class Stroke implements StrokeLike {
   private curR = 0; private curG = 0; private curB = 0;
   private wetR = 0; private wetG = 0; private wetB = 0;
   private load = 1;
+  private loadTravel = 0;
   private readonly sm = new Float32Array(4);
   private speed = 0;
   private lastT = -1; private lastX = 0; private lastY = 0;
+  /** Time of the first sample, for the wet map. */
+  private t0 = -1;
+  /** Where the pen rested mid-stroke, and how long (a bead of pigment forms there). */
+  private readonly pools: { x: number; y: number; t: number }[] = [];
   private readonly wigA: number;
   private readonly wigB: number;
 
@@ -205,22 +220,28 @@ export class Stroke implements StrokeLike {
       this.covPooled = c.pooled;
     }
     const br = s.brush;
-    this.colour = s.tool === 'paint' && needsColourPath(br);
+    this.colour = s.tool === 'paint' && (needsColourPath(br) || !!br.bristle);
     const md = br.render ? MODES[br.render] : NORMAL_MODE;
     this.mode = md;
     this.wet = s.tool === 'paint' ? (br.wet ?? (br.render ? MODES[br.render].wet ?? null : null)) : null;
     this.wetR = this.colorR; this.wetG = this.colorG; this.wetB = this.colorB;
     this.wigA = (br.wiggle ?? 0) > 0 ? this.rng() * 6.28 : 0;
     this.wigB = (br.wiggle ?? 0) > 0 ? this.rng() * 6.28 : 0;
-    if (this.colour && (br.wet || br.render) && (!br.blend || br.blend === 'normal') && !br.lumBlend) {
+    if (this.colour && (br.wet || br.render) && !br.bristle) {
       this.wp = new WetPaint(this.w, this.h, this.data, {
         algo: br.render ? RENDER_ALGOS[br.render] : WET_DEFAULT, wet: br.wet ?? null, wetEdges: br.wetEdges ?? 0, baseDia: this.baseDia, rng: this.rng,
       });
       this.wp.setSource(this.snap, this.tilesX);
+      if ((br.wetEdges ?? 0) > 0) {
+        if (!poolEdgeBusy) {
+          if (!poolEdge || poolEdge.length !== this.w * this.h) poolEdge = new Uint8Array(this.w * this.h);
+          poolEdgeBusy = true; this.edgePooled = true; this.edge = poolEdge;
+        } else this.edge = new Uint8Array(this.w * this.h);
+      }
     }
     if (PenResponse.wanted(br)) this.pen = new PenResponse(br);
     if (this.colour) {
-      if (this.wp) { /* the wet model keeps its own reservoir, no per-pixel stroke colour */ } else if (!poolColBusy) {
+      if (this.wp || br.bristle) { /* the wet model and the bristle bundle keep their own paint, no per-pixel stroke colour */ } else if (!poolColBusy) {
         if (!poolCol || poolCol.length !== this.w * this.h * 3) poolCol = new Uint16Array(this.w * this.h * 3);
         poolColBusy = true;
         this.colBuf = poolCol;
@@ -257,6 +278,13 @@ export class Stroke implements StrokeLike {
       this.tooth = t;
       if (br.grain > 0.2 && this.gblend === 0 && br.grainMode !== 'moving' && !br.grainOffsetJitter && !br.wet && !br.render && (br.grainMovement ?? 1) >= 1) this.capK = Math.min(0.85, br.grain * 0.85);
     } else this.tooth = null;
+    if (br.bristle && this.cov && s.tool === 'paint') {
+      const wm = br.wet ?? (br.render ? RENDER_ALGOS[br.render].wet : null) ?? { dilution: 0, charge: 1, attack: 0.2, pull: 0.5, grade: 0.5 };
+      this.bristle = new Bristle(br.bristle, this.baseDia, wm, {
+        w: this.w, h: this.h, data: this.data, cov: this.cov, snap: this.snap, tilesX: this.tilesX, sel: this.sel, lock: s.alphaLock,
+        tooth: this.tooth, bump: br.bump ?? 0, burnt: br.burntEdges ?? 0, touch: (a, b, c, d) => this.touch(a, b, c, d),
+      }, this.rng);
+    }
     this.taperLen = 0;
     this.endLen = 0;
     this.setTaper(false);
@@ -310,6 +338,11 @@ export class Stroke implements StrokeLike {
       const v = Math.hypot(sample.x - this.lastX, sample.y - this.lastY) / (sample.time - this.lastT);
       this.speed += (Math.min(1, v / 3) - this.speed) * 0.25;
     }
+    if (this.t0 < 0) this.t0 = sample.time;
+    // a pen that rests lets the wash pool there: the longer it rests, the thicker the bead
+    if (this.lastT >= 0 && this.count > 0 && sample.time - this.lastT > 120 && Math.hypot(sample.x - this.lastX, sample.y - this.lastY) < Math.max(3, (sample.time - this.lastT) * 0.03) && this.pools.length < 64) {
+      this.pools.push({ x: sample.x, y: sample.y, t: Math.min(1.8, ((sample.time - this.lastT) / 1000) * 0.9) });
+    }
     this.lastT = sample.time; this.lastX = sample.x; this.lastY = sample.y;
     if (this.count === 0 && sample.kind === 'pen') { this.penKind = true; this.setTaper(true); }
     let pr = Math.min(1, Math.max(0, sample.pressure));
@@ -362,19 +395,36 @@ export class Stroke implements StrokeLike {
     this.done = true;
     let patch: PixelPatch | null = null;
     if (this.hasDirty) {
-      const rect: Rect = { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 };
+      let rect: Rect = { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 };
       const sh = this.s.brush.shine;
       if (this.s.tool === 'paint' && this.wp && this.cov) {
         // the wash dries: the rim pools and the pigment settles into the paper tooth
-        const br = this.s.brush, pool = br.wetEdges ?? 0, gran = this.tooth && pool > 0 ? 0.3 + br.grain * 0.7 : 0;
+        const br = this.s.brush, pool = br.wetEdges ?? 0, glaze = !!br.render && RENDER_ALGOS[br.render].glaze;
+        // granulation: pigment settles into the paper's valleys, for washes with grain
+        const gran = this.tooth && (pool > 0 || (glaze && br.grain >= 0.3)) ? 0.3 + br.grain * 0.7 : 0;
         if (pool > 0 || gran > 0) {
+          const last = this.prev;
+          // a wash laid over one that is still wet bleeds into it
+          // (the bleed reaches past the stroke, so the work rectangle grows by its reach and the undo patch with it)
+          let wetw: Float32Array | null = null;
+          if (pool > 0 && this.t0 >= 0) {
+            const reach = Math.ceil(this.baseDia * 0.7);
+            const ex0 = Math.max(0, this.dx0 - reach), ey0 = Math.max(0, this.dy0 - reach), ex1 = Math.min(this.w, this.dx1 + reach), ey1 = Math.min(this.h, this.dy1 + reach);
+            wetw = wetSample(this.layerId, this.w, ex0, ey0, ex1, ey1, this.t0);
+            if (wetw) { this.touch(ex0, ey0, ex1, ey1); rect = { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 }; wetw = wetSample(this.layerId, this.w, this.dx0, this.dy0, this.dx1, this.dy1, this.t0); }
+          }
           dryWash({
+            wetw,
+            ends: pool > 0 ? this.pools.map((q) => ({ x: q.x, y: q.y, r: this.baseDia * 0.6, t: q.t * pool })) : undefined,
             data: this.data, w: this.w, x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1, cov: this.cov, snap: this.snap, tilesX: this.tilesX,
-            pool, gran, radius: Math.min(20, Math.max(2, this.baseDia * 0.09)), tooth: this.tooth, lock: this.s.alphaLock, sel: this.sel,
+            pool, gran, radius: Math.min(28, Math.max(2, this.baseDia * 0.1)), tooth: this.tooth, lock: this.s.alphaLock, sel: this.sel, edge: this.edge,
+            end: pool > 0 && last && this.count > 1 ? { x: last.x, y: last.y, r: this.baseDia * 0.55, t: 0.6 * pool * this.wp.loadNow } : undefined,
           });
+          if (pool > 0 && this.edge && this.lastT >= 0) wetMark(this.layerId, this.w, this.dx0, this.dy0, this.dx1, this.dy1, this.edge, 90, this.lastT, 4 + 8 * (br.wet?.dilution ?? 0.3));
         }
       }
       if (this.s.tool === 'paint' && this.cov && hasShine(sh)) {
+        if (this.bristle) for (let k = 0; k < 4; k++) smoothCov(this.cov, this.w, this.dx0, this.dy0, this.dx1, this.dy1);
         bakeShine(this.data, this.w, this.h, this.cov, { x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1 }, sh, {
           baseDia: this.baseDia, tooth: this.tooth, bump: this.s.brush.bump ?? 0, sel: this.sel, lock: this.s.alphaLock,
         });
@@ -463,21 +513,23 @@ export class Stroke implements StrokeLike {
     let dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pn ? pn.size : pressure) * tilt.sizeMul * rollK);
     if (brush.speedSize) dia = Math.max(0.6, dia * Math.min(3, Math.max(0.25, 1 + brush.speedSize * (this.speed - 0.3) * 1.6)));
     if (brush.jitterSize) dia = Math.max(0.6, dia * (1 - brush.jitterSize * 0.7 * this.rng()));
-    if (brush.fallOff) dia = Math.max(0.6, dia * (1 - brush.fallOff * 0.85 * Math.min(1, this.travel / (200 + 900 * (1 - brush.fallOff)))));
     if (this.taperLen > 0) {
       this.startRamp = this.shapeRamp(Math.min(1, this.travel / this.taperLen));
       const ts = brush.taperSize ?? 0.12;
       dia = Math.max(0.6, dia * (ts + (1 - ts) * this.startRamp));
     }
     if (this.endScale < 1) dia = Math.max(0.6, dia * this.endScale);
-    this.lastStep = Math.max(0.5, brush.spacing * dia);
+    // a bundle lays continuous hair lines, so it steps a little at a time whatever the spacing says
+    this.lastStep = Math.max(this.bristle ? Math.min(2.5, Math.max(1.2, dia * 0.04)) : 0.5, brush.spacing * dia);
     if (brush.spacingJitter) this.lastStep *= Math.max(0.2, 1 + (this.rng() - 0.5) * 2 * brush.spacingJitter);
     if (brush.speedSpacing) this.lastStep *= Math.max(0.25, 1 + brush.speedSpacing * (this.speed - 0.3) * 2.2);
     this.travel += this.lastStep;
     let flow = Math.min(1, Math.max(0, brush.flow * pressureFlow(brush, pn ? pn.flow : pressure) * rollOp));
     if (brush.speedOpacity) flow *= Math.min(1.5, Math.max(0.05, 1 + brush.speedOpacity * (this.speed - 0.3) * 1.6));
     if (brush.jitterOpacity) flow *= 1 - brush.jitterOpacity * this.rng();
-    if (brush.burnout) flow *= Math.max(0.03, 1 - brush.burnout * Math.min(1, this.travel / (150 + 1400 * (1 - brush.burnout))));
+    // burnout and fall off fade the opacity per distance in brush diameters, so a small brush does not run dry in 600 px
+    if (brush.burnout) flow *= Math.max(0.03, 1 - brush.burnout * Math.min(1, this.travel / (this.baseDia * (7 + 70 * (1 - brush.burnout)))));
+    if (brush.fallOff) flow *= Math.max(0.03, 1 - brush.fallOff * Math.min(1, this.travel / (this.baseDia * (6 + 50 * (1 - brush.fallOff)))));
     if (brush.taperOpacity) flow *= 1 - brush.taperOpacity * (1 - Math.min(this.startRamp, this.endRamp));
     if (tilt.opacityMul !== 1) flow *= tilt.opacityMul;
     const po = brush.pressureOpacity ?? (brush.curves?.opacity ? 1 : 0);
@@ -518,6 +570,22 @@ export class Stroke implements StrokeLike {
       rm *= 1 - (useV ? v : h) * 0.9 * this.rng();
       if (useV) this.roundAng = Math.PI / 2;
     }
+    if (this.bristle && tool === 'paint') {
+      const bs = this.bstep;
+      if (dir !== null) {
+        this.bdx += (Math.cos(dir) - this.bdx) * 0.35; this.bdy += (Math.sin(dir) - this.bdy) * 0.35;
+        const l = Math.hypot(this.bdx, this.bdy) || 1; this.bdx /= l; this.bdy /= l;
+      }
+      bs.cx = x; bs.cy = y; bs.dia = dia; bs.dx = this.bdx; bs.dy = this.bdy;
+      bs.pressure = pn ? pn.size : pressure; bs.speed = this.speed;
+      bs.flow = flow; bs.opacity = brush.pressureOpacity || brush.curves?.opacity ? this.opBase * this.opRamp : this.opBase;
+      bs.travel = this.travel; bs.ds = Math.max(0, this.travel - this.bTravel); this.bTravel = this.travel;
+      bs.grain = brush.grain; bs.moving = brush.grainMode === 'moving'; bs.movement = brush.grainMovement ?? 1;
+      bs.wobble = (brush.pathJitter ?? 0) * 0.5;
+      this.bristle.step(bs);
+      this.dabCount++;
+      return;
+    }
     if (n === 1) { this.stamp(x, y, dia, flow, dir, tilt.angle, rm, tiltX, tiltY, 0); return; }
     const sub = Math.max(0.6, dia * Math.max(0.3, 1 / Math.sqrt(n)));
     for (let k = 0; k < n; k++) {
@@ -533,7 +601,10 @@ export class Stroke implements StrokeLike {
   private roundAng = 0;
   private dabX = 0;
   private dabY = 0;
-  private readonly wst: WetStamp = { x0: 0, y0: 0, x1: 0, y1: 0, ab: new Float32Array(0), bw: 0, cov: new Uint16Array(0), w: 0, sel: null, lock: false, opacity: 1, cx: 0, cy: 0, tooth: null, bump: 0, burnt: 0, peak: 1, snap: [], tilesX: 0 };
+  private readonly wst: WetStamp = { x0: 0, y0: 0, x1: 0, y1: 0, ab: new Float32Array(0), bw: 0, cov: new Uint16Array(0), w: 0, sel: null, lock: false, opacity: 1, cx: 0, cy: 0, tooth: null, bump: 0, burnt: 0, peak: 1, snap: [], tilesX: 0, edge: null, blend: null, lum: 0 };
+  /** The wash's shape (paint/wet-dry.ts): coverage per dab-flow, for brushes with wet edges. */
+  private edge: Uint8Array | null = null;
+  private edgePooled = false;
 
   /** Composite one stamp with the wet / glaze paint model (paint/wet.ts). */
   private applyWet(x0: number, y0: number, x1: number, y1: number, ab: Float32Array, bw: number, opacity: number): void {
@@ -542,7 +613,8 @@ export class Stroke implements StrokeLike {
     st.cov = this.cov!; st.w = this.w; st.sel = this.sel; st.lock = this.s.alphaLock; st.opacity = opacity;
     st.cx = this.dabX; st.cy = this.dabY;
     st.tooth = this.tooth; st.bump = br.bump ?? 0; st.burnt = br.burntEdges ?? 0; st.peak = this.dabPeak;
-    st.snap = this.snap; st.tilesX = this.tilesX;
+    st.snap = this.snap; st.tilesX = this.tilesX; st.edge = this.edge;
+    st.blend = br.blend && br.blend !== 'normal' ? br.blend : null; st.lum = br.lumBlend ?? 0;
     this.wp!.paint(st);
   }
 
@@ -565,6 +637,11 @@ export class Stroke implements StrokeLike {
         const k = Math.min(1, this.strokeSec + (cd.stampSecondary ? this.rng() * cd.stampSecondary : 0));
         r += (c2.r - r) * k; g += (c2.g - g) * k; b += (c2.b - b) * k;
       }
+    }
+    if (this.bristle) {
+      this.bristle.setColour(r, g, b);
+      this.alphaMul = 1;
+      return;
     }
     if (this.wp) {
       // the wet model takes the dab colour and does its own mixing and dilution
@@ -589,7 +666,9 @@ export class Stroke implements StrokeLike {
         this.wetG += (sm[1] / sm[3] - this.wetG) * k;
         this.wetB += (sm[2] / sm[3] - this.wetB) * k;
       }
-      this.load = Math.max(0, this.load - (1 - w.charge) * 0.12 * stepF);
+      // per distance in brush diameters (not per dab), so it runs dry after the same stretch at any size
+      this.load = Math.max(0, this.load - (1 - w.charge) * Math.max(0, this.travel - this.loadTravel) / (Math.max(1, dia) * 24));
+      this.loadTravel = this.travel;
       const atk = w.attack * Math.max(0, 1 - this.travel / (dia * 3)) * 0.8 * sm[3];
       let m = Math.min(1, w.dilution * 0.5 + (1 - this.load) * 0.6 + atk + w.pull * 0.45 * sm[3]);
       m = Math.pow(m, 0.5 + w.grade);
@@ -1047,6 +1126,11 @@ export class Stroke implements StrokeLike {
     if (cv && this.hasDirty) {
       for (let y = this.dy0; y < this.dy1; y++) cv.fill(0, y * this.w + this.dx0, y * this.w + this.dx1);
     }
+    if (this.edge && this.hasDirty) {
+      for (let y = this.dy0; y < this.dy1; y++) this.edge.fill(0, y * this.w + this.dx0, y * this.w + this.dx1);
+    }
+    if (this.edgePooled) { poolEdgeBusy = false; this.edgePooled = false; }
+    this.edge = null;
     if (cv && this.covPooled) poolBusy = false;
     if (this.colPooled) { poolColBusy = false; this.colPooled = false; }
     this.colBuf = null;

@@ -159,9 +159,12 @@ export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape
   const flat = k >= 0.02;
   // Shading with the side of the lead: the mark grows wide (also along the lean), softens, lightens and shows more
   // of the paper's tooth, unless the brush sets its own tilt opacity, gradation or bleed.
+  // The oval's long axis (along the lean) grows to 4x; its short axis keeps growing too (to 2x), so a pen leaning
+  // along the stroke still lays a wider line, and one leaning across it lays a broad shading band.
+  const longK = flat ? 1 + 3 * k : 1, shortK = flat ? 1 + k : 1;
   return {
-    roundnessMul: flat ? lerp(1, 0.42, k) : 1,
-    sizeMul: (flat ? lerp(1, 4, k) : 1) * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
+    roundnessMul: flat ? shortK / longK : 1,
+    sizeMul: longK * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
     angle: flat ? info.azimuth : null,
     lean,
     opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1 - 0.3 * k,

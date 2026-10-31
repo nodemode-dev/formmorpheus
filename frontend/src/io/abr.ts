@@ -1,12 +1,13 @@
-/** Brush files (.abr), read for their sampled tips, written for formvis with two open-source readers as the reference
- *  for the layout. Two families exist. Versions 1 and 2: a count, then each brush's type and size; sampled
- *  brushes (type 2) carry spacing, a name (version 2), bounds, depth and pixels, raw or PackBits-compressed by row.
- *  Versions 6 to 10: a subversion, then 8BIM sections; 'samp' holds the sampled tips, each a length, a key and header
- *  (47 bytes to skip for subversion 1, 301 for subversion 2), bounds, depth, a compression flag and pixels. The 'desc' section's
- *  folders give each brush its path, and its computed (round, parametric) brushes become soft tips; a tip takes the name its descriptor entry gives, else
- *  one made from the file. The 'desc' section is walked for each sampled brush's Spcn (spacing in percent), matched to its tip by the
- *  tip's key (the text at the start of its record); a tip with none keeps 25 percent.
- *  A tip's grey is the paint: 255 paints fully, 0 not at all. */
+/** Brush files (.abr): the binary layer. Two families exist. Versions 1 and 2: a count, then each brush's type and size;
+ *  sampled brushes (type 2) carry spacing, a name (version 2), bounds, depth and pixels (raw or PackBits by row), computed
+ *  ones (type 1) carry spacing, diameter, roundness, angle and hardness. Versions 6 to 10: a subversion, then 8BIM sections:
+ *  'samp' the sampled tips (a pascal-string id, 10 or 264 bytes to skip, bounds, depth, compression, pixels), 'patt' the
+ *  patterns (abr-patt.ts), 'desc' the presets as a descriptor tree (abr-desc.ts) and 'phry' the folders. Whatever cannot be
+ *  read is left out with a warning; the rest of the file is still used. A tip's grey is the paint: 255 paints fully, 0 not
+ *  at all. Tips over 512 pixels are reduced, never dropped; 16-bit levels (0 to 32768) are scaled to 8 bits. */
+
+import { readDescriptor, readPhry, isNode, textOf, numOf, type DescNode, type DescValue } from './abr-desc';
+import { readPatterns, type AbrPattern } from './abr-patt';
 
 export interface SampledTip { w: number; h: number; data: Uint8Array }
 /** `spacing` is a fraction of the tip's diameter: 0.25 is the file's 25 percent. */
@@ -23,26 +24,26 @@ class Reader {
   skip(n: number): void { this.pos += n; }
 }
 
-/** Rows of PackBits: `h` row byte counts (16-bit), then each row's runs. */
-function unpackRows(r: Reader, w: number, h: number): Uint8Array | null {
+/** Rows of PackBits: `h` row byte counts (16-bit), then each row's runs; a row decodes to `rowBytes` bytes. */
+function unpackRows(r: Reader, rowBytes: number, h: number): Uint8Array | null {
   if (r.left < h * 2) return null;
-  const out = new Uint8Array(w * h), counts: number[] = [];
+  const out = new Uint8Array(rowBytes * h), counts: number[] = [];
   for (let y = 0; y < h; y++) counts.push(r.u16());
   for (let y = 0; y < h; y++) {
     // every read stays inside the file and inside the row's declared byte count
     const end = Math.min(r.pos + counts[y], r.pos + r.left);
     let x = 0;
-    while (r.pos < end && x < w) {
+    while (r.pos < end && x < rowBytes) {
       let n = r.u8();
       if (n >= 128) n -= 256;
       if (n < 0) {
         if (n === -128) continue;
         if (r.pos >= end) break;
         const v = r.u8();
-        for (let k = 0; k < 1 - n && x < w; k++) out[y * w + x++] = v;
+        for (let k = 0; k < 1 - n && x < rowBytes; k++) out[y * rowBytes + x++] = v;
       } else {
-        const take = Math.min(n + 1, w - x, end - r.pos);
-        for (let k = 0; k < take; k++) out[y * w + x++] = r.u8();
+        const take = Math.min(n + 1, rowBytes - x, end - r.pos);
+        for (let k = 0; k < take; k++) out[y * rowBytes + x++] = r.u8();
       }
     }
     r.pos = end;
@@ -50,101 +51,108 @@ function unpackRows(r: Reader, w: number, h: number): Uint8Array | null {
   return out;
 }
 
-/** Pixels of `depth` bits (8 or 16), raw or packed, as 8-bit greys. */
-function pixels(r: Reader, w: number, h: number, depth: number, packed: boolean): Uint8Array | null {
-  if (w <= 0 || h <= 0 || w * h > 16_000_000) return null;
-  if (depth === 8) {
-    if (packed) return unpackRows(r, w, h);
-    if (r.left < w * h) return null;
-    const out = new Uint8Array(r.v.buffer, r.v.byteOffset + r.pos, w * h).slice();
-    r.skip(w * h);
-    return out;
+/** The most pixels a tip may have (the source app allows 5000 x 5000) and the side tips are reduced to. */
+const MAX_PIXELS = 36_000_000;
+const TIP_SIDE = 512;
+
+/** A tip with its size as stored (`srcW` x `srcH`) and its pixels, reduced to at most 512 a side. */
+export interface DecodedTip extends SampledTip { srcW: number; srcH: number }
+
+/** Box reduction so a huge tip is shrunk, never dropped. */
+function reduce(w: number, h: number, data: Uint8Array): DecodedTip {
+  const k = Math.max(w, h) / TIP_SIDE;
+  if (k <= 1) return { w, h, data, srcW: w, srcH: h };
+  const nw = Math.max(1, Math.round(w / k)), nh = Math.max(1, Math.round(h / k)), out = new Uint8Array(nw * nh);
+  for (let y = 0; y < nh; y++) {
+    const y0 = Math.floor(y * k), y1 = Math.min(h, Math.max(y0 + 1, Math.floor((y + 1) * k)));
+    for (let x = 0; x < nw; x++) {
+      const x0 = Math.floor(x * k), x1 = Math.min(w, Math.max(x0 + 1, Math.floor((x + 1) * k)));
+      let s = 0, n = 0;
+      for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { s += data[yy * w + xx]; n++; }
+      out[y * nw + x] = Math.round(s / Math.max(1, n));
+    }
   }
-  if (depth === 16 && !packed) {
-    if (r.left < w * h * 2) return null;
-    const out = new Uint8Array(w * h);
-    for (let i = 0; i < out.length; i++) out[i] = r.u16() >> 8;
-    return out;
-  }
-  return null;
+  return { w: nw, h: nh, data: out, srcW: w, srcH: h };
 }
 
-function readOld(r: Reader, version: number, base: string): AbrBrush[] {
-  const count = r.u16(), out: AbrBrush[] = [];
+/** Pixels of `depth` bits (8 or 16), raw or packed, as an 8-bit tip. 16-bit levels run 0 to 32768 (65535 when any is higher). */
+function pixels(r: Reader, w: number, h: number, depth: number, packed: boolean): DecodedTip | null {
+  if (w <= 0 || h <= 0 || w * h > MAX_PIXELS || (depth !== 8 && depth !== 16)) return null;
+  const bpp = depth / 8;
+  let raw: Uint8Array | null;
+  if (packed) raw = unpackRows(r, w * bpp, h);
+  else {
+    if (r.left < w * h * bpp) return null;
+    raw = new Uint8Array(r.v.buffer, r.v.byteOffset + r.pos, w * h * bpp);
+    r.skip(w * h * bpp);
+  }
+  if (!raw) return null;
+  if (depth === 8) return reduce(w, h, packed ? raw : raw.slice());
+  const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength), out = new Uint8Array(w * h);
+  let mx = 0;
+  for (let i = 0; i < out.length; i++) mx = Math.max(mx, dv.getUint16(i * 2));
+  const k = mx > 32768 ? 255 / 65535 : 255 / 32768;
+  for (let i = 0; i < out.length; i++) out[i] = Math.min(255, Math.round(dv.getUint16(i * 2) * k));
+  return reduce(w, h, out);
+}
+
+/** A brush of a version 1 or 2 file: sampled (a picture) or computed (round, from numbers). */
+export interface AbrLegacy {
+  name: string;
+  /** A fraction of the diameter. */
+  spacing: number;
+  tip?: DecodedTip;
+  /** Computed brushes: diameter in pixels, hardness and roundness in percent, angle in degrees. */
+  computed?: { diameter: number; hardness: number; roundness: number; angle: number };
+}
+
+function readOld(r: Reader, version: number, base: string, warnings: string[]): AbrLegacy[] {
+  const count = r.u16(), out: AbrLegacy[] = [];
   for (let i = 0; i < count && r.left > 6; i++) {
     const type = r.u16(), size = r.u32(), next = r.pos + size;
-    if (type === 2) {
-      r.skip(4);
-      const spacing = r.u16();
-      let name = `${base} ${out.length + 1}`;
-      if (version === 2) {
-        const len = r.u32();
-        let s = '';
-        for (let k = 0; k < len; k++) { const c = r.u16(); if (c) s += String.fromCharCode(c); }
-        if (s.trim()) name = s.trim();
+    try {
+      if (type === 2) {
+        r.skip(4);
+        const spacing = r.u16();
+        let name = `${base} ${out.length + 1}`;
+        if (version === 2) {
+          const len = r.u32();
+          if (len > 1024) throw new RangeError('bad name');
+          let s = '';
+          for (let k = 0; k < len; k++) { const c = r.u16(); if (c) s += String.fromCharCode(c); }
+          if (s.trim()) name = s.trim();
+        }
+        r.skip(1 + 8);
+        const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
+        const tip = pixels(r, right - left, bottom - top, depth, packed);
+        if (tip) out.push({ name, tip, spacing: spacing / 100 });
+        else warnings.push(`Tip ${i + 1} could not be read.`);
+      } else if (type === 1) {
+        r.skip(4);
+        const spacing = r.u16(), diameter = r.u16(), roundness = r.u16(), angle = r.v.getInt16(r.pos), hardness = r.v.getUint16(r.pos + 2);
+        out.push({ name: `${base} ${out.length + 1}`, spacing: spacing / 100, computed: { diameter, hardness, roundness, angle } });
       }
-      r.skip(1 + 8);
-      const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
-      const data = pixels(r, right - left, bottom - top, depth, packed);
-      if (data) out.push({ name, tip: { w: right - left, h: bottom - top, data }, spacing: spacing / 100 });
-    }
+    } catch { warnings.push(`Brush ${i + 1} could not be read.`); }
     r.pos = next;
   }
   return out;
 }
 
-/** Each sampled brush's spacing (a fraction of its diameter) in a 'desc' section, by its sampledData key. The
- *  descriptor tree is walked for objects holding both; a value of a type not known ends the walk, keeping what was found. */
+/** A computed brush's numbers (spacing in percent), for the picture-only view in `parseAbr`. */
 interface Computed { id: string; name: string; diameter: number; hardness: number; angle: number; roundness: number; spacing: number }
 
-function readDescSpacing(r: Reader): { spacing: Map<string, number>; names: Map<string, string>; folders: Map<string, string[]>; computed: Computed[] } {
-  const found = new Map<string, number>(), names = new Map<string, string>(), folders = new Map<string, string[]>(), computed: Computed[] = [], leaves = new WeakMap<object, string[]>();
-  const id = (): string => { const n = r.u32(); let s = ''; for (let i = 0; i < (n || 4); i++) s += String.fromCharCode(r.u8()); return s; };
-  const text = (): string => { const n = r.u32(); let s = ''; for (let i = 0; i < n; i++) { const c = r.u16(); if (c) s += String.fromCharCode(c); } return s; };
-  const double = (): number => { const x = r.v.getFloat64(r.pos); r.skip(8); return x; };
-  const value = (type: string): unknown => {
-    switch (type) {
-      case 'Objc': case 'GlbO': {
-        text(); id();
-        const vals: Record<string, unknown> = {};
-        for (let n = r.u32(); n > 0; n--) { const key = id(); vals[key] = value(String.fromCharCode(r.u8(), r.u8(), r.u8(), r.u8())); }
-        if (typeof vals.sampledData === 'string' && typeof vals.Spcn === 'number') found.set(vals.sampledData.trim(), Math.min(10, Math.max(0.01, vals.Spcn / 100)));
-        const inner = vals.Brsh as Record<string, unknown> | undefined;
-        if (typeof vals['Nm  '] === 'string' && inner && typeof inner.sampledData === 'string' && vals['Nm  '].trim()) names.set(inner.sampledData.trim(), vals['Nm  '].trim().slice(0, 60));
-        const label = typeof vals['Nm  '] === 'string' ? vals['Nm  '].trim().slice(0, 60) : '';
-        if (Array.isArray(inner)) {
-          // A folder: the tips and computed brushes inside it, nested folders already walked, take its name at the front of their path.
-          const ids: string[] = [];
-          for (const it of inner) if (it && typeof it === 'object') ids.push(...(leaves.get(it) ?? []));
-          leaves.set(vals, ids);
-          if (label) for (const k of ids) folders.set(k, [label, ...(folders.get(k) ?? [])]);
-        } else if (inner && typeof inner === 'object') {
-          if (typeof inner.sampledData === 'string') leaves.set(vals, [inner.sampledData.trim()]);
-          else if (typeof inner.Dmtr === 'number' && label) {
-            const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d), id = `computed:${computed.length}`;
-            computed.push({ id, name: label, diameter: num(inner.Dmtr, 20), hardness: num(inner.Hrdn, 100), angle: num(inner.Angl, 0), roundness: num(inner.Rndn, 100), spacing: num(inner.Spcn, 25) });
-            leaves.set(vals, [id]);
-          }
-        }
-        return vals;
-      }
-      case 'VlLs': { const items: unknown[] = []; for (let n = r.u32(); n > 0; n--) items.push(value(String.fromCharCode(r.u8(), r.u8(), r.u8(), r.u8()))); return items; }
-      case 'doub': return double();
-      case 'UntF': r.skip(4); return double();
-      case 'long': return r.i32();
-      case 'comp': r.skip(8); return 0;
-      case 'bool': return r.u8() !== 0;
-      case 'TEXT': return text();
-      case 'enum': id(); return id();
-      case 'type': case 'GlbC': text(); return id();
-      case 'tdta': case 'alis': r.skip(r.u32()); return null;
-      default: throw new Error('unknown descriptor value');
-    }
-  };
-  try {
-    if (r.u32() === 16) value('Objc');
-  } catch { /* the rest keeps the default spacing */ }
-  return { spacing: found, names, folders, computed };
+/** A preset of a version 6 to 10 file: its descriptor and the folders it sat in (outermost first). */
+export interface AbrPreset { node: DescNode; folder: string[] }
+
+/** Presets in a 'desc' tree. A list under `Brsh` whose entries again hold a `Brsh` list is a folder (the older layout). */
+function collectPresets(list: DescValue[], path: string[], out: AbrPreset[]): void {
+  for (const it of list) {
+    if (!isNode(it)) continue;
+    const inner = it.items.get('Brsh');
+    if (Array.isArray(inner)) collectPresets(inner, [...path, (textOf(it.items.get('Nm  ')) ?? '').trim()].filter((s) => s), out);
+    // an entry with no tip is a preset the walk cut short, or not a brush at all
+    else if (isNode(inner) || it.items.has('sampledData') || it.items.has('Dmtr')) out.push({ node: it, folder: path });
+  }
 }
 
 /** A computed (round or elliptical) brush as a soft tip: full inside `hardness` percent of the radius, fading to nothing at the
@@ -159,46 +167,105 @@ function computedTip(c: Computed): SampledTip {
   return { w: size, h: size, data };
 }
 
-function readSections(r: Reader, sub: number, base: string): AbrBrush[] {
-  const out: AbrBrush[] = [], keys: string[] = [];
-  let spacings = new Map<string, number>(), called = new Map<string, string>(), placed = new Map<string, string[]>(), round: Computed[] = [];
-  while (r.left >= 12) {
-    const sig = String.fromCharCode(r.u8(), r.u8(), r.u8(), r.u8()), key = String.fromCharCode(r.u8(), r.u8(), r.u8(), r.u8()), len = r.u32();
-    if (sig !== '8BIM') break;
-    const end = r.pos + len;
-    if (key === 'samp') {
-      while (r.pos < end - 4) {
-        const size = r.u32(), next = r.pos + size + ((4 - (size % 4)) % 4), start = r.pos;
-        let tipKey = '';
-        for (let n = Math.min(r.u8(), size - 1), k = 0; k < n; k++) tipKey += String.fromCharCode(r.u8());
-        r.pos = start;
-        r.skip(sub === 1 ? 47 : 301);
-        const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
-        const data = pixels(r, right - left, bottom - top, depth, packed);
-        if (data) { out.push({ name: `${base} ${out.length + 1}`, tip: { w: right - left, h: bottom - top, data }, spacing: 0.25 }); keys.push(tipKey.trim()); }
-        r.pos = next;
-      }
-    } else if (key === 'desc') ({ spacing: spacings, names: called, folders: placed, computed: round } = readDescSpacing(r));
-    r.pos = end;
-  }
-  out.forEach((b, i) => {
-    b.spacing = spacings.get(keys[i]) ?? b.spacing; b.name = called.get(keys[i]) ?? b.name;
-    const path = placed.get(keys[i]);
-    if (path?.length) b.folder = path.join('/');
-  });
-  for (const c of round) {
-    const path = placed.get(c.id);
-    out.push({ name: c.name, tip: computedTip(c), spacing: Math.min(10, Math.max(0.01, c.spacing / 100)), ...(path?.length ? { folder: path.join('/') } : {}) });
-  }
-  return out;
+/** A sampled tip of a version 6 to 10 file; `id` is what a preset's `sampledData` names. */
+export interface AbrSample extends DecodedTip { id: string }
+
+/** Everything an .abr file holds. Presets and legacy brushes are alternatives: a version 1 or 2 file has `legacy`, the rest `presets`. */
+export interface AbrFile {
+  version: number;
+  samples: AbrSample[];
+  patterns: AbrPattern[];
+  presets: AbrPreset[];
+  legacy: AbrLegacy[];
+  /** Things that could not be read; the rest of the file was still used. */
+  warnings: string[];
 }
 
-/** The sampled tips in an .abr file; throws on a file that is not one. `base` names tips when the file does not. */
-export function parseAbr(buf: ArrayBuffer, base = 'Brush'): AbrBrush[] {
-  const r = new Reader(new DataView(buf));
+const sig4 = (v: DataView, p: number): string => String.fromCharCode(v.getUint8(p), v.getUint8(p + 1), v.getUint8(p + 2), v.getUint8(p + 3));
+
+/** Where the next '8BIM' starts at or just after `p` (sections are padded to four bytes, and some writers pad wrongly), or -1. */
+function nextSection(v: DataView, p: number): number {
+  for (let q = p; q <= p + 8 && q + 12 <= v.byteLength; q++) if (sig4(v, q) === '8BIM') return q;
+  return -1;
+}
+
+function readSamples(v: DataView, start: number, end: number, sub: number, out: AbrSample[], warnings: string[]): void {
+  const r = new Reader(v);
+  r.pos = start;
+  while (r.pos + 4 <= end) {
+    const size = r.u32(), rec = r.pos, next = rec + size + ((4 - (size % 4)) % 4);
+    if (size < 40 || rec + size > end) { if (size) warnings.push('A tip record was cut short.'); break; }
+    try {
+      const idLen = r.u8();
+      let id = '';
+      for (let k = 0; k < idLen; k++) id += String.fromCharCode(r.u8());
+      r.skip(sub === 1 ? 10 : 264);
+      const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
+      const tip = pixels(r, right - left, bottom - top, depth, packed);
+      if (tip) out.push({ ...tip, id: id.trim() });
+      else warnings.push('A tip in the file could not be read.');
+    } catch { warnings.push('A tip in the file could not be read.'); }
+    r.pos = next;
+  }
+}
+
+function readSections(v: DataView, sub: number, f: AbrFile): void {
+  let p = nextSection(v, 4), phry: string[][] | null = null;
+  while (p >= 0 && p + 12 <= v.byteLength) {
+    const key = sig4(v, p + 4), len = v.getUint32(p + 8), start = p + 12, end = Math.min(v.byteLength, start + len);
+    try {
+      if (key === 'samp') readSamples(v, start, end, sub, f.samples, f.warnings);
+      else if (key === 'patt') f.patterns.push(...readPatterns(v, start, end, f.warnings));
+      else if (key === 'desc' && start + 4 <= end) {
+        const { root, error } = readDescriptor(v, start + 4, end);
+        const list = root.items.get('Brsh');
+        if (Array.isArray(list)) collectPresets(list, [], f.presets);
+        if (error) f.warnings.push(`The preset list stops early (${error}); the presets before it were kept.`);
+      } else if (key === 'phry' && start + 4 <= end) phry = readPhry(v, start + 4, end).paths;
+    } catch (e) { f.warnings.push(`Section ${key} could not be read.`); void e; }
+    // a section ends where its length says, rounded up to four; look a little further when the next one is not there
+    const q = nextSection(v, end);
+    p = q;
+  }
+  if (phry && phry.length === f.presets.length) f.presets.forEach((pr, i) => { if (!pr.folder.length) pr.folder = phry![i]; });
+  else if (phry && phry.length && f.presets.length) f.warnings.push('The folder list does not match the presets, so folders were not used.');
+}
+
+/** Reads a whole .abr file; throws on a file that is not one. `base` names brushes the file does not name. */
+export function parseAbrFile(buf: ArrayBuffer, base = 'Brush'): AbrFile {
+  const v = new DataView(buf), r = new Reader(v);
   if (r.left < 4) throw new Error('This file is too short to be a brush file.');
   const version = r.u16();
-  if (version === 1 || version === 2) return readOld(r, version, base);
-  if (version >= 6 && version <= 10) { const sub = r.u16(); return readSections(r, sub, base); }
+  const f: AbrFile = { version, samples: [], patterns: [], presets: [], legacy: [], warnings: [] };
+  if (version === 1 || version === 2) { f.legacy = readOld(r, version, base, f.warnings); return f; }
+  if (version >= 6 && version <= 10) {
+    const sub = r.u16();
+    if (sub !== 1 && sub !== 2) throw new Error(`This brush file has a layout this reader does not know (${version}.${sub}).`);
+    readSections(v, sub, f);
+    return f;
+  }
   throw new Error(`This is not an .abr brush file this reader knows (version ${version}).`);
+}
+
+/** The tips in an .abr file with their names, spacing and folder, computed brushes drawn as soft tips. Kept for callers that want pictures only. */
+export function parseAbr(buf: ArrayBuffer, base = 'Brush'): AbrBrush[] {
+  const f = parseAbrFile(buf, base), out: AbrBrush[] = [];
+  for (const l of f.legacy) {
+    const tip = l.tip ?? (l.computed ? computedTip({ id: '', name: l.name, diameter: l.computed.diameter, hardness: l.computed.hardness, angle: l.computed.angle, roundness: l.computed.roundness, spacing: l.spacing * 100 }) : null);
+    if (tip) out.push({ name: l.name, tip: { w: tip.w, h: tip.h, data: tip.data }, spacing: l.spacing });
+  }
+  const byId = new Map(f.samples.map((s) => [s.id, s]));
+  for (const pr of f.presets) {
+    const it = pr.node.items.get('Brsh'), tipNode = isNode(it) ? it : pr.node;
+    const sid = textOf(tipNode.items.get('sampledData'))?.trim(), s = sid ? byId.get(sid) : undefined;
+    const sp = (numOf(pr.node.items.get('Spcn')) ?? numOf(tipNode.items.get('Spcn')) ?? 25) / 100;
+    const name = (textOf(pr.node.items.get('Nm  ')) ?? '').trim() || `${base} ${out.length + 1}`;
+    const folder = pr.folder.length ? { folder: pr.folder.join('/') } : {};
+    if (s) out.push({ name, tip: { w: s.w, h: s.h, data: s.data }, spacing: sp, ...folder });
+    else if (numOf(tipNode.items.get('Dmtr')) !== null) {
+      const g = (k: string, d: number): number => numOf(tipNode.items.get(k)) ?? d;
+      out.push({ name, tip: computedTip({ id: '', name, diameter: g('Dmtr', 20), hardness: g('Hrdn', 100), angle: g('Angl', 0), roundness: g('Rndn', 100), spacing: sp * 100 }), spacing: sp, ...folder });
+    }
+  }
+  return out;
 }

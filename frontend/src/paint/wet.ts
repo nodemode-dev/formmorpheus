@@ -10,6 +10,7 @@
 // holds a K/S vector and an amount. Pure maths on typed arrays; the stroke engine calls prepare() then paint().
 
 import type { RenderAlgo } from './render-modes';
+import { blendChannel } from './dynamics';
 import type { WetMix } from './types';
 
 const NB = 6;
@@ -100,7 +101,16 @@ export interface WetStamp {
   /** The stroke's 64 px undo tiles: the untouched pixels, which a glaze film is laid over. */
   snap: (Uint8ClampedArray | undefined)[];
   tilesX: number;
+  /** Coverage normalised to the dab's own flow (255 = a full dab), for the wash's shape; null when the brush has no wet edges. */
+  edge: Uint8Array | null;
+  /** The brush's blend mode (null: normal) and its luminance blend share. */
+  blend: string | null;
+  lum: number;
 }
+
+/** A glaze's film is a thickness: alpha = 1 - exp(-k * thickness), scaled so a full film is fully opaque. */
+const TK = 1.6, TN = 1 / (1 - Math.exp(-TK));
+const thickAlpha = (f: number): number => (f <= 0 ? 0 : (1 - Math.exp(-TK * (f > 1 ? 1 : f))) * TN);
 
 export interface WetOptions {
   algo: RenderAlgo;
@@ -126,6 +136,9 @@ export class WetPaint {
   private bR = -1; private bG = -1; private bB = -1;
   private started = false;
   private load = 1;
+  private prevTravel = 0;
+  /** The brush's remaining load, 1 full to 0 empty (read by the stroke for its end blob). */
+  loadNow = 1;
   private span = 1;
   private cx = 0; private cy = 0;
   private stepF = 1;
@@ -170,15 +183,21 @@ export class WetPaint {
     const stepF = Math.min(1, spacing * 3);
     this.stepF = stepF;
     const dil = Math.min(1, wet.dilution * (wet.wetJitter ? 1 - wet.wetJitter * this.rng() : 1));
-    this.dilScale = 1 - dil * 0.5;
+    // dilution thins the pigment strongly (70% leaves ~40% of the pigment), never to nothing
+    this.dilScale = 1 - dil * 0.85;
     this.dragRate = wet.pull * stepF * 0.38;
     const cell = this.cell, G = this.G, kb = this.kb;
     if (!this.started) {
       this.started = true;
       for (let i = 0; i < G * G; i++) { for (let k = 0; k < NB; k++) cell[i * CS + k] = kb[k]; cell[i * CS + 6] = 1; }
     }
+    // the brush runs low per distance in brush diameters, not per dab: the same stroke dries after the same
+    // number of diameters at 8 px or 120 px, and at any spacing. A glaze may thin but never vanishes.
+    const ds = Math.max(0, travel - this.prevTravel);
+    this.prevTravel = travel;
+    this.load = Math.max(this.algo.glaze ? 0.7 : 0, this.load - (1 - wet.charge) * ds / (Math.max(1, dia) * (this.algo.glaze ? 250 : 24)));
+    this.loadNow = this.load;
     if (this.fixed) return;
-    this.load = Math.max(0, this.load - (1 - wet.charge) * 0.05 * stepF);
     // a brush that pulls holds on to what it picked up: less refill from the brush's own paint
     const rf = Math.min(1, this.load * 0.28 * stepF * (1 - 0.6 * wet.pull) * (0.4 + 0.6 * wet.charge));
     const attack = wet.attack * Math.max(0, 1 - travel / (dia * 3));
@@ -188,10 +207,13 @@ export class WetPaint {
     const span = this.span, cs = span / G, q = cs * (0.25 + blur * 1.5);
     const kc = this.kc;
     const sKb = steer(kb, 0);
+    // what a cell can hold: the brush's remaining load plus what a pulling brush carries off the canvas
+    const ceil = this.load + 0.65 * wet.pull;
     for (let j = 0; j < G; j++) {
       const v = (j + 0.5) / G - 0.5;
       for (let i = 0; i < G; i++) {
         const o = (j * G + i) * CS;
+        if (cell[o + 6] > ceil) cell[o + 6] = ceil;
         // refill toward the brush's own paint
         if (rf > 0) {
           // weighted by how strongly each pigment steers, like every other mix, so a dense blue does not drown a thin yellow
@@ -222,7 +244,9 @@ export class WetPaint {
         rgbToKs(ENC[(lr * 4096) | 0], ENC[(lg * 4096) | 0], ENC[(lb * 4096) | 0], kc, 0);
         // paper-white picks up as barely any pigment (it would only dilute the stroke)
         let pg = (kc[0] + kc[1] + kc[2] + kc[3] + kc[4] + kc[5]) * 0.4;
-        pg = pg > 1 ? 1 : pg < 0.02 ? 0.02 : pg;
+        // bare paper is no paint: picking it up would only wash the reservoir out over a long stroke
+        if (pg < 0.05) continue;
+        pg = pg > 1 ? 1 : pg;
         const add = pick * sa * wr * pg * 0.4;
         const A = cell[o + 6];
         const tot = A + add;
@@ -266,6 +290,7 @@ export class WetPaint {
     const dil = this.dilScale, drag = this.dragRate;
     const tooth = s.bump > 0 ? s.tooth : null, bump = s.bump;
     const peak = Math.max(0.001, s.peak);
+    const edgeMap = s.edge;
     const inv = G / this.span;
     if (this.colI.length < bw) { this.colI = new Int32Array(bw * 2); this.colW = new Float32Array(bw * 2); }
     const colI = this.colI, colW = this.colW;
@@ -298,6 +323,7 @@ export class WetPaint {
         if (algo.uniform) c = a > c0 ? (a > 1 ? 1 : a) : c0;
         else { const aa = a * algo.k; c = c0 + (1 - c0) * (aa > 1 ? 1 : aa); }
         cov[idx] = (c * 65535 + 0.5) | 0;
+        if (edgeMap) { const e8 = a >= peak ? 255 : ((a / peak) * 255) | 0; if (e8 > edgeMap[idx]) edgeMap[idx] = e8; }
         const am = a > 1 ? 1 : a;
         const dCov = (c - c0) * opacity;
         // pull drags even where the stroke has no new coverage
@@ -360,7 +386,7 @@ export class WetPaint {
           so = (((py & 63) << 6) | (px & 63)) << 2;
           let film = c * opacity * Am * (sel ? sel[idx] / 255 : 1);
           if (grade !== 0) film += grade * (film * film * (3 - 2 * film) - film);
-          t = film > 1 ? 1 : film;
+          t = algo.glaze ? thickAlpha(film) : film > 1 ? 1 : film;
           if (dragT > 0) dg = dragT * (Am * 1.5 > 1 ? 1 : Am * 1.5);
         }
         const ca = src[so + 3] / 255;
@@ -411,6 +437,16 @@ export class WetPaint {
           // mixed pigments lose chroma in a coarse spectrum; give a share of it back
           const L = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
           pr = L + (pr - L) * lift; pg = L + (pg - L) * lift; pb = L + (pb - L) * lift;
+        }
+        // a blend mode acts on the deposited paint against the pixel under it, so it combines with the wet mix
+        if (ca > 0 && (s.blend || s.lum > 0)) {
+          if (s.blend) {
+            pr += (blendChannel(s.blend, cr, pr) - pr) * ca; pg += (blendChannel(s.blend, cg, pg) - pg) * ca; pb += (blendChannel(s.blend, cb, pb) - pb) * ca;
+          }
+          if (s.lum > 0) {
+            const kk = s.lum * ((0.3 * pr + 0.59 * pg + 0.11 * pb) / 255) * ca;
+            pr += (blendChannel('screen', cr, pr) - pr) * kk; pg += (blendChannel('screen', cg, pg) - pg) * kk; pb += (blendChannel('screen', cb, pb) - pb) * kk;
+          }
         }
         if (tooth) {
           const d = (tooth[((py & 255) << 8) | (px & 255)] - 0.5) * bump * 70;

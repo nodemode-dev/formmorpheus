@@ -8,6 +8,7 @@ import type { PenSample, Point, Raster, Rect, StrokeSettings, Mask } from './typ
 import { Stroke } from './stroke';
 import { setPressureCurve } from './dynamics';
 import { hasShine } from './shine';
+import { dries } from './wet-dry';
 
 export type ToWorker =
   | {
@@ -90,7 +91,7 @@ ctx.onmessage = (e: MessageEvent<ToWorker>): void => {
       if (m.selId && selection) { sels.delete(m.selId); sels.set(m.selId, selection); }
       while (sels.size > SEL_CACHE) sels.delete(sels.keys().next().value as number);
       setPressureCurve(m.curve);
-      live = { id: m.id, stroke: new Stroke(mirror.raster, m.layer, { ...m.settings, selection }), n: 0, acc: null, last: 0, timer: 0, shine: m.settings.tool === 'paint' && hasShine(m.settings.brush.shine) };
+      live = { id: m.id, stroke: new Stroke(mirror.raster, m.layer, { ...m.settings, selection }), n: 0, acc: null, last: 0, timer: 0, shine: m.settings.tool === 'paint' && (hasShine(m.settings.brush.shine) || dries(m.settings.brush)) };
       return;
     }
     const l = live;
@@ -109,7 +110,7 @@ ctx.onmessage = (e: MessageEvent<ToWorker>): void => {
       if (l.timer) { clearTimeout(l.timer); l.timer = 0; }
       const patch = l.stroke.finish();
       live = null;
-      // finishing a lit material bakes the whole stroke, so its whole rectangle comes back
+      // finishing a lit material or a drying wash reworks the whole stroke, so its whole rectangle comes back
       const tail = l.shine ? (patch ? patch.rect : null) : l.stroke.lastCallRect();
       reply('done', l, tail ? unite(l.acc, tail) : l.acc);
     } else if (m.t === 'cancel') {
