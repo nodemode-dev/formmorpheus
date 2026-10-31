@@ -9,10 +9,24 @@ import { srcFrame } from '../retime';
 import type { BlendMode, CanvasRect, Content, DrawingLayer, Movie, Track } from '../types';
 import {
   FS_BOIL, FS_BOOST, FS_BOX, FS_COPY, FS_DOWN, FS_GAUSS, FS_HSB, FS_MASK, FS_NOISE_APPLY, FS_NOISE_GRID, FS_PRESENT, FS_SHARPEN,
-  FS_SRC_BLEND, FS_SRC_PLAIN, FS_UP, VS_BOX, VS_SRC,
+  FS_SRC_BLEND, FS_SRC_PLAIN, FS_UP, HEAD, VS_BOX, VS_SRC,
 } from './shaders';
+
+/** Frame of a registry effect shader (engine/fx/registry.ts): the step supplies `vec4 fx(ivec2 p)` and its own uniforms. */
+const FX_HEAD = `${HEAD}uniform sampler2D uSrc;
+uniform sampler2D uS0; uniform sampler2D uS1; uniform sampler2D uS2; uniform sampler2D uS3; uniform sampler2D uS4; uniform sampler2D uS5;
+uniform float uScale;
+uniform vec2 uO;
+uniform vec2 uM;
+`;
+const FX_TAIL = '\nout vec4 o;\nvoid main() { o = fx(ivec2(gl_FragCoord.xy)); }';
 import { TextureCache, type TexSource } from './textures';
+import '../fx';
+import { activeFx, gpuSteps, type Effect, type FxCtx } from '../fx/registry';
+import type { FxInst } from '../keys';
 import { fontEpoch } from '../text-layout';
+import { phaseSig, textPhase } from '../text-phase';
+import type { TextPhase } from '../text-anim';
 import { hasTree } from '../../paint/layer-tree';
 import { hasRowMask } from '../flip-draw';
 import { isPixelBlend } from '../blend';
@@ -21,6 +35,8 @@ import { MeshDrawer, flatScaleOf } from './mesh';
 import { contentRect, setStagePost, warpActive, warpQuads } from '../warp-draw';
 import { boneQuads } from '../bones';
 import { postMatrix } from '../transform';
+import { FS_ADJUST } from './shaders-shape';
+import { hasFilters } from '../shape-adjust';
 
 export interface ViewLike {
   scale: number;
@@ -38,9 +54,11 @@ export interface GpuHost {
   /** True for content only the CPU path draws (Warp and Distort, layer groups and masks): it is rasterised there and uploaded. */
   cpu(c: Content, a: Animated, local: number): boolean;
   /** Draws the text of `c` at `density` pixels per movie pixel into `into` (resized to fit); returns its movie-space box. */
-  textBox(c: Content, movie: Movie, density: number, into: OffscreenCanvas): { x: number; y: number; w: number; h: number } | null;
+  textBox(c: Content, movie: Movie, density: number, into: OffscreenCanvas, ph?: TextPhase | null): { x: number; y: number; w: number; h: number } | null;
   /** Draws the whole content (transform included) into `into`, which is cleared and identity-transformed. */
   raster(c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, into: OffscreenCanvas): void;
+  /** An Adjustment's weight picture (opacity times mask) as alpha on a canvas, or null for the plain opacity; the canvas is valid inside `use`. */
+  adjust(c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, op: number, use: (w: OffscreenCanvas | null) => void): void;
 }
 
 export type Mat = [number, number, number, number, number, number];
@@ -121,7 +139,8 @@ export class GpuCompositor {
   private w = 0;
   private h = 0;
   private tick = 0;
-  private rasterCanvas: OffscreenCanvas | null = null;
+  private readonly rasterPool: OffscreenCanvas[] = [];
+  private rasterUsed = 0;
   private readonly textSig = new Map<string, { sig: string; box: { x: number; y: number; w: number; h: number } }>();
   private textCanvas: OffscreenCanvas | null = null;
   /** Called when a lost context has come back, so the renderer draws again. */
@@ -188,6 +207,7 @@ export class GpuCompositor {
     this.scratch = null;
     this.scratchTree = null;
     this.perm = null;
+    this.fxTable = null;
     this.meshDrawer?.dispose();
     this.meshDrawer = null;
     this.textSig.clear();
@@ -358,6 +378,7 @@ export class GpuCompositor {
       this.w = w; this.h = h;
       this.tick++;
       this.cache.beginFrame();
+      this.rasterUsed = 0;
       const gl = this.gl;
       gl.disable(gl.SCISSOR_TEST);
       const out = this.acquire(w, h, 'u8', true);
@@ -386,7 +407,7 @@ export class GpuCompositor {
       const c = t.content.find((x) => frame >= x.start && frame < end(x));
       if (!c || c.opacity <= 0) continue;
       const a = animate(c, frame - c.start);
-      if (a.blur > 0 || a.sharpen > 0 || a.lens || a.hsb || a.noise) return true;
+      if (a.blur > 0 || a.sharpen > 0 || a.lens || a.hsb || a.noise || a.fx) return true;
     }
     return false;
   }
@@ -406,6 +427,7 @@ export class GpuCompositor {
       if (!c || c.opacity <= 0) continue;
       const a = animate(c, frame - c.start);
       if (a.opacity <= 0) continue;
+      if (c.kind === 'adjust') { commit(); this.adjust(host, out, c, frame - c.start, a, view, movie); continue; }
       if (host.direct(c, a, tracks, i, frame)) {
         commit();
         this.content(host, out, c, frame - c.start, view, movie, a, IDENT, 1, 0);
@@ -424,6 +446,33 @@ export class GpuCompositor {
       held = { layer, c, opacity: a.opacity };
     }
     commit();
+  }
+
+  /** Adjustment block: filters a copy of everything drawn so far and mixes it back through the block's weight (shape-adjust.ts). */
+  private adjust(host: GpuHost, out: Surf, c: Content, local: number, a: Animated, view: ViewLike, movie: Movie): void {
+    if (!hasFilters(a)) return;
+    const op = Math.min(1, Math.max(0, a.opacity));
+    if (op <= 0) return;
+    const gl = this.gl;
+    const f = this.filters(this.copyPass(out, 'u8'), a, view, movie);
+    host.adjust(c, local, view, movie, a, op, (w) => {
+      const wt = w ? this.cache.put('r:' + c.id, w) : null;
+      const p = this.prog('adjust', FS_ADJUST);
+      gl.useProgram(p.p);
+      this.setTex(p, 'uF', 0, f.tex);
+      if (wt) this.setTex(p, 'uW', 1, wt);
+      gl.uniform1i(p.loc('uHasW'), wt ? 1 : 0);
+      gl.uniform1f(p.loc('uOp'), op);
+      gl.enable(gl.BLEND);
+      gl.uniform1i(p.loc('uPass'), 0);
+      gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+      this.box(p, out, 0, 0, out.w, out.h);
+      gl.uniform1i(p.loc('uPass'), 1);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      this.box(p, out, 0, 0, out.w, out.h);
+      gl.disable(gl.BLEND);
+    });
+    this.release(f);
   }
 
   /** Target colour times the mask value read from `mask` (destination-in). */
@@ -496,7 +545,7 @@ export class GpuCompositor {
         }
         return;
       }
-      case 'text': this.text(host, target, c, m, movie, alpha, mode); return;
+      case 'text': this.text(host, target, c, m, movie, alpha, mode, textPhase(c, local, a, movie)); return;
       case 'group': {
         const unit: ViewLike = { scale: 1, ox: 0, oy: 0, width: mw, height: mh };
         const g = srcFrame(c, local);
@@ -518,17 +567,20 @@ export class GpuCompositor {
 
   /** Content the CPU draws (Warp and Distort, layer groups and masks): rasterised at the target's size and drawn as one picture. */
   private raster(host: GpuHost, target: Surf, c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, alpha: number, mode: number): void {
-    if (!this.rasterCanvas) this.rasterCanvas = new OffscreenCanvas(this.w, this.h);
-    const rc = this.rasterCanvas;
+    // one canvas per raster in a frame: reusing a canvas for a second raster before the frame ends shows the first one's
+    // picture missing (a solid under a shape vanished); the pool is capped, and past the cap canvases are shared again
+    const slot = this.rasterUsed++ % 6;
+    const rc = this.rasterPool[slot] ?? (this.rasterPool[slot] = new OffscreenCanvas(this.w, this.h));
     if (rc.width !== this.w || rc.height !== this.h) { rc.width = this.w; rc.height = this.h; }
-    const cx = rc.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    // a software canvas, like the CPU path's own, so antialiased edges (clips, strokes) come out the same pixels
+    const cx = rc.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     cx.setTransform(1, 0, 0, 1, 0, 0);
     cx.globalAlpha = 1;
     cx.globalCompositeOperation = 'source-over';
     cx.clearRect(0, 0, rc.width, rc.height);
     host.raster(c, local, view, movie, a, rc);
     const tex = this.cache.put('r:' + c.id, rc);
-    if (tex) this.quad(target, tex, IDENT, 0, 0, this.w, this.h, alpha, mode);
+    if (tex) { this.quad(target, tex, IDENT, 0, 0, this.w, this.h, alpha, mode); }
   }
 
   /**
@@ -573,16 +625,16 @@ export class GpuCompositor {
   }
 
   /** Text is drawn once into a tight picture at the density it shows at, then placed like any picture; kept while unchanged. */
-  private text(host: GpuHost, target: Surf, c: Content, m: Mat, movie: Movie, alpha: number, mode: number): void {
+  private text(host: GpuHost, target: Surf, c: Content, m: Mat, movie: Movie, alpha: number, mode: number, ph: TextPhase | null): void {
     if (!c.text) return;
     const d = Math.min(8, Math.max(0.05, Math.max(Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3]))));
     const key = 't:' + c.id;
-    const sig = `${JSON.stringify(c.text)}|${d.toFixed(3)}|${movie.width}x${movie.height}|${fontEpoch()}`;
+    const sig = `${JSON.stringify(c.text)}|${d.toFixed(3)}|${movie.width}x${movie.height}|${fontEpoch()}|${phaseSig(c, movie, ph)}`;
     let tex = this.textSig.get(key)?.sig === sig ? this.cache.peek(key) : null;
     let box = this.textSig.get(key)?.box;
     if (!tex) {
       if (!this.textCanvas) this.textCanvas = new OffscreenCanvas(8, 8);
-      box = host.textBox(c, movie, d, this.textCanvas) ?? undefined;
+      box = host.textBox(c, movie, d, this.textCanvas, ph) ?? undefined;
       tex = box ? this.cache.put(key, this.textCanvas) : null;
       if (tex && box) this.textSig.set(key, { sig, box }); else this.textSig.delete(key);
     }
@@ -657,7 +709,7 @@ export class GpuCompositor {
 
   /** Runs the content's filters in the CPU order (HSB, blur, lens, sharpen, noise); returns the surface holding the result. */
   private filters(layer: Surf, a: Animated, view: ViewLike, movie: Movie): Surf {
-    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil) return layer;
+    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil && !a.fx) return layer;
     const side = Math.max(movie.width, movie.height) * 0.05 * view.scale;
     const stages: ((src: Surf, fmt: 'u8' | 'f16') => Surf)[] = [];
     const bo = a.boil;
@@ -670,6 +722,9 @@ export class GpuCompositor {
     if (a.sharpen > 0) { const k = a.sharpen; stages.push((s, f) => this.sharpen(s, f, k)); }
     const nz = a.noise;
     if (nz && nz.amount > 0) stages.push((s, f) => this.noise(s, f, nz, view));
+    const fctx: FxCtx = { scale: view.scale, ox: view.ox, oy: view.oy, mw: movie.width, mh: movie.height };
+    for (const { e, inst } of activeFx(a.fx)) stages.push((s, f) => this.fxPass(s, f, e, inst, fctx));
+    if (!stages.length) return layer;
     let cur = layer;
     const last = stages.length - 1;
     stages.forEach((st, k) => {
@@ -678,6 +733,61 @@ export class GpuCompositor {
       cur = next;
     });
     return cur;
+  }
+
+  /** 1024 x 1 float table an effect step reads as `uTable` (a color correction's levels and curves). */
+  private fxTable: WebGLTexture | null = null;
+
+  /** Runs a registry effect (engine/fx): its steps in order, intermediate results kept for the later steps that read them. */
+  private fxPass(src: Surf, fmt: 'u8' | 'f16', e: Effect, inst: FxInst, ctx: FxCtx): Surf {
+    const gl = this.gl;
+    const steps = gpuSteps(e, inst.p, inst.o);
+    const mid: 'u8' | 'f16' = this.floatOk ? 'f16' : 'u8';
+    const res: Surf[] = [];
+    const last = steps.length - 1;
+    for (let i = 0; i <= last; i++) {
+      const st = steps[i];
+      const f = i === last ? fmt : mid;
+      if (st.kind === 'blur') {
+        res.push(this.blur(st.from < 0 ? src : res[st.from], f, st.sigma(inst.p, inst.o, ctx)));
+        continue;
+      }
+      const out = this.acquire(src.w, src.h, f, false);
+      const p = this.prog('fx|' + st.glsl, FX_HEAD + st.glsl + FX_TAIL);
+      gl.useProgram(p.p);
+      if (st.table) {
+        const t = st.table(inst.p, inst.o);
+        if (!this.fxTable) {
+          const tex = gl.createTexture() as WebGLTexture;
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, t.length / 4, 1);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+          this.fxTable = tex;
+        }
+        this.bindTex(6, this.fxTable);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, t.length / 4, 1, gl.RGBA, gl.FLOAT, t);
+        gl.uniform1i(p.loc('uTable'), 6);
+      }
+      // bound after the table: creating a texture binds it on the active unit
+      this.setTex(p, 'uSrc', 0, src.tex);
+      (st.reads ?? []).forEach((k, n) => this.setTex(p, 'uS' + k, 1 + n, res[k].tex));
+      gl.uniform1f(p.loc('uScale'), ctx.scale);
+      gl.uniform2f(p.loc('uO'), ctx.ox, ctx.oy);
+      gl.uniform2f(p.loc('uM'), ctx.mw, ctx.mh);
+      const u = st.uniforms ? st.uniforms(inst.p, inst.o, ctx) : {};
+      for (const name in u) {
+        const v = u[name], loc = p.loc(name);
+        if (typeof v === 'number') gl.uniform1f(loc, v);
+        else if (v.length === 2) gl.uniform2f(loc, v[0], v[1]);
+        else if (v.length === 3) gl.uniform3f(loc, v[0], v[1], v[2]);
+        else gl.uniform4f(loc, v[0], v[1], v[2], v[3]);
+      }
+      this.full(p, out);
+      res.push(out);
+    }
+    for (let i = 0; i < last; i++) this.release(res[i]);
+    return res[last];
   }
 
   private setTex(p: Prog, name: string, unit: number, tex: WebGLTexture): void {

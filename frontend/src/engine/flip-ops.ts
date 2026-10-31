@@ -21,8 +21,8 @@ function freshLayers(layers: DrawingLayer[]): DrawingLayer[] {
   return layers.map((l) => ({ ...l, id: ids.get(l.id)!, ...(l.parent && ids.has(l.parent) ? { parent: ids.get(l.parent) } : {}) }));
 }
 
-function copyFrame(f: FlipbookFrame): FlipbookFrame {
-  return { id: uid('f'), hold: f.hold, layers: freshLayers(f.layers) };
+export function copyFrame(f: FlipbookFrame): FlipbookFrame {
+  return { id: uid('f'), hold: f.hold, layers: freshLayers(f.layers), ...(f.name ? { name: f.name } : {}), ...(f.note ? { note: f.note } : {}) };
 }
 
 /** Longest row, in movie frames. */
@@ -36,8 +36,15 @@ function fit(c: Content): Content {
   return len > c.duration ? { ...c, duration: len } : c;
 }
 
+/** A blank frame held for the row's Shoot on setting. */
+function shot(t: FlipTrack | undefined): FlipbookFrame {
+  const f = flipFrame();
+  return t?.shoot && t.shoot > 1 ? { ...f, hold: t.shoot } : f;
+}
+
 export function insertFrame(c: Content, row: number, after: number): Content {
-  return fit(frames(c, row, (f) => [...f.slice(0, after + 1), flipFrame(), ...f.slice(after + 1)]));
+  const t = c.flip[row];
+  return fit(frames(c, row, (f) => [...f.slice(0, after + 1), shot(t), ...f.slice(after + 1)]));
 }
 
 export function duplicateFrame(c: Content, row: number, index: number): Content {
@@ -104,10 +111,10 @@ export function insertFlipTrack(c: Content, at: number, t: FlipTrack): Content {
 
 export interface FrameRef { track: string; frames: string[] }
 
-const isBlank = (f: FlipbookFrame): boolean => f.layers.every((l) => l.pixels === null && !l.group);
+export const isBlank = (f: FlipbookFrame): boolean => f.layers.every((l) => l.pixels === null && !l.group);
 
 /** `fn` gets the row as it stands after earlier refs (two refs may name the same row), not as it was in `c`. */
-function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[], cur: FlipTrack) => FlipbookFrame[] | null): Content {
+export function eachRef(c: Content, refs: FrameRef[], fn: (row: number, idx: number[], cur: FlipTrack) => FlipbookFrame[] | null): Content {
   let out = c;
   for (const ref of refs) {
     const row = out.flip.findIndex((t) => t.id === ref.track);

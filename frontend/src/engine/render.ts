@@ -7,6 +7,8 @@ import { memberMatrix, mul, ownMatrix, postMatrix, topMatrix, viewMat, type Mat 
 import { boneQuads } from './bones';
 import { gaussianBlur, hsb, lensBlur, noise, sharpen } from '../paint/filters';
 import { boil } from '../paint/boil';
+import './fx';
+import { activeFx, applyFxCpu } from './fx/registry';
 import type { Raster } from '../paint/types';
 import { hasTree } from '../paint/layer-tree';
 import { drawLayerTree } from './layer-draw';
@@ -17,10 +19,16 @@ import { GpuCompositor, type GpuHost } from './gpu/compositor';
 import { probeGpu, type ProbeResult } from './gpu/probe';
 import { liveSet } from './gpu/live';
 import { layoutText, paintText } from './text-layout';
+import { textPhase } from './text-phase';
+import type { TextPhase } from './text-anim';
 import { SparseIndex } from './sparse';
 import { srcFrame } from './retime';
 import { transitionAt, tracksHaveTransition } from './transitions';
 import { mixTransition } from './transition-draw';
+import { paintAdjustGlyph, paintShape } from './shape-draw';
+import { resolveShape } from './shape';
+import { adjustWeight, applyAdjustCpu, type AdjustHost } from './shape-adjust';
+import { motionCfg, poseMoves, subOffsets } from './fx/motion-blur';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type Surface = OffscreenCanvas;
@@ -181,13 +189,14 @@ export class Renderer {
       },
       direct: (c, a, tracks, i, frame) => this.direct(c, a, tracks, i, frame),
       cpu: (c, a, local) => this.needsCpu(c, a, local),
-      textBox: (c, movie, density, into) => this.textBox(c, movie, density, into),
+      textBox: (c, movie, density, into, ph) => this.textBox(c, movie, density, into, ph),
       raster: (c, local, view, movie, a, into) => { this.drawContent(into.getContext('2d') as OffscreenCanvasRenderingContext2D, c, local, view as View, movie, a); },
+      adjust: (c, local, view, movie, a, op, use) => { adjustWeight(this.adjustHost(), c, local, view as View, movie, a, op, use); },
     });
   }
 
   /** Draws a Text content tightly into `into` at `density` pixels per movie pixel; returns the movie-space box it covers. */
-  private textBox(c: Content, movie: Movie, density: number, into: OffscreenCanvas): { x: number; y: number; w: number; h: number } | null {
+  private textBox(c: Content, movie: Movie, density: number, into: OffscreenCanvas, phase?: TextPhase | null): { x: number; y: number; w: number; h: number } | null {
     const s = c.text;
     if (!s || !s.text) return null;
     const mc = into.getContext('2d') as OffscreenCanvasRenderingContext2D;
@@ -199,7 +208,7 @@ export class Renderer {
     mc.clearRect(0, 0, pw, ph);
     const k = pw / w, kv = ph / h;
     mc.setTransform(k, 0, 0, kv, -x * k, -y * kv);
-    paintText(mc, s, lay);
+    paintText(mc, s, lay, phase);
     return { x, y, w, h };
   }
 
@@ -207,7 +216,11 @@ export class Renderer {
   private needsCpu(c: Content, a: Animated, local: number): boolean {
     // a canvas wider than a GPU texture can be goes through the CPU
     if (c.canvas && Math.max(c.canvas.w, c.canvas.h) > MAX_CANVAS_SIDE / 2) return true;
+    // motion blur averages sub-frame poses of the content: one CPU raster on every path (below, motionDraw)
+    if (this.mbPlan(c, local, a)) return true;
     switch (c.kind) {
+      // shapes and solids are one CPU raster (shape-draw.ts) on every path, so the GPU shows the identical picture
+      case 'shape': case 'solid': return true;
       // layer trees and row masks are drawn by the GPU compositor itself (gpu/tree.ts)
       case 'group': {
         const g = srcFrame(c, local);
@@ -405,6 +418,7 @@ export class Renderer {
       mv = this.noCam as Movie;
     }
     this.frameNow = frame;
+    this.mbMovie = mv;
     this.incomplete = false;
     this.nest.length = 0;
     this.flat = null;
@@ -417,11 +431,113 @@ export class Renderer {
     this.ph = Math.max(1, Math.round(view.height));
     this.gen++;
     this.frameNow = frame;
+    this.mbMovie = movie;
     this.incomplete = false;
     this.nest.length = 0;
     this.flat = null;
     try { this.composeTracks(ctx, movie.tracks, frame, view, movie); } finally { this.frameNow = -1; }
   }
+
+  /** Motion blur (engine/fx/motion-blur.ts): the movie being drawn, a re-entry guard and the float accumulator. */
+  private mbMovie: Movie | null = null;
+  private mbBusy = false;
+  private mbAcc = new Float32Array(0);
+
+  /** The sub-frame offsets to average for this content, or null when it has no motion blur or does not move in the shutter. */
+  private mbPlan(c: Content, local: number, a: Animated): number[] | null {
+    const movie = this.mbMovie;
+    if (!movie || this.mbBusy || this.frameNow < 0 || c.kind === 'audio' || this.flat === c) return null;
+    const cfg = motionCfg(movie, a);
+    if (!cfg) return null;
+    const offs = subOffsets(cfg);
+    const top = this.nest.length ? this.nest[this.nest.length - 1] : 0;
+    const unit = { scale: 1, ox: 0, oy: 0 };
+    const mat = (dt: number, aa: Animated): Mat => (this.nest.length ? memberMatrix(movie, c, top + dt, aa) : topMatrix(movie, c, this.frameNow + dt, aa, unit));
+    const a0 = animate(c, local + offs[0]);
+    const m0 = mat(offs[0], a0);
+    let moved = false, travel = 0;
+    // the farthest a corner of a movie-sized probe travels inside the shutter: it sets how many samples keep the ghost steps under a few pixels
+    const hw = movie.width / 2, hh = movie.height / 2;
+    for (let i = 1; i < offs.length; i++) {
+      const ai = animate(c, local + offs[i]);
+      const mi = mat(offs[i], ai);
+      if (poseMoves(m0, mi, a0, ai)) moved = true;
+      for (const [x, y] of [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]) {
+        const dx = (mi[0] - m0[0]) * x + (mi[2] - m0[2]) * y + mi[4] - m0[4], dy = (mi[1] - m0[1]) * x + (mi[3] - m0[3]) * y + mi[5] - m0[5];
+        travel = Math.max(travel, Math.hypot(dx, dy));
+      }
+    }
+    if (!moved) return null;
+    const px = travel * this.mbPxScale;
+    const n = Math.max(2, Math.min(cfg.samples, Math.ceil(px / 2)));
+    return n === cfg.samples ? offs : subOffsets({ shutter: cfg.shutter, samples: n });
+  }
+
+  /** Surface pixels per movie pixel of the frame being drawn (set by drawFrameInner). */
+  private mbPxScale = 1;
+
+  /** Draws the content at each sub-frame pose and writes the average over `ctx`; false when it does not blur. */
+  private motionDraw(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie, t: Animated): boolean {
+    const planned = this.mbPlan(c, local, t);
+    if (!planned) return false;
+    // each sample reads the whole canvas back: the live view uses at most 5 evenly spread samples, exports use all
+    const offs = !this.exact && planned.length > 5 ? Array.from({ length: 5 }, (_, i) => planned[Math.min(planned.length - 1, Math.round(((i + 0.5) * planned.length) / 5 - 0.5))]) : planned;
+    const w = ctx.canvas.width, h = ctx.canvas.height, n4 = w * h * 4;
+    const s = this.surface(w, h);
+    const sc = s.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+    if (this.mbAcc.length < n4) this.mbAcc = new Float32Array(n4);
+    const acc = this.mbAcc;
+    acc.fill(0, 0, n4);
+    const base = ctx.getTransform();
+    const frame0 = this.frameNow;
+    const top = this.nest.length ? this.nest.length - 1 : -1;
+    const top0 = top >= 0 ? this.nest[top] : 0;
+    this.mbBusy = true;
+    try {
+      for (const dt of offs) {
+        sc.setTransform(1, 0, 0, 1, 0, 0);
+        sc.globalAlpha = 1;
+        sc.globalCompositeOperation = 'source-over';
+        sc.clearRect(0, 0, w, h);
+        sc.setTransform(base);
+        this.frameNow = frame0 + dt;
+        if (top >= 0) this.nest[top] = top0 + dt;
+        this.drawContent(sc, c, local, view, movie, animate(c, local + dt));
+        sc.setTransform(1, 0, 0, 1, 0, 0);
+        const d = sc.getImageData(0, 0, w, h).data;
+        for (let i = 0; i < n4; i += 4) {
+          const al = d[i + 3];
+          if (al === 0) continue;
+          const k = al / 255;
+          acc[i] += d[i] * k; acc[i + 1] += d[i + 1] * k; acc[i + 2] += d[i + 2] * k; acc[i + 3] += al;
+        }
+      }
+    } finally {
+      this.mbBusy = false;
+      this.frameNow = frame0;
+      if (top >= 0) this.nest[top] = top0;
+    }
+    const out = new ImageData(w, h);
+    const o = out.data, inv = 1 / offs.length;
+    for (let i = 0; i < n4; i += 4) {
+      const al = acc[i + 3];
+      if (al <= 0) continue;
+      const k = 255 / al;
+      o[i] = acc[i] * k + 0.5; o[i + 1] = acc[i + 1] * k + 0.5; o[i + 2] = acc[i + 2] * k + 0.5; o[i + 3] = al * inv + 0.5;
+    }
+    sc.clearRect(0, 0, w, h);
+    sc.putImageData(out, 0, 0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(s, 0, 0);
+    ctx.restore();
+    this.release(s);
+    // the accumulator is a full-canvas float array (up to 265 MB at 3840 px): freed once motion blur has not run for a while
+    if (this.mbIdle) clearTimeout(this.mbIdle);
+    this.mbIdle = setTimeout(() => { this.mbIdle = 0; if (!this.mbBusy) this.mbAcc = new Float32Array(0); }, 3000) as unknown as number;
+    return true;
+  }
+  private mbIdle = 0;
 
   /** Per-picture ink bands: a layer draw fills only the pixels near ink (engine/sparse.ts). */
   private readonly sparse = new SparseIndex();
@@ -437,6 +553,7 @@ export class Renderer {
   private drawFrameInner(ctx: Ctx, movie: Movie, frame: number, view: View, opts: { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null; keepAlpha?: boolean }): void {
     this.pw =Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
+    this.mbPxScale = view.scale;
     this.gen++;
     const gpu = this.gpuCompose(movie, frame, view);
     ctx.save();
@@ -500,7 +617,13 @@ export class Renderer {
       if (!c || c.opacity <= 0) continue;
       const a = animate(c, frame - c.start);
       if (a.opacity <= 0) continue;
-      const tx = tracks === movie.tracks && t.content.length > 1 ? transitionAt(t.content, frame) : null;
+      if (c.kind === 'adjust') {
+        // filters everything drawn on the tracks below (shape-adjust.ts)
+        commit();
+        applyAdjustCpu(this.adjustHost(), out, c, a, frame - c.start, view, movie);
+        continue;
+      }
+      const tx = t.content.length > 1 ? transitionAt(t.content, frame) : null;
       if (tx) {
         commit();
         held = { layer: this.transitionLayer(tx, view, movie), c: tx.b, opacity: 1 };
@@ -555,7 +678,7 @@ export class Renderer {
     // a Passthrough group has no surface of its own: its members blend with the tracks beneath
     const through = c.kind === 'group' && c.blend === 'passthrough';
     if (c.mask !== 'none' || (c.blend !== 'normal' && !through) || a.opacity < 1) return false;
-    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens || a.boil || a.warp || a.distort || a.bones) return false;
+    if (a.blur || a.sharpen || a.noise || a.hsb || a.lens || a.boil || a.warp || a.distort || a.bones || a.fx) return false;
     if (through) {
       for (let j = i - 1; j >= 0; j--) {
         if (tracks[j].hidden) continue;
@@ -565,7 +688,7 @@ export class Renderer {
       return true;
     }
     if (c.kind === 'drawing') { if (c.layers.some((l) => l.blend !== 'normal' || l.opacity < 1)) return false; }
-    else if (c.kind !== 'image' && c.kind !== 'text' && c.kind !== 'video') return false;
+    else if (c.kind !== 'image' && c.kind !== 'text' && c.kind !== 'video' && c.kind !== 'shape' && c.kind !== 'solid') return false;
     for (let j = i - 1; j >= 0; j--) {
       if (tracks[j].hidden) continue;
       const n = tracks[j].content.find((x) => frame >= x.start && frame < end(x));
@@ -599,6 +722,7 @@ export class Renderer {
 
   drawContent(ctx: OffscreenCanvasRenderingContext2D, c: Content, local: number, view: View, movie: Movie, anim?: Animated): void {
     const t = anim ?? animate(c, local);
+    if (!this.mbBusy && this.motionDraw(ctx, c, local, view, movie, t)) return;
     if (t.bones && c.rig) {
       // bones first: drawn flat, skinned to the posed bones; Warp / Distort then bend that result (bones.ts)
       const fs = flatScale(movie, view);
@@ -672,8 +796,14 @@ export class Renderer {
       case 'video': this.drawVideoContent(ctx, c, local, movie); break;
       case 'drawing': this.drawLayers(ctx, c.layers, movie, canvasOf(c, movie)); break;
       case 'flipbook': this.drawFlipbook(ctx, c, srcFrame(c, local), movie); break;
-      case 'text': this.drawText(ctx, c, movie); break;
+      case 'text': this.drawText(ctx, c, movie, textPhase(c, local, t, movie)); break;
       case 'group': this.drawGroup(ctx, c, srcFrame(c, local), movie); break;
+      case 'shape': case 'solid': if (c.shape) paintShape(ctx, c.shape, resolveShape(c.shape, t.shape), movie, false, c.kind === 'solid'); break;
+      case 'adjust':
+        // the mask outline (when set) in white; a thumbnail shows a light and dark tile instead
+        if (this.frameNow < 0) paintAdjustGlyph(ctx, movie.width, movie.height);
+        else if (c.shape) paintShape(ctx, c.shape, resolveShape(c.shape, t.shape), movie, true);
+        break;
       default: break;
     }
     ctx.restore();
@@ -743,7 +873,7 @@ export class Renderer {
         };
         prep(c, f - c.start);
         // the other side of a running transition is drawn too: it must be decoded for this frame
-        const tx = tracks === movie.tracks ? transitionAt(t.content, f) : null;
+        const tx = t.content.length > 1 ? transitionAt(t.content, f) : null;
         if (tx) { if (c === tx.a) prep(tx.b, tx.bLocal); else prep(tx.a, tx.aLocal); }
       }
     };
@@ -843,11 +973,23 @@ export class Renderer {
     }
   }
 
+  private adjustHostObj: AdjustHost | null = null;
+
+  /** What an Adjustment block borrows from this renderer (engine/shape-adjust.ts). */
+  private adjustHost(): AdjustHost {
+    return this.adjustHostObj ?? (this.adjustHostObj = {
+      surface: () => this.surface(),
+      release: (s) => { this.release(s); },
+      filters: (s, a, view, movie) => { this.applyFilters(s, a, view as View, movie); },
+      draw: (ctx, c, local, view, movie, a) => { this.drawContent(ctx, c, local, view as View, movie, a); },
+    });
+  }
+
   /** Applies the live filters of a content (its keyframed Blur, Sharpen, Noise, HSB and Lens Blur) to its drawn surface. */
   private applyFilters(s: Surface, a: Animated, view: View, movie: Movie): void {
-    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil) return;
+    if (!a.blur && !a.sharpen && !a.noise && !a.hsb && !a.lens && !a.boil && !a.fx) return;
     const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    const onlyBlur = a.blur > 0 && !a.boil && !a.sharpen && !(a.noise && a.noise.amount > 0) && !a.hsb && !(a.lens && a.lens.radius > 0);
+    const onlyBlur = a.blur > 0 && !a.boil && !a.sharpen && !(a.noise && a.noise.amount > 0) && !a.hsb && !(a.lens && a.lens.radius > 0) && !a.fx;
     if (onlyBlur && CANVAS_FILTER) {
       // the browser's own blur runs on the GPU: about 60 ms a frame cheaper than the CPU path at 1080p
       const t = this.surface();
@@ -875,14 +1017,42 @@ export class Renderer {
       const n = a.noise;
       step((src, dst) => noise(src, dst, { ...n, scale: Math.max(1, n.scale * view.scale), offsetX: n.offsetX * view.scale, offsetY: n.offsetY * view.scale }, 7));
     }
+    if (a.fx) {
+      // registry effects (engine/fx), after the built-in filters, in lane order
+      const act = activeFx(a.fx);
+      if (act.length) cur = { width: cur.width, height: cur.height, data: applyFxCpu(act, cur.data, s.width, s.height, { scale: view.scale, ox: view.ox, oy: view.oy, mw: movie.width, mh: movie.height }) };
+    }
     if (cur.data !== img.data) img.data.set(cur.data);
     sc.putImageData(img, 0, 0);
   }
 
-  private drawText(ctx: OffscreenCanvasRenderingContext2D, c: Content, movie: Movie): void {
+  private drawText(ctx: OffscreenCanvasRenderingContext2D, c: Content, movie: Movie, ph: TextPhase | null): void {
     const s = c.text;
     if (!s) return;
-    paintText(ctx, s, layoutText(s, movie));
+    paintText(ctx, s, layoutText(s, movie), ph);
+  }
+
+  /** A running transition between two members of a group, drawn onto the group's own context (its transform stays in force). */
+  private drawGroupTransition(ctx: OffscreenCanvasRenderingContext2D, tx: import('./transitions').ActiveTransition, unit: View, movie: Movie): void {
+    const m = ctx.getTransform();
+    const side = (c: Content, local: number): { s: Surface; o: number } => {
+      const a = animate(c, local);
+      const s = this.surface(ctx.canvas.width, ctx.canvas.height);
+      const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      sc.setTransform(m);
+      this.drawContent(sc, c, local, unit, movie, a);
+      return { s, o: Math.max(0, Math.min(1, a.opacity)) };
+    };
+    const A = side(tx.a, tx.aLocal), B = side(tx.b, tx.bLocal);
+    const out = this.surface(ctx.canvas.width, ctx.canvas.height);
+    mixTransition(out.getContext('2d') as OffscreenCanvasRenderingContext2D, A.s, B.s, A.o, B.o, tx, { x: m.e, y: m.f, w: movie.width * m.a, h: movie.height * m.d });
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(out, 0, 0);
+    ctx.restore();
+    this.release(A.s);
+    this.release(B.s);
+    this.release(out);
   }
 
   private drawGroup(ctx: OffscreenCanvasRenderingContext2D, g: Content, local: number, movie: Movie): void {
@@ -896,6 +1066,9 @@ export class Renderer {
         if (!c || c.opacity <= 0) continue;
         const a = animate(c, local - c.start);
         if (a.opacity <= 0) continue;
+        // a transition between two touching members: both drawn on surfaces in the group's space and mixed (engine/transition-draw.ts)
+        const tx = t.content.length > 1 ? transitionAt(t.content, local) : null;
+        if (tx) { this.drawGroupTransition(ctx, tx, unit, movie); continue; }
         // opacity multiplies down the chain of groups (and keyed opacity counts), a normal member keeps the group's blend
         const alpha = ctx.globalAlpha * a.opacity;
         if (isPixelBlend(c.blend)) {

@@ -4,7 +4,7 @@
 // Pure, no DOM.
 import type { Content, Ease, Key, KeyKind, KeyLane, Movie } from './types';
 import { end, locate, sourceFrames } from './model';
-import { KEY_KINDS, channelSpec, kindSpec, laneOf } from './keys';
+import { channelSpec, kindSpec, laneOf, laneRank } from './keys';
 import { growEnd } from './retime';
 
 export interface Take {
@@ -177,7 +177,6 @@ export function reduceKeys(keys: Key[], tolerance: number): Key[] {
   return out;
 }
 
-const KIND_ORDER = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
 /**
  * Longest duration content `id` may grow to when a take outruns it: up to the next block on its track, the
@@ -215,9 +214,11 @@ export function applyTake(c: Content, take: Take, ease: Ease = 'linear', room = 
   }
   if (!changed) return c;
   const lane: KeyLane = existing ? { ...existing, channels } : { kind: take.kind, expanded: false, channels, options };
-  const rest = c.keys.filter((l) => l.kind !== take.kind);
-  rest.push(lane);
-  rest.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0));
+  const at = c.keys.findIndex((l) => l.kind === take.kind);
+  const inPlace = at >= 0 && !!kindSpec(take.kind).fx;
+  const rest = inPlace ? c.keys.map((l, i) => (i === at ? lane : l)) : c.keys.filter((l) => l.kind !== take.kind);
+  if (!inPlace) rest.push(lane);
+  rest.sort((a, b) => laneRank(a.kind) - laneRank(b.kind));
   // content the take outruns grows to meet it, as far as the neighbours and the movie allow
   return { ...c, keys: rest, duration: dur };
 }

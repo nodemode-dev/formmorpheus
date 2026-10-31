@@ -2,6 +2,8 @@
 // `frames` instead of rows) so no code path meets undefined. Runs on a freshly parsed movie, in memory only: the
 // file on disk stays as it was until the person saves. Pure, no DOM.
 import { FORMAT_VERSION, type Movie } from './types';
+import { hasKind } from './keys';
+import './fx/index'; // registers the effect lane kinds before lanes are checked
 
 type Obj = Record<string, unknown>;
 
@@ -29,8 +31,13 @@ function lane(l: unknown): Obj | null {
   return l;
 }
 
-function lanes(v: unknown): Obj[] {
-  return arr(v).map(lane).filter((l): l is Obj => l !== null);
+/** Splits lanes into the ones this build knows and the rest (from a newer file); the rest ride along under `unknownLanes`. */
+function laneSplit(o: Obj): void {
+  const all = [...arr(o.keys), ...arr(o.unknownLanes)].map(lane).filter((l): l is Obj => l !== null);
+  const known = all.filter((l) => hasKind(l.kind));
+  const rest = all.filter((l) => !hasKind(l.kind));
+  o.keys = known;
+  if (rest.length) o.unknownLanes = rest; else delete o.unknownLanes;
 }
 
 function layer(l: unknown, i: number): Obj | null {
@@ -93,11 +100,32 @@ function content(c: unknown): Obj | null {
   c.flip = arr(c.flip).map(flipRow).filter((t): t is Obj => t !== null);
   if (kind === 'flipbook' && !(c.flip as Obj[]).length) c.flip = [flipRow({ frames: [{ layers: [{}] }] }, 0) as Obj];
   c.onion = isObj(c.onion) ? onion(c.onion) : null;
-  c.keys = lanes(c.keys);
+  laneSplit(c);
   if (!isObj(c.text)) c.text = kind === 'text' ? { text: 'Text', font: 'Inter', size: 160, weight: 600, color: '#111111', align: 'center' } : null;
   c.tracks = trackList(c.tracks);
   c.volume = num(c.volume, 1);
+  shapeDef(c, kind);
   return c;
+}
+
+/** Shape and Solid always carry a valid outline; an Adjustment's mask is optional; other kinds drop a stray one. */
+function shapeDef(c: Obj, kind: string): void {
+  if (kind !== 'shape' && kind !== 'solid' && kind !== 'adjust') { delete c.shape; return; }
+  const s = c.shape;
+  if (!isObj(s)) {
+    delete c.shape;
+    if (kind !== 'adjust') c.shape = kind === 'solid'
+      ? { type: 'rect', w: 0, h: 0, fill: { kind: 'solid', color: '#3a8bff' }, stroke: null }
+      : { type: 'rect', w: 400, h: 300, fill: { kind: 'solid', color: '#3a8bff' }, stroke: null };
+    return;
+  }
+  const types = ['rect', 'ellipse', 'polygon', 'star', 'line', 'arrow', 'path'];
+  if (!types.includes(str(s.type, ''))) s.type = 'rect';
+  s.w = num(s.w, 400);
+  s.h = num(s.h, 300);
+  if (!isObj(s.fill)) s.fill = null;
+  if (!isObj(s.stroke)) s.stroke = null;
+  if (s.nodes !== undefined) s.nodes = arr(s.nodes).filter(isObj).map((n) => ({ x: num(n.x, 0), y: num(n.y, 0), ix: num(n.ix, 0), iy: num(n.iy, 0), ox: num(n.ox, 0), oy: num(n.oy, 0) }));
 }
 
 function onion(o: Obj): Obj {
@@ -138,7 +166,7 @@ export function normalizeMovie(raw: unknown): Movie {
   m.onion = onion(isObj(m.onion) ? m.onion : {});
   m.tracks = trackList(m.tracks);
   m.assets = isObj(m.assets) ? m.assets : {};
-  if (isObj(m.camera)) m.camera = { ...m.camera, keys: lanes(m.camera.keys) };
+  if (isObj(m.camera)) { const cam: Obj = { ...m.camera }; laneSplit(cam); m.camera = cam; }
   else delete m.camera;
   let last = 0;
   const walk = (ts: Obj[]): void => { for (const t of ts) for (const c of t.content as Obj[]) { last = Math.max(last, (c.start as number) + (c.duration as number)); walk(c.tracks as Obj[]); } };

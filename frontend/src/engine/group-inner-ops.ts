@@ -1,7 +1,8 @@
 // Edits of content inside a group (the Timeline's in-place group expand): move and trim reuse the top-level
 // ops by treating the group's own tracks as a movie of their own. Pure, no DOM.
 import * as ops from './ops';
-import type { Content, Movie, Track } from './types';
+import type { Content, Movie, Track, Transition } from './types';
+import { previousOf } from './transitions';
 
 /** The group whose tracks directly hold `id`, anywhere in the movie. */
 export function ownerGroup(tracks: Track[], id: string): Content | null {
@@ -37,4 +38,26 @@ export function moveInner(movie: Movie, ids: string[], deltaFrames: number, toTr
 
 export function trimInner(movie: Movie, id: string, edge: 'start' | 'end', deltaFrames: number): Movie {
   return viaGroup(movie, id, (m) => ops.trimContent(m, id, edge, deltaFrames, false));
+}
+
+/** The block inside `g` that starts a cut (it touches a block before it on its track) nearest group frame `local`, within `reach` frames. */
+export function cutNear(g: Content, local: number, reach = 12): Content | null {
+  let best: Content | null = null, dist = reach + 1;
+  for (const t of g.tracks) {
+    for (const b of t.content) {
+      if (!previousOf(t.content, b)) continue;
+      const d = Math.abs(b.start - local);
+      if (d < dist) { dist = d; best = b; }
+    }
+  }
+  return best;
+}
+
+/** Sets (or, with null, removes) the transition into block `innerId` of a group, exactly as on a top-level track. */
+export function setInnerTransition(movie: Movie, innerId: string, tr: Transition | null): Movie {
+  return viaGroup(movie, innerId, (m) => ops.updateContent(m, innerId, (c) => {
+    const n: Content = { ...c };
+    if (tr) n.transition = tr; else delete n.transition;
+    return n;
+  }));
 }

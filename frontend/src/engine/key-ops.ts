@@ -1,10 +1,10 @@
 // Pure keyframe edits: every function returns a new Content (structural sharing) and never mutates.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
-import { KEY_KINDS, baseValues, boneSpec, easeAt, evalLane, kindSpec, laneFrames, laneOf, warpSize } from './keys';
+import { baseValues, boneSpec, easeAt, evalLane, laneRank, kindSpec, laneFrames, laneOf, warpSize } from './keys';
 import { WARP_MAX, WARP_MIN, meshOffset, warpId } from './warp-draw';
 import { mirrorSpan, withEase } from './graph-ops';
+import { srcFrame } from './retime';
 
-const KIND_ORDER = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
 function defaultOptions(kind: KeyKind): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
@@ -15,10 +15,14 @@ function defaultOptions(kind: KeyKind): Record<string, string | number | boolean
 
 /** Replace (or insert) a lane, keeping lanes in KEY_KINDS order. A null lane removes it. */
 function withLane(c: Content, kind: KeyKind, lane: KeyLane | null): Content {
-  const rest = (c.keys ?? []).filter((l) => l.kind !== kind);
+  const old = c.keys ?? [];
+  const at = old.findIndex((l) => l.kind === kind);
+  // an effect lane that already exists keeps its place in the stack
+  if (lane && at >= 0 && kindSpec(kind).fx) return { ...c, keys: old.map((l, i) => (i === at ? lane : l)) };
+  const rest = old.filter((l) => l.kind !== kind);
   if (lane) {
     rest.push(lane);
-    rest.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0));
+    rest.sort((a, b) => laneRank(a.kind) - laneRank(b.kind));
   }
   return { ...c, keys: rest };
 }
@@ -95,9 +99,10 @@ export function addLane(c: Content, kind: KeyKind, at: number, keyAtStart: boole
   const frame = Math.round(at);
   const existing = laneOf(c, kind);
   if (existing) return setKeys(c, kind, frame, evalLane(c, existing, frame));
-  const base = baseValues(c, kind);
+  // Time Remap starts from what the block shows now: source frame at each key, so adding the lane changes nothing
+  const base = kind === 'time' ? { src: srcFrame(c, frame) } : baseValues(c, kind);
   let out = setKeys(c, kind, frame, base, ease);
-  if (keyAtStart && frame > 0) out = setKeys(out, kind, 0, base, ease);
+  if (keyAtStart && frame > 0) out = setKeys(out, kind, 0, kind === 'time' ? { src: srcFrame(c, 0) } : base, ease);
   return out;
 }
 

@@ -5,6 +5,7 @@ import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
 import { boilSeed } from '../paint/boil';
 import { pathAt, type Pt } from './path';
 import { DISTORT_IDS, WARP_DEFAULT, WARP_MAX, WARP_MIN, warpId } from './warp-draw';
+import { SHAPE_CHANNELS, relevantChannels, shapeBase } from './shape';
 
 export interface ChannelSpec {
   id: string;
@@ -17,16 +18,26 @@ export interface ChannelSpec {
   /** Multiply the stored value by this for display (100 for percent). */
   display: number;
   def: number;
+  /** Registry effects: the section heading the row sits under, Advanced placement, and the colour a swatch edits. */
+  group?: string;
+  adv?: boolean;
+  swatch?: string;
 }
 
 export interface KindSpec {
   kind: KeyKind;
   label: string;
-  group: 'motion' | 'filter' | 'audio' | 'camera';
+  group: 'motion' | 'filter' | 'audio' | 'camera' | 'shape';
   icon: string;
   channels: ChannelSpec[];
-  options?: { id: string; label: string; choices?: string[]; def: string | number | boolean }[];
+  options?: { id: string; label: string; choices?: string[]; def: string | number | boolean; hidden?: boolean }[];
+  /** A registry effect (engine/fx/registry.ts); `custom` names an extra control its card draws. */
+  fx?: boolean;
+  custom?: string;
 }
+
+/** One registry effect on a content at a frame: its id, keyed values and lane options. */
+export interface FxInst { id: string; p: Record<string, number>; o: Record<string, string | number | boolean> }
 
 const svg = (body: string): string =>
   `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -51,6 +62,9 @@ const ICONS: Record<KeyKind, string> = {
   ),
   boil: svg('<path d="M3.5 9c2-2.5 3.5 2.5 5.5 0s3.5 2.5 5.5 0 3.5 2.5 5.5 0"/><path d="M3.5 15c2-2.5 3.5 2.5 5.5 0s3.5 2.5 5.5 0 3.5 2.5 5.5 0" opacity=".5"/>'),
   volume: svg('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'),
+  shape: svg('<rect x="3.5" y="9.5" width="9" height="9" rx="1.5"/><circle cx="15.5" cy="8.5" r="5"/>'),
+  time: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/><path d="M3.5 19.5l3-2M20.5 19.5l-3-2" opacity=".6"/>'),
+  textanim: svg('<path d="M4.5 18.5l4-12 4 12M6 14.5h5"/><path d="M15.5 8.5h4M15.5 12.5h4M15.5 16.5h2.5" opacity=".7"/>'),
 };
 
 const ch = (
@@ -218,12 +232,67 @@ export const KEY_KINDS: KindSpec[] = [
     icon: ICONS.volume,
     channels: [ch('level', 'Level', 'Level', 0, 4, 0.01, '%', 100, 1), ch('pan', 'Pan', 'Pan', -1, 1, 0.01, '%', 100, 0)],
   },
+  {
+    // Text only: keys the progress of the build on / build off / typewriter animators (0 hidden, 1 built); no lane, they run on the block's own time
+    kind: 'textanim',
+    label: 'Text Animation',
+    group: 'motion',
+    icon: ICONS.textanim,
+    channels: [
+      ch('in', 'Build on', 'On', 0, 1, 0.01, '%', 100, 1),
+      ch('out', 'Build off', 'Off', 0, 1, 0.01, '%', 100, 0),
+      ch('type', 'Typewriter', 'Type', 0, 1, 0.01, '%', 100, 1),
+    ],
+  },
+  {
+    // Video, Flipbook and Group only: the source frame shown at each block frame, eased between keys (engine/retime.ts srcFrame); it replaces Speed and Reverse
+    kind: 'time',
+    label: 'Time Remap',
+    group: 'motion',
+    icon: ICONS.time,
+    channels: [ch('src', 'Source frame', 'Src', 0, 20000, 1, '', 1, 0)],
+  },
+  {
+    // Shape, Solid and an Adjustment's mask: its card is the Shape panel (ui/shape-panel.ts)
+    kind: 'shape',
+    label: 'Shape',
+    group: 'shape',
+    icon: ICONS.shape,
+    channels: SHAPE_CHANNELS.map((s) => ({ ...s })),
+  },
 ];
 
 const SPEC_BY_KIND = new Map<KeyKind, KindSpec>(KEY_KINDS.map((k) => [k.kind, k]));
+const ORDER_OF = new Map<KeyKind, number>(KEY_KINDS.map((k, i) => [k.kind, i]));
 
+/** Adds a kind of lane after the built-in ones (engine/fx/registry.ts calls this once per effect). */
+export function registerKind(spec: KindSpec): void {
+  if (SPEC_BY_KIND.has(spec.kind)) return;
+  ORDER_OF.set(spec.kind, KEY_KINDS.length);
+  KEY_KINDS.push(spec);
+  SPEC_BY_KIND.set(spec.kind, spec);
+}
+
+/** Whether this build knows a lane kind (a newer file may carry kinds it does not). */
+export function hasKind(kind: unknown): kind is KeyKind {
+  return typeof kind === 'string' && SPEC_BY_KIND.has(kind as KeyKind);
+}
+
+/** Position of a kind in KEY_KINDS (lanes keep this order); kinds added later come after the built-in ones. */
+export function kindOrder(kind: KeyKind): number {
+  return ORDER_OF.get(kind) ?? 0;
+}
+
+/** Sort rank of a lane: built-in kinds by KEY_KINDS position; every registry effect shares one rank after them, so effects keep the order the person gave them (a stable sort leaves them where they are). */
+export function laneRank(kind: KeyKind): number {
+  return SPEC_BY_KIND.get(kind)?.fx ? 1e6 : kindOrder(kind);
+}
+
+const UNKNOWN_SPEC: KindSpec = { kind: 'move', label: 'Unknown', icon: '', group: 'filter', channels: [] } as unknown as KindSpec;
+
+/** The spec of a lane kind; a kind this build lacks (never kept past load) gets an empty spec instead of undefined. */
 export function kindSpec(kind: KeyKind): KindSpec {
-  return SPEC_BY_KIND.get(kind) as KindSpec;
+  return SPEC_BY_KIND.get(kind) ?? UNKNOWN_SPEC;
 }
 
 /** Spec of a bone's rotation channel (degrees relative to rest); the id is the bone's id ("b3" reads "Bone 3"). */
@@ -260,6 +329,12 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
     out.pan = c.pan ?? 0;
     return out;
   }
+  if (kind === 'shape') {
+    // a new lane keys the parameters this shape type has; the others are keyed on demand
+    const all = shapeBase(c.shape);
+    for (const id of relevantChannels(c.shape)) out[id] = all[id];
+    return out;
+  }
   const spec = kindSpec(kind);
   const ids = kind === 'warp' ? new Set(warpChannelIds(warpSize(laneOf(c, 'warp')))) : null;
   for (const ch of spec.channels) if (!ids || ids.has(ch.id)) out[ch.id] = ch.def;
@@ -282,6 +357,7 @@ export function warpChannelIds(n: number): string[] {
 export function laneChannels(lane: KeyLane): ChannelSpec[] {
   if (lane.kind === 'bones') return Object.keys(lane.channels).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(boneSpec);
   const spec = kindSpec(lane.kind).channels;
+  if (lane.kind === 'shape') return spec.filter((s) => lane.channels[s.id]?.length);
   if (lane.kind !== 'warp') return spec;
   const ids = new Set(warpChannelIds(warpSize(lane)));
   return spec.filter((s) => ids.has(s.id));
@@ -480,6 +556,12 @@ export interface Animated {
   resample?: 'nearest' | 'high';
   /** Bone rotations by bone id (degrees from rest) when the content has a rig and any bone is turned, else null. */
   bones: Record<string, number> | null;
+  /** Registry effects (engine/fx) in lane order; absent when the content has none. */
+  fx?: FxInst[] | null;
+  /** Shape lane: the keyed channels at this frame (engine/shape.ts resolveShape lays them over the saved values). */
+  shape?: Record<string, number>;
+  /** Text Animation lane: the keyed progress of the build on, build off and typewriter animators (engine/text-phase.ts). */
+  textAnim?: { in: number; out: number; type: number };
 }
 
 /** Evaluate one channel of a lane, falling back to `base` when it has no keys. */
@@ -632,6 +714,29 @@ function animateRaw(c: Content, local: number): Animated {
         a.volume = chv(lane, 'level', local, c.volume);
         a.pan = chv(lane, 'pan', local, c.pan ?? 0);
         break;
+      case 'textanim':
+        a.textAnim = { in: chv(lane, 'in', local, 1), out: chv(lane, 'out', local, 0), type: chv(lane, 'type', local, 1) };
+        break;
+      case 'shape': {
+        const sv: Record<string, number> = {};
+        for (const id in lane.channels) {
+          const keys = lane.channels[id];
+          if (keys.length) { const v = evalChannel(keys, local); if (v !== null && Number.isFinite(v)) sv[id] = v; }
+        }
+        a.shape = sv;
+        break;
+      }
+      default: {
+        // a registry effect: every channel at this frame, the lane options over the defaults
+        const spec = SPEC_BY_KIND.get(lane.kind);
+        if (!spec || !spec.fx) break;
+        const p: Record<string, number> = {};
+        for (const s of spec.channels) p[s.id] = chv(lane, s.id, local, s.def);
+        const o: Record<string, string | number | boolean> = {};
+        for (const op of spec.options ?? []) o[op.id] = op.def;
+        for (const k in lane.options) o[k] = lane.options[k];
+        (a.fx ?? (a.fx = [])).push({ id: lane.kind.slice(3), p, o });
+      }
     }
   }
   return a;

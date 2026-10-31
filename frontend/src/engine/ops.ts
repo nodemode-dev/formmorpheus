@@ -1,6 +1,7 @@
 import type { BlendMode, Content, Highlight, MaskMode, Movie, PlaybackMode, Track, Transform } from './types';
 import { clampSide, content as makeContent, end, fits, sourceFrames, sortContent, track as makeTrack, trackName, uid, contentEnd } from './model';
 import { clampFps } from './time';
+import { tidyGuides } from './guides';
 import { scaleKeyTimes, shiftKeys } from './key-ops';
 import * as retime from './retime';
 
@@ -328,6 +329,9 @@ export interface MoviePatch {
   loopVisible?: boolean;
   backstage?: number;
   timecode?: boolean;
+  motionBlur?: { on: boolean; shutter: number; samples: number };
+  /** Stage guides; null clears them. */
+  guides?: import('./guides').Guides | null;
 }
 
 export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
@@ -360,7 +364,12 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
   if (patch.playback !== undefined) next.playback = patch.playback;
   if (patch.addKeyAtStart !== undefined) next.addKeyAtStart = patch.addKeyAtStart;
   if (patch.loopVisible !== undefined) next.loopVisible = patch.loopVisible;
-  if (patch.backstage !== undefined) next.backstage = Math.min(1, Math.max(0, patch.backstage));
+  if (patch.motionBlur !== undefined) {
+    const b = patch.motionBlur;
+    next.motionBlur = { on: b.on, shutter: Math.min(720, Math.max(0, Math.round(b.shutter))), samples: Math.min(64, Math.max(2, Math.round(b.samples))) };
+  }
+  if (patch.guides !== undefined) { const g = tidyGuides(patch.guides); if (g) next.guides = g; else delete next.guides; }
+  if (patch.backstage !== undefined) next.backstage =Math.min(1, Math.max(0, patch.backstage));
   // the Timecode is on unless turned off, so only "off" is written
   if (patch.timecode !== undefined) { if (patch.timecode) delete next.timecode; else next.timecode = false; }
   return next;

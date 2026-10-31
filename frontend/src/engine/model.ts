@@ -58,6 +58,7 @@ export function drawingLayer(name = 'Layer 1'): DrawingLayer {
 
 const KIND_NAMES: Record<ContentKind, string> = {
   drawing: 'Drawing', flipbook: 'Flipbook', image: 'Image', video: 'Video', audio: 'Audio', text: 'Text', group: 'Group',
+  shape: 'Shape', solid: 'Solid', adjust: 'Adjustment',
 };
 
 export function kindName(kind: ContentKind): string {

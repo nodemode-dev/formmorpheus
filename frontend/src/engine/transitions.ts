@@ -1,6 +1,7 @@
 // Transitions between two blocks that touch on one track. Pure: finds the live transition at a frame and the
 // maths of each kind; the renderer draws both blocks and mixes them with `mixPlan`.
 import { end } from './model';
+import { srcFrame } from './retime';
 import type { Content, Transition, TransitionKind } from './types';
 
 export const TRANSITION_KINDS: { id: TransitionKind; label: string }[] = [
@@ -65,6 +66,12 @@ export function anyTransitionAt(items: Content[], frame: number): boolean {
   return false;
 }
 
+/** True when a group, or a group inside it, holds a block with a transition (a cheap test before the frame is looked at). */
+function groupHas(g: Content): boolean {
+  for (const t of g.tracks) for (const c of t.content) if (c.transition || (c.kind === 'group' && groupHas(c))) return true;
+  return false;
+}
+
 /** True if any track of the list has a transition running at `frame` (the GPU compositor defers those frames to the CPU). */
 export function tracksHaveTransition(tracks: { hidden: boolean; content: Content[] }[], frame: number): boolean {
   for (const t of tracks) {
@@ -72,6 +79,10 @@ export function tracksHaveTransition(tracks: { hidden: boolean; content: Content
     let has = false;
     for (const c of t.content) if (c.transition) { has = true; break; }
     if (has && transitionAt(t.content, frame)) return true;
+    // a group shows its own tracks at its own time: its transitions run there
+    for (const c of t.content) {
+      if (c.kind === 'group' && frame >= c.start && frame < end(c) && groupHas(c) && tracksHaveTransition(c.tracks, srcFrame(c, frame - c.start))) return true;
+    }
   }
   return false;
 }

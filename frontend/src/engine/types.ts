@@ -38,7 +38,7 @@ export const BLEND_MODES: { id: BlendMode; label: string; short: string }[] = [
 
 export type MaskMode = 'none' | 'clipping' | 'alpha' | 'luminance';
 
-export type ContentKind = 'drawing' | 'flipbook' | 'image' | 'video' | 'audio' | 'text' | 'group';
+export type ContentKind = 'drawing' | 'flipbook' | 'image' | 'video' | 'audio' | 'text' | 'group' | 'shape' | 'solid' | 'adjust';
 
 export type Mode = 'compose' | 'perform' | 'keyframe';
 
@@ -88,6 +88,24 @@ export interface FlipbookFrame {
   layers: DrawingLayer[];
   /** Label of the frame (a mouth shape's name); absent unless set. */
   name?: string;
+  /** A note for this drawing, shown in the exposure sheet's notes column; absent unless set. */
+  note?: string;
+}
+
+/** A picture or video shown under the drawing area while drawing a Flipbook. Never drawn on the Stage or exported. */
+export interface FlipUnderlay {
+  asset: string;
+  /** Shown while drawing (false keeps the settings but hides it). */
+  visible: boolean;
+  opacity: number;
+  /** Offset from the centre of the canvas in canvas pixels, and a scale on top of the fit-to-canvas size. */
+  x: number;
+  y: number;
+  scale: number;
+  /** Frames added to the Flipbook's time before the underlay is read (its own time offset). */
+  offset: number;
+  /** Light table: the paper is lit and the underlay shows through it (multiplied). */
+  table?: boolean;
 }
 
 /** One row of a Flipbook: its frames play in order, each for `hold` movie frames, and loop. */
@@ -102,6 +120,8 @@ export interface FlipTrack {
   /** A masking row is not drawn: it cuts the row below it (alpha or luminance). Absent in older files. */
   mask?: FlipMask;
   maskInvert?: boolean;
+  /** Shoot on: how many movie frames a new frame of this row is held (2 is twos). Absent: ones. */
+  shoot?: number;
 }
 
 export type FlipMask = 'none' | 'clipping' | 'alpha' | 'luminance';
@@ -147,7 +167,7 @@ export interface SpatialTangents {
   linear?: boolean;
 }
 
-export type KeyKind = 'camera' | 'move' | 'warp' | 'distort' | 'bones' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'boil' | 'volume';
+export type KeyKind = 'camera' | 'move' | 'warp' | 'distort' | 'bones' | 'opacity' | 'blur' | 'sharpen' | 'noise' | 'hsb' | 'lensblur' | 'boil' | 'volume' | 'shape' | 'textanim' | 'time' | `fx:${string}`;
 
 /** One lane under a content: a set of channels keyed together (Move & Scale has x, y, scaleX, scaleY, rotation). */
 export interface KeyLane {
@@ -184,6 +204,11 @@ export interface TextStyle {
   vertical?: boolean;
   /** Wrap width in movie pixels; unset, the text is one block as wide as its longest line. */
   boxW?: number;
+  /** Rich titles (engine/text-rich.ts): styled spans, drop shadow, background box, build on / off animators. Each is written only when used. */
+  runs?: import('./text-rich').TextRun[];
+  shadow?: import('./text-rich').TextShadow;
+  box?: import('./text-rich').TextBoxFx;
+  anim?: import('./text-rich').TextAnim;
 }
 
 /** A bone at rest, in content pixels: `x`, `y` is its head, `angle` (degrees) points to its tip at `length`. */
@@ -230,12 +255,16 @@ export interface Content {
   rig?: Rig;
   /** Id of the content this one follows: its transform is applied inside the parent's. Absent: none. */
   parent?: string;
+  /** Lanes of a kind this build does not know (a newer file): kept out of `keys`, written back on save, restored on load once the kind exists. */
+  unknownLanes?: KeyLane[];
   /** Drawing and Flipbook only: the canvas its pictures cover, in movie pixels from the movie's top-left (may reach past the Stage). Absent: the movie rectangle. A Flipbook's frames all share it. */
   canvas?: CanvasRect;
   /** Sound blocks only: fade in and fade out lengths in movie frames (absent: none), and the stereo position -1..1 (absent: centre). */
   fadeIn?: number;
   fadeOut?: number;
   pan?: number;
+  /** Sound and video blocks: audio effects on this block's sound (engine/audio-fx.ts). Absent: none. */
+  fx?: import('./audio-fx').AudioFx;
   /** Retime (engine/retime.ts): playback speed 0.25 to 4 (0 freezes on `offset`), played backward when `reverse`. Absent: normal. */
   speed?: number;
   reverse?: boolean;
@@ -243,6 +272,10 @@ export interface Content {
   speedPitch?: boolean;
   /** Transition into this block from the block that touches its start on the same track (engine/transitions.ts). */
   transition?: Transition;
+  /** Flipbook only: a reference picture or video under the drawing area (never exported). */
+  underlay?: FlipUnderlay;
+  /** Shape and Solid: the outline, fill and stroke. Adjustment: an optional mask outline (engine/shape.ts). Absent on other kinds. */
+  shape?: import('./shape-types').ShapeDef;
 }
 
 export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';
@@ -277,6 +310,9 @@ export interface Track {
   /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */
   mute?: true;
   solo?: true;
+  /** Audio effects on the sum of this track's sound, and ducking under another track (engine/audio-fx.ts). Absent: none. */
+  fx?: import('./audio-fx').AudioFx;
+  duck?: import('./audio-fx').Duck;
   content: Content[];
 }
 
@@ -342,9 +378,13 @@ export interface Movie {
   /** Who made the movie (Movie settings, About this artwork). Absent: not set. */
   author?: string;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
-  camera?: { keys: KeyLane[] };
+  camera?: { keys: KeyLane[]; unknownLanes?: KeyLane[] };
   /** Named cue points on the ruler. Absent: none. */
   markers?: Marker[];
+  /** Stage guides: grid, thirds, safe areas, guide lines (engine/guides.ts). A drawing aid, never exported. Absent: none. */
+  guides?: import('./guides').Guides;
+  /** Movie-wide motion blur (engine/fx/motion-blur.ts); a content's own Motion Blur lane overrides it. Absent: off. */
+  motionBlur?: { on: boolean; shutter: number; samples: number };
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;
