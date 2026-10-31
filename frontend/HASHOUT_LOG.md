@@ -2,7 +2,7 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.13.0
+Current build version: v0.14.0
 Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still open, second review round)
 
 ---
@@ -688,3 +688,10 @@ Playback cost here is per destination pixel (about 3 ns), not per source pixel: 
 - logged: v0.13.0 · 2026-10-31
 
 The owner judged parity by depth, not rows, so depth analyses (`DEPTH_GAPS_*.md` in the sidecar) drove the second half of this release. GPU: meshes (Warp, Distort, Bones) and layer trees / row masks left `needsCpu`; parity w/ the CPU raster is within rounding except a few hundred pixels of the discontinuous blends (hard mix, darker / lighter color) used as clip or group blends; on software GL the GPU is slower and the auto switch keeps it off. Transition frames bypass the GPU and mix on the CPU. Export renders in a Worker w/ the same `Run` and `Renderer`; sound is mixed on the main thread and sent as PCM; movies w/ video fall back to the main thread. Grains (54) and tips (79) are generated at runtime from seeded noise and cached, not shipped as images. Wet paint mixes in a Kubelka-Munk-style model written here; a big blending brush at 4K still costs about 2 s per 40 samples. Paint layers park as 128 px tiles when idle and unpark on first read, so the paint API is unchanged. Brush fields and their export keys are optional and `fm`-prefixed. Saved history keeps the newest 2,000 steps and halves on a string-size error. Process: no repo SEDO breach reported.
+
+### Phases 36 to 39 (v0.14.0)
+- refers-to: src/engine/fx/ (registry.ts, shadow, glow, colorcorrect, vignette, pixelate, directional-blur, radial-blur, motion-blur, key, fx2-cpu, fx2-glsl); src/engine/text-rich.ts, text-anim.ts, text-phase.ts; src/engine/shape*.ts, gpu/shaders-shape.ts; src/media/audio-dsp.ts, audio-dsp-worker.ts, audio-dsp-client.ts, engine/audio-fx.ts; src/export/delivery.ts, anim-image.ts, psd.ts, worker-video.ts, audio-export.ts; src/engine/bin-ops.ts, ui/media-bin.ts; src/paint/paint-worker.ts, ui/paint-bridge.ts, paint/shine.ts, dry-media.ts, io/palette-io.ts; src/engine/flip-time.ts, ui/flip-xsheet.ts, flip-tools.ts, flip-underlay.ts; src/engine/normalize.ts :: unknownLanes
+- kind: explainer
+- logged: v0.14.0 · 2026-10-31
+
+Effects plug into one registry (`engine/fx/registry.ts`): an effect is a file that calls `registerEffect`, w/ params, a pure CPU function and a GLSL twin; lanes are `fx:<id>`; uniforms must not be named `uSize` or `uBox`. Lanes of an unknown kind (a removed effect, a newer file) move to `unknownLanes` on load and come back when the kind exists, so nothing is lost and nothing throws. Motion blur averages sub-frame poses in float on the CPU raster. Text runs, shadow, box and animators share `layoutText`; the GPU text signature includes the animation phase. Shapes are a content kind w/ 33 keyable channels and draw on the CPU raster under the GPU. Audio effects are our own DSP (no Web Audio nodes) run in a worker on the used span only, so playback equals export sample for sample. Exports w/ video decode in the worker (`WorkerVideo`, same frame choice as `VideoPool`). The paint worker owns a mirror of the active layer and returns dirty rects as transferables (no cross-origin isolation, so no SharedArrayBuffer); undo / redo wait for a landing stroke; the selection cache is 4 ids on both sides w/ a miss message. PSD and APNG writers stream and cap memory. Process: the wet-paint builder ran one `sed -i` on `paint/wet.ts` for a debug switch and reverted it by Edit (SEDO breach, logged; the reviewer found no residue).

@@ -2,7 +2,7 @@
 
 Living log for the desktop shell (Tauri 2). Source stays comment-free; rationale lives here. The splash and reveal reproduce the owner's formvis splash and boot map exactly.
 
-Current build version: v0.13.0
+Current build version: v0.14.0
 Last updated: 2026-10-30 · reveal_folder for Show brush folder
 
 ---

@@ -2,7 +2,7 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.13.0
+Current build version: v0.14.0
 Last updated: 2026-10-30 · brush libraries as files, recovery presence over a WebSocket, streamed duplicates
 
 ---

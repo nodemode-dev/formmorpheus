@@ -250,6 +250,20 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
+## New in 0.14.0
+
+**Effects.** The Action menu's Live Filters now include Drop Shadow, Glow, Color Correction (levels, curves, color balance, exposure, temperature and tint, vibrance), Vignette, Pixelate, Directional Blur, Radial Blur (drag its center on the Stage), Motion Blur, Chroma Key (pick the key color on the Stage, view the matte) and Luma Key. Every setting can be keyed. Movie settings · Timeline turns on motion blur for the whole movie.
+
+**Titles, shapes and solids.** Select words in a text and use Edit Style to give them their own font, size, color and outline; the Effects tab adds a shadow and a background box, and the Animate tab builds text on and off by letter, word or line (fade, slide, scale, rotate, blur, typewriter). Create · Shape draws rectangles, ellipses, polygons, stars, lines and pen paths with gradient fills, dashed strokes and an animated trim; Create · Solid fills the movie with a color; an Adjustment block applies its filters to everything below it.
+
+**Sound.** The Sound effects card adds EQ, compressor, reverb, noise gate and de-esser to a block or a track, a track can duck under another, the Timeline shows level meters, and Export · Sound only writes WAV, M4A or Opus, or one file per track.
+
+**Export and media.** Presets for common shapes and limits (and your own), a target bitrate or file size with a size estimate, a frame rate and scale for the export, fit or fill into another shape, animated WebP and APNG, a layered PSD of the current frame and frame zips named by timecode. Every export, including movies with video, now renders in the background. View · Media Bin lists the movie's pictures, video, sound and fonts, where each is used, and replaces or relinks them.
+
+**Drawing.** Painting now runs off the main thread. Wet brushes drag paint along the stroke, pencils and charcoal respond to light pressure, Materials can add shine (gloss, metal, light angle), and palettes import and export (including from a picture). In a Flipbook, Timing sets shooting on ones to fours, Exposure Sheet shows frames, holds, sound and notes in a grid, and Underlay puts a picture or video under the drawing as a reference.
+
+**Keyboard.** A skip link is the first Tab stop on Home, in the editor and in Draw and Paint.
+
 ## New in 0.13.0
 
 **Brush Studio.** Right-click a brush and choose Edit Brush, or New brush in the brush panel's menu. A live drawing pad sits beside the brush's sections: Stroke path, Taper, Shape, Grain, Rendering, Wet mix, Color dynamics, Dynamics, Pencil, Pressure curves, Properties, Materials and About this brush. Every slider has a number, double-click a label to reset it, Undo last change and Reset brush step back, and a built-in brush is saved as a copy. Shape and Grain have libraries of tips and paper grains to pick from, and brush size can follow the canvas size.
