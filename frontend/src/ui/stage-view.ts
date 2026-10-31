@@ -419,7 +419,8 @@ export class StageView {
   }
 
   private drawBox(m: Movie): void {
-    const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => this.engine.isOver(c));
+    // a sound has no picture: no transform box
+    const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
     this.textStage.sync();
     const warpShown = this.warp.sync(this.view, sel), bonesShown = this.bones.sync(this.view, sel);
     const handles = warpShown || bonesShown;
@@ -462,7 +463,7 @@ export class StageView {
     if (!m || !v || e.button !== 0 || this.grab || this.nav.preview) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
-    const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
+    const sel = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
     const tag = `stage-${Date.now()}`;
     this.root.focus({ preventScroll: true });
     if (sel.length === 1 && target.closest('.fm-box-more')) {
@@ -491,7 +492,7 @@ export class StageView {
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
       // Perform keeps its one content when the pen lands off it: the take is a drag, not a click
       if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) { this.engine.select([]); return; }
-      const ids = this.engine.selected.filter((c) => this.engine.isOver(c)).map((c) => c.id);
+      const ids = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c)).map((c) => c.id);
       if (!ids.length) return;
       const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
       const anchors = new Map(ids.map((id) => {
@@ -563,6 +564,9 @@ export class StageView {
   /** Add the latest values at the Playhead and show the take so far (unfiltered) under the pen. */
   private sampleRec(g: Grab, r: Rec): void {
     if (!r.last) return;
+    // the take ends where its block can grow no more: playback stops there and nothing is keyed past it
+    const mv = this.engine.movie;
+    if (mv && this.engine.frame - r.start >= roomFor(mv, r.id)) { if (this.engine.playing) this.engine.stop(); return; }
     r.rec.add(this.engine.frame - r.start, r.last);
     this.commitRec(g, r, 0);
   }
@@ -757,7 +761,7 @@ export class StageView {
   /** Move the selection by movie pixels; a burst of nudges is one undo step. */
   nudge(dx: number, dy: number): void {
     const m = this.engine.movie;
-    const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
+    const sel = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
     if (!m || !sel.length) return;
     const ids = sel.map((c) => c.id), tag = `nudge-${ids.join()}`;
     if (this.keyed()) {

@@ -8,6 +8,7 @@ import { renderBrushPreview } from '../paint/preview';
 import { importBrushFile } from '../io/brush-import';
 import { exportBrush, exportBrushLib, exportBrushSet, fileNameFor } from '../io/brush-export';
 import { brushThumb, brushThumbs } from './brush-thumb';
+import { openBrushStudio } from './brush-studio';
 import { downloadBlob } from '../io/api';
 import type { Brush } from '../paint/types';
 
@@ -26,10 +27,11 @@ const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>';
 
 type Tool = 'paint' | 'smudge' | 'erase';
-type Act = 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib' | 'export' | 'exportlib' | 'showfolder';
+type Act = 'edit' | 'newbrush' | 'rename' | 'duplicate' | 'delete' | 'up' | 'down' | 'pressure' | 'import' | 'newset' | 'restore' | 'newlib' | 'renamelib' | 'deletelib' | 'export' | 'exportlib' | 'showfolder';
 
 const LABEL: Record<Act, string> = {
   rename: 'Rename', duplicate: 'Duplicate', delete: 'Delete', up: 'Move up', down: 'Move down',
+  edit: 'Edit Brush', newbrush: 'New brush',
   pressure: 'Pressure & Smoothing', import: 'Import brushes', newset: 'New set', restore: 'Restore starter brushes',
   newlib: 'New library', renamelib: 'Rename library', deletelib: 'Delete library',
   export: 'Export brush', exportlib: 'Export library', showfolder: 'Show brush folder',
@@ -123,7 +125,7 @@ export class BrushPanel {
       <input class="fm-bp-file" type="file" accept=".abr,.brush,.brushset,.brushlib,image/*" multiple hidden>
       <input class="fm-bp-rename" type="text" maxlength="60" hidden spellcheck="false" autocomplete="off">
       <div class="fm-bp-libmenu fm-pp-glass" hidden></div>
-      <div class="fm-bp-menu fm-pp-glass" hidden>${(Array.from({ length: 8 }, () => '<button type="button" class="fm-bp-mi" hidden></button>')).join('')}</div>
+      <div class="fm-bp-menu fm-pp-glass" hidden>${(Array.from({ length: 10 }, () => '<button type="button" class="fm-bp-mi" hidden></button>')).join('')}</div>
       <div class="fm-bp-card" hidden>
         <div class="fm-bp-card-head"><div class="fm-bp-card-title">Pressure &amp; Smoothing</div><button type="button" class="fm-bp-card-done">Done</button></div>
         <div class="fm-bp-card-name"></div>
@@ -421,9 +423,9 @@ export class BrushPanel {
   private openMenu(x: number, y: number, target: { kind: 'brush' | 'set' | 'panel'; id: string }): void {
     this.menuTarget = target;
     let acts: Act[];
-    if (target.kind === 'brush') acts = ['pressure', 'rename', 'duplicate', 'export', 'up', 'down', 'delete'];
+    if (target.kind === 'brush') acts = ['edit', 'newbrush', 'pressure', 'rename', 'duplicate', 'export', 'up', 'down', 'delete'];
     else if (target.kind === 'set') acts = ['rename', 'duplicate', 'export', 'up', 'down', 'delete'];
-    else acts = ['import', 'newset', 'newlib', 'renamelib', 'exportlib', 'showfolder', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
+    else acts = ['newbrush', 'import', 'newset', 'newlib', 'renamelib', 'exportlib', 'showfolder', ...(brushStore.canDeleteLib(brushStore.activeLib()) ? ['deletelib' as Act] : []), 'restore'];
     if (target.kind === 'set' && target.id === IMPORTED_ID) acts = ['export', 'up', 'down'];
     this.menuItems.forEach((b, i) => {
       const a = acts[i];
@@ -487,6 +489,7 @@ export class BrushPanel {
     const t = this.menuTarget;
     this.closeMenu();
     if (!t) return;
+    if (act === 'newbrush') { this.studio(t.kind === 'brush' ? t.id : this.currentId, 'new'); return; }
     if (t.kind === 'panel') {
       if (act === 'import') this.fileEl.click();
       else if (act === 'newset') this.newSet();
@@ -499,7 +502,8 @@ export class BrushPanel {
       return;
     }
     if (t.kind === 'brush') {
-      if (act === 'pressure') this.openCard(t.id);
+      if (act === 'edit') this.studio(t.id, 'edit');
+      else if (act === 'pressure') this.openCard(t.id);
       else if (act === 'rename') this.beginRename('brush', t.id);
       else if (act === 'duplicate') brushStore.duplicate(t.id);
       else if (act === 'export') { const b = brushStore.brush(t.id); if (b) void brushThumb(b).then((th) => this.saveFile(fileNameFor(b.name, 'brush'), exportBrush(b, th))); }
@@ -516,6 +520,17 @@ export class BrushPanel {
     else if (act === 'delete') brushStore.removeSet(t.id);
     else if (act === 'up') brushStore.stepSet(t.id, -1);
     else if (act === 'down') brushStore.stepSet(t.id, 1);
+  }
+
+  /** Opens Brush Studio on a brush (edit it) or from one (a new brush starts as a copy of it). */
+  private studio(id: string, mode: 'edit' | 'new'): void {
+    const base = brushStore.brush(id) ? id : brushStore.all()[0]?.id;
+    if (!base) return;
+    this.close();
+    void openBrushStudio({
+      brushId: base, mode, setId: this.activeSet === RECENT ? brushStore.setOf(base)?.id : this.activeSet,
+      onSaved: (nid) => { const nb = brushStore.brush(nid); if (nb && (mode === 'new' || nid === this.currentId)) this.opts.onPick(nb); },
+    });
   }
 
   private exportLib(id: string): void {

@@ -1,7 +1,8 @@
 import type { Engine } from '../engine/engine';
 import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
-import { browserHasAac, startExport } from '../export/run';
+import { browserHasAac } from '../export/run';
+import { startExportAuto as startExport } from '../export/worker-host';
 import { jobCapabilities, startEngineExport, type EngineTarget, type JobCapabilities } from '../export/engine-jobs';
 import { pictureHasAlpha } from '../export/still-formats';
 import type { AudioKind, ExportFormat, ExportJob, ExportOptions, ExportProgress, PictureExt, ProresProfile } from '../export/types';

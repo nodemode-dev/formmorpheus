@@ -7,6 +7,7 @@ import {
 import { flipLength, flipStartOf } from '../engine/model';
 import { isMaskRow } from '../engine/flip-draw';
 import { flipDuration } from '../engine/flip-ops';
+import { reducedMotion } from './a11y';
 import { FlipPreview } from './flip-preview';
 import { FlipSelect, Lasso } from './flip-select';
 import { ScrubWheel } from './flip-wheel';
@@ -853,7 +854,7 @@ export class FlipStrip {
   private flingFrom(samples: { t: number; x: number }[], from: number, r: number, k: number): boolean {
     const a = samples[0], b = samples[samples.length - 1];
     const dt = b.t - a.t;
-    if (dt <= 0 || performance.now() - b.t > 100) return false;
+    if (dt <= 0 || performance.now() - b.t > 100 || reducedMotion()) return false;
     let v = (-(b.x - a.x) / dt) * k / COL; // frames per ms, left swipe positive
     if (Math.abs(v) < 0.004) return false;
     let pos = from, t0 = performance.now();

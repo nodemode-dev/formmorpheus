@@ -16,10 +16,37 @@ export function mountStorageButton(btn: HTMLElement): void {
     const caps = await capabilities();
     const label = t('Library folder');
     btn.title = caps?.libraryDir ? `${label}: ${caps.libraryDir}` : label;
+    // the button names the storage location in use, like the reference's location picker
+    const info = await locations();
+    const name = !info ? label : info.source === 'default' ? t('On This Computer') : info.icloud && info.dir === info.icloud ? t('iCloud Drive') : (info.dir.split(/[\\/]/).filter(Boolean).pop() ?? label);
+    const span = btn.lastElementChild;
+    if (span && span.textContent !== name) span.textContent = name;
   };
   btn.addEventListener('click', () => { dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void tip(); }); });
   document.addEventListener('fm:library-changed', () => { void tip(); });
   void tip();
+}
+
+interface Locations { dir: string; default: string; source: string; icloud: string | null }
+
+/** The library's current folder and the iCloud Drive folder when this computer has one (null when the engine is away). */
+export async function locations(): Promise<Locations | null> {
+  try { const r = await fetch('/api/system/library'); return r.ok ? ((await r.json()) as Locations) : null; } catch { return null; }
+}
+
+/** True when this computer has an iCloud Drive folder the movies can be copied to. */
+export async function hasIcloud(): Promise<boolean> {
+  return !!(await locations())?.icloud;
+}
+
+/** Copy to iCloud Drive: the movies' files go to the iCloud Drive folder; never overwrites. */
+export async function copyMoviesToIcloud(names: string[]): Promise<void> {
+  const dir = (await locations())?.icloud;
+  if (!dir) { toast(t('iCloud Drive was not found on this computer.'), 'error'); return; }
+  try {
+    for (const n of names) await api.copyMovieTo(n, dir);
+    toast(names.length === 1 ? `${t('Copied to')} ${dir}.` : `${names.length} ${t('movies copied')} ${dir}.`);
+  } catch (err) { toast((err as Error).message, 'error'); }
 }
 
 /** The system folder picker (desktop app), or null when cancelled or unavailable. */

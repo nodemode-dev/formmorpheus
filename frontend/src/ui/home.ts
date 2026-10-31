@@ -99,7 +99,7 @@ export class HomeScreen {
       if (p) this.d.engine.newDocument(p.w, p.h, 'Untitled Movie', p.fps, false);
     });
     const brandPop = new Popover('fm-brand-menu', 220);
-    const brandRows: Array<[string, string]> = [['about', 'About formmorpheus'], ['whats-new', "What's New"], ['help', 'Help Center'], ['reset-examples', 'Reset Examples']];
+    const brandRows: Array<[string, string]> = [['about', 'About formmorpheus'], ['whats-new', "What's New"], ['help-center', 'Help Center'], ['reset-examples', 'Reset Examples']];
     for (const [cmd, label] of brandRows) {
       const r = popRow(null, label);
       r.el.addEventListener('click', () => { brandPop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: cmd })); });

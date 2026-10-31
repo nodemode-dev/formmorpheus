@@ -13,6 +13,7 @@ import { canConvert } from './flip-convert';
 import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
+import { EdRows } from './content-menu-ed';
 
 const MASKS: Array<[MaskMode, string]> = [['none', 'None'], ['clipping', 'Clipping'], ['alpha', 'Alpha'], ['luminance', 'Luminance']];
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -45,6 +46,8 @@ export class ContentMenu {
   private readonly fill: PopRow;
   private readonly splitLayers: PopRow;
   private readonly lip: PopRow;
+  private readonly soundRow: PopRow;
+  onSound: (() => void) | null = null;
   /** Opens the lip-sync dialog for the selection (set by the app). */
   onLipsync: (() => void) | null = null;
   /** Converts the selection to a Flipbook (bakes non-Drawing content first); set by the app. */
@@ -58,6 +61,9 @@ export class ContentMenu {
   private readonly track: TrackMenu;
   private readonly parents: ParentPicker;
   private readonly xform: TransformRows;
+  /** Size, speed, freeze and transition rows (content-menu-ed.ts). */
+  private readonly ed: EdRows;
+  private readonly opacityBox: HTMLElement;
 
   constructor(private readonly engine: Engine) {
     this.pop = new Popover('fm-cm', 264);
@@ -185,6 +191,8 @@ export class ContentMenu {
     });
     this.lip = popRow('audio', 'Lip-sync from Sound...');
     this.lip.el.addEventListener('click', () => { this.pop.hide(); this.onLipsync?.(); });
+    this.soundRow = popRow('audio', 'Sound: fades, pan, normalize...');
+    this.soundRow.el.addEventListener('click', () => { this.pop.hide(); this.onSound?.(); });
     this.formvis = popRow('layers', 'Edit in formvis');
     this.formvis.el.addEventListener('click', () => { const id = this.ids[0]; this.pop.hide(); if (id) this.onEditInFormvis?.(id); });
     this.group = popRow('group', 'Group');
@@ -222,8 +230,10 @@ export class ContentMenu {
 
     this.parents = new ParentPicker(engine, this.pop);
     this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
+    this.ed = new EdRows(engine, this.pop, () => this.ids, () => this.pop.hide());
+    this.opacityBox = opacity;
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows, popSep(),
-      this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.lip.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+      ...this.ed.rows, this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.lip.el, this.soundRow.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
   }
 
   open(x: number, y: number): void {
@@ -335,12 +345,17 @@ export class ContentMenu {
     setClass(this.splitLayers.el, 'is-gone', !(sel.length === 1 && canSplitLayers(first)));
     const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
     setClass(this.lip.el, 'is-gone', !lipOk);
+    setClass(this.soundRow.el, 'is-gone', !(sel.length === 1 && first.kind === 'audio'));
     setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);
     setClass(this.flipOrder.el, 'is-gone', sel.length < 2);
     this.parents.patch(this.ids);
     this.xform.patch();
+    this.ed.patch();
+    // a sound has no picture: no opacity, blend, mask, parent or flip rows
+    const audioOnly = sel.length > 0 && sel.every((c) => c.kind === 'audio');
+    for (const n of [this.opacityBox, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows]) setClass(n, 'is-gone', audioOnly);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     this.del.setDisabled(none);
   }

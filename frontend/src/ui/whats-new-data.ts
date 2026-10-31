@@ -5,6 +5,18 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.13.0', name: 'Brush Studio, real wet paint, sound recording and editing tools',
+    additions: [
+      { title: 'Brush Studio', text: 'Edit every part of a brush on a live drawing pad: stroke, taper, shape, grain, rendering, wet mix, color dynamics, pressure curves and more.', command: 'new-flipbook' },
+      { title: 'Real wet paint', text: 'Wet brushes pick up and mix the paint already on the canvas, and blue over yellow makes green.', command: 'new-flipbook' },
+      { title: 'New tips and grains', text: 'Pencils, charcoal, chalk, bristles and sponges now each have their own tip and paper grain.', command: 'new-flipbook' },
+      { title: 'Record sound', text: 'Record a voice-over straight onto the Timeline, with takes, punch-in, fades, pan, mute and solo.', command: 'record-audio' },
+      { title: 'Editing tools', text: 'Snapping, markers, speed, reverse and freeze, transitions between blocks, and fit or fill for imported media.', command: 'home' },
+      { title: 'Help Center', text: 'Guided tutorials that run inside the app, the manual, and a place to send ideas.', command: 'settings' },
+      { title: 'Keyboard and screen readers', text: 'Reach every control from the keyboard, with names for screen readers and reduced motion.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.12.0', name: 'Faster playback, smooth dragging and brush folders',
     additions: [
       { title: 'Faster playback', text: 'Movies with many sparse drawings play faster from the first pass.', command: 'play' },

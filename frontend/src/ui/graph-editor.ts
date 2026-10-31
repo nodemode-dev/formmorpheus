@@ -37,6 +37,9 @@ const PRESETS: { id: Ease; label: string }[] = [
   { id: 'out', label: 'Ease out' },
   { id: 'inout', label: 'Ease in & out' },
   { id: 'hold', label: 'Hold' },
+  { id: 'bounce', label: 'Bounce' },
+  { id: 'elastic', label: 'Elastic' },
+  { id: 'overshoot', label: 'Overshoot' },
   { id: 'custom', label: 'Custom' },
 ];
 

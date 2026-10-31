@@ -21,6 +21,10 @@ import { EndBarMenu, KeySelMenu, KeySelection, inPoly, lassoTouches, nearTrail, 
 import type { KeyRef } from '../engine/key-sel-ops';
 import { gestureRegion, penHover, touchModifier } from './gestures';
 import { loadPrefs } from './prefs';
+import { drawSoundOverlay, fadeFramesFor, fadeHandleAt, waveGain } from './timeline-sound';
+import { setFade } from '../media/audio-edit';
+import { TimelineEd } from './timeline-ed';
+import { srcFrame } from '../engine/retime';
 
 const RULER_H = 28;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
@@ -55,6 +59,7 @@ type Drag =
   | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number; moved?: boolean }
   | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
+  | { kind: 'fade'; id: string; which: 'in' | 'out'; tag: string }
   | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; applied: number; moved: boolean; tag: string }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'lasso'; pts: Pt[]; base: string[] }
@@ -175,9 +180,15 @@ export class TimelineView {
   private audio: AudioEngine | null = null;
   private readonly decoding = new Set<string>();
   private readonly peakNorm = new WeakMap<object, number>();
+  /** Snapping, markers and transition handles (ui/timeline-ed.ts). */
+  private readonly ed: TimelineEd;
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
+    this.ed = new TimelineEd(engine, {
+      fx: (f) => this.fx(f), xf: (x) => this.xf(x), laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, ppf: () => this.ppf,
+      ruler: this.ruler, tracks: this.tracksCanvas, schedule: () => this.schedule(),
+    });
     this.actionMenu = new ActionMenu(engine, this.keyState);
     this.laneMenu = new LaneMenu(engine, this.keyState);
     this.keyMenu = new KeySelMenu(engine, this.keySel, () => this.schedule());
@@ -618,6 +629,7 @@ export class TimelineView {
       c.fillStyle = p.ruler;
       for (let i = 0; i < 3; i++) c.fillRect(px - 5 + i * 4, RULER_H - 20, 2, 3);
     }
+    this.ed.drawRuler(c, m, p, this.width);
   }
 
   private visibleRows(m: Movie): number {
@@ -703,6 +715,7 @@ export class TimelineView {
       c.globalAlpha = 1;
     }
     c.lineWidth = 1;
+    this.ed.drawTracks(c, m, p, this.height);
   }
 
   /** A dashed link from each block that follows a parent to the parent's block, at the child's first visible frame. */
@@ -789,6 +802,7 @@ export class TimelineView {
     c.fillStyle = item.highlight === 'none' ? p.block : p.hl[item.highlight];
     c.fillRect(x0, y, w, BLOCK_H);
     this.drawThumbs(c, m, item, x0, y, w);
+    if (item.kind === 'audio') drawSoundOverlay(c, item, x0, y, w, BLOCK_H, this.ppf, selected, 'rgba(0,0,0,.38)', p.accent);
     if (t.hidden) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(x0, y, w, BLOCK_H); }
     c.restore();
     // a Multi-select pick is outlined red, as its lasso trail is
@@ -928,14 +942,17 @@ export class TimelineView {
     c.fillStyle = color;
     c.globalAlpha = alpha;
     for (let x = Math.max(x0, 0); x < Math.min(x0 + w, this.width); x += step) {
-      const f0 = this.xf(x) - item.start + item.offset, f1 = this.xf(x + step) - item.start + item.offset;
+      const s0 = srcFrame(item, this.xf(x) - item.start), s1 = srcFrame(item, this.xf(x + step) - item.start);
+      const f0 = Math.min(s0, s1), f1 = Math.max(s0, s1);
+      // a sound block is drawn as it will be heard: level, level keys and fades scale the wave
+      const g = item.kind === 'audio' ? waveGain(item, this.xf(x) - item.start) : 1;
       const a = Math.max(0, Math.floor((f0 / m.fps) * pk.perSecond));
       const b = Math.min(n, Math.max(a + 1, Math.ceil((f1 / m.fps) * pk.perSecond)));
       if (a >= n) break;
       const skip = Math.max(1, Math.floor((b - a) / 12));
       let lo = 0, hi = 0;
       for (let i = a; i < b; i += skip) { if (pk.min[i] < lo) lo = pk.min[i]; if (pk.max[i] > hi) hi = pk.max[i]; }
-      const top1 = mid - Math.min(1, hi * norm) * half, bot = mid - Math.max(-1, lo * norm) * half;
+      const top1 = mid - Math.min(1, hi * norm * g) * half, bot = mid - Math.max(-1, lo * norm * g) * half;
       c.fillRect(x, top1, step - 0.6, Math.max(1, bot - top1));
     }
     c.globalAlpha = 1;
@@ -955,7 +972,7 @@ export class TimelineView {
       const first = Math.max(0, Math.floor((0 - x0) / tileW));
       for (let k = first; x0 + k * tileW < Math.min(x0 + w, this.width); k++) {
         const x = x0 + k * tileW;
-        const sec = Math.min(last, Math.max(0, (((k + 0.5) * tileW) / this.ppf + item.offset) / m.fps));
+        const sec = Math.min(last, Math.max(0, srcFrame(item, ((k + 0.5) * tileW) / this.ppf) / m.fps));
         const img = pool.thumb(asset.id, sec, pw, ph);
         if (!img) continue;
         c.save();
@@ -1079,6 +1096,7 @@ export class TimelineView {
   private rulerDown(e: PointerEvent): void {
     const m = this.engine.movie;
     if (!m || e.button !== 0) return;
+    if (this.ed.rulerDown(e)) return;
     this.ruler.setPointerCapture(e.pointerId);
     this.engine.stop();
     const r = this.ruler.getBoundingClientRect();
@@ -1110,6 +1128,7 @@ export class TimelineView {
       return;
     }
     if (e.button !== 0) return;
+    if (this.ed.tracksDown(e)) return;
     this.engine.stop();
     const r = this.tracksCanvas.getBoundingClientRect();
     const x = e.clientX - r.left;
@@ -1144,6 +1163,11 @@ export class TimelineView {
           this.schedule();
           return;
         }
+      }
+      if (h.item.kind === 'audio' && this.engine.selection.content.includes(h.item.id)) {
+        const bx = this.fx(h.item.start);
+        const which = fadeHandleAt(h.item, x - bx, h.y - this.laneTop(h.index), this.fx(end(h.item)) - bx, BLOCK_H, this.ppf, e.pointerType === 'touch' ? 14 : 7);
+        if (which) { this.drag = { kind: 'fade', id: h.item.id, which, tag: `fade-${Date.now()}` }; return; }
       }
       if (h.edge) {
         const d: Drag = { kind: 'trim', id: h.item.id, edge: h.edge, x0: e.clientX, applied: 0, ripple: e.altKey || this.altDown, tag: `trim-${Date.now()}` };
@@ -1346,13 +1370,14 @@ export class TimelineView {
       this.scrollY = this.clampScroll(d.scroll0 - (e.clientY - d.y0), m);
       this.schedule();
     } else if (d.kind === 'move') {
-      const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
+      let total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
       const lanes = Math.round((e.clientY - d.y0) / STRIDE);
       if (!d.moved && Math.abs(e.clientX - d.x0) < 3 && Math.abs(e.clientY - d.y0) < 3) return;
       d.moved = true;
+      const ids = this.engine.selection.content;
+      total = this.ed.snapMove(m, ids, d.tag, d.applied, total, e);
       const step = total - d.applied, laneStep = lanes - d.appliedTrack;
       if (!step && !laneStep) return;
-      const ids = this.engine.selection.content;
       if (this.tryRun('Move Content', (mv) => ops.moveContent(mv, ids, step, laneStep), d.tag)) { d.applied = total; d.appliedTrack = lanes; }
     } else if (d.kind === 'inner') {
       const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
@@ -1364,8 +1389,14 @@ export class TimelineView {
         ? this.tryRun('Move Content', (mv) => groupInner.moveInner(mv, [d.id], step), d.tag)
         : this.tryRun('Trim', (mv) => groupInner.trimInner(mv, d.id, d.mode as 'start' | 'end', step), d.tag);
       if (ok) d.applied = total;
+    } else if (d.kind === 'fade') {
+      const item = this.engine.selected.find((it) => it.id === d.id);
+      if (!item) return;
+      const bx = this.fx(item.start), w = this.fx(end(item)) - bx;
+      const px = e.clientX - this.tracksCanvas.getBoundingClientRect().left - bx;
+      this.engine.run(d.which === 'in' ? 'Fade In' : 'Fade Out', (mv) => setFade(mv, d.id, d.which, fadeFramesFor(d.which, px, w, this.ppf)), d.tag);
     } else if (d.kind === 'trim') {
-      const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
+      const total = this.ed.snapTrim(m, d.id, d.edge, d.tag, d.applied, Math.round(((e.clientX - d.x0) / this.ppf) * speed), e);
       const step = total - d.applied;
       if (!step) return;
       if (this.tryRun(d.ripple ? 'Free Trim' : 'Trim', (mv) => ops.trimContent(mv, d.id, d.edge, step, d.ripple), d.tag)) d.applied = total;
@@ -1432,6 +1463,7 @@ export class TimelineView {
   private pointerUp(e: PointerEvent): void {
     const d = this.drag;
     this.drag = null;
+    this.ed.clear();
     if (this.thumbStale) { this.thumbStale = false; this.thumbGen++; }
     this.cancelLongPress();
     try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* released */ }
@@ -1448,7 +1480,7 @@ export class TimelineView {
     // a tap on a key (no drag) opens its values
     if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform') this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
-    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner') this.engine.endGesture();
+    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !this.addsToSelection(e)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);

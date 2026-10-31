@@ -1,0 +1,19 @@
+/* Markers, retime and transition rows (ui/timeline-ed.ts, ui/content-menu-ed.ts) */
+.fm-mk-field { padding: var(--space-2) var(--space-3) 0; }
+.fm-mk-name { width: 100%; box-sizing: border-box; height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: var(--surface-raised); color: var(--text-primary); font: inherit; }
+.fm-mk-name:focus { outline: none; border-color: var(--accent-color); }
+.fm-mk-swatches { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3); }
+.fm-mk-sw { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: none; cursor: pointer; }
+.fm-mk-sw.is-on { border-color: var(--text-primary); }
+.fm-mk-sw:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+.fm-mk-sw[data-hl="none"] .fm-cm-dot { background: color-mix(in srgb, var(--accent-color) 60%, transparent); }
+
+.fm-sp-presets { display: flex; gap: var(--space-2); }
+.fm-sp-preset { flex: 1; height: 26px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--fs-11); cursor: pointer; }
+.fm-sp-preset:hover { background: var(--accent-soft); }
+.fm-sp-preset.is-on { border-color: var(--accent-color); color: var(--accent-color); }
+
+.fm-tr-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); cursor: default; }
+.fm-tr-len { width: 64px; height: 26px; }
+.fm-tr-color { width: 40px; height: 26px; padding: 0; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: none; }
+.fm-pop-note { color: var(--text-muted); font-size: var(--fs-11); height: 28px; pointer-events: none; }

@@ -1,0 +1,25 @@
+/* Brush Studio: pen response curve editors. */
+.fm-bc { display: flex; flex-direction: column; gap: var(--space-2); }
+.fm-bc-hint { margin: 0; color: var(--text-muted); font-size: var(--fs-11); line-height: 1.4; }
+.fm-bc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.fm-bc-card { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; padding: var(--space-2); border: 1px solid var(--line-1); border-radius: var(--radius-md); background: var(--bg-primary); }
+.fm-bc-card.is-set { border-color: var(--line-3); }
+.fm-bc-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 20px; }
+.fm-bc-name { color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
+.fm-bc-card.is-set .fm-bc-name::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--accent-color); vertical-align: middle; }
+.fm-bc-reset { height: 20px; padding: 0 var(--space-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-10); cursor: default; }
+.fm-bc-reset:hover { background: var(--bg-hover); color: var(--text-primary); }
+.fm-bc-reset[hidden] { display: none; }
+.fm-bc-plot { width: 100%; aspect-ratio: 1; }
+.fm-bc-svg { display: block; width: 100%; height: 100%; touch-action: none; overflow: visible; cursor: crosshair; }
+.fm-bc-frame { fill: var(--surface-field); stroke: var(--line-2); stroke-width: 0.8; }
+.fm-bc-grid-l { stroke: var(--line-1); stroke-width: 0.5; }
+.fm-bc-diag { stroke: var(--line-3); stroke-width: 0.6; stroke-dasharray: 2 3; }
+.fm-bc-curve { fill: none; stroke: var(--accent-color); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.fm-bc-node { fill: var(--bg-primary); stroke: var(--accent-color); stroke-width: 1.6; cursor: grab; outline: none; }
+.fm-bc-node.is-end { fill: var(--accent-color); }
+.fm-bc-node:hover, .fm-bc-node:focus-visible { stroke-width: 2.6; }
+.fm-bc-speed { display: grid; grid-template-columns: 1fr 34px; align-items: center; column-gap: var(--space-2); row-gap: 0; color: var(--text-secondary); font-size: var(--fs-10); }
+.fm-bc-speed input { grid-column: 1; width: 100%; min-width: 0; accent-color: var(--accent-color); }
+.fm-bc-speed span { grid-column: 1 / -1; }
+.fm-bc-speed output { grid-column: 2; grid-row: 2; text-align: right; font-variant-numeric: tabular-nums; }

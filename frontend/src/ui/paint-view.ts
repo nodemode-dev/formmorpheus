@@ -18,6 +18,7 @@ import { historyNotice } from '../paint/history';
 import { baseDiameter, setPressureCurve } from '../paint/dynamics';
 import { PenInput } from '../paint/input';
 import { Stroke } from '../paint/stroke';
+import { PumpedStroke } from '../paint/pump';
 import type { Brush, Mask, PaintTool, Point, Rect, RGB } from '../paint/types';
 import { BrushPanel } from './brush-panel';
 import { ColourPanel } from './colour-panel';
@@ -54,6 +55,8 @@ import { decodeTga } from '../media/tga-decode';
 
 interface BrushState { size: number; opacity: number; /** Smudge only: how far the smear carries (the brush's pickup is 1 minus this). */ strength?: number }
 
+/** Milliseconds of stamping one pointer event or frame may spend before the rest of the queued samples wait for the next frame. */
+const PUMP_MS = 6;
 const STATE_KEY = 'formmorpheus.paint.brushes';
 const TOOL_KEY = 'formmorpheus.paint.tools';
 
@@ -143,7 +146,9 @@ export class PaintView {
   private cursor: Point | null = null;
 
   private readonly input: PenInput;
-  private stroke: Stroke | null = null;
+  private stroke: PumpedStroke | null = null;
+  /** Frame request that stamps the samples a slow stroke left queued (paint/pump.ts). */
+  private pumpReq = 0;
   /** Paint target of the live stroke: a layer id, or `mask:<id>` while a mask is painted. */
   private strokeId = '';
   /** Markers for the four remembered size and opacity values of the brush. */
@@ -1064,8 +1069,8 @@ export class PaintView {
 
   /** Brush outline radius in screen pixels: with dynamic scaling the brush keeps its screen size, else its canvas size. */
   private cursorRadius(b: Brush, size: number): number {
-    const dia = baseDiameter(b, size);
     const m = this.engine.movie;
+    const dia = baseDiameter(b, size, m ? Math.max(m.width, m.height) : 0);
     const sc = brushScale(this.prefs.scaling, this.view.scale, m?.width ?? 1920, m?.height ?? 1080);
     return Math.max(2, (sc.screenFixed ? dia : dia * sc.k * this.view.scale) / 2);
   }
@@ -1283,7 +1288,8 @@ export class PaintView {
     const x = this.hudDot.getContext('2d') as CanvasRenderingContext2D;
     x.clearRect(0, 0, 120, 120);
     const b = this.brush();
-    const dia = Math.min(110, Math.max(2, baseDiameter(b, st.size) * Math.min(1, this.view.scale * 2)));
+    const mv = this.engine.movie;
+    const dia = Math.min(110, Math.max(2, baseDiameter(b, st.size, mv ? Math.max(mv.width, mv.height) : 0) * Math.min(1, this.view.scale * 2)));
     const rgb = this.colour.get();
     x.globalAlpha = st.opacity;
     x.fillStyle = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
@@ -1942,8 +1948,9 @@ export class PaintView {
     const st = this.state(b);
     const fo = this.feel.get(b.id);
     this.input.smoothing = Math.min(1, b.smoothing + stabilizationRope(b) + (fo.stabilization ?? this.prefs.smoothing));
-    this.input.motion = fo.motion ?? this.prefs.motionFilter;
-    this.input.expression = fo.expression ?? this.prefs.expression;
+    this.input.motion = fo.motion ?? (b.motionFilter ? true : this.prefs.motionFilter);
+    this.input.expression = fo.expression ?? (b.expression !== undefined ? b.expression / 100 : this.prefs.expression);
+    this.input.motionAmount = fo.motion === undefined && b.motionFilter ? b.motionFilter / 100 : 1;
     if (fo.gamma !== undefined) { setPressureGamma(fo.gamma); this.gammaOwn = true; }
     else if (this.gammaOwn) { setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y }))); this.gammaOwn = false; }
     if (this.cursorBox) this.dirtyScreen(this.cursorBox);
@@ -1957,35 +1964,47 @@ export class PaintView {
       if (tool === 'erase') tool = 'paint';
     }
     this.strokeId = target.id;
-    this.stroke = new Stroke(target.raster, target.id, {
+    this.stroke = new PumpedStroke(new Stroke(target.raster, target.id, {
       tool, brush: this.tool === 'smudge' ? { ...b, pickup: Math.max(0.02, Math.min(1, 1 - (st.strength ?? 0.5))) } : b, color, size: st.size, opacity: st.opacity,
       alphaLock: target.alphaLock, selection: this.selection, zoom: sc.zoom, dynamicScaling: sc.dynamic,
-      seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b),
-    });
+      seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b), color2: this.colour.secondary(), viewRot: this.view.rot,
+    }));
     this.strokePointer = e.pointerId;
     this.feed(this.input.down(e));
   }
 
-  private feed(samples: { predicted?: boolean }[]): void {
+  /** `all`: the pen came up, so every queued sample is stamped now; else stamping stops after a few milliseconds and the frame loop carries on. */
+  private feed(samples: { predicted?: boolean }[], all = false): void {
     const s = this.stroke, doc = this.doc;
     if (!s || !doc) return;
-    let rect: Rect | null = null;
     const ahead: Parameters<Stroke['add']>[0][] = [];
     for (const p of samples as Parameters<Stroke['add']>[0][]) {
       if (p.predicted) { ahead.push(p); continue; }
-      const r = s.add(p);
+      s.add(p);
       this.tailFrom = { x: p.x, y: p.y };
-      if (r) rect = rect ? unite(rect, r) : r;
     }
+    const rect = s.drain(all ? Infinity : PUMP_MS);
     if (rect) doc.markDirty(this.strokeId || doc.active, rect);
+    if (s.pending && !this.pumpReq) this.pumpReq = requestAnimationFrame(() => this.pump());
     this.setTail(ahead);
+  }
+
+  /** One frame's share of the samples a heavy brush has not stamped yet. */
+  private pump(): void {
+    this.pumpReq = 0;
+    const s = this.stroke, doc = this.doc;
+    if (!s || !doc) return;
+    const rect = s.drain(PUMP_MS);
+    if (rect) doc.markDirty(this.strokeId || doc.active, rect);
+    if (s.pending) this.pumpReq = requestAnimationFrame(() => this.pump());
   }
 
   /** The predicted points ride on screen as a thin tail until the real points replace them. */
   private setTail(ahead: Parameters<Stroke['add']>[0][]): void {
     if (this.tool !== 'paint' || !this.tailFrom || !ahead.length) { this.clearTail(); return; }
     const b = this.brush(), st = this.state(b);
-    const base = baseDiameter(b, st.size);
+    const mv = this.engine.movie;
+    const base = baseDiameter(b, st.size, mv ? Math.max(mv.width, mv.height) : 0);
     const [lo, hi] = b.pressureSize;
     const r = this.tail.set(this.tailFrom, ahead, (s) => base * (lo + (hi - lo) * s.pressure), this.colour.get(), st.opacity);
     if (r) this.redraw(r);
@@ -2143,7 +2162,7 @@ export class PaintView {
       if (r) doc.markDirty(this.strokeId || doc.active, r);
       doc.settle();
     } else {
-      this.feed(this.input.up(e));
+      this.feed(this.input.up(e), true);
       const patch = s.finish();
       if (patch) {
         doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : this.tool === 'smudge' ? 'Smudge' : 'Paint');

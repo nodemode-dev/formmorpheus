@@ -1,0 +1,58 @@
+/* Record sound card and the Sound card of a block (ui/voice-panel.ts, ui/sound-card.ts). */
+.fm-vo, .fm-snd {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + 220px);
+  z-index: var(--z-companion);
+  width: 320px;
+  max-height: calc(100vh - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+}
+.fm-vo[hidden], .fm-snd[hidden], .fm-vo [hidden], .fm-snd [hidden] { display: none; }
+.fm-vo-head, .fm-snd-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); font-weight: 600; }
+.fm-vo-head .fm-vo-title, .fm-snd-head .fm-snd-title { flex: 1; }
+.fm-vo-x, .fm-snd-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: var(--radius-sm); line-height: 0; }
+.fm-vo-x:hover, .fm-snd-x:hover { color: var(--text-primary); background: var(--surface-raised); }
+.fm-vo-err { margin: 0 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--danger-fill); border-radius: var(--radius-md); color: var(--danger-text); font-size: var(--fs-12); line-height: 1.4; }
+.fm-vo-err .cv-btn { margin-top: var(--space-2); }
+.fm-vo-row, .fm-snd-row { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+.fm-snd-row { grid-template-columns: 64px minmax(0, 1fr) 64px; }
+.fm-vo-lab, .fm-snd-lab { color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-vo-row .cv-input, .fm-snd-row .cv-input { width: 100%; }
+.fm-vo-split { display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: var(--space-2); }
+.fm-vo-meter { position: relative; height: 10px; margin: 0 0 var(--space-3); border-radius: 5px; background: var(--bg-input); overflow: hidden; border: 1px solid var(--border-light); }
+.fm-vo-bar { position: absolute; inset: 0 auto 0 0; width: calc(var(--lv, 0) * 100%); background: linear-gradient(90deg, var(--accent-color), var(--accent-color) 70%, var(--danger-fill)); }
+.fm-vo-meter.is-clip { border-color: var(--danger-fill); }
+.fm-vo-chk { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-vo-chk input { margin: 0; accent-color: var(--accent-color); }
+.fm-vo-start { margin: var(--space-2) 0; color: var(--text-muted); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-vo-count { text-align: center; font-size: 56px; line-height: 1.1; font-weight: 700; color: var(--accent-color); font-variant-numeric: tabular-nums; }
+.fm-vo-actions { display: flex; gap: var(--space-2); }
+.fm-vo-go { flex: 1; justify-content: center; border-color: var(--danger-fill); }
+.fm-vo-go .fm-vo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger-fill); }
+.fm-vo.is-recording .fm-vo-dot { animation: fm-vo-pulse 0.9s ease-in-out infinite; }
+@keyframes fm-vo-pulse { 50% { opacity: 0.35; } }
+.fm-vo-status { min-height: 1.4em; margin-top: var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-vo-takes { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
+.fm-vo-takes:empty { display: none; }
+.fm-vo-take { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); background: var(--surface-2); font-size: var(--fs-12); }
+.fm-vo-take .fm-vo-tn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-vo-take.is-live .fm-vo-tn { color: var(--accent-color); }
+.fm-vo-take .cv-btn { height: 24px; padding: 0 8px; font-size: var(--fs-12); }
+.fm-vo-note { margin-top: var(--space-2); color: var(--text-muted); font-size: var(--fs-12); line-height: 1.4; }
+/* the Sound card sits on the left so both cards can be open together */
+.fm-snd { right: auto; left: var(--space-4); bottom: calc(var(--space-4) + 390px); }
+.fm-snd-row input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-snd-val { color: var(--text-secondary); font-size: var(--fs-12); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fm-snd-btns { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.fm-snd-btns .cv-btn { height: 26px; font-size: var(--fs-12); }
+.fm-snd-btns .cv-btn.is-on { border-color: var(--accent-color); color: var(--accent-color); }

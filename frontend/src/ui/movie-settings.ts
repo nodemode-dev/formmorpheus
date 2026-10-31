@@ -15,6 +15,7 @@ const TABS = ['Project', 'Stage', 'Timeline', 'Prefs', 'Share'] as const;
 const UNDO_STEPS: Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
 
 function runCommand(id: string): void {
+  document.dispatchEvent(new CustomEvent('fm:ms-close'));
   document.dispatchEvent(new CustomEvent('fm:command', { detail: id }));
 }
 
@@ -162,6 +163,8 @@ export class MovieSettings {
     this.wire();
     this.tab(0);
     engine.on('movie', () => { if (this.pop.isOpen) this.patch(); });
+    // an action that opens a dialog (Export, Preferences, Shortcuts) takes the popover away first
+    document.addEventListener('fm:ms-close', () => this.pop.hide());
   }
 
   toggle(anchor: HTMLElement): void {

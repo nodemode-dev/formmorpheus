@@ -2,6 +2,8 @@
 // pointer; dragging away sideways, or holding Alt, switches to fine control where the same vertical travel moves
 // the value a fraction as far. Pure pointer handling: the host owns the values.
 
+import { keyboardSlider } from './a11y';
+
 export type SliderKind = 'size' | 'opacity' | 'strength';
 
 export interface SliderHost {
@@ -30,6 +32,7 @@ export function wireSlider(node: HTMLElement, kind: SliderKind, value: () => num
   let v = 0;
   let fine = false;
   const clamp = (n: number): number => Math.max(0, Math.min(1, n));
+  keyboardSlider(node, { value, set: (n) => host.apply(kind, n, false), done: () => host.end(kind) });
   node.addEventListener('pointerdown', (e) => {
     id = e.pointerId;
     node.setPointerCapture(id);
