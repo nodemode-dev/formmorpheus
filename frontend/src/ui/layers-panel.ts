@@ -21,6 +21,24 @@ const ICON_HOOK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" st
 
 type SideKind = 'menu' | 'blend' | 'mask';
 
+/** The blend modes in their families: a heading, then the modes (Passthrough is a group's own mode and is shown for groups only). */
+const BLEND_GROUPS: { title: string; ids: BlendMode[] }[] = [
+  { title: '', ids: ['normal'] },
+  { title: 'Darken', ids: ['darken', 'multiply', 'color-burn', 'linear-burn', 'darker-color'] },
+  { title: 'Lighten', ids: ['lighten', 'screen', 'color-dodge', 'add', 'lighter-color'] },
+  { title: 'Contrast', ids: ['overlay', 'soft-light', 'hard-light', 'vivid-light', 'linear-light', 'pin-light', 'hard-mix'] },
+  { title: 'Comparative', ids: ['difference', 'exclusion', 'subtract', 'divide'] },
+  { title: 'Component', ids: ['hue', 'saturation', 'color', 'luminosity'] },
+  { title: '', ids: ['passthrough'] },
+];
+
+function blendRows(): string {
+  const label = (id: BlendMode): { label: string; short: string } => BLEND_MODES.find((m) => m.id === id) ?? { label: id, short: '' };
+  return BLEND_GROUPS.map((g) =>
+    (g.title ? `<div class="fm-lp-blendhead">${g.title}</div>` : '') +
+    g.ids.map((id) => `<button type="button" class="fm-pop-row has-check" data-blend="${id}"><span class="fm-pop-label">${label(id).label}</span><span class="fm-lp-blendshort">${label(id).short}</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>`).join('')).join('');
+}
+
 interface Thumb { layer: PaintLayer; raster: unknown; ver: number; mask: unknown }
 
 export class LayersPanel {
@@ -57,11 +75,10 @@ export class LayersPanel {
   private readonly onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || this.renaming) return;
     e.stopPropagation();
-    if (this.side) this.closeSide(); else this.close();
+    if (this.side) this.closeSide(false); else this.close();
   };
 
   constructor(private readonly opts: { doc: () => PaintDoc | null; onClose?: () => void }) {
-    const modes = BLEND_MODES;
     this.root = el<HTMLElement>(`<div class="fm-lp" hidden>
       <div class="fm-lp-card fm-pp-glass">
         <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-add fm-lp-multi fm-lp-delsel" aria-label="Delete selected layers" title="Delete selected layers" hidden>${ICON_TRASH}</button><button type="button" class="fm-lp-add fm-lp-multi fm-lp-groupsel" aria-label="Group selected layers" title="Group selected layers" hidden>${ICON_GROUP_SEL}</button><button type="button" class="fm-lp-add fm-lp-addgroup" aria-label="New Group" title="New Group">${ICON_GROUP_PLUS}</button><button type="button" class="fm-lp-add fm-lp-addlayer" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div></div>
@@ -69,17 +86,16 @@ export class LayersPanel {
       </div>
       <div class="fm-lp-side fm-lp-menu fm-pp-glass" hidden>
         <button type="button" class="fm-pop-row" data-act="rename"><span class="fm-pop-label">Rename</span></button>
+        <button type="button" class="fm-pop-row" data-act="addmask" data-for="layer"><span class="fm-pop-label">Mask</span></button>
         <button type="button" class="fm-pop-row has-check" data-act="clip" data-for="layer"><span class="fm-pop-label">Clipping Mask</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
-        <button type="button" class="fm-pop-row has-check" data-act="lock" data-for="layer"><span class="fm-pop-label">Alpha Lock</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <button type="button" class="fm-pop-row has-check" data-act="lock" data-for="layer" title="Alpha Lock (Alt+click a layer, or swipe right with two fingers)"><span class="fm-pop-label">Alpha Lock</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>
+        <button type="button" class="fm-pop-row" data-act="merge" data-for="layer" title="Merge Down (Alt+Shift+click a layer, or pinch two layers together)"><span class="fm-pop-label">Merge Down</span></button>
+        <button type="button" class="fm-pop-row" data-act="clear" data-for="layer"><span class="fm-pop-label">Clear</span></button>
         <div class="fm-pop-sep"></div>
-        <button type="button" class="fm-pop-row" data-act="addmask" data-for="layer"><span class="fm-pop-label">Add Mask</span></button>
         <button type="button" class="fm-pop-row" data-act="group"><span class="fm-pop-label">Group</span></button>
         <button type="button" class="fm-pop-row" data-act="ungroup" data-for="group"><span class="fm-pop-label">Ungroup</span></button>
         <button type="button" class="fm-pop-row" data-act="flatten" data-for="group"><span class="fm-pop-label">Flatten</span></button>
-        <div class="fm-pop-sep"></div>
-        <button type="button" class="fm-pop-row" data-act="merge" data-for="layer"><span class="fm-pop-label">Merge Down</span></button>
         <button type="button" class="fm-pop-row" data-act="dup"><span class="fm-pop-label">Duplicate</span></button>
-        <button type="button" class="fm-pop-row" data-act="clear" data-for="layer"><span class="fm-pop-label">Clear</span></button>
         <button type="button" class="fm-pop-row is-danger" data-act="delete"><span class="fm-pop-label">Delete</span></button>
       </div>
       <div class="fm-lp-side fm-lp-maskcard fm-pp-glass" hidden>
@@ -93,7 +109,7 @@ export class LayersPanel {
       <div class="fm-lp-side fm-lp-blendcard fm-pp-glass" hidden>
         <div class="fm-cm-opacity"><div class="fm-cm-opacity-head"><span>Opacity</span><span class="fm-cm-pct fm-lp-pct">100%</span></div><input class="fm-cm-range fm-lp-range" type="range" min="0" max="100" step="1" value="100"></div>
         <div class="fm-pop-sep"></div>
-        <div class="fm-lp-blends">${modes.map((m) => `<button type="button" class="fm-pop-row has-check" data-blend="${m.id}"><span class="fm-pop-label">${m.label}</span><span class="fm-pop-tail">${ICON_CHECK}</span></button>`).join('')}</div>
+        <div class="fm-lp-blends">${blendRows()}</div>
       </div>
     </div>`);
     this.card = q(this.root, '.fm-lp-card');
@@ -138,7 +154,10 @@ export class LayersPanel {
       const d = this.doc();
       if (id && d) { d.setProps(id, { visible: (t as HTMLInputElement).checked }); this.refresh(); }
     });
+    this.list.addEventListener('pointerdown', (e) => this.touchDown(e), true);
     this.list.addEventListener('pointerdown', (e) => this.onRowDown(e));
+    document.addEventListener('pointermove', (e) => this.touchMove(e));
+    for (const ev of ['pointerup', 'pointercancel']) document.addEventListener(ev, (e) => this.touchEnd(e as PointerEvent));
     this.list.addEventListener('dblclick', (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>('.fm-lp-row');
       if (row && (e.target as HTMLElement).closest('.fm-lp-name')) this.startRename(row.dataset.key ?? '');
@@ -161,14 +180,15 @@ export class LayersPanel {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-blend]');
       if (b) this.previewBlend(b.dataset.blend as BlendMode);
     });
-    this.blendList.addEventListener('pointerleave', () => this.endPreview());
+    // leaving the list shows the picked mode again (or the layer's own); a click picks a mode and keeps it on show;
+    // tapping outside the card confirms it and closes, Escape puts the layer back
+    this.blendList.addEventListener('pointerleave', () => this.previewBlend(this.pendingBlend ?? this.blendPreview?.blend ?? null));
     this.blendList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-blend]');
-      this.endPreview();
-      const d = this.doc(); const id = this.side?.id;
-      if (!b || !d || !id) return;
-      d.setProps(id, { blend: b.dataset.blend as BlendMode });
-      this.refresh();
+      if (!b) return;
+      this.pendingBlend = b.dataset.blend as BlendMode;
+      this.previewBlend(this.pendingBlend);
+      this.syncSide();
     });
     // a right click or a touch held on a row opens its menu
     this.root.addEventListener('contextmenu', (e) => {
@@ -201,6 +221,7 @@ export class LayersPanel {
     if (!this.opened) return;
     this.opened = false;
     this.closeSide();
+    this.clearSwipe();
     this.renaming = null;
     this.root.hidden = true;
     this.anchor = null;
@@ -243,6 +264,7 @@ export class LayersPanel {
           <span class="fm-lp-name"></span><input class="fm-lp-rename" type="text" hidden spellcheck="false">
           <button type="button" class="fm-lp-blend" title="Opacity and blend mode"></button>
           <label class="fm-lp-vis"><input class="fm-lp-check" type="checkbox"></label>
+          <span class="fm-lp-acts" hidden><button type="button" data-sw="dup">Duplicate</button><button type="button" data-sw="del" class="is-danger">Delete</button></span>
         </div>`);
         this.patchRow(row, l, active, all);
         return row;
@@ -322,6 +344,96 @@ export class LayersPanel {
 
   // Selection, side cards and renaming
 
+  // Touch gestures and their desktop equivalents: swipe right on a row selects it with others, swipe left shows
+  // Duplicate and Delete, two fingers swiped right toggle Alpha Lock, two layers pinched together merge, and
+  // Alt+click is Alpha Lock, Alt+Shift+click is Merge Down.
+
+  private touchPts = new Map<number, { x: number; y: number; x0: number; y0: number; row: string }>();
+  private twoFinger = false;
+  private fired = false;
+  private pinch0 = 0;
+
+  private touchDown(e: PointerEvent): void {
+    if (e.pointerType !== 'touch') return;
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.fm-lp-row');
+    this.touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, row: row?.dataset.key ?? '' });
+    if (this.touchPts.size === 2) {
+      this.twoFinger = true;
+      this.fired = false;
+      const [a, b] = [...this.touchPts.values()];
+      this.pinch0 = Math.abs(a.y - b.y);
+    }
+  }
+
+  private touchMove(e: PointerEvent): void {
+    const p = this.touchPts.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
+    const d = this.doc();
+    if (this.touchPts.size !== 2 || this.fired || !d) return;
+    const [a, b] = [...this.touchPts.values()];
+    if (a.row && a.row === b.row) {
+      const dx = ((a.x - a.x0) + (b.x - b.x0)) / 2, dy = (Math.abs(a.y - a.y0) + Math.abs(b.y - b.y0)) / 2;
+      const l = d.layer(a.row);
+      if (dx > 28 && dy < 24 && l && !l.group) {
+        this.fired = true;
+        this.lastDrag = performance.now();
+        d.setProps(l.id, { alphaLock: !l.alphaLock });
+        this.refresh();
+      }
+    } else if (a.row && b.row && this.pinch0 >= 60 && Math.abs(a.y - b.y) < this.pinch0 * 0.55) {
+      this.fired = true;
+      this.lastDrag = performance.now();
+      this.mergeSpan(a.row, b.row);
+    }
+  }
+
+  private touchEnd(e: PointerEvent): void {
+    if (!this.touchPts.delete(e.pointerId)) return;
+    if (!this.touchPts.size) { this.twoFinger = false; this.fired = false; }
+  }
+
+  /** Merges the layers from the upper one down to the lower one into the lower one. */
+  private mergeSpan(a: string, b: string): void {
+    const d = this.doc();
+    if (!d) return;
+    const ia = d.layers.findIndex((l) => l.id === a), ib = d.layers.findIndex((l) => l.id === b);
+    if (ia < 0 || ib < 0) return;
+    const ids = d.layers.slice(Math.min(ia, ib), Math.max(ia, ib) + 1).filter((l) => !l.group).map((l) => l.id);
+    for (let k = 0; k < ids.length - 1; k++) if (d.canMergeDown(ids[k])) d.mergeDown(ids[k]);
+    this.closeSide();
+    this.refresh();
+  }
+
+  private toggleSel(id: string): void {
+    const d = this.doc();
+    const l = d?.layer(id);
+    if (!d || !l) return;
+    this.closeSide();
+    if (this.sel.size === 0 && !d.layer(d.active)?.group) this.sel.add(d.active);
+    if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id);
+    this.anchorId = id;
+    if (!l.group && this.sel.has(id)) d.setActive(id);
+    this.refresh();
+  }
+
+  private swiped: HTMLElement | null = null;
+
+  private clearSwipe(): void {
+    if (!this.swiped) return;
+    setClass(this.swiped, 'is-swiped', false);
+    setHidden(q(this.swiped, '.fm-lp-acts'), true);
+    this.swiped = null;
+  }
+
+  private showSwipe(row: HTMLElement): void {
+    this.clearSwipe();
+    this.closeSide();
+    this.swiped = row;
+    setClass(row, 'is-swiped', true);
+    setHidden(q(row, '.fm-lp-acts'), false);
+  }
+
   private onListClick(e: MouseEvent): void {
     if (performance.now() - this.lastDrag < 150) return;
     const t = e.target as HTMLElement;
@@ -329,9 +441,25 @@ export class LayersPanel {
     const id = row?.dataset.key;
     const d = this.doc();
     if (!row || !id || !d) return;
+    const sw = t.closest<HTMLElement>('[data-sw]');
+    if (sw) {
+      this.clearSwipe();
+      if (sw.dataset.sw === 'dup') d.duplicateLayer(id); else d.deleteLayer(id);
+      this.closeSide();
+      this.refresh();
+      return;
+    }
+    if (this.swiped) this.clearSwipe();
     if (t.closest('.fm-lp-vis') || t.closest('.fm-lp-rename')) return;
     const l = d.layer(id);
     if (!l) return;
+    if (e.altKey && !l.group && !(e.ctrlKey || e.metaKey)) {
+      if (d.active !== id) d.setActive(id);
+      if (e.shiftKey) { if (d.canMergeDown(id)) { d.mergeDown(id); this.closeSide(); } }
+      else d.setProps(id, { alphaLock: !l.alphaLock });
+      this.refresh();
+      return;
+    }
     if (t.closest('.fm-lp-fold')) { d.setCollapsed(id, !l.collapsed); this.closeSide(); this.refresh(); return; }
     if (e.ctrlKey || e.metaKey || e.shiftKey) {
       this.closeSide();
@@ -377,6 +505,7 @@ export class LayersPanel {
   }
 
   private openSide(kind: SideKind, id: string, row: HTMLElement): void {
+    if (this.side && (this.side.kind !== kind || this.side.id !== id)) this.endPreview(true);
     this.side = { kind, id };
     setHidden(this.menu, kind !== 'menu');
     setHidden(this.blendCard, kind !== 'blend');
@@ -386,33 +515,41 @@ export class LayersPanel {
   }
 
   private blendPreview: { id: string; blend: BlendMode } | null = null;
+  /** The mode clicked in the list: it is recorded when the card closes by a tap outside. */
+  private pendingBlend: BlendMode | null = null;
 
   /** Shows `mode` on the side card's layer without recording it. */
-  private previewBlend(mode: BlendMode): void {
+  private previewBlend(mode: BlendMode | null): void {
     const d = this.doc();
     const id = this.side?.kind === 'blend' ? this.side.id : '';
     const l = id && d ? d.layer(id) : null;
-    if (!d || !l) return;
+    if (!d || !l || !mode) return;
     if (!this.blendPreview) this.blendPreview = { id, blend: l.blend };
     if (l.blend === mode) return;
     l.blend = mode;
     d.markDirty(id, { x: 0, y: 0, w: d.width, h: d.height });
   }
 
-  private endPreview(): void {
+  /** Puts the layer back and, when `keep` and a mode was picked, records that mode as one step. */
+  private endPreview(keep = false): void {
     const p = this.blendPreview;
+    const pick = this.pendingBlend;
     this.blendPreview = null;
+    this.pendingBlend = null;
     const d = this.doc();
     const l = p && d ? d.layer(p.id) : null;
-    if (!p || !d || !l || l.blend === p.blend) return;
-    l.blend = p.blend;
-    d.markDirty(p.id, { x: 0, y: 0, w: d.width, h: d.height });
-    d.settle();
+    if (!p || !d || !l) return;
+    if (l.blend !== p.blend) {
+      l.blend = p.blend;
+      d.markDirty(p.id, { x: 0, y: 0, w: d.width, h: d.height });
+      d.settle();
+    }
+    if (keep && pick && pick !== p.blend) { d.setProps(p.id, { blend: pick }); this.refresh(); }
   }
 
-  private closeSide(): void {
+  private closeSide(keep = true): void {
     if (!this.side) return;
-    this.endPreview();
+    this.endPreview(keep);
     this.side = null;
     setHidden(this.menu, true);
     setHidden(this.blendCard, true);
@@ -462,6 +599,9 @@ export class LayersPanel {
       setText(this.pct, `${v}%`);
       setStyleVar(this.range, '--fm-pct', `${v}%`);
       for (const b of Array.from(this.blendList.children) as HTMLElement[]) setClass(b, 'is-checked', b.dataset.blend === l.blend);
+      // the opacity slider and the list sit in one card: the layer's blend letter follows the shown mode
+      const row = this.rowOf(l.id);
+      if (row) setText(q(row, '.fm-lp-blend'), BLEND_MODES.find((m) => m.id === l.blend)?.short ?? 'N');
     }
   }
 
@@ -599,17 +739,22 @@ export class LayersPanel {
     if (t.closest('.fm-lp-vis, .fm-lp-blend, .fm-lp-rename, .fm-lp-fold')) return;
     const row = t.closest<HTMLElement>('.fm-lp-row');
     const d = this.doc();
-    if (!row || !d || d.layers.length < 2) return;
+    if (!row || !d || t.closest('.fm-lp-acts')) return;
     const id = row.dataset.key ?? '';
     const startX = e.clientX, startY = e.clientY, pid = e.pointerId;
     let started = false;
+    let swipe = 0;
     let drop: { parent: string | null; before: string | null } | null = null;
 
     const move = (ev: PointerEvent): void => {
-      if (ev.pointerId !== pid) return;
+      if (ev.pointerId !== pid || this.twoFinger) return;
       const dy = ev.clientY - startY;
       if (!started) {
-        if (Math.abs(dy) < 5) return;
+        // a mostly sideways flick is a swipe: right picks the row with others, left shows Duplicate and Delete
+        const dx = ev.clientX - startX;
+        if (!swipe && Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy) * 1.5) swipe = dx > 0 ? 1 : -1;
+        if (swipe) return;
+        if (Math.abs(dy) < 5 || d.layers.length < 2) return;
         started = true;
         row.setPointerCapture(pid);
         this.list.classList.add('is-dragging');
@@ -624,6 +769,11 @@ export class LayersPanel {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', end);
       document.removeEventListener('pointercancel', end);
+      if (swipe && ev.type === 'pointerup' && !this.twoFinger) {
+        this.lastDrag = performance.now();
+        if (swipe > 0) this.toggleSel(id); else this.showSwipe(row);
+        return;
+      }
       if (!started) return;
       this.lastDrag = performance.now();
       this.list.classList.add('is-settling');

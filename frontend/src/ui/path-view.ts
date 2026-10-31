@@ -136,7 +136,9 @@ export class PathView {
     if (vb !== this.box) { this.root.setAttribute('viewBox', vb); this.pivotRoot.setAttribute('viewBox', vb); this.box = vb; }
     // pivot crosshair: where the pivot point sits on the Stage now
     const sx = view.ox + (m.width / 2 + b.px + b.x) * view.scale, sy = view.oy + (m.height / 2 + b.py + b.y) * view.scale;
-    setHiddenAttr(this.pivotRoot, false);
+    // Compose turns about the content centre: the anchor crosshair belongs to Perform and Keyframe
+    if (mode === 'compose' && anchorMode.on) anchorMode.stop();
+    setHiddenAttr(this.pivotRoot, mode === 'compose');
     setAttr(this.pv, 'transform', `translate(${sx.toFixed(1)} ${sy.toFixed(1)})`);
     this.syncAnchor(m, c, view, b.x, b.y);
     const lane = keyed ? laneOf(c, 'move') : null;

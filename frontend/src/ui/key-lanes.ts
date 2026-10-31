@@ -1,5 +1,5 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
-import { channelSpec, easeAt, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
+import { channelSpec, easeAt, easeCurve, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
 import { t as tt } from './i18n';
 
@@ -50,6 +50,24 @@ const glyphs = new Map<string, HTMLImageElement>();
 let onGlyphLoad: (() => void) | null = null;
 
 export function setGlyphLoadHandler(fn: () => void): void { onGlyphLoad = fn; }
+
+/** The stretch between two keys a hold or a menu is on: its easing name and tick markers show over it (content-local frames). */
+export interface EasePreview { id: string; kind: KeyKind; channel: string | null; a: number; b: number }
+let preview: EasePreview | null = null;
+
+/** Show (or clear, with null) the easing preview; the Timeline redraws. */
+export function setEasePreview(p: EasePreview | null): void {
+  if (!p && !preview) return;
+  preview = p;
+  onGlyphLoad?.();
+}
+
+/** The easing's name in the interface language. */
+function easeName(e: string | null): string {
+  if (!e) return '';
+  const english = EASES.find((x) => x.id === e)?.label ?? (e === 'custom' ? 'Custom' : '');
+  return english ? tt(english) : '';
+}
 
 /** Kind icon tinted to a colour, as an image for canvas drawing; null until it has decoded. */
 export function glyph(kind: KeyKind, color: string): HTMLImageElement | null {
@@ -159,6 +177,23 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           }
         }
       }
+      // a collapsed lane names the easing of each stretch wide enough to hold it
+      if (!row.channel && frames.length > 1) {
+        const nameW = nameAt !== null ? c.measureText(tt(row.label)).width + 12 : 0;
+        for (let i = 0; i + 1 < frames.length; i++) {
+          const xa = g.x(frames[i]), xb = g.x(frames[i + 1]);
+          if (xb < 0 || xa > g.width || xb - xa < 70) continue;
+          const label = easeName(easeAt(slot.lane, frames[i]));
+          const lw = c.measureText(label).width;
+          const mid = (xa + xb) / 2;
+          if (!label || xb - xa < lw + GLYPH * 2 + 8 || (nameAt !== null && mid - lw / 2 < nameAt + nameW)) continue;
+          c.fillStyle = p.text;
+          c.globalAlpha = 0.6;
+          c.textAlign = 'center';
+          c.fillText(label, mid, cy);
+          c.globalAlpha = 1;
+        }
+      }
       for (let i = 0; i < frames.length; i++) {
         const x = g.x(frames[i]);
         if (x < -GLYPH || x > g.width + GLYPH) continue;
@@ -173,6 +208,32 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           c.lineWidth = 1;
         }
         drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy);
+      }
+      // held or in the lane menu: the stretch's easing name at its midpoint and tick markers at the easing's cadence
+      if (preview && preview.id === item.id && preview.kind === kind && preview.channel === row.channel) {
+        const xa = g.x(preview.a), xb = g.x(preview.b);
+        const e = easeAt(slot.lane, preview.a, row.channel ?? undefined);
+        if (xb > xa && xb >= 0 && xa <= g.width) {
+          const f = easeCurve(!e || e === 'custom' ? 'linear' : e);
+          c.strokeStyle = p.text;
+          c.lineWidth = 1.5;
+          c.globalAlpha = 0.9;
+          c.beginPath();
+          for (let i = 0; i <= 10; i++) { const tx = Math.round(xa + (xb - xa) * f(i / 10)) + 0.5; c.moveTo(tx, cy - 9); c.lineTo(tx, cy + 9); }
+          c.stroke();
+          c.lineWidth = 1;
+          c.globalAlpha = 1;
+          const label = easeName(e);
+          if (label) {
+            const lw = c.measureText(label).width + 14, mid = (xa + xb) / 2;
+            c.fillStyle = p.text;
+            round(c, mid - lw / 2, cy - 9, lw, 18, 9);
+            c.fill();
+            c.fillStyle = p.bar;
+            c.textAlign = 'center';
+            c.fillText(label, mid, cy);
+          }
+        }
       }
       if (nameAt !== null) {
         const tw = c.measureText(tt(row.label)).width;

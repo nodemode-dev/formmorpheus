@@ -1,0 +1,2 @@
+/* Block menu: never taller than the window; it scrolls inside when the sections are open. */
+.fm-pop.fm-cm, .fm-pop.fm-cm-sub, .fm-pop.fm-tm.fm-pop-sub { max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; }

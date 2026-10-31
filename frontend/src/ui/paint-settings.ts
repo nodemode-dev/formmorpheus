@@ -28,6 +28,10 @@ export interface PaintPrefs {
   keyframeEffects: boolean;
   /** Hide the Undo and Redo buttons on the sidebar (the gestures and keys still work). */
   hideUndoButtons: boolean;
+  /** Hold at the end of a stroke to snap it to a shape: for a pen only, for pen and mouse, or never. */
+  quickShape: 'pen' | 'all' | 'off';
+  /** Hold still after pressing to pick a color with the loupe: touch only, any pointer, or never. */
+  holdPick: 'touch' | 'all' | 'off';
 }
 
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
@@ -48,6 +52,8 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   undoDelay: 420,
   keyframeEffects: false,
   hideUndoButtons: false,
+  quickShape: 'pen',
+  holdPick: 'touch',
 };
 
 const KEY = 'formmorpheus.paint';
@@ -77,6 +83,8 @@ export function loadPaintPrefs(): PaintPrefs {
     out.scaling = o.scaling && ['off', 'canvas', 'screen'].includes(o.scaling) ? o.scaling : out.dynamicScaling ? 'screen' : 'off';
     if (o.outline && ['contrast', 'colour', 'brush'].includes(o.outline)) out.outline = o.outline;
     if (o.penButton && ['cycle', 'eyedropper', 'off'].includes(o.penButton)) out.penButton = o.penButton;
+    if (o.quickShape && ['pen', 'all', 'off'].includes(o.quickShape)) out.quickShape = o.quickShape;
+    if (o.holdPick && ['touch', 'all', 'off'].includes(o.holdPick)) out.holdPick = o.holdPick;
     out.cursor = out.cursorMode !== 'off';
     out.dynamicScaling = out.scaling !== 'off';
     for (const k of ['smoothing', 'maskVisibility', 'expression'] as const) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clamp01(o[k]);
@@ -229,6 +237,8 @@ export class PaintSettings {
   private readonly expr: SliderRow;
   private readonly penBtn: Seg;
   private readonly eraser: ToggleRow;
+  private readonly quick: Seg;
+  private readonly holdPickSeg: Seg;
   private readonly finger: ToggleRow;
   private readonly sideBar: Seg;
   private readonly smooth: SliderRow;
@@ -350,6 +360,11 @@ export class PaintSettings {
     const pen = seg('Pen button', ['Cycle tool', 'Eyedropper', 'Off'], (i) => o.setPrefs({ penButton: PEN[i] }));
     this.penBtn = pen.seg;
     this.eraser = toggleRow('Pen eraser end erases', (v) => o.setPrefs({ eraserEnd: v }));
+    const QS = ['pen', 'all', 'off'] as const, HP = ['touch', 'all', 'off'] as const;
+    const qs = seg('QuickShape (hold to snap)', ['Pen', 'Pen and mouse', 'Off'], (i) => o.setPrefs({ quickShape: QS[i] }));
+    this.quick = qs.seg;
+    const hp = seg('Hold to pick a color', ['Touch', 'All', 'Off'], (i) => o.setPrefs({ holdPick: HP[i] }));
+    this.holdPickSeg = hp.seg;
     this.finger = toggleRow('Paint with finger', (v) => o.setPrefs({ fingerPaints: v }));
     const sideRow = el('<div class="fm-ps-row fm-ps-sidebar"><span class="fm-ps-label">Size and opacity sidebar</span></div>');
     this.sideBar = segmented(['Left', 'Right'], (i) => o.setPrefs({ sidebarRight: i === 1 }));
@@ -373,7 +388,7 @@ export class PaintSettings {
     const SPD = ['precise', 'medium', 'fast'] as const;
     const spd = seg('Scrub speed', ['Precise', 'Medium', 'Fast'], (i) => { updatePrefs({ scrubSpeed: SPD[i] }); this.refresh(); });
     this.scrubSpeed = spd.seg;
-    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, spd.row, this.curveRow, this.curveWrap);
+    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, qs.row, hp.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, spd.row, this.curveRow, this.curveWrap);
 
     this.showTab(this.tab, true);
   }
@@ -426,6 +441,8 @@ export class PaintSettings {
     this.expr.el.classList.toggle('is-disabled', !p.motionFilter);
     this.penBtn.set(['cycle', 'eyedropper', 'off'].indexOf(p.penButton));
     this.eraser.set(p.eraserEnd);
+    this.quick.set(['pen', 'all', 'off'].indexOf(p.quickShape));
+    this.holdPickSeg.set(['touch', 'all', 'off'].indexOf(p.holdPick));
     this.finger.set(p.fingerPaints);
     this.sideBar.set(p.sidebarRight ? 1 : 0);
     this.smooth.set(p.smoothing, pct(p.smoothing));

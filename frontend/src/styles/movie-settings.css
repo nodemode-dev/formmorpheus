@@ -1,0 +1,53 @@
+/* Movie settings (G03, G05, G20, FV-211): a fixed-size panel, a scrolling body above a tab bar that stays put at the bottom. */
+.fm-pop.fm-ms { display: flex; flex-direction: column; width: 372px; padding: 0; overflow: hidden; border-radius: 26px; }
+.fm-pop.fm-ms[hidden] { display: none; }
+.fm-ms-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-3) var(--space-2) var(--space-2); }
+.fm-ms-title { padding: var(--space-1) var(--space-3) var(--space-3); color: var(--text-primary); font-size: var(--fs-18); font-weight: 700; }
+.fm-ms-pane { gap: 2px; }
+.fm-ms-pair { gap: var(--space-1); }
+.fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { flex: none; width: 36px; padding-inline: 0; }
+.fm-ms-sub { display: grid; gap: 2px; }
+.fm-ms-sub[hidden] { display: none; }
+.fm-ms-pane[hidden] { display: none; }
+.fm-ms-head { padding-top: var(--space-4); }
+
+.fm-ms-tabs { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding: var(--space-2) var(--space-2) var(--space-2); border-top: 1px solid var(--line-2); background: transparent; border-radius: 0; margin: 0; }
+.fm-ms-tab { display: grid; justify-items: center; align-content: center; gap: 2px; height: 52px; border: 0; border-radius: var(--radius-xl); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-11); cursor: default; }
+.fm-ms-tab:hover { color: var(--text-primary); }
+.fm-ms-tab.is-active { background: transparent; color: var(--accent-color); }
+.fm-ms-tab-label { font-weight: 600; }
+
+/* rows are rounded cells, values on the right */
+.fm-ms-row { border-radius: var(--radius-xl); }
+.fm-ms-link { width: 100%; border: 0; font: inherit; color: inherit; text-align: left; cursor: default; }
+.fm-ms-link:hover { background: color-mix(in srgb, var(--surface-raised) 80%, var(--text-primary) 10%); }
+.fm-ms-go { display: inline-flex; color: var(--text-muted); }
+.fm-ms-back { justify-content: flex-start; gap: var(--space-2); margin-bottom: var(--space-2); }
+.fm-ms-back .fm-ms-go { margin-left: 0; }
+.fm-ms-back > :last-child { margin-left: 0; }
+
+.fm-ms-art { display: inline-flex; width: 56px; height: 32px; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-field); }
+.fm-ms-art img { width: 100%; height: 100%; object-fit: cover; }
+.fm-ms-art img:not([src]) { visibility: hidden; }
+
+/* Playback: three radio rows with a check circle */
+.fm-ms-group { display: grid; gap: 2px; }
+.fm-ms-radio { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fm-pop-row-h); padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-xl); background: var(--surface-raised); font: inherit; text-align: left; cursor: default; }
+.fm-ms-radio:hover { background: color-mix(in srgb, var(--surface-raised) 80%, var(--text-primary) 10%); }
+.fm-ms-check { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: transparent; box-shadow: inset 0 0 0 1.5px var(--line-3); }
+.fm-ms-radio.is-on .fm-ms-check { background: var(--accent-color); color: var(--text-on-accent); box-shadow: none; }
+
+/* the rapid undo delay slider and its value chip */
+.fm-ms-slide { display: inline-flex; align-items: center; gap: var(--space-2); }
+.fm-ms-range { width: 110px; accent-color: var(--accent-color); }
+.fm-ms-chip { min-width: 52px; padding: 2px var(--space-2); border-radius: var(--radius-md); background: var(--surface-field); color: var(--text-secondary); font-size: var(--fs-12); text-align: center; }
+
+/* G22: one pair of Undo and Redo on screen: the status bar pair gives way while the Stage pair is showing */
+body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="undo"], body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="redo"] { display: none; }
+
+/* the toolbar button fills while the panel is open */
+.fm-round-btn.is-ms-open { background: var(--accent-color); color: var(--text-on-accent); }
+
+/* G04: the undo / redo banner at the top of the Stage; never takes a pointer event */
+.fm-undo-banner { position: fixed; left: var(--ub-x, 50%); top: var(--ub-y, 56px); z-index: var(--z-menu); transform: translate(-50%, -6px); max-width: min(520px, 80vw); padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); background: var(--glass-bg); box-shadow: inset 0 0 0 1px var(--glass-border), 0 6px 20px rgba(0, 0, 0, 0.35); color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity 0.14s, transform 0.14s; }
+.fm-undo-banner.is-on { opacity: 1; transform: translate(-50%, 0); }

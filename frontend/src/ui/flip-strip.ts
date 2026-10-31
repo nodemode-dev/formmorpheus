@@ -155,15 +155,19 @@ export class FlipStrip {
         `<button class="fm-fs-ib fm-fs-step" data-act="prev" type="button" title="Previous drawing (hold for the first)" aria-label="Previous drawing">${glyph(ICO.prev, 16)}</button>` +
         `<button class="fm-fs-ib fm-fs-step" data-act="next" type="button" title="Next drawing (hold for the last)" aria-label="Next drawing">${glyph(ICO.next, 16)}</button>` +
         `<span class="fm-fs-grip" aria-hidden="true"></span><span class="fm-fs-wheelslot"></span>` +
-        `<button class="fm-fs-ib" data-act="sheet" type="button" title="Exposure sheet: frames by tracks, holds, sound and notes" aria-label="Exposure sheet">${glyph(ICO.sheet, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="timing" type="button" title="Timing: shoot on twos, reverse and append, cycle, inbetweens" aria-label="Timing">${glyph(ICO.timing, 18)}</button>` +
-        `<button class="fm-fs-ib" data-act="under" type="button" title="Reference underlay and light table" aria-label="Reference underlay">${glyph(ICO.under, 18)}</button>` +
-        `<button class="fm-fs-ib has-lab" data-act="mini" type="button" title="Mini Flipbook: a small floating strip with a scrub wheel" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}<span class="fm-fs-iblab">Mini</span></button>` +
-        `<button class="fm-fs-ib has-lab" data-act="preview" type="button" title="Mini preview: watch the loop while you draw" aria-label="Mini preview">${glyph(ICO.preview, 18)}<span class="fm-fs-iblab">Preview</span></button>` +
         `<button class="fm-fs-ib has-lab" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}<span class="fm-fs-iblab">Select</span></button>` +
         `<button class="fm-fs-ib has-lab" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}<span class="fm-fs-iblab">Track</span></button>` +
         `<button class="fm-fs-ib has-lab" data-act="frame" type="button" title="Add frame (press and hold, or Alt: add after the hold)" aria-label="Add frame">${icon('plus', 18)}<span class="fm-fs-iblab">Frame</span></button>` +
-        `<button class="fm-fs-ib" data-act="hide" type="button" title="Hide or show the frames" aria-label="Hide frames">${glyph(ICO.chev, 16)}</button></div>` +
+        `<button class="fm-fs-ib" data-act="more" type="button" title="More: exposure sheet, timing, underlay, mini flipbook, preview" aria-label="More" aria-haspopup="menu">${icon('dots', 16)}</button>` +
+        // the extras sit behind More; the buttons are the same ones the strip always had, so their wiring is unchanged
+        `<div class="fm-fs-more" role="menu" hidden>` +
+        `<button class="fm-fs-ib has-lab" data-act="sheet" type="button" title="Exposure sheet: frames by tracks, holds, sound and notes" aria-label="Exposure sheet">${glyph(ICO.sheet, 18)}<span class="fm-fs-iblab">Exposure sheet</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="timing" type="button" title="Timing: shoot on twos, reverse and append, cycle, inbetweens" aria-label="Timing">${glyph(ICO.timing, 18)}<span class="fm-fs-iblab">Timing</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="under" type="button" title="Reference underlay and light table" aria-label="Reference underlay">${glyph(ICO.under, 18)}<span class="fm-fs-iblab">Underlay</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="mini" type="button" title="Mini Flipbook: a small floating strip with a scrub wheel (or drag the strip by its top)" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}<span class="fm-fs-iblab">Mini Flipbook</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="preview" type="button" title="Mini preview: watch the loop while you draw" aria-label="Mini preview">${glyph(ICO.preview, 18)}<span class="fm-fs-iblab">Preview</span></button>` +
+        `<button class="fm-fs-ib has-lab" data-act="hide" type="button" title="Hide or show the frames" aria-label="Hide frames">${glyph(ICO.chev, 16)}<span class="fm-fs-iblab">Hide frames</span></button>` +
+        `</div></div>` +
         `<div class="fm-fs-body"><div class="fm-fs-rulerrow"><div class="fm-fs-corner"></div><div class="fm-fs-ruler"><div class="fm-fs-ruler-in"></div></div></div>` +
         `<div class="fm-fs-rows"></div><div class="fm-fs-drop" hidden></div></div></div>`);
     this.body = q(this.root, '.fm-fs-body');
@@ -1080,8 +1084,33 @@ export class FlipStrip {
 
   // ---- input ----
 
+  private toggleMore(): void {
+    const m = q<HTMLElement>(this.root, '.fm-fs-more');
+    if (m.hidden) {
+      setHidden(m, false);
+      setClass(q(this.root, '[data-act="more"]'), 'is-on', true);
+      document.addEventListener('pointerdown', this.moreAway, true);
+    } else this.closeMore();
+  }
+
+  private closeMore(): void {
+    const m = q<HTMLElement>(this.root, '.fm-fs-more');
+    if (m.hidden) return;
+    setHidden(m, true);
+    setClass(q(this.root, '[data-act="more"]'), 'is-on', false);
+    document.removeEventListener('pointerdown', this.moreAway, true);
+  }
+
+  private readonly moreAway = (e: PointerEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.closest('.fm-fs-more') || t.closest('[data-act="more"]'))) return;
+    this.closeMore();
+  };
+
   private wire(): void {
     this.playBtn.addEventListener('click', () => this.host.togglePlay());
+    // the More menu is not a drag handle for the strip
+    q(this.root, '.fm-fs-more').addEventListener('pointerdown', (e) => e.stopPropagation());
     // Add frame: a press and hold adds after the hold, like Alt
     let frameHeld = false;
     let frameTimer = 0;
@@ -1096,6 +1125,9 @@ export class FlipStrip {
     frameBtn.addEventListener('pointerleave', stopFrame);
     this.head.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+      if (act === 'more') { this.toggleMore(); return; }
+      // a pick in the More menu closes it
+      if (act && (e.target as HTMLElement).closest('.fm-fs-more')) this.closeMore();
       if (act === 'preview') this.preview.toggle();
       else if (act === 'frame') { if (frameHeld) { frameHeld = false; return; } this.addFrame(e.altKey); }
       else if (act === 'track') this.addTrack();

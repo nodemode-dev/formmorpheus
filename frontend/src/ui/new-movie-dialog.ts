@@ -18,6 +18,12 @@ function screenSizes(): Array<[number, number]> {
   return [1, 0.75, 0.5, 0.25].map((s): [number, number] => [Math.max(16, Math.round((w * k * s) / 2) * 2), Math.max(16, Math.round((h * k * s) / 2) * 2)]);
 }
 
+/** Wide screen starts at 4K on a display of 1440p or more (the reference default), else at HD. */
+function wideDefault(): string {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.max(window.screen?.width || 0, window.screen?.height || 0) * dpr >= 2560 ? '0' : '2';
+}
+
 interface Saved { card: number; start: 'empty' | 'flipbook' }
 
 function load(): Saved {
@@ -60,7 +66,7 @@ export class NewMovieDialog extends Dialog {
       setText(q(card, '.fm-nm-label'), p.label);
       setText(q(card, '.fm-nm-ratio'), `${p.aspect[0]}:${p.aspect[1]}`);
       const sel = el<HTMLSelectElement>(`<select class="cv-input fm-nm-size" aria-label="${p.label} size">${p.sizes.map(([w, h], k) => `<option value="${k}">${w} x ${h}</option>`).join('')}</select>`);
-      sel.value = i === 0 ? '2' : '0'; // Wide screen opens at HD: 4K frames make frame-by-frame drawing heavy
+      sel.value = i === 0 ? wideDefault() : '0';
       sel.addEventListener('change', () => this.pick(i));
       this.sizes.push(sel);
       card.appendChild(sel);
@@ -87,26 +93,19 @@ export class NewMovieDialog extends Dialog {
     this.wireCard(custom, CUSTOM);
     grid.appendChild(custom);
 
-    const seg = el<HTMLElement>('<div class="fm-nm-seg" role="group"></div>');
-    (['empty', 'flipbook'] as const).forEach((id) => {
-      const b = el<HTMLButtonElement>('<button class="fm-nm-segbtn" type="button"></button>');
-      setText(b, id === 'empty' ? 'Empty' : 'Flipbook');
-      b.addEventListener('click', () => this.setStart(id));
-      this.starts.push(b);
-      seg.appendChild(b);
-    });
-
+    // the two start buttons below make the movie at once (the movie is in the Theater from that moment)
     const opts = el<HTMLElement>('<div class="fm-nm-opts"></div>');
-    opts.append(this.optRow('Frame rate', this.fps), this.optRow('Duration (seconds)', this.seconds), this.optRow('Start as', seg));
+    opts.append(this.optRow('Frame rate', this.fps), this.optRow('Duration (seconds)', this.seconds));
     this.fps.value = '24';
     this.body.append(grid, opts);
     this.body.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); this.create(); }
+      if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); this.create(this.state.start); }
     });
 
     this.button('Reset to defaults', 'ghost', () => this.reset()).classList.add('cv-btn-apart');
     this.button('Cancel', 'ghost', () => this.close());
-    this.button('Create', 'primary', () => this.create());
+    this.button('Flipbook', 'primary', () => this.create('flipbook'));
+    this.button('Empty', 'primary', () => this.create('empty'));
     this.remember([], {
       read: () => ({ card: String(this.state.card), start: this.state.start }),
       write: (v) => {
@@ -167,7 +166,7 @@ export class NewMovieDialog extends Dialog {
 
   /** Back to the first card at its largest size, 24 fps, 10 seconds, an empty start. */
   private reset(): void {
-    this.sizes.forEach((s, i) => { s.value = i === 0 ? '2' : '0'; });
+    this.sizes.forEach((s, i) => { s.value = i === 0 ? wideDefault() : '0'; });
     this.width.value = '1920';
     this.height.value = '1080';
     this.fps.value = '24';
@@ -177,7 +176,9 @@ export class NewMovieDialog extends Dialog {
     save(this.state);
   }
 
-  private create(): void {
+  private create(start: Saved['start']): void {
+    this.state.start = start;
+    save(this.state);
     const [width, height] = this.size();
     const seconds = this.seconds.valueAsNumber;
     this.engine.create({

@@ -140,7 +140,8 @@ export class PopupMenu {
     this.panel.style.visibility = 'hidden';
     this.panel.hidden = false;
     this.panel.scrollTop = 0;
-    const { width: w, height: h } = this.panel.getBoundingClientRect();
+    // offset sizes: the open animation scales the panel, and the placement must not follow that
+    const w = this.panel.offsetWidth, h = this.panel.offsetHeight;
     // As native menus: below and right of the pointer when it fits, otherwise above or to the left of it, so the
     // pointer sits at a corner and never over an item (clamping alone could put a submenu under it, opening it).
     const fitsRight = x + w <= window.innerWidth - 4, fitsBelow = y + h <= window.innerHeight - 4;
@@ -148,6 +149,9 @@ export class PopupMenu {
     const top = Math.max(4, Math.min(fitsBelow ? y : y - h, window.innerHeight - h - 4));
     this.panel.style.left = `${Math.round(left)}px`;
     this.panel.style.top = `${Math.round(top)}px`;
+    // the menu grows from the point it was opened at (a corner of it)
+    this.panel.style.setProperty('--fm-ox', `${Math.round(Math.max(0, Math.min(w, x - left)))}px`);
+    this.panel.style.setProperty('--fm-oy', `${Math.round(Math.max(0, Math.min(h, y - top)))}px`);
     this.panel.style.visibility = '';
   }
 

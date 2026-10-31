@@ -8,6 +8,7 @@ import { toast } from './toast';
 import { TheaterTools, type Target } from './home-theater';
 import { TheaterCarry } from './theater-carry';
 import { TheaterPreview } from './theater-preview';
+import { ensurePoster } from './poster-maker';
 
 /** Home's file browser (1.87.1, CLOSE_GAPS P02): Recent, Projects (the library) and Outputs (exports), each as a
  *  thumbnail grid or a list with name, kind, size and when it changed; filter, sort, open on click, and Remove from
@@ -242,7 +243,7 @@ export class HomeFiles {
   private row(i: Item): HTMLElement {
     const n = el(`<div class="cv-hf-item" role="listitem">
       <span class="cv-hf-check">${icon('check', 12)}</span>
-      <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" draggable="false" hidden><span class="cv-hf-glyph">${icon('fileImage', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
+      <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" draggable="false" hidden><span class="cv-hf-glyph">${icon('film', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
       <button class="cv-hf-remove" type="button" tabindex="-1" title="Remove from Recent" aria-label="Remove from Recent">${icon('close', 12)}</button>
     </div>`);
     this.fillRow(n, i);
@@ -254,7 +255,8 @@ export class HomeFiles {
     setText(q(n, '.cv-hf-kind'), i.kind.startsWith('Stack · ') ? `${t('Stack')}${i.kind.slice(5)}` : i.kind);
     setText(q(n, '.cv-hf-size'), i.missing ? 'Missing' : sizeText(i.size));
     setText(q(n, '.cv-hf-when'), whenText(i.when));
-    setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : i.where);
+    // the card shows the poster and the name only; kind and age wait in the tooltip
+    setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : [i.name, i.kind.startsWith('Stack · ') ? `${t('Stack')}${i.kind.slice(5)}` : i.kind, whenText(i.when)].filter(Boolean).join(' · '));
     setClass(n, 'is-missing', i.missing);
     setClass(n, 'is-selected', !!this.theater?.selected.has(i.key));
     setClass(n, 'is-stack', !!i.target?.stack);
@@ -277,7 +279,11 @@ export class HomeFiles {
       else if (th.project) blob = await api.thumbnail({ path: th.path });
       else blob = await api.readPath(th.path, n).catch(() => null);
       this.loading.delete(tk);
-      if (!blob || !blob.size) return;
+      if (!blob || !blob.size) {
+        // no poster in the file (recovered or old): one is drawn from the movie and written, then this card asks again
+        if ('name' in th && i.key.startsWith('lib:')) ensurePoster(th.name, () => { if (n.dataset.thumb === tk) { n.dataset.thumb = ''; this.fillRow(n, i); } });
+        return;
+      }
       const u = URL.createObjectURL(blob);
       this.thumbs.set(tk, u);
       if (n.dataset.thumb !== tk) return;

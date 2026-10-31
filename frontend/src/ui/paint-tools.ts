@@ -75,6 +75,21 @@ const FILTERS: { id: FilterId; label: string; params: Param[] }[] = [
 const SELECT_MODES: { id: SelectMode; label: string }[] = [
   { id: 'automatic', label: 'Automatic' }, { id: 'freehand', label: 'Freehand' }, { id: 'rectangle', label: 'Rectangle' }, { id: 'ellipse', label: 'Ellipse' },
 ];
+const tile = (body: string): string => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+/** The filter screen's right-hand tiles. */
+const TILE_ICONS: Record<string, string> = {
+  apply: tile('<path d="m5 12.5 4.5 4.5L19 7.5"/>'),
+  undo: tile('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'),
+  preview: tile('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>'),
+  cancel: tile('<path d="M6 6l12 12M18 6 6 18"/>'),
+  reset: tile('<path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.5 4.5v4h4"/>'),
+};
+
+const SEL_TIPS: Record<string, string> = {
+  clear: 'Erase the pixels inside the selection',
+  none: 'Clear selection: drop the outline and keep the pixels',
+  all: 'Pick colors from every layer, not only the active one',
+};
 const TRANSFORM_MODES: { id: TransformMode; label: string }[] = [
   { id: 'freeform', label: 'Freeform' }, { id: 'uniform', label: 'Uniform' }, { id: 'distort', label: 'Distort' }, { id: 'warp', label: 'Warp' },
 ];
@@ -117,7 +132,12 @@ export class PaintTools {
   readonly root: HTMLElement;
   private readonly host: ToolHost;
   private current: ToolMode = 'paint';
-  private selectMode: SelectMode = 'rectangle';
+  private selectMode: SelectMode = 'automatic';
+  /** Automatic: the region the current threshold would select, tinted while the threshold slides. */
+  private cand: OffscreenCanvas | null = null;
+  private candReq = 0;
+  private readonly thrEl: HTMLElement;
+  private readonly fthr: HTMLElement;
   private combineMode: CombineMode = 'replace';
   private transformMode: TransformMode = 'uniform';
   private interp: Interpolation = 'bilinear';
@@ -155,7 +175,13 @@ export class PaintTools {
     this.modes = q(this.root, '.fm-ptools-modes');
     this.actions = q(this.root, '.fm-ptools-actions');
     this.params = q(this.root, '.fm-ptools-params');
-    this.filterMenu = el<HTMLElement>(`<div class="fm-pfilters fm-pop" hidden><div class="fm-pfilters-title">Adjustments</div>${FILTERS.map((f) => `<button class="fm-pop-row" type="button" data-f="${f.id}">${f.label}</button>`).join('')}</div>`);
+    // the list reads Hue Saturation Brightness, Lens Blur, Gaussian Blur, Noise, Sharpen
+    const order: FilterId[] = ['hsb', 'lens', 'blur', 'noise', 'sharpen'];
+    const listed = [...FILTERS].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    this.filterMenu = el<HTMLElement>(`<div class="fm-pfilters fm-pop" hidden><div class="fm-pfilters-title">${tr('Adjustment filters')}</div>${listed.map((f) => `<button class="fm-pop-row" type="button" data-f="${f.id}">${f.label}</button>`).join('')}</div>`);
+    // the filter screen's title chip: the filter's name and its live value over a progress line
+    this.fthr = el<HTMLElement>('<div class="fm-thr fm-fthr" role="status" hidden><div class="fm-thr-row"><span class="fm-thr-title"></span><span class="fm-thr-val"></span></div><div class="fm-thr-line"><i></i></div></div>');
+    this.root.appendChild(this.fthr);
     this.root.addEventListener('click', (e) => this.click(e));
     this.root.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('[data-act="preview"]')) { this.preview(true); return; }
@@ -174,7 +200,38 @@ export class PaintTools {
       if (id) this.startFilter(id);
     });
     document.addEventListener('pointerdown', (e) => { if (!this.filterMenu.hidden && !this.filterMenu.contains(e.target as Node)) this.filterMenu.hidden = true; }, true);
-    queueMicrotask(() => this.root.parentElement?.appendChild(this.filterMenu));
+    this.thrEl = el<HTMLElement>(`<div class="fm-thr" role="status" hidden><div class="fm-thr-row"><span class="fm-thr-title">${tr('Selection Threshold')}</span><span class="fm-thr-val"></span></div><div class="fm-thr-line"><i></i></div></div>`);
+    queueMicrotask(() => { this.root.parentElement?.appendChild(this.filterMenu); this.root.parentElement?.appendChild(this.thrEl); });
+  }
+
+  /** The Automatic threshold readout (title, percent, progress line) and the candidate tint under it. */
+  private showThreshold(on: boolean): void {
+    setHidden(this.thrEl, !on);
+    if (!on) { this.cand = null; return; }
+    setText(q(this.thrEl, '.fm-thr-val'), `${Math.round(this.threshold * 100)}%`);
+    this.thrEl.style.setProperty('--v', String(this.threshold));
+    if (this.candReq) return;
+    this.candReq = requestAnimationFrame(() => { this.candReq = 0; this.makeCandidate(); });
+  }
+
+  private makeCandidate(): void {
+    const d = this.drag, doc = this.host.doc();
+    if (!d || d.kind !== 'automatic' || !doc) { this.cand = null; return; }
+    const x = Math.floor(d.start.x), y = Math.floor(d.start.y);
+    if (x < 0 || y < 0 || x >= doc.width || y >= doc.height) { this.cand = null; return; }
+    const m = autoMask(sampleAll.on ? doc.flattened() : doc.activeLayer().raster, x, y, this.threshold);
+    const cv = this.cand && this.cand.width === m.width && this.cand.height === m.height ? this.cand : new OffscreenCanvas(m.width, m.height);
+    const g = cv.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    const img = g.createImageData(m.width, m.height);
+    const px = img.data;
+    for (let i = 0, p = 0; i < m.data.length; i++, p += 4) {
+      const a = m.data[i];
+      if (!a) continue;
+      px[p] = 0; px[p + 1] = 214; px[p + 2] = 255; px[p + 3] = (a * 110) / 255;
+    }
+    g.putImageData(img, 0, 0);
+    this.cand = cv;
+    this.host.redraw();
   }
 
   mode(): ToolMode { return this.current; }
@@ -244,6 +301,11 @@ export class PaintTools {
   // ------------------------------------------------------------ capsule
 
   private build(): void {
+    this.showThreshold(false);
+    // the filter screen: the interface dims, a title chip sits on top, the sliders in a bottom pill, the actions on the right
+    this.root.classList.toggle('is-filters', this.current === 'filters');
+    this.root.parentElement?.classList.toggle('is-filtering', this.current === 'filters');
+    setHidden(this.fthr, this.current !== 'filters');
     setHidden(this.root, this.current === 'paint');
     setHidden(this.params, this.current !== 'filters');
     setHidden(this.modes, this.current === 'filters');
@@ -252,7 +314,7 @@ export class PaintTools {
       this.variant(this.actions, 'select', () => htmlOf([
         ['add', 'Add'], ['remove', 'Remove'], ['invert', 'Invert'],
         ['all', 'Sample all layers'], ['reload', 'Reload'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'], ['none', 'Deselect'], ['done', 'Done'],
-      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}">${tr(label)}</button>`).join('')));
+      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${SEL_TIPS[id] ? ` title="${tr(SEL_TIPS[id])}"` : ''}>${tr(label)}</button>`).join('')));
       for (const b of this.modes.querySelectorAll<HTMLElement>('[data-sel]')) b.classList.toggle('is-active', b.dataset.sel === this.selectMode);
       for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="add"],[data-act="remove"]')) b.classList.toggle('is-active', b.dataset.act === this.combineMode);
       for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="all"]')) b.classList.toggle('is-active', sampleAll.on);
@@ -281,7 +343,8 @@ export class PaintTools {
         for (const b of v.querySelectorAll<HTMLButtonElement>('[data-nt]')) b.addEventListener('click', () => { const k = b.dataset.nt as 'additive' | 'multichannel'; this.fopts[k] = !this.fopts[k]; this.syncChoices(); this.scheduleFilter(); });
         return v;
       });
-      this.variant(this.actions, 'filters', () => htmlOf([['undo', 'Undo'], ['preview', 'Preview'], ['reset', 'Reset'], ['cancel', 'Cancel'], ['apply', 'Apply']].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${id === 'preview' ? ` title="${tr('Hold to see the original')}"` : ''}>${tr(label)}</button>`).join('')));
+      setText(q(this.fthr, '.fm-thr-title'), tr(f.label));
+      this.variant(this.actions, 'filters', () => htmlOf([['apply', 'Apply'], ['undo', 'Undo'], ['preview', 'Preview'], ['cancel', 'Cancel'], ['reset', 'Reset']].map(([id, label]) => `<button type="button" class="fm-ptools-act fm-ptools-tile" data-act="${id}" title="${id === 'preview' ? tr('Hold to see the original') : tr(label)}">${TILE_ICONS[id]}<span>${tr(label)}</span></button>`).join('')));
       this.syncChoices();
       this.syncOutputs();
     }
@@ -358,6 +421,11 @@ export class PaintTools {
     const f = FILTERS.find((x) => x.id === this.filter);
     if (!f) return;
     const scope = this.params.querySelector<HTMLElement>(`[data-v="${f.id}"]`) ?? this.params;
+    // the title chip shows the first slider's value, and its progress line follows it
+    const p0 = f.params[0];
+    const v0 = this.values[p0.id] ?? p0.def;
+    setText(q(this.fthr, '.fm-thr-val'), f.id === 'hsb' ? '' : `${Math.round(v0 * p0.scale)}${p0.unit}`);
+    this.fthr.style.setProperty('--v', String(Math.max(0, Math.min(1, (v0 - p0.min) / (p0.max - p0.min || 1)))));
     for (const p of f.params) {
       const v = this.values[p.id] ?? p.def;
       setText(scope.querySelector(`[data-o="${p.id}"]`), `${Math.round(v * p.scale)}${p.unit}`);
@@ -440,7 +508,11 @@ export class PaintTools {
   private down(e: PointerEvent): void {
     const p = this.host.toCanvas(e.clientX, e.clientY);
     const base = { start: p, last: p, pts: [p], i: -1, j: -1, quad0: this.float?.quad.map((x) => ({ ...x })) ?? [], grid0: this.float?.grid?.map((r) => r.map((x) => ({ ...x }))) ?? null, th0: this.threshold, cx: e.clientX };
-    if (this.current === 'select') { this.drag = { kind: this.selectMode, ...base }; return; }
+    if (this.current === 'select') {
+      this.drag = { kind: this.selectMode, ...base };
+      if (this.selectMode === 'automatic') this.showThreshold(true);
+      return;
+    }
     if (this.current === 'filters') { this.drag = { kind: 'filter', ...base, th0: this.values[this.firstParam()] ?? FILTERS.find((x) => x.id === this.filter)?.params[0]?.def ?? 0 }; return; }
     if (this.current === 'transform' && this.float) {
       const hit = this.hitHandle(e);
@@ -464,7 +536,7 @@ export class PaintTools {
     d.last = p;
     if (this.current === 'select') {
       if (d.kind === 'freehand') d.pts.push(p);
-      if (d.kind === 'automatic') { this.threshold = clamp(d.th0 + (e.clientX - d.cx) / 400, 0.01, 1); this.host.say(tr('Selection threshold {p}%').replace('{p}', String(Math.round(this.threshold * 100)))); }
+      if (d.kind === 'automatic') { this.threshold = clamp(d.th0 + (e.clientX - d.cx) / 400, 0.01, 1); this.showThreshold(true); return; }
       this.host.redraw();
       return;
     }
@@ -484,6 +556,7 @@ export class PaintTools {
   private up(e: PointerEvent): void {
     const d = this.drag;
     this.drag = null;
+    if (d?.kind === 'automatic') { this.showThreshold(false); this.host.redraw(); }
     const doc = this.host.doc();
     if (!d || !doc) return;
     let p = this.host.toCanvas(e.clientX, e.clientY);
@@ -548,6 +621,10 @@ export class PaintTools {
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = accent();
+    if (this.current === 'select' && d && d.kind === 'automatic' && this.cand) {
+      const o = S({ x: 0, y: 0 });
+      ctx.drawImage(this.cand, o.x, o.y, this.cand.width * v.scale, this.cand.height * v.scale);
+    }
     if (this.current === 'select' && d) {
       ctx.setLineDash([5, 4]);
       ctx.beginPath();

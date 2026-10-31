@@ -7,11 +7,24 @@ import { followLanguage, fpsText } from './fps-label';
 import { toggleOf } from './panels/controls';
 import { confirmAction } from './dialogs';
 import { loadPrefs, updatePrefs } from './prefs';
+import { openPaintOnCreate, setOpenPaintOnCreate } from './create-pref';
 import { loadPaintPrefs, savePaintPrefs } from './paint-settings';
 import { Popover } from './popover';
 import { StageOptionsBody, type BackgroundPicker } from './stage-options';
+import { MS_TAB_ICONS } from './ms-icons';
+import { t } from './i18n';
+import { api } from '../io/api';
+import { toast } from './toast';
+import '../styles/movie-settings.css';
 
-const TABS = ['Project', 'Stage', 'Timeline', 'Prefs', 'Share'] as const;
+/** The reference order: Share before Prefs. */
+const TABS = ['Project', 'Stage', 'Timeline', 'Share', 'Prefs'] as const;
+const PANE_OF: Record<(typeof TABS)[number], number> = { Project: 0, Stage: 1, Timeline: 2, Share: 4, Prefs: 3 };
+/** The Gestures page: the pen words are generic (a pen, not a product). */
+const GESTURES: Array<['penHover' | 'penRoll' | 'penPlay' | 'undoGestures' | 'multiFinger' | 'rotatePinch', string]> = [
+  ['penHover', 'Pen hover on Timeline'], ['penRoll', 'Rotate performing with a twisting pen'], ['penPlay', 'Pen button plays and pauses'],
+  ['undoGestures', 'Undo and redo gestures'], ['multiFinger', 'Multi-select with finger'], ['rotatePinch', 'Rotate Stage with pinch zoom'],
+];
 const UNDO_STEPS: Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
 
 function runCommand(id: string): void {
@@ -59,7 +72,7 @@ export class MovieSettings {
   private readonly duration = input('text');
   private readonly frames: HTMLElement;
   private readonly stage: StageOptionsBody;
-  private readonly playback = select(PLAYBACK);
+  private readonly playbackRows: HTMLButtonElement[] = [];
   private readonly addKey = input('checkbox');
   private readonly loopVisible = input('checkbox');
   private readonly mbOn = input('checkbox');
@@ -68,7 +81,14 @@ export class MovieSettings {
   private forceCustom = false;
   private readonly undoSteps = select(UNDO_STEPS);
   private readonly recentUndo = select([['100', '100%'], ['75', '75%'], ['50', '50%'], ['25', '25%'], ['10', '10%']]);
-  private readonly rapid = select([['150', '150 ms'], ['300', '300 ms'], ['420', '420 ms'], ['600', '600 ms'], ['800', '800 ms'], ['1000', '1000 ms']]);
+  private readonly rapid = el<HTMLInputElement>('<input class="fm-ms-range" type="range" min="150" max="1000" step="50" aria-label="Rapid undo delay">');
+  private readonly rapidChip = el<HTMLElement>('<span class="fm-ms-chip"></span>');
+  private readonly stageUndo = input('checkbox');
+  private readonly openPaint = input('checkbox');
+  private readonly gestureBoxes = new Map<string, HTMLInputElement>();
+  private prefsMain!: HTMLElement;
+  private prefsGestures!: HTMLElement;
+  private body!: HTMLElement;
   private readonly author = input('text', 'fm-ms-wide');
   private art!: HTMLImageElement;
   private artUrl = '';
@@ -89,18 +109,18 @@ export class MovieSettings {
 
   constructor(private readonly engine: Engine, picker: BackgroundPicker, private readonly poster: () => Promise<Blob | null> = () => Promise.resolve(null)) {
     this.stage = new StageOptionsBody(engine, picker);
-    this.pop = new Popover('fm-ms', 380);
+    this.pop = new Popover('fm-ms', 372);
     followLanguage(this.fps);
+    // the tab bar sits at the bottom (icon over label) and never moves: the panel has one size, the pane scrolls
     const strip = el<HTMLElement>('<div class="fm-ms-tabs" role="tablist"></div>');
-    TABS.forEach((label, i) => {
-      const b = el<HTMLButtonElement>('<button class="fm-ms-tab" type="button" role="tab"></button>');
-      setText(b, label);
-      b.addEventListener('click', () => this.tab(i));
-      this.tabs.push(b);
+    TABS.forEach((label) => {
+      const b = el<HTMLButtonElement>(`<button class="fm-ms-tab" type="button" role="tab">${MS_TAB_ICONS[label]}<span class="fm-ms-tab-label"></span></button>`);
+      setText(q(b, '.fm-ms-tab-label'), label);
+      b.addEventListener('click', () => this.tab(PANE_OF[label]));
+      this.tabs[PANE_OF[label]] = b;
       strip.appendChild(b);
-      const pane = el<HTMLElement>('<div class="fm-ms-pane" role="tabpanel"></div>');
-      this.panes.push(pane);
     });
+    for (let i = 0; i < TABS.length; i++) this.panes.push(el<HTMLElement>('<div class="fm-ms-pane" role="tabpanel"></div>'));
 
     this.width.min = '16'; this.height.min = '16';
     this.fpsCustom.min = '1'; this.fpsCustom.max = '120'; this.fpsCustom.step = 'any';
@@ -118,7 +138,16 @@ export class MovieSettings {
     this.panes[0].append(row('Name', this.name), row('Resolution', size), row('Frame rate', this.fps), this.fpsCustomRow, row('Duration', durWrap), row('', fitBtn));
 
     this.panes[1].append(this.stage.el);
-    this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)), row('Motion blur', toggleOf(this.mbOn)), row('Shutter angle', this.mbShutter), row('Motion blur maximum samples', this.mbSamples));
+    const modes = el<HTMLElement>('<div class="fm-ms-group" role="radiogroup" aria-label="Playback"></div>');
+    for (const [mode, label] of PLAYBACK) {
+      const b = el<HTMLButtonElement>('<button class="fm-ms-radio" type="button" role="radio"><span class="fm-ms-label"></span><span class="fm-ms-check" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></span></button>');
+      setText(q(b, '.fm-ms-label'), label);
+      b.dataset.mode = mode;
+      b.addEventListener('click', () => this.run('Playback', { playback: mode }));
+      this.playbackRows.push(b);
+      modes.appendChild(b);
+    }
+    this.panes[2].append(el<HTMLElement>('<div class="fm-ms-head">Playback</div>'), modes, row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)), row('Motion blur', toggleOf(this.mbOn)), row('Shutter angle', this.mbShutter), row('Motion blur maximum samples', this.mbSamples));
     this.mbShutter.min = '0'; this.mbShutter.max = '720'; this.mbSamples.min = '2'; this.mbSamples.max = '64';
     this.undoSteps.value = String(loadPrefs().undoDepth);
     this.undoSteps.addEventListener('change', () => {
@@ -134,20 +163,45 @@ export class MovieSettings {
     this.author.placeholder = 'Your name';
     enter(this.author);
     this.author.addEventListener('change', () => this.run('Author', { author: this.author.value }));
-    const art = el<HTMLElement>('<div class="fm-ms-art"><img alt="Artwork" draggable="false"><span class="fm-ms-art-cap">The picture shown in the Theater</span></div>');
+    // the picture shown in the Theater is a small thumbnail inside the About row, not a large preview
+    const art = el<HTMLElement>('<span class="fm-ms-art"><img alt="Theater picture" draggable="false"></span>');
     this.art = q<HTMLImageElement>(art, 'img');
     this.panes[0].append(
-      el<HTMLElement>('<div class="fm-ms-head">About this artwork</div>'), art, row('Author', this.author),
+      el<HTMLElement>('<div class="fm-ms-head">About this artwork</div>'), row('Picture in the Theater', art), row('Author', this.author),
       el<HTMLElement>('<div class="fm-ms-head">History</div>'),
       row('Undo steps', this.undoSteps), row('Recent undo steps', this.recentUndo), row('Recovery points', actionBtn('Recovery Points...', 'recovery-points')),
     );
-    this.rapid.value = String(Math.round(loadPaintPrefs().undoDelay / 10) * 10);
-    this.rapid.addEventListener('change', () => savePaintPrefs({ ...loadPaintPrefs(), undoDelay: Number(this.rapid.value) }));
-    this.panes[3].append(
-      row('Rapid undo delay', this.rapid),
+    this.rapid.addEventListener('input', () => { setText(this.rapidChip, `${this.rapid.value} ms`); savePaintPrefs({ ...loadPaintPrefs(), undoDelay: Number(this.rapid.value) }); });
+    const rapidCtl = el<HTMLElement>('<span class="fm-ms-slide"></span>');
+    rapidCtl.append(this.rapid, this.rapidChip);
+    this.stageUndo.addEventListener('change', () => {
+      updatePrefs({ stageUndoButtons: this.stageUndo.checked });
+      document.body.classList.toggle('fm-no-stage-undo', !this.stageUndo.checked);
+    });
+    this.openPaint.addEventListener('change', () => setOpenPaintOnCreate(this.openPaint.checked));
+    // the Prefs page: its main rows, and the Gestures page behind a row (a back row returns)
+    this.prefsMain = el<HTMLElement>('<div class="fm-ms-sub"></div>');
+    this.prefsGestures = el<HTMLElement>('<div class="fm-ms-sub" hidden></div>');
+    const gestRow = el<HTMLButtonElement>('<button class="fm-ms-row fm-ms-link" type="button"><span class="fm-ms-label">Gestures</span><span class="fm-ms-go" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></span></button>');
+    gestRow.addEventListener('click', () => this.gestures(true));
+    const back = el<HTMLButtonElement>('<button class="fm-ms-row fm-ms-link fm-ms-back" type="button"><span class="fm-ms-go" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg></span><span class="fm-ms-label">Prefs</span></button>');
+    back.addEventListener('click', () => this.gestures(false));
+    this.prefsMain.append(
+      row('Rapid undo delay', rapidCtl),
+      row('Undo and redo buttons', toggleOf(this.stageUndo)),
+      row('Open Draw & Paint after adding', toggleOf(this.openPaint)),
       row('Keyboard shortcuts', actionBtn('Keyboard Shortcuts...', 'shortcuts')),
+      gestRow,
       row('More settings', actionBtn('Preferences...', 'settings')),
     );
+    this.prefsGestures.append(back);
+    for (const [key, label] of GESTURES) {
+      const box = input('checkbox');
+      box.addEventListener('change', () => { updatePrefs({ [key]: box.checked }); document.dispatchEvent(new CustomEvent('fm:gesture-prefs')); });
+      this.gestureBoxes.set(key, box);
+      this.prefsGestures.append(row(label, toggleOf(box)));
+    }
+    this.panes[3].append(this.prefsMain, this.prefsGestures);
     this.panes[4].append(
       row('Export', actionBtn('Export...', 'export')),
       row('Movie file', actionBtn('Share Movie File', 'export-fmo')),
@@ -163,10 +217,13 @@ export class MovieSettings {
     }
     this.panes[0].insertBefore(row('Hours, minutes, seconds', hms), this.panes[0].children[5]);
 
-    this.pop.body.append(strip, ...this.panes);
+    this.body = el<HTMLElement>('<div class="fm-ms-body"></div>');
+    this.body.append(el<HTMLElement>('<div class="fm-ms-title">Movie Settings</div>'), ...this.panes);
+    this.pop.body.append(this.body, strip);
     this.wire();
     this.tab(0);
     engine.on('movie', () => { if (this.pop.isOpen) this.patch(); });
+    this.pop.onHide(() => setClass(this.anchor, 'is-ms-open', false));
     // an action that opens a dialog (Export, Preferences, Shortcuts) takes the popover away first
     document.addEventListener('fm:ms-close', () => this.pop.hide());
   }
@@ -175,10 +232,17 @@ export class MovieSettings {
     if (this.pop.isOpen) { this.pop.hide(); return; }
     if (!this.engine.movie) return;
     this.forceCustom = false;
+    this.gestures(false);
     this.patch(true);
     this.anchor = anchor;
     this.place();
+    setClass(anchor, 'is-ms-open', true);
     void this.refreshArt();
+  }
+
+  private gestures(on: boolean): void {
+    setHidden(this.prefsMain, on);
+    setHidden(this.prefsGestures, !on);
   }
 
   /** The artwork picture is the current Stage frame, swapped in when it is ready. */
@@ -198,13 +262,17 @@ export class MovieSettings {
     const a = this.anchor;
     if (!a) return;
     const r = a.getBoundingClientRect();
-    this.pop.showFor(a, r.top > window.innerHeight - r.bottom ? 'above' : 'below');
+    const above = r.top > window.innerHeight - r.bottom;
+    // one fixed size, worked out once per opening: a tab never changes it, so the tab bar never moves
+    const room = (above ? r.top - 40 : window.innerHeight - r.bottom) - 24;
+    this.pop.el.style.height = `${Math.round(Math.max(300, Math.min(560, room)))}px`;
+    this.pop.showFor(a, above ? 'above' : 'below');
   }
 
   private tab(at: number): void {
     this.tabs.forEach((b, i) => { setClass(b, 'is-active', i === at); b.setAttribute('aria-selected', String(i === at)); });
     this.panes.forEach((p, i) => setHidden(p, i !== at));
-    if (this.pop.isOpen) this.place();
+    this.body.scrollTop = 0;
   }
 
   private run(label: string, patch: ops.MoviePatch): void {
@@ -214,7 +282,8 @@ export class MovieSettings {
 
   private wire(): void {
     for (const n of [this.name, this.width, this.height, this.fpsCustom, this.duration]) enter(n);
-    this.name.addEventListener('change', () => this.run('Rename Movie', { name: this.name.value }));
+    // the name is the file's name in the Theater: renaming renames the library file, then the movie
+    this.name.addEventListener('change', () => { void this.rename(this.name.value.trim()); });
     this.width.addEventListener('change', () => { if (Number.isFinite(this.width.valueAsNumber)) this.run('Resolution', { width: this.width.valueAsNumber }); else this.patch(true); });
     this.height.addEventListener('change', () => { if (Number.isFinite(this.height.valueAsNumber)) this.run('Resolution', { height: this.height.valueAsNumber }); else this.patch(true); });
     this.fps.addEventListener('change', () => {
@@ -234,7 +303,6 @@ export class MovieSettings {
       if (frames !== null && frames > 0) this.run('Duration', { duration: frames });
       else this.patch(true);
     });
-    this.playback.addEventListener('change', () => this.run('Playback', { playback: this.playback.value as PlaybackMode }));
     this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
     const mb = (): void => {
@@ -242,6 +310,21 @@ export class MovieSettings {
       this.run('Motion Blur', { motionBlur: { on: this.mbOn.checked, shutter: Number.isFinite(sh) ? sh : 180, samples: Number.isFinite(sm) ? sm : 16 } });
     };
     for (const n of [this.mbOn, this.mbShutter, this.mbSamples]) n.addEventListener('change', mb);
+  }
+
+  private async rename(to: string): Promise<void> {
+    const e = this.engine, m = e.movie;
+    if (!m || !to || to === (e.libraryName ?? m.name)) { this.patch(true); return; }
+    try {
+      if (e.libraryName) {
+        const item = await api.renameMovie(e.libraryName, to);
+        e.libraryName = item.name;
+        e.nameMovie(item.name);
+      } else this.run('Rename Movie', { name: to });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : t('The movie could not be renamed.'), 'error');
+    }
+    this.patch(true);
   }
 
   /** A new frame rate retimes every block and key to keep its length in seconds, so a movie with content asks first. */
@@ -280,7 +363,14 @@ export class MovieSettings {
     this.put(this.recentUndo, String(Math.round(loadPrefs().recentUndo / 25) * 25 || 10), true);
     this.put(this.author, m.author ?? '', force);
     this.stage.sync();
-    this.put(this.playback, m.playback, true);
+    for (const b of this.playbackRows) { const on = b.dataset.mode === m.playback; setClass(b, 'is-on', on); b.setAttribute('aria-checked', String(on)); }
+    const p = loadPrefs();
+    const delay = String(Math.round(loadPaintPrefs().undoDelay / 50) * 50);
+    if (this.rapid.value !== delay) this.rapid.value = delay;
+    setText(this.rapidChip, `${delay} ms`);
+    setChecked(this.stageUndo, p.stageUndoButtons);
+    setChecked(this.openPaint, openPaintOnCreate());
+    for (const [key] of GESTURES) { const box = this.gestureBoxes.get(key); if (box) setChecked(box, p[key]); }
     setChecked(this.addKey, m.addKeyAtStart);
     setChecked(this.loopVisible, !!m.loopVisible);
     setChecked(this.mbOn, !!m.motionBlur?.on);

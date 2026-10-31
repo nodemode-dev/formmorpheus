@@ -1,8 +1,7 @@
 // A brush file dropped anywhere on the window (the Stage, the Timeline or the Draw & Paint canvas) is imported
 // into the Imported set. It runs in the capture phase so the shell's own picture import never sees it.
 
-import { importBrushFile } from '../io/brush-import';
-import { brushStore } from './brush-store';
+import { importFileWithPreview } from './brush-import-dialog';
 import { t, tn } from './i18n';
 import { toast } from './toast';
 
@@ -19,14 +18,14 @@ function allBrushFiles(files: File[]): boolean {
 }
 
 export async function importBrushFiles(files: File[]): Promise<void> {
-  let added = 0, failed = 0, last = '';
+  let added = 0, failed = 0, last = '', cancelled = 0;
   for (const f of files) {
     try {
-      const r = await importBrushFile(f);
-      if (r.sets && r.sets.length) { brushStore.addImportedLibrary(r.libName ?? f.name.replace(/\.[^.]+$/, ''), r.sets); added += r.brushes.length; }
-      else if (r.brushes.length) { if (r.setName) brushStore.addImportedSet(r.setName, r.brushes); else brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
+      const r = await importFileWithPreview(f);
+      if (r.cancelled) cancelled++; else if (r.added) added += r.added; else failed++;
     } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
   }
+  if (cancelled && !added && !failed) return;
   if (added) toast(tn(added, 'Imported {n} brush', 'Imported {n} brushes') + (failed ? `, ${tn(failed, '{n} skipped', '{n} skipped')}` : ''));
   else toast(last || t('No brushes found in that file'), 'error');
 }

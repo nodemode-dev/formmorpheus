@@ -6,6 +6,7 @@ import { icon } from './icons';
 import { ExamplesRow } from './examples-row';
 import { mountStorageButton } from './theater-storage';
 import { Popover, popRow } from './popover';
+import '../styles/theater-wall.css';
 
 export interface HomeDeps {
   engine: ShellModel;
@@ -42,8 +43,15 @@ export class HomeScreen {
     const key = (k: string): string => `<span class="cv-keys" dir="ltr"><kbd class="cv-key">${mod}</kbd><kbd class="cv-key">${k}</kbd></span>`;
     const formats = ['FMO', 'PNG', 'JPEG', 'GIF', 'WEBP', 'MP4', 'MOV', 'WAV', 'MP3'].map((f) => `<span class="cv-home-format">${f}</span>`).join('');
     const sizes = PRESETS.map((p, i) => `<button class="cv-home-size" type="button" data-size="${i}"><span class="cv-home-size-box"><span style="aspect-ratio: ${p.w} / ${p.h}"></span></span><span class="cv-home-size-name">${p.name}</span><span class="cv-home-size-meta">${p.w} x ${p.h} px · ${p.fps} fps</span></button>`).join('');
-    this.root.innerHTML = `<nav class="cv-home-nav" aria-label="Home">
-      <button class="cv-home-brand" type="button" data-brand aria-haspopup="menu" title="About, What's New, Help">formmorpheus <span>by NodeMode</span>${icon('chevronDown', 12)}</button>
+    this.root.innerHTML = `<header class="cv-home-top">
+      <button class="cv-home-toggle" type="button" data-toggle title="Sidebar" aria-label="Sidebar" aria-expanded="false">${icon('panelNav', 18)}</button>
+      <button class="cv-home-word" type="button" data-brand aria-haspopup="menu" title="About, What's New, Help"><b>form</b>morpheus</button>
+      <span class="cv-home-top-gap"></span>
+      <button class="cv-home-toggle" type="button" data-tools title="Filter, sort and view" aria-label="Filter, sort and view" aria-pressed="false">${icon('more3', 18)}</button>
+      <button class="cv-home-pill" type="button" data-select aria-pressed="false">Select</button>
+      <button class="cv-home-plus" type="button" data-cmd="new" title="New Movie" aria-label="New Movie">${icon('plus', 18)}</button>
+    </header>
+    <nav class="cv-home-nav" aria-label="Home">
       <button class="cv-home-nav-item cv-home-storage" type="button" data-storage>${icon('folder', 16)}<span>Library folder</span></button>
       ${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
       <div class="cv-home-nav-sep"></div>
@@ -107,6 +115,7 @@ export class HomeScreen {
     }
     const brandBtn = this.root.querySelector('[data-brand]') as HTMLElement;
     brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
+    this.wireTop();
     mountStorageButton(this.root.querySelector('[data-storage]') as HTMLElement);
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
@@ -115,8 +124,31 @@ export class HomeScreen {
     this.sync();
   }
 
+  /** The top bar: the sidebar toggle (closed at first, remembered), the quiet tools row, and Select, which is the Theater's own Select button. */
+  private wireTop(): void {
+    const NAV = 'formmorpheus.theaterNav';
+    const get = (k: string): boolean => { try { return localStorage.getItem(k) === '1'; } catch { return false; } };
+    const put = (k: string, v: boolean): void => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* this session only */ } };
+    const toggle = this.root.querySelector('[data-toggle]') as HTMLElement;
+    const tools = this.root.querySelector('[data-tools]') as HTMLElement;
+    const pick = this.root.querySelector('[data-select]') as HTMLElement;
+    const nav = (on: boolean): void => { setClass(this.root, 'is-nav-open', on); toggle.setAttribute('aria-expanded', String(on)); put(NAV, on); };
+    nav(get(NAV));
+    toggle.addEventListener('click', () => nav(!this.root.classList.contains('is-nav-open')));
+    // choosing a page or a command from the sidebar puts it away again, so the wall stays a wall
+    this.root.querySelector('.cv-home-nav')?.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-v], [data-cmd], [data-storage], [data-back]')) nav(false); });
+    tools.addEventListener('click', () => { const on = !this.root.classList.contains('show-tools'); setClass(this.root, 'show-tools', on); tools.setAttribute('aria-pressed', String(on)); });
+    const inner = this.root.querySelector('[data-page="projects"] .cv-th-select') as HTMLElement | null;
+    if (!inner) return;
+    pick.addEventListener('click', () => inner.click());
+    const mirror = (): void => { const on = inner.getAttribute('aria-pressed') === 'true'; setClass(pick, 'is-active', on); pick.setAttribute('aria-pressed', String(on)); setText(pick, on ? 'Done' : 'Select'); };
+    new MutationObserver(mirror).observe(inner, { attributes: true, attributeFilter: ['aria-pressed'] });
+  }
+
   /** The chosen page shown, the others hidden, its nav item marked; attribute writes only. */
   private paint(): void {
+    setHidden(this.root.querySelector('[data-select]') as HTMLElement, this.page !== 'projects');
+    setHidden(this.root.querySelector('[data-tools]') as HTMLElement, this.page === 'start' || this.page === 'trash');
     for (const n of Array.from(this.root.querySelectorAll<HTMLElement>('.cv-home-page'))) setHidden(n, n.dataset.page !== this.page);
     for (const n of Array.from(this.root.querySelectorAll<HTMLElement>('.cv-home-nav-item[data-v]'))) setClass(n, 'is-active', n.dataset.v === this.page);
     const h = new Date().getHours();

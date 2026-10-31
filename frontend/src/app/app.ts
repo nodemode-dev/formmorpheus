@@ -5,7 +5,7 @@ import { Renderer } from '../engine/render';
 import { convertToFlipbook } from '../ui/flip-convert';
 import { setFlipServices } from '../ui/flip-services';
 import type { Asset, Content } from '../engine/types';
-import { api, capabilities, onServiceChange } from '../io/api';
+import { api, capabilities, onServiceChange, serviceReady } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
@@ -30,6 +30,7 @@ import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../
 import { enhanceAllSelects } from '../ui/dropdown';
 import { HelpView } from '../ui/help-view';
 import { AboutDialog } from '../ui/about-dialog';
+import { PenLink } from '../ui/pen-link';
 import { setupOnboarding } from '../ui/onboarding';
 import { setupHelpCenter } from '../ui/help-setup';
 import { previewFor } from '../ui/preview-strip';
@@ -39,6 +40,8 @@ import { historyLabel } from '../ui/history-label';
 import { icon } from '../ui/icons';
 import '../ui/icons-morph';
 import { MenuBar, PopupMenu, setMenuStyle, type MenuDef } from '../ui/menu';
+import { CreateMenu, type CreateItem } from '../ui/create-menu';
+import { openPaintOnCreate, setOpenPaintOnCreate } from '../ui/create-pref';
 import { MovieSettings } from '../ui/movie-settings';
 import { MENUS_IN_WINDOW_KEY, NativeMenus, menusInWindow, wantsNativeMenus } from '../ui/native-menu';
 import { NewMovieDialog } from '../ui/new-movie-dialog';
@@ -55,6 +58,7 @@ import { TimelineView } from '../ui/timeline';
 import { GraphEditor } from '../ui/graph-editor';
 import { MediaBin } from '../ui/media-bin';
 import { TitleTools } from '../ui/titlebar-tools';
+import { installUndoUi } from '../ui/undo-banner';
 import { TitleName, movieLabel } from '../ui/title-name';
 import { Tips } from '../ui/tips';
 import { findContent } from '../engine/transform';
@@ -64,6 +68,7 @@ import { ckCommands } from './ck-commands';
 import { pushCommands } from './push-commands';
 import { loopCommands } from './loop-commands';
 import { edCommands } from './ed-commands';
+import { timelineViewCommands } from './timeline-view-commands';
 import { a11yCommands, installA11y } from '../ui/a11y';
 import { installPenPlay } from '../ui/pen-play';
 import { toast } from '../ui/toast';
@@ -93,7 +98,8 @@ const SHELL = `<div class="cv-app fm-app">
 const FLIP_RATES = [6, 8, 12, 15, 24, 30];
 const FLIP_FPS_MENU = { label: 'Flipbook at frame rate', items: FLIP_RATES.map((n) => `add-flipbook-${n}`) };
 /** The Create menu: what to make, then what to bring in. */
-const CREATE_ITEMS = ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, '-', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file', '-', 'record-audio'];
+/** Under the card's More row: what the four tiles and three rows leave out. */
+const CREATE_MORE: CreateItem[] = [FLIP_FPS_MENU, ...SHAPE_CREATE_ITEMS, '-', 'import-audio', 'record-audio', '-', 'create-opens-paint'];
 const CUSTOM_TITLE_KEY ='formmorpheus.customTitleBar';
 const stored = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const store = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
@@ -157,13 +163,13 @@ export function startApp(): void {
   const stageMenu = new PopupMenu(commands, null, true);
   stage.nav.onContext = (x, y) => { stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
-  const createMenu = new PopupMenu(commands, null, true);
+  const createMenu = new CreateMenu(commands, CREATE_MORE);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
     contentMenu: (x, y) => contentMenu.open(x, y),
     trackMenu: (x, y, id) => trackMenu.open(x, y, id),
     movieSettings: (a) => movieSettings.toggle(a),
-    home: () => home.show(),
-    create: (a) => { const r = a.getBoundingClientRect(); createMenu.setItems(CREATE_ITEMS); createMenu.openAt(r.right, r.top - 6); },
+    home: () => { void toTheater(); },
+    create: (a) => { if (createMenu.isOpen) createMenu.close(); else createMenu.openFor(a); },
     edit: (c) => editContent(c),
     scrubSpeed: () => (prefs.scrubSpeed === 'precise' ? 0.4 : prefs.scrubSpeed === 'fast' ? 2 : 1),
     graph: (id, kind, channel) => graphEditor.open(id, kind, channel),
@@ -234,9 +240,11 @@ export function startApp(): void {
   const askToKeep = async (): Promise<boolean> => {
     // an export reads this movie's pictures and sound until it finishes
     if (exportDialog.running) { toast('An export is running: wait for it, or cancel it, before closing this movie.'); return false; }
-    if (!engine.movie || !engine.modified) return true;
-    const keep = await confirmAction('Unsaved changes', t('Save the changes to "{name}" first?').replace('{name}', engine.movie.name), 'Save', false, 'Discard');
-    if (keep) return save(false);
+    // leaving a movie never asks: the work is written (poster from the Playhead frame) and the tile follows
+    if (engine.movie && !(await save(false, { quiet: true, poster: true })) && engine.modified) {
+      // the one case with something to lose: the write failed (or the engine is not running), so the choice is the person's
+      return confirmAction('Could not save', t('"{name}" could not be written, so closing it now loses the latest changes.').replace('{name}', engine.movie.name), 'Close anyway', true, 'Stay');
+    }
     return true;
   };
 
@@ -315,31 +323,131 @@ export function startApp(): void {
       .then(() => import('@tauri-apps/api/core')).then((m) => m.invoke<string[]>('take_pending_opens')).then((paths) => openAll(paths)).catch(() => undefined);
   }
 
-  async function save(asNew: boolean): Promise<boolean> {
-    const m = engine.movie;
-    if (!m) return false;
-    let name = asNew ? null : engine.libraryName;
-    if (!name) {
-      name = await promptName(asNew ? 'Save As' : 'Save Movie', m.name, 'Save');
-      if (!name) return false;
-    }
-    const job = engine.startJob(t('Save {name}').replace('{name}', name), 1);
+  // The document model (G01): a movie is a file in the Theater from the moment it is made, and every step writes it
+  // (debounced, one write at a time, the movie file replaced atomically by the engine). There is no unsaved state.
+  interface SaveOpts { quiet?: boolean; poster?: boolean; notice?: boolean }
+  let writeChain: Promise<boolean> = Promise.resolve(true);
+  let posterCache: { frame: number; at: number; blob: Blob | null } | null = null;
+  let lastCost = 0;
+  let failedOnce = false;
+  const freeLibraryName = async (base: string): Promise<string> => {
+    const taken = new Set((await api.library().catch(() => [])).map((i) => i.name));
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+  };
+
+  /** Writes the open movie now. `poster` takes a fresh poster from the Playhead frame (leaving); otherwise one up to 5 s old is reused. */
+  function save(asCopy: boolean, opts: SaveOpts = {}): Promise<boolean> {
+    if (asCopy) return saveCopy();
+    writeChain = writeChain.then(() => writeOnce(opts), () => writeOnce(opts));
+    return writeChain;
+  }
+
+  async function writeOnce(opts: SaveOpts): Promise<boolean> {
+    const movie = engine.movie, name = engine.libraryName;
+    if (!movie || !name) return false;
+    const frame = Math.min(engine.frame, movie.duration - 1);
+    const stalePoster = !posterCache || (opts.poster ? posterCache.frame !== frame || engine.modified : Date.now() - posterCache.at > 5000);
+    if (!engine.modified && !(opts.poster && stalePoster)) { if (opts.notice) toast(t('Saved'), 'info', { ms: 1200 }); return true; }
+    const t0 = performance.now();
     try {
-      engine.nameMovie(name);
-      const poster = stage ? await stage.snapshot(480) : null;
-      const preview = await previewFor(name, renderer, engine.movie ?? m);
-      const blob = await packMovie(engine.movie ?? m, engine.history.past, engine.history.recovery, engine.assets, poster, true, preview);
+      const past = engine.history.past.slice(), rec = engine.history.recovery.slice(), assets = new Map(engine.assets);
+      if (stalePoster) posterCache = { frame, at: Date.now(), blob: stage ? await stage.snapshot(480) : null };
+      const preview = await previewFor(name, renderer, movie);
+      const blob = await packMovie(movie, past, rec, assets, posterCache?.blob ?? null, true, preview);
       const saved = await api.writeMovie(name, blob);
-      engine.markSaved(saved.name);
+      if (engine.libraryName === name) {
+        const moved = engine.movie !== movie;
+        engine.markSaved(saved.name);
+        if (moved) { engine.modified = true; scheduleSave(); }
+      }
       remember(saved.name);
       noteRecentDocument(saved.path);
+      lastCost = performance.now() - t0;
+      failedOnce = false;
+      document.dispatchEvent(new CustomEvent('fm:library-changed'));
+      if (opts.notice) toast(t('Saved'), 'info', { ms: 1200 });
+      return true;
+    } catch (e) {
+      // the work stays in memory (and in the crash snapshot); one notice per streak, a retry in a few seconds
+      if (!failedOnce) toast(e instanceof Error ? e.message : 'The movie could not be saved.', 'error');
+      failedOnce = true;
+      scheduleSave(5000);
+      return false;
+    }
+  }
+
+  /** "Duplicate as...": a copy in the library under a new name; the open movie stays open and keeps its name. */
+  async function saveCopy(): Promise<boolean> {
+    const m = engine.movie;
+    if (!m) return false;
+    const asked = await promptName('Duplicate as...', await freeLibraryName(`${m.name} copy`), 'Save');
+    if (!asked) return false;
+    try {
+      await save(false, { quiet: true, poster: true });
+      const name = await freeLibraryName(asked);
+      const poster = stage ? await stage.snapshot(480) : null;
+      const blob = await packMovie({ ...(engine.movie ?? m), name, id: uid('m') }, engine.history.past, engine.history.recovery, engine.assets, poster, true);
+      const saved = await api.writeMovie(name, blob);
+      remember(saved.name);
+      document.dispatchEvent(new CustomEvent('fm:library-changed'));
+      toast(t('Saved a copy as "{name}"').replace('{name}', saved.name), 'info');
       return true;
     } catch (e) {
       toast(e instanceof Error ? e.message : 'The movie could not be saved.', 'error');
       return false;
-    } finally {
-      engine.endJob(job);
     }
+  }
+
+  let saveTimer = 0, saveSince = 0;
+  /** Debounced write after a step: 400 ms after the last one, at most 3 s after the first, longer for a movie that is slow to write. */
+  function scheduleSave(delay?: number): void {
+    if (!engine.movie || !engine.libraryName) return;
+    const now = performance.now();
+    if (!saveSince) saveSince = now;
+    window.clearTimeout(saveTimer);
+    const wait = delay ?? Math.min(Math.max(400, lastCost * 3), saveSince + Math.max(3000, lastCost * 6) - now);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = 0;
+      saveSince = 0;
+      const go = (): void => { void save(false, { quiet: true }); };
+      // off the main path: when the page is idle, within 1.5 s
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 1500 }); else go();
+    }, Math.max(0, wait));
+  }
+  engine.on('history', () => { if (engine.modified) scheduleSave(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && engine.modified && engine.libraryName) void save(false, { quiet: true }); });
+
+  /** Puts a movie that has no library name into the library at once (New Movie, a file opened from outside, a recovered movie). */
+  let adopting = false;
+  async function adopt(): Promise<void> {
+    if (adopting) return;
+    adopting = true;
+    let id = '';
+    try {
+      await Promise.resolve();
+      const m = engine.movie;
+      if (!m || engine.libraryName || !(await serviceReady())) return;
+      id = m.id;
+      const name = await freeLibraryName(m.name || 'Untitled Movie');
+      if (engine.movie?.id !== id || engine.libraryName) return;
+      engine.nameMovie(name);
+      engine.libraryName = name;
+      engine.modified = true;
+      await save(false, { quiet: true, poster: true });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The movie could not be saved.', 'error');
+    } finally {
+      adopting = false;
+      if (engine.movie && !engine.libraryName && engine.movie.id !== id) void adopt();
+    }
+  }
+  engine.on('projects', () => { if (engine.movie && !engine.libraryName && !adopting) void adopt(); });
+
+  /** Leaving for the Theater: the poster is taken from the Playhead frame and the file written first (a slow write does not hold the Theater back for more than a moment). */
+  async function toTheater(): Promise<void> {
+    if (engine.movie && engine.libraryName) await Promise.race([save(false, { quiet: true, poster: true }), new Promise((r) => window.setTimeout(r, 700))]);
+    home.show();
   }
 
   async function exportFile(withHistory: boolean): Promise<void> {
@@ -356,11 +464,12 @@ export function startApp(): void {
     window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
+  // the interval is only a safety net now: steps already write the movie (see scheduleSave)
   let autosaveTimer = 0;
   function scheduleAutosave(): void {
     window.clearInterval(autosaveTimer);
     autosaveTimer = 0;
-    if (prefs.autosaveSeconds > 0) autosaveTimer = window.setInterval(() => { if (engine.movie && engine.modified && engine.libraryName && !engine.playing) void save(false); }, prefs.autosaveSeconds * 1000);
+    if (prefs.autosaveSeconds > 0) autosaveTimer = window.setInterval(() => { if (engine.movie && engine.modified && engine.libraryName && !engine.playing) void save(false, { quiet: true }); }, prefs.autosaveSeconds * 1000);
   }
   scheduleAutosave();
 
@@ -434,15 +543,18 @@ export function startApp(): void {
   }
 
   const aboutDialog = new AboutDialog();
+  const penLink = new PenLink(paint);
   const has = (): boolean => !!engine.movie;
   const sel = (): boolean => engine.selection.content.length > 0;
+  /** A new Drawing or Flipbook stays on the Timeline, selected with its Edit pill; the choice in the Create menu goes straight into Draw & Paint. */
+  const afterCreate = (id: string | null): void => { if (id && openPaintOnCreate()) void paint.open(id); };
   const add: Command[] = [
     { id: 'new', label: 'New Movie...', keys: ['Mod+N'], run: () => newMovie.show(false) },
     { id: 'new-flipbook', label: 'New Flipbook...', run: () => newMovie.show(true) },
     { id: 'open', label: 'Open...', keys: ['Mod+O'], run: () => home.show('projects') },
     { id: 'open-file', label: 'Open Movie File...', keys: ['Shift+Mod+O'], run: () => { pickMode = 'open'; picker.accept = '.fmo'; picker.click(); } },
-    { id: 'save', label: 'Save', keys: ['Mod+S'], enabled: has, run: () => { void save(false); } },
-    { id: 'save-as', label: 'Save As...', keys: ['Shift+Mod+S'], enabled: has, run: () => { void save(true); } },
+    { id: 'save', label: 'Save', keys: ['Mod+S'], enabled: has, run: () => { void save(false, { poster: true, notice: true }); } },
+    { id: 'save-as', label: 'Duplicate as...', keys: ['Shift+Mod+S'], enabled: has, run: () => { void save(true); } },
     { id: 'export-fmo', label: 'Share Movie File', enabled: has, run: () => { void exportFile(false); } },
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
     { id: 'export-fvd', label: 'Current frame as formvis document...', enabled: has, run: () => { void roundTripOut('frame'); } },
@@ -459,7 +571,7 @@ export function startApp(): void {
     { id: 'import-font', label: 'Import font...', enabled: has, run: () => pickFor('.otf,.ttf,.woff,.woff2') },
     { id: 'export', label: 'Export...', keys: ['Mod+E'], enabled: has, run: () => exportDialog.open('share') },
     { id: 'close', label: 'Close Movie', keys: ['Mod+W'], enabled: has, run: () => { void askToKeep().then((ok) => { if (ok) engine.close(); }); } },
-    { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => home.show() },
+    { id: 'home', label: 'Theater', keys: ['Shift+Mod+H'], run: () => { void toTheater(); } },
     { id: 'settings', label: 'Preferences...', keys: ['Mod+,'], run: () => settings.show() },
     { id: 'search', label: 'Search Commands...', keys: ['Mod+K'], run: () => palette.show() },
     { id: 'undo', label: () => (engine.history.canUndo ? `${t('Undo')} ${historyLabel(engine.history.undoLabel ?? '')}` : 'Undo'), keys: ['Mod+Z'], enabled: () => engine.history.canUndo, run: () => engine.undo() },
@@ -476,8 +588,9 @@ export function startApp(): void {
     { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.some((c) => c.kind === 'group'), run: () => { const g = engine.selected.find((c) => c.kind === 'group'); if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
     { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
-    { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => { const id = engine.insert('drawing'); if (id) void paint.open(id); } },
-    { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => { const id = engine.insert('flipbook'); if (id) void paint.open(id); } },
+    { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => afterCreate(engine.insert('drawing')) },
+    { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => afterCreate(engine.insert('flipbook')) },
+    { id: 'create-opens-paint', label: 'Open Draw & Paint after adding', enabled: has, checked: () => openPaintOnCreate(), run: () => setOpenPaintOnCreate(!openPaintOnCreate()) },
     // a Flipbook that plays its drawings at its own rate: each drawing is held for movie fps / rate frames
     ...FLIP_RATES.map((n): Command => ({ id: `add-flipbook-${n}`, label: `${n} fps`, enabled: has, run: () => {
       const m = engine.movie;
@@ -485,8 +598,7 @@ export function startApp(): void {
       const hold = Math.max(1, Math.round(m.fps / n));
       const track = flipTrack('Track 1', n);
       track.frames = track.frames.map((f) => ({ ...f, hold }));
-      const id = engine.insert('flipbook', { flip: [track], duration: n * hold });
-      if (id) void paint.open(id);
+      afterCreate(engine.insert('flipbook', { flip: [track], duration: n * hold }));
     } })),
     { id: 'add-text', label: 'Text', icon: 'text', enabled: has, run: () => { const id = engine.insert('text', { name: 'Text', text: { text: 'Text', font: 'Inter', size: 160, weight: 600, color: textColorFor(engine.movie?.background ?? '#ffffff'), align: 'center' } }); if (id) stage.editText(id); } },
     { id: 'add-track', label: 'Track', icon: 'track', keys: ['Shift+Mod+T'], enabled: has, run: () => { const m = engine.movie; if (!m) return; const at = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0; engine.run('Add Track', (mv) => ops.addTrack(mv, at).movie); } },
@@ -555,16 +667,18 @@ export function startApp(): void {
     ...pushCommands(engine),
     ...loopCommands(engine),
     ...edCommands(engine),
+    ...timelineViewCommands(engine, () => timeline),
     ...a11yCommands(engine),
     ...ckCommands({
       engine,
       nudge: (dx, dy) => stage?.nudge(dx, dy),
       centerPlayhead: () => timeline?.centerOnPlayhead(),
       openOptions: () => { const p = mid(); contentMenu.open(p.x, p.y); },
-      openCreate: () => { const p = mid(); createMenu.setItems(CREATE_ITEMS); createMenu.openAt(p.x, p.y); },
+      openCreate: () => { const p = mid(); createMenu.openAt(p.x, p.y); },
       edit: (c) => { void editContent(c); },
     }),
     { id: 'shortcuts', label: 'Keyboard Shortcuts...', run: () => shortcutsDialog.show() },
+    { id: 'pen-link', label: 'Pen Link...', run: () => penLink.show() },
     { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
     { id: 'recover-lost', label: 'Recover Lost Movies...', run: () => { void recovery.offer('menu'); } },
   );
@@ -575,10 +689,10 @@ export function startApp(): void {
   setupHelpCenter({ commands, engine, askToKeep, closeHome: () => home.hide() });
   menus.push(
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
-    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'settings'] },
+    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'pen-link', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-snap', 'marker-add', 'marker-prev', 'marker-next', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'marker-add', 'marker-prev', 'marker-next', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
@@ -664,6 +778,7 @@ export function startApp(): void {
   // two-finger tap undoes, three-finger tap redoes (held: repeats); pinch, hold and the rest live in ui/gestures.ts
   gestures.actions = { undo: () => { engine.undo(); }, redo: () => { engine.redo(); } };
   gestures.install();
+  installUndoUi(engine, () => q(root, '.fm-stage-wrap'), (c) => { commands.run(c); });
   installPenPlay();
 
   const split = q(root, '.fm-split');

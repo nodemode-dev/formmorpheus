@@ -1,0 +1,27 @@
+/* Preferences > Pen and Tablet (ui/pen-settings.ts) */
+.fm-pen-test { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+.fm-pen-padbox { position: relative; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--bg-primary); overflow: hidden; }
+.fm-pen-pad { display: block; width: 100%; height: 210px; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+.fm-pen-padhint { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; color: var(--text-muted); font-size: var(--fs-12); text-align: center; padding: var(--space-3); }
+.fm-pen-padhint[hidden] { display: none; }
+.fm-pen-read { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-3); row-gap: 2px; margin: 0; font-size: var(--fs-11); }
+.fm-pen-read dt { color: var(--text-muted); }
+.fm-pen-read dd { margin: 0; color: var(--text-primary); font-family: var(--font-mono); font-size: var(--fs-11); overflow-wrap: anywhere; min-height: 1.3em; }
+.fm-pen-meter { grid-column: 1 / -1; position: relative; height: 5px; border-radius: var(--radius-pill); background: var(--bg-tertiary); overflow: hidden; margin: 2px 0 4px; }
+.fm-pen-meter-raw, .fm-pen-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; }
+.fm-pen-meter-raw { background: var(--border-light); }
+.fm-pen-meter-fill { background: var(--accent-color); height: 50%; top: 25%; }
+.fm-pen-diag { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius); background: var(--bg-tertiary); color: var(--text-secondary); font-size: var(--fs-12); line-height: 1.4; }
+.fm-pen-diag.is-bad { color: var(--text-primary); box-shadow: inset 3px 0 0 var(--accent-color); }
+.fm-pen-btns { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.fm-pen-curvebox { display: flex; gap: var(--space-4); align-items: flex-start; margin-bottom: var(--space-2); }
+.fm-pen-curve { flex: none; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-md); touch-action: none; cursor: pointer; }
+.fm-pen-curve.is-removing { cursor: not-allowed; opacity: 0.7; }
+.fm-pen-curveside { display: grid; gap: var(--space-2); min-width: 0; }
+.fm-pen-presets { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.fm-pen-presets .cv-btn.is-on { background: var(--accent-color); color: var(--text-on-accent); border-color: var(--accent-color); }
+.fm-pen-dev { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.fm-pen-devname { color: var(--text-muted); font-size: var(--fs-11); font-family: var(--font-mono); margin-right: auto; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .fm-pen-test, .fm-pen-curvebox { grid-template-columns: 1fr; flex-direction: column; }
+}

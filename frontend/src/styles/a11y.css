@@ -5,6 +5,12 @@
   outline-offset: 1px;
 }
 .fm-tl-tracks:focus-visible { outline-offset: -2px; }
+/* The Stage and the paint canvas carry no orange frame (FV-205). The Stage can take keyboard focus, so a keyboard user
+   still sees a thin, quiet, inset hairline there; a container that only holds focus (a dialog, a panel) shows none,
+   its controls show theirs. */
+.fm-stage:focus-visible { outline: 1px solid color-mix(in srgb, var(--text-primary) 40%, transparent) !important; outline-offset: -3px; }
+.fm-stage:focus:not(:focus-visible), .fm-paint-canvas:focus, .fm-paint:focus { outline: none !important; }
+[tabindex="-1"]:focus-visible:not(input, textarea, select, button) { outline: none !important; }
 .cv-menu-item:focus-visible, .fm-pop-row:focus-visible, .cv-search-item:focus-visible { outline-offset: -2px; }
 
 .fm-a11y-live {
@@ -20,8 +26,8 @@
 .fm-skip:focus { transform: none; opacity: 1; }
 
 /* Accent text on its own tint fails AA on the light themes (1.6 to 2.3); darken the text, keep the hue. */
-body.theme-light .fm-mode.is-active { color: color-mix(in srgb, var(--accent-color) 45%, #000); }
-body:not(.theme-light) .fm-mode.is-active { color: color-mix(in srgb, var(--accent-color) 85%, #fff); }
+body.theme-light .fm-mode.is-active .icon { color: color-mix(in srgb, var(--accent-color) 45%, #000); }
+body:not(.theme-light) .fm-mode.is-active .icon { color: var(--accent-color); }
 
 /* Reduced motion: the reveal, popover and menu transitions, and any looping animation stop; state still changes. */
 @media (prefers-reduced-motion: reduce) {

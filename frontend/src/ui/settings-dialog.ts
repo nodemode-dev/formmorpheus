@@ -7,12 +7,13 @@ import { languages, onLanguage, setLanguage, t, type Lang } from './i18n';
 import { checkRow, colorRow, selectRow, sliderRow } from './panels/controls';
 import { SCRUB_SPEEDS, UI_FONT_SIZES, UI_SCALES, UNDO_CHOICES, loadPrefs, savePrefs, setUiScale, uiScaleChoice, type Prefs, type ScrubSpeed, type UiFontSize } from './prefs';
 import { LibraryFolderDialog } from './library-folder';
+import { PenSettingsPage } from './pen-settings';
 import { THEMES, readChoice, setAccent, setIntensity, setTheme, themeSwatchesHtml } from './themes';
 
 const RAIL_KEY = 'formmorpheus.prefsRailCollapsed';
 const AUTOSAVE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Off'], ['10', '10 s'], ['30', '30 s'], ['60', '1 min'], ['300', '5 min']];
 const NOTICE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Automatic'], ['3', '3 seconds'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds']];
-const SECTION_ORDER = ['General', 'Interface', 'Timeline'];
+const SECTION_ORDER = ['General', 'Interface', 'Timeline', 'Pen and Tablet'];
 
 export class SettingsDialog extends Dialog {
   private readonly grid = el('<div class="nm-theme-grid" role="group" aria-label="Theme"></div>');
@@ -31,6 +32,7 @@ export class SettingsDialog extends Dialog {
   private wireD = '';
   private portY = Number.NaN;
   private prefs: Prefs = loadPrefs();
+  private readonly penPage = new PenSettingsPage();
 
   private readonly homeRow = checkRow('Show Home screen at launch', (v) => this.change({ autoShowHome: v }));
   private readonly homeCloseRow = checkRow('Show Home screen when the last movie closes', (v) => this.change({ homeOnLastClose: v }));
@@ -61,6 +63,7 @@ export class SettingsDialog extends Dialog {
   private readonly penHoverRow = checkRow('Pen hover scrubs the Timeline', (v) => this.change({ penHover: v }));
   private readonly penRollRow = checkRow('Rotate while performing with a twisting pen', (v) => this.change({ penRoll: v }));
   private readonly penPlayRow = checkRow('Pen button plays and pauses', (v) => this.change({ penPlay: v }));
+  private readonly snapAlwaysRow = checkRow('Snap Stage drags to the frame without Shift (otherwise only while Shift or a second finger is held)', (v) => this.change({ stageSnapAlways: v }));
   private readonly fingerPaintRow = checkRow('Paint with finger', (v) => setFingerPaints(v));
   private readonly confirmDeleteRow =checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
 
@@ -72,7 +75,7 @@ export class SettingsDialog extends Dialog {
     this.grid.append(swatches.content);
     for (const b of Array.from(this.grid.querySelectorAll<HTMLElement>('[data-theme-id]'))) b.style.removeProperty('border-color');
     const pages = el('<div class="cv-prefs-pages"></div>');
-    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory' };
+    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory', 'Pen and Tablet': 'shPen' };
     const grp = (label: string, ...content: HTMLElement[]): HTMLElement => {
       const g = el('<section class="cv-prefs-group"><h3 class="cv-prefs-label"></h3></section>');
       const h = q<HTMLElement>(g, '.cv-prefs-label');
@@ -134,7 +137,8 @@ export class SettingsDialog extends Dialog {
       grp('Keyboard', this.keysBtn, nt('See every command with its keys, change them, and set them back.')),
       grp('Playhead', this.scrubRow.el),
       grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.multiFingerRow.el, this.penHoverRow.el, this.penRollRow.el, this.penPlayRow.el, this.fingerPaintRow.el),
-      grp('Editing', this.confirmDeleteRow.el, this.showTipsRow.el));
+      grp('Editing', this.confirmDeleteRow.el, this.snapAlwaysRow.el, this.showTipsRow.el));
+    add('Pen and Tablet', ...this.penPage.groups);
     for (const name of SECTION_ORDER) {
       const tab = this.nav.querySelector<HTMLElement>(`[data-section="${name}"]`), card = this.sections.get(name);
       if (tab?.parentElement) tab.parentElement.appendChild(tab);
@@ -223,6 +227,8 @@ export class SettingsDialog extends Dialog {
     this.penPlayRow.set(p.penPlay);
     this.fingerPaintRow.set(gesturePrefs().fingerPaints);
     this.confirmDeleteRow.set(p.confirmDelete);
+    this.snapAlwaysRow.set(p.stageSnapAlways);
+    this.penPage.show();
     this.sync();
     if (section && this.sections.has(section)) this.showSection(section);
     this.open();

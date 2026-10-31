@@ -57,13 +57,15 @@ export interface Prefs {
   tipsSeen: string[];
   /** Compose the Stage and exports on the GPU (WebGL2) when it matches the CPU path. */
   gpu: boolean;
+  /** Stage drags snap to the frame's centre and quarters without the snap modifier (off: only while Shift or a second finger is held). */
+  stageSnapAlways: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
   shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 250, recentUndo: 100, stageUndoButtons: true, autosaveSeconds: 30,
-  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, penRoll: true, penPlay: false, confirmDelete: false, multiFinger: false, showTips: true, tipsSeen: [], gpu: true,
+  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, penRoll: true, penPlay: false, confirmDelete: false, multiFinger: false, showTips: true, tipsSeen: [], gpu: true, stageSnapAlways: false,
 };
 
 const KEY = 'formmorpheus.prefs';
@@ -155,6 +157,7 @@ export function loadPrefs(): Prefs {
       showTips: flag(r.showTips, d.showTips),
       tipsSeen: strings(r.tipsSeen, 20, 40),
       gpu: flag(r.gpu, d.gpu),
+      stageSnapAlways: flag(r.stageSnapAlways, d.stageSnapAlways),
     };
   } catch {
     return { ...d, language: systemLang() };

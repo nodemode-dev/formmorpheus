@@ -1,0 +1,57 @@
+/* Stage transform readout, the "Snapping on" chip, and the corner rotation ring (Keyframe and Perform). */
+.fm-hud {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: var(--z-raised);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-0, var(--border-color));
+  color: var(--text-primary);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  pointer-events: none;
+}
+.fm-hud[hidden], .fm-hud-chip[hidden] { display: none; }
+.fm-hud-chip {
+  position: absolute;
+  left: 50%;
+  top: var(--space-3);
+  transform: translateX(-50%);
+  z-index: var(--z-raised);
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-color);
+  color: var(--text-on-accent);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Keyframe and Perform: no top stem handle; a click on a corner node reveals a ring that rotates about the anchor */
+.fm-stage-box.is-keyed .fm-box-stem, .fm-stage-box.is-keyed .fm-box-rot { display: none; }
+.fm-box-ring { fill: none; stroke: var(--accent-color); stroke-width: 7; stroke-opacity: 0.35; pointer-events: stroke; cursor: grab; display: none; }
+.fm-stage-box.is-keyed .fm-box-ring.is-on { display: block; }
+.fm-box-ring:active { cursor: grabbing; }
+.fm-box-h[data-h="1"], .fm-box-h[data-h="3"] { cursor: nesw-resize; }
+.fm-box-h[data-h="0"], .fm-box-h[data-h="2"] { cursor: nwse-resize; }
+
+/* Frame tooltip while a key is dragged on the Timeline */
+.fm-keytip { position: fixed; left: 0; top: 0; z-index: var(--z-context); padding: 3px var(--space-2); border-radius: var(--radius-pill); background: var(--bg-secondary); box-shadow: inset 0 0 0 1px var(--accent-color); color: var(--text-primary); font-size: var(--fs-11); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.fm-keytip[hidden] { display: none; }
+
+/* Action card, second step: a way back to Move and Filter */
+.fm-ka-back { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-left: calc(var(--space-1) * -1); padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.fm-ka-back:hover { background: var(--accent-soft); color: var(--text-primary); }
+.fm-ka-back svg { width: 16px; height: 16px; }
+
+/* Perform: Retake on the banner and the Modifications extras */
+.fm-perf-retake { height: 22px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: var(--fs-11); cursor: pointer; pointer-events: auto; }
+.fm-perf-retake[hidden] { display: none; }
+.fm-perf-retake:hover { background: var(--accent-color); color: var(--text-on-accent); }
+.fm-pf-punch { height: auto; min-height: 30px; gap: var(--space-2); text-align: left; margin: var(--space-1) var(--space-2) 0; width: calc(100% - var(--space-4)); }
+.fm-pf-retake { margin: var(--space-2) var(--space-2) var(--space-1); width: calc(100% - var(--space-4)); height: 28px; border: 1px solid var(--line-2, var(--border-light)); border-radius: var(--radius); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-12); cursor: pointer; }
+.fm-pf-retake:hover:not(:disabled) { border-color: var(--accent-color); }
+.fm-pf-retake:disabled { opacity: 0.4; cursor: default; }

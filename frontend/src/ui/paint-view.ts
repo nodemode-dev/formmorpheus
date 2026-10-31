@@ -16,9 +16,15 @@ import { BRUSHES, DEFAULT_ERASE, DEFAULT_PAINT, DEFAULT_SMUDGE, brushById, stabi
 import { PaintDoc } from '../paint/doc';
 import { historyNotice } from '../paint/history';
 import { baseDiameter, setPressureCurve } from '../paint/dynamics';
+import { defaultSlider, engineSize, stepSlider } from './paint-size';
+import { drawBubble } from './paint-bubble';
+import { confirmAction } from './dialogs';
+import { QuickShapeCtl } from './paint-quick';
+import type { Pt } from '../paint/quickshape';
 import { PenInput } from '../paint/input';
 import { Stroke } from '../paint/stroke';
 import { PumpedStroke } from '../paint/pump';
+import { dries } from '../paint/wet-dry';
 import { paintBridge, RemoteStroke } from './paint-bridge';
 import type { Brush, Mask, PaintTool, PixelPatch, Point, Rect, RGB } from '../paint/types';
 import { BrushPanel } from './brush-panel';
@@ -50,7 +56,8 @@ import { wireBrushDrop } from './brush-drop';
 import { PaintClip } from './paint-clip';
 import { FeelPopover, FeelStore, drawBrushCursor } from './paint-feel';
 import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys';
-import { ROLL_NAME, brushScale, penButton } from '../paint/feel';
+import { ROLL_NAME, brushScale } from '../paint/feel';
+import type { BarrelAction } from '../paint/pen-arbiter';
 import { setPressureGamma } from '../paint/dynamics';
 import type { Command, Commands } from './commands';
 import { decodeTiff } from '../media/tiff-decode';
@@ -60,6 +67,8 @@ interface BrushState { size: number; opacity: number; /** Smudge only: how far t
 
 /** Milliseconds of stamping one pointer event or frame may spend before the rest of the queued samples wait for the next frame. */
 const PUMP_MS = 6;
+/** A pencil-like brush of the Animation library: the first brush of a fresh install. */
+const START_PAINT = 'an-sketch-lead-stub';
 const STATE_KEY = 'formmorpheus.paint.brushes';
 const TOOL_KEY = 'formmorpheus.paint.tools';
 
@@ -98,14 +107,19 @@ const TEMPLATE = `<div class="fm-paint" hidden>
   <button class="fm-paint-side-btn" type="button" data-a="undo" title="Undo (Ctrl or Cmd+Z, two-finger tap)">${icon('undo', 18)}</button>
   <button class="fm-paint-side-btn" type="button" data-a="redo" title="Redo (Shift+Ctrl or Cmd+Z, three-finger tap)">${icon('redo', 18)}</button>
 </div>
-<div class="fm-paint-hud" hidden><div class="fm-paint-hud-title"></div><canvas class="fm-paint-hud-dot" width="120" height="120"></canvas>
+<div class="fm-paint-hud" hidden title="Tap + to store this value, tap a marker to recall it, hold a marker to store here. Drag sideways, or hold Alt, for fine control."><div class="fm-paint-hud-title"></div><canvas class="fm-paint-hud-dot" width="320" height="112"></canvas>
   <div class="fm-paint-hud-mem"><button type="button" class="fm-paint-hud-btn" data-h="minus" title="Reset the marker at this value" aria-label="Reset marker"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8"/></svg></button><span class="fm-paint-hud-hint">Markers</span><button type="button" class="fm-paint-hud-btn" data-h="plus" title="Store this value in the next marker" aria-label="Store in a marker"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7h8M7 3v8"/></svg></button></div>
-  <div class="fm-paint-hud-tip">Tap + to store this value, tap a marker to recall it, hold a marker to store here. Drag sideways, or hold Alt, for fine control.</div></div>
+</div>
 <div class="fm-paint-toast" hidden></div>
 <div class="fm-paint-menu fm-pop" hidden>
-  <button class="fm-pop-row" type="button" data-m="done">Finish</button>
-  <button class="fm-pop-row" type="button" data-m="cancel">Discard changes</button>
-  <button class="fm-pop-row" type="button" data-m="help">Help</button>
+  <button class="fm-pop-row" type="button" data-m="done"><span class="fm-paint-menu-finish">Finish Drawing</span></button>
+  <button class="fm-pop-row" type="button" data-m="help-toggle">Help<span class="fm-paint-menu-arrow">${icon('chevronRight', 12)}</span></button>
+  <div class="fm-paint-menu-sub" hidden>
+    <button class="fm-pop-row" type="button" data-m="help-center">Help Center</button>
+    <button class="fm-pop-row" type="button" data-m="help">Handbook</button>
+  </div>
+  <div class="fm-pop-sep"></div>
+  <button class="fm-pop-row fm-paint-menu-danger" type="button" data-m="cancel">Discard changes</button>
 </div>
 </div>`;
 
@@ -222,6 +236,9 @@ export class PaintView {
   private ownRun = false;
   private readonly mini: FlipMini;
   private readonly tools: PaintTools;
+  private readonly qs: QuickShapeCtl;
+  /** The pointer of a Shift+click line, which has no raw stroke to take it from. */
+  private qsPointer = -1;
 
   private readonly bar: HTMLElement;
   private readonly modeName: HTMLElement;
@@ -271,7 +288,7 @@ export class PaintView {
     this.prefs = loadPaintPrefs();
     this.holdUndoBtn.delay = this.holdRedoBtn.delay = this.prefs.undoDelay;
     setPressureCurve(this.prefs.pressure.map(([x, y]) => ({ x, y })));
-    this.brushIds = readJson<Record<PaintTool, string>>(TOOL_KEY, { paint: DEFAULT_PAINT, smudge: DEFAULT_SMUDGE, erase: DEFAULT_ERASE });
+    this.brushIds = readJson<Record<PaintTool, string>>(TOOL_KEY, { paint: START_PAINT, smudge: DEFAULT_SMUDGE, erase: DEFAULT_ERASE });
     this.brushStates = readJson<Record<string, BrushState>>(STATE_KEY, {});
     this.slots = new BrushSlots({ size: this.sizeSlider, opacity: this.opacitySlider }, {
       key: () => `${this.tool}:${this.brush().id}`,
@@ -334,6 +351,14 @@ export class PaintView {
       }
     });
     this.tools = new PaintTools(this.toolHost());
+    this.qs = new QuickShapeCtl({
+      // a resting pen pools wet paint, so wet brushes never snap to a shape
+      allowed: (e) => (this.tool === 'erase' || (this.tool === 'paint' && !dries(this.brush()))) && this.tools.mode() === 'paint' && !this.interaction && (e.pointerType === 'pen' || (e.pointerType === 'mouse' && this.prefs.quickShape === 'all')) && this.prefs.quickShape !== 'off',
+      toCanvas: (x, y) => this.toCanvas(x, y),
+      restamp: (pts, prs, tpl) => this.qsRestamp(pts, prs, tpl),
+      replaceLast: (pts, prs, tpl) => this.qsReplace(pts, prs, tpl),
+      say: (t) => this.say(t),
+    });
     for (const p of [this.colour.root, this.brushPanel.root, this.layersPanel.root, this.settings.root, this.strip.root, this.strip.preview.root, this.tools.root]) this.root.appendChild(p);
 
     this.loupe = new Loupe({
@@ -350,6 +375,7 @@ export class PaintView {
     this.dropper = new ColourDrop({ doc: () => this.doc, selection: () => this.selection, toCanvas: (x, y) => this.toCanvas(x, y), root: this.root });
     this.root.appendChild(this.loupe.root);
     this.root.appendChild(this.dropper.bubble);
+    this.dropper.onContinue = () => this.syncChrome();
     this.clip = new PaintClip({
       doc: () => this.doc,
       selection: () => this.selection,
@@ -385,6 +411,22 @@ export class PaintView {
 
   isOpen(): boolean { return this.contentId !== null; }
   openId(): string | null { return this.contentId; }
+
+  /** Pen Link: the tablet's toolbar reads and drives the current tool (erase or paint), size and opacity, and undo or redo. */
+  penLinkState(): { open: boolean; erase: boolean; size: number; opacity: number } {
+    const st = this.state(this.brush());
+    return { open: this.isOpen(), erase: this.tool === 'erase', size: st.size, opacity: st.opacity };
+  }
+  penLinkApply(p: { erase?: boolean; size?: number; opacity?: number; history?: 'undo' | 'redo' }): void {
+    if (!this.isOpen()) return;
+    if (p.history === 'undo') this.undo();
+    else if (p.history === 'redo') this.redo();
+    if (p.erase !== undefined && (this.tool === 'erase') !== p.erase) this.setTool(p.erase ? 'erase' : 'paint');
+    const s: Partial<BrushState> = {};
+    if (p.size !== undefined) s.size = Math.max(0, Math.min(1, p.size));
+    if (p.opacity !== undefined) s.opacity = Math.max(0.01, Math.min(1, p.opacity));
+    if (s.size !== undefined || s.opacity !== undefined) this.setState(s);
+  }
 
   // ---------------------------------------------------------------- open / close
 
@@ -470,6 +512,8 @@ export class PaintView {
     this.remote = null;
     this.stroke = null;
     this.strokePointer = -1;
+    this.qsPointer = -1;
+    this.qs.finish(true);
     this.endPenTool();
     this.clearTail();
     if (!s || !doc) return;
@@ -1028,15 +1072,10 @@ export class PaintView {
       ctx.strokeRect(v.ox - kv.x * v.scale, v.oy - kv.y * v.scale, m.width * v.scale, m.height * v.scale);
       ctx.restore();
     }
-    // the canvas edge is a clear accent outline just outside the picture, with a dark rim so it reads on any backdrop
-    const accent = getComputedStyle(this.root).getPropertyValue('--accent-color').trim() || '#ff8a1f';
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = 4;
-    roundRect(ctx, v.ox - 1.5, v.oy - 1.5, w + 3, h + 3, own ? 0 : 13);
-    ctx.stroke();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    roundRect(ctx, v.ox - 1.5, v.oy - 1.5, w + 3, h + 3, own ? 0 : 13);
+    // the canvas edge: one thin white line on the picture's own edge (FV-205)
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, v.ox, v.oy, w, h, own ? 0 : 12);
     ctx.stroke();
     this.drawCursor(ctx);
     ctx.restore();
@@ -1113,7 +1152,7 @@ export class PaintView {
   /** Brush outline radius in screen pixels: with dynamic scaling the brush keeps its screen size, else its canvas size. */
   private cursorRadius(b: Brush, size: number): number {
     const m = this.engine.movie;
-    const dia = baseDiameter(b, size, m ? Math.max(m.width, m.height) : 0);
+    const dia = baseDiameter(b, engineSize(size), m ? Math.max(m.width, m.height) : 0);
     const sc = brushScale(this.prefs.scaling, this.view.scale, m?.width ?? 1920, m?.height ?? 1080);
     return Math.max(2, (sc.screenFixed ? dia : dia * sc.k * this.view.scale) / 2);
   }
@@ -1234,7 +1273,7 @@ export class PaintView {
 
   private state(b: Brush): BrushState {
     const have = this.brushStates[`${this.tool}:${b.id}`];
-    const base = have ?? { size: b.presets[0]?.size ?? 0.3, opacity: b.presets[0]?.opacity ?? 1 };
+    const base = have ?? { size: defaultSlider(b), opacity: b.presets[0]?.opacity ?? 1 };
     return this.tool === 'smudge' ? { ...base, strength: have?.strength ?? Math.max(0, Math.min(1, 1 - b.pickup)) } : base;
   }
 
@@ -1254,6 +1293,7 @@ export class PaintView {
   private setTool(t: PaintTool): void {
     this.dropper.stopContinue();
     this.pickArmed = false;
+    this.hideHud();
     if (this.tool !== t) this.lastTool = this.tool;
     if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
     if (this.tool === t && !this.brushPanel.isOpen()) {
@@ -1278,6 +1318,7 @@ export class PaintView {
     writeJson(STATE_KEY, this.brushStates);
     this.lastTool = from;
     this.tool = to;
+    this.hideHud();
     this.brushPanel.close();
     this.syncChrome();
     this.say(tr('{brush} carried to {tool}').replace('{brush}', b.name).replace('{tool}', tr(to === 'paint' ? 'Paint' : to === 'smudge' ? 'Smudge' : 'Erase')));
@@ -1328,18 +1369,23 @@ export class PaintView {
     setText(this.hudTitle, `${name} ${Math.round(val * 100)}%${fine ? ` · ${tr('Fine control')}` : ''}`);
     setClass(this.hud, 'is-plain', kind === 'strength');
     setHidden(this.hud, false);
-    const x = this.hudDot.getContext('2d') as CanvasRenderingContext2D;
-    x.clearRect(0, 0, 120, 120);
-    const b = this.brush();
+    if (kind === 'strength') return;
     const mv = this.engine.movie;
-    const dia = Math.min(110, Math.max(2, baseDiameter(b, st.size, mv ? Math.max(mv.width, mv.height) : 0) * Math.min(1, this.view.scale * 2)));
-    const rgb = this.colour.get();
-    x.globalAlpha = st.opacity;
-    x.fillStyle = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
-    x.beginPath();
-    x.arc(60, 60, dia / 2, 0, Math.PI * 2);
-    x.fill();
-    x.globalAlpha = 1;
+    // a stroke sample made by the brush engine: repainted at most once a frame while the slider moves
+    cancelAnimationFrame(this.hudFrame);
+    this.hudFrame = requestAnimationFrame(() => {
+      const s2 = this.state(this.brush());
+      drawBubble(this.hudDot, { brush: this.brush(), size: engineSize(s2.size), opacity: s2.opacity, color: this.colour.get(), canvasLong: mv ? Math.max(mv.width, mv.height) : 0, viewScale: this.view.scale });
+    });
+  }
+
+  private hudFrame = 0;
+
+  /** The size and opacity bubble goes away at once: a tool switch, Esc or a press on the picture. */
+  private hideHud(): void {
+    clearTimeout(this.hudTimer);
+    cancelAnimationFrame(this.hudFrame);
+    if (!this.hud.hidden) setHidden(this.hud, true);
   }
 
   /** Settings > Crop and resize: asks, saves the open frame, re-bakes the pixels as new assets, then reloads the frame. */
@@ -1503,16 +1549,22 @@ export class PaintView {
       const r = mode.getBoundingClientRect();
       const host = this.root.getBoundingClientRect();
       this.menu.hidden = !this.menu.hidden;
+      setText(q(this.menu, '.fm-paint-menu-finish'), tr(this.content()?.kind === 'flipbook' ? 'Finish Flipbook' : 'Finish Drawing'));
+      setHidden(q(this.menu, '.fm-paint-menu-sub'), true);
       this.menu.style.transform = `translate(${Math.round(r.left - host.left)}px, ${Math.round(r.bottom - host.top + 6)}px)`;
       e.stopPropagation();
     });
     mode.addEventListener('dblclick', () => { this.menu.hidden = true; void this.done(); });
     this.menu.addEventListener('click', (e) => {
       const m = (e.target as HTMLElement).closest<HTMLElement>('[data-m]')?.dataset.m;
+      // Help opens its submenu in place
+      if (m === 'help-toggle') { const sub = q<HTMLElement>(this.menu, '.fm-paint-menu-sub'); setHidden(sub, !sub.hidden); return; }
       this.menu.hidden = true;
       if (m === 'done') void this.done();
-      if (m === 'cancel') this.discard();
+      // Discard throws the strokes away, so it asks first
+      if (m === 'cancel') void confirmAction(tr('Discard changes?'), tr('Everything drawn since this was opened is thrown away.'), tr('Discard'), true).then((ok) => { if (ok) this.discard(); });
       if (m === 'help') this.commands?.run('help');
+      if (m === 'help-center') this.commands?.run('help-center');
     });
     this.root.addEventListener('pointerdown', (e) => { if (!this.menu.contains(e.target as Node) && !mode.contains(e.target as Node)) this.menu.hidden = true; }, true);
 
@@ -1640,6 +1692,10 @@ export class PaintView {
     this.holdRedoBtn.bind(this.redoBtn, () => this.redo());
 
     const cv = this.canvas;
+    // events the app dispatches itself (a linked tablet) have no live pointer to capture; that must not stop the stroke
+    const proto = HTMLElement.prototype;
+    cv.setPointerCapture = (id: number): void => { try { proto.setPointerCapture.call(cv, id); } catch { /* synthetic pointer */ } };
+    cv.releasePointerCapture = (id: number): void => { try { proto.releasePointerCapture.call(cv, id); } catch { /* synthetic pointer */ } };
     cv.addEventListener('pointerdown', (e) => this.down(e));
     cv.addEventListener('pointermove', (e) => this.move(e));
     cv.addEventListener('pointerup', (e) => this.up(e));
@@ -1658,6 +1714,7 @@ export class PaintView {
     window.addEventListener('keydown', (e) => this.key(e), true);
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') this.space = false;
+      if (e.key === 'Shift') this.qs.shift(false);
       if (e.key === 'Alt' && this.loupe.active && !this.loupe.held) this.loupe.hide();
     }, true);
     window.addEventListener('blur', () => { this.space = false; if (this.loupe.active) this.loupe.hide(); });
@@ -1680,7 +1737,7 @@ export class PaintView {
 
   private nudgeState(kind: 'size' | 'opacity', delta: number): void {
     const st = this.state(this.brush());
-    const v = Math.max(kind === 'size' ? 0 : 0.01, Math.min(1, st[kind] + delta));
+    const v = kind === 'size' ? stepSlider(st.size, delta > 0 ? 1 : -1) : Math.max(0.01, Math.min(1, st[kind] + delta));
     this.setState({ [kind]: v } as Partial<BrushState>);
     this.say(`${kind === 'size' ? tr('Size') : tr('Opacity')} ${Math.round(v * 100)}%`);
   }
@@ -1798,11 +1855,9 @@ export class PaintView {
   /** The pointer lifted on a color drop: keep the fill and stay in continue-fill. */
   private finishDrop(color?: RGB): void {
     const c = color ?? this.colour.get();
-    const was = this.dropper.continuing;
     if (!this.dropper.end()) return;
     this.syncUndo();
     this.colour.commit(c);
-    if (!was) this.say('Tap other areas to keep filling');
   }
 
   /** Undo and redo never run under a live stroke, transform or filter (their patches would be built on stale bytes). */
@@ -1825,8 +1880,11 @@ export class PaintView {
     if (!this.isOpen() || this.cropSurface?.isOpen) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // a modal dialog keeps its own keys (Space and Enter in the brush import list)
+    if (t && t.closest('.fm-bi-list')) return;
     // Delete, Extend, Contract, Push, Pull, Fill duration and Escape on the focused frame strip
     if (t && !e.metaKey && !e.ctrlKey && !e.altKey && this.strip.root.contains(t) && this.strip.handleKey(e)) { e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key === 'Shift') this.qs.shift(true);
     if (e.key === 'Alt') {
       if (this.lastMouse && !this.stroke && !this.interaction && this.tools.mode() === 'paint' && !e.repeat) this.showLoupe(this.lastMouse.x, this.lastMouse.y, false);
       return;
@@ -1850,6 +1908,7 @@ export class PaintView {
     else if (e.code === 'Space') { this.space = true; }
     else if (e.key === 'Escape' && this.previewSaved) this.togglePreview();
     else if (e.key === 'Escape') {
+      this.hideHud();
       if (this.strip.closeMenus()) { e.preventDefault(); e.stopPropagation(); return; }
       if (this.brushPanel.isOpen() && this.brushPanel.closeInner()) { e.preventDefault(); e.stopPropagation(); return; }
       const open =[this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
@@ -1922,6 +1981,7 @@ export class PaintView {
   }
 
   private down(e: PointerEvent): void {
+    this.input.watch(e, 'down');
     if (this.busy && this.doc && e.button === 0) {
       this.queuedDown = { e, released: false };
       setClass(this.root, 'is-waiting', true);
@@ -1929,17 +1989,19 @@ export class PaintView {
     }
     if (!this.doc || this.busy) return;
     this.closePanels();
+    this.hideHud();
     const cv = this.canvas;
     if (e.pointerType === 'touch') {
+      if (this.input.rejected(e)) return;
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
       if (this.touches.size >= 2) {
         this.clearPickHold();
-        this.cancelStroke();
+        if (!this.input.runtime.arbiter.penDown) this.cancelStroke();
         this.startGesture();
         cv.setPointerCapture(e.pointerId);
         return;
       }
-      if (!this.interaction && this.tools.mode() === 'paint') this.armPickHold(e);
+      if (!this.interaction && this.tools.mode() === 'paint' && this.prefs.holdPick !== 'off') this.armPickHold(e);
       if (!this.input.paintable(e)) { this.pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId }; cv.setPointerCapture(e.pointerId); return; }
     }
     if (this.space && e.button === 0 && e.shiftKey) {
@@ -1947,13 +2009,14 @@ export class PaintView {
       cv.setPointerCapture(e.pointerId);
       return;
     }
-    if (e.button === 1 || this.space || (e.button === 0 && e.pointerType === 'mouse' && e.buttons === 4)) {
+    if ((e.button === 1 && e.pointerType !== 'pen') || this.space || (e.button === 0 && e.pointerType === 'mouse' && e.buttons === 4)) {
       this.pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId };
       cv.setPointerCapture(e.pointerId);
       return;
     }
-    const pb = this.interaction || this.tools.mode() !== 'paint' ? null : penButton(e);
-    if (pb === 'eraser' && this.prefs.eraserEnd) {
+    const role = this.interaction || this.tools.mode() !== 'paint' ? null : this.input.runtime.arbiter.classify(e);
+    const rs = this.input.runtime.settings;
+    if (role === 'eraser' && (rs.eraserEnd ?? (this.prefs.eraserEnd ? 'erase' : 'off')) === 'erase') {
       // the pen's eraser end erases for this stroke only
       cv.setPointerCapture(e.pointerId);
       this.penTool = this.tool;
@@ -1962,10 +2025,10 @@ export class PaintView {
       this.startStroke(e);
       return;
     }
-    if (pb === 'barrel' && this.prefs.penButton !== 'off') {
+    if (role === 'barrel1' || role === 'barrel2') {
+      const old: BarrelAction = this.prefs.penButton === 'off' ? 'none' : this.prefs.penButton;
       cv.setPointerCapture(e.pointerId);
-      if (this.prefs.penButton === 'eyedropper') this.showLoupe(e.clientX, e.clientY, true, e.pointerId);
-      else this.cycleTool();
+      this.barrelAction(role === 'barrel1' ? rs.barrel1 ?? old : rs.barrel2 ?? 'none', e);
       return;
     }
     if (e.button !== 0) return;
@@ -1980,10 +2043,14 @@ export class PaintView {
       else this.dropper.cancel();
       return;
     }
+    // Shift+click: a straight line from where the last stroke ended
+    if (e.shiftKey && this.tool !== 'smudge' && this.qs.lastEnd && this.prefs.quickShape !== 'off') { this.qsPointer = e.pointerId; this.qs.startLine(this.toCanvas(e.clientX, e.clientY), e); return; }
+    this.qs.start(e);
     this.startStroke(e);
+    if (e.pointerType !== 'touch' && this.prefs.holdPick === 'all' && this.stroke && this.tools.mode() === 'paint') this.armPickHold(e);
   }
 
-  private startStroke(e: PointerEvent): void {
+  private startStroke(e: PointerEvent | { pointerId: number }, seed?: Parameters<Stroke['add']>[0][]): void {
     const doc = this.doc as PaintDoc;
     const layer = doc.activeLayer();
     const target = doc.paintTarget();
@@ -2010,7 +2077,7 @@ export class PaintView {
     }
     this.strokeId = target.id;
     const settings = {
-      tool, brush: this.tool === 'smudge' ? { ...b, pickup: Math.max(0.02, Math.min(1, 1 - (st.strength ?? 0.5))) } : b, color, size: st.size, opacity: st.opacity,
+      tool, brush: this.tool === 'smudge' ? { ...b, pickup: Math.max(0.02, Math.min(1, 1 - (st.strength ?? 0.5))) } : b, color, size: engineSize(st.size), opacity: st.opacity,
       alphaLock: target.alphaLock, selection: this.selection, zoom: sc.zoom, dynamicScaling: sc.dynamic,
       seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b), color2: this.colour.secondary(), viewRot: this.view.rot,
     };
@@ -2023,7 +2090,50 @@ export class PaintView {
     }) ?? null;
     this.stroke = this.remote ?? new PumpedStroke(new Stroke(target.raster, target.id, settings));
     this.strokePointer = e.pointerId;
-    this.feed(this.input.down(e));
+    this.feed(seed ?? this.input.down(e as PointerEvent));
+  }
+
+  /** QuickShape: the live stroke is thrown away and the shape's points are stamped in its place. */
+  private qsRestamp(pts: Pt[], prs: number[], tpl: unknown): void {
+    const doc = this.doc;
+    if (!doc) return;
+    const id = this.strokePointer >= 0 ? this.strokePointer : this.qsPointer;
+    const s = this.stroke;
+    // a late timer or frame after the stroke ended must not start a stroke nobody will lift
+    if (!s && this.qsPointer < 0) return;
+    if (s) {
+      this.remote = null;
+      this.stroke = null;
+      this.clearTail();
+      const r = s.cancel();
+      if (r) doc.markDirty(this.strokeId || doc.active, r);
+      doc.settle();
+    }
+    this.startStroke({ pointerId: id }, this.qsSeed(pts, prs, tpl));
+  }
+
+  private qsSeed(pts: Pt[], prs: number[], tpl: unknown): Parameters<Stroke['add']>[0][] {
+    const base = (tpl ?? { tiltX: 0, tiltY: 0, twist: 0, kind: 'pen' }) as Record<string, unknown>;
+    const t0 = performance.now();
+    return pts.map((p, i) => ({ ...base, x: p.x, y: p.y, pressure: prs[i] ?? 0.5, time: t0 + i * 4, predicted: false }) as unknown as Parameters<Stroke['add']>[0]);
+  }
+
+  /** Edit Shape: the last snapped shape is undone and another outline is stamped as one step. */
+  private qsReplace(pts: Pt[], prs: number[], tpl: unknown): void {
+    const doc = this.doc;
+    if (!doc || this.stroke || this.busy || !doc.canUndo()) return;
+    doc.undo();
+    this.qsPointer = -2;
+    this.startStroke({ pointerId: -2 }, this.qsSeed(pts, prs, tpl));
+    const s = this.stroke as PumpedStroke | RemoteStroke | null;
+    if (!s) return;
+    this.feed([], true);
+    const patch = s.finish();
+    if (patch instanceof Promise) this.landStroke(patch, doc, this.tool, this.colour.get());
+    else if (patch) { doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : 'Paint'); this.syncUndo(); }
+    this.stroke = null;
+    this.strokePointer = -1;
+    this.qsPointer = -1;
   }
 
   /** `all`: the pen came up, so every queued sample is stamped now; else stamping stops after a few milliseconds and the frame loop carries on. */
@@ -2031,6 +2141,7 @@ export class PaintView {
     const s = this.stroke, doc = this.doc;
     if (!s || !doc) return;
     const ahead: Parameters<Stroke['add']>[0][] = [];
+    this.qs.record(samples as { x: number; y: number; pressure: number; predicted?: boolean }[]);
     for (const p of samples as Parameters<Stroke['add']>[0][]) {
       if (p.predicted) { ahead.push(p); continue; }
       s.add(p);
@@ -2065,7 +2176,7 @@ export class PaintView {
     if (this.tool !== 'paint' || !this.tailFrom || !ahead.length) { this.clearTail(); return; }
     const b = this.brush(), st = this.state(b);
     const mv = this.engine.movie;
-    const base = baseDiameter(b, st.size, mv ? Math.max(mv.width, mv.height) : 0);
+    const base = baseDiameter(b, engineSize(st.size), mv ? Math.max(mv.width, mv.height) : 0);
     const [lo, hi] = b.pressureSize;
     const r = this.tail.set(this.tailFrom, ahead, (s) => base * (lo + (hi - lo) * s.pressure), this.colour.get(), rm ? st.opacity * Math.min(1, 0.3 + 0.7 * b.flow) * (1 - 0.5 * b.softness) : st.opacity);
     if (r) this.redraw(r);
@@ -2080,6 +2191,8 @@ export class PaintView {
   private lastMouse: Point | null = null;
 
   private move(e: PointerEvent): void {
+    this.input.watch(e, 'move');
+    if (e.pointerType === 'touch' && this.input.runtime.arbiter.isDropped(e.pointerId)) return;
     if (e.pointerType === 'mouse') this.lastMouse = { x: e.clientX, y: e.clientY };
     if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
       const t = this.touches.get(e.pointerId)!;
@@ -2114,12 +2227,12 @@ export class PaintView {
       this.showLoupe(e.clientX, e.clientY, false);
       return;
     }
-    if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; this.feed(this.input.move(e)); }
+    if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; if (!this.qs.moved(e)) this.feed(this.input.move(e)); }
     else if (!this.stroke && !this.busy && this.doc && e.pointerId === this.resumePointer && e.buttons) { this.resumePointer = -1; this.startStroke(e); }
     if (e.pointerType !== 'touch') {
       const old = this.cursorBox;
       this.cursor = this.toCanvas(e.clientX, e.clientY);
-      if (e.pointerType === 'pen') this.lastTilt = { x: e.tiltX || 0, y: e.tiltY || 0, roll: e.twist || 0 };
+      if (e.pointerType === 'pen') this.lastTilt = this.input.runtime.settings.tiltAngle ? { x: e.tiltX || 0, y: e.tiltY || 0, roll: e.twist || 0 } : { x: 0, y: 0, roll: e.twist || 0 };
       if (this.cursorShown() || old) {
         if (old) this.dirtyScreen(old);
         const b = this.brush();
@@ -2169,13 +2282,15 @@ export class PaintView {
   private armPickHold(e: PointerEvent): void {
     this.clearPickHold();
     const x = e.clientX, y = e.clientY, id = e.pointerId;
+    const touch = e.pointerType === 'touch';
     const timer = window.setTimeout(() => {
       this.pickHold = null;
-      if (this.interaction || this.gesture || this.loupe.active || !this.touches.has(id) || this.touches.size !== 1) return;
+      if (this.interaction || this.gesture || this.loupe.active) return;
+      if (touch ? !this.touches.has(id) || this.touches.size !== 1 : this.strokePointer !== id) return;
       this.cancelStroke();
       this.pan = null;
       this.showLoupe(x, y, true, id);
-    }, 500);
+    }, touch ? 500 : 600);
     this.pickHold = { id, x, y, timer };
   }
 
@@ -2187,6 +2302,8 @@ export class PaintView {
   }
 
   private up(e: PointerEvent, cancelled = false): void {
+    this.input.watch(e, 'up');
+    if (e.pointerType === 'touch' && this.input.runtime.arbiter.isDropped(e.pointerId)) { this.input.runtime.arbiter.release(e.pointerId); return; }
     if (this.queuedDown && this.queuedDown.e.pointerId === e.pointerId) { if (cancelled) { this.queuedDown = null; setClass(this.root, 'is-waiting', false); } else this.queuedDown.released = true; return; }
     if (e.pointerType === 'touch') {
       const info = this.touches.get(e.pointerId);
@@ -2208,6 +2325,7 @@ export class PaintView {
         return;
       }
     }
+    this.clearPickHold(e.pointerId);
     if (this.spin.active && this.spin.pointer === e.pointerId) { this.spin.end(); return; }
     if (this.loupe.held && this.pickPointer === e.pointerId) { this.endLoupe(e, cancelled); return; }
     if (this.dropper.active && this.dropPointer === e.pointerId) { this.dropPointer = -1; this.finishDrop(); return; }
@@ -2219,13 +2337,17 @@ export class PaintView {
     const doc = this.doc as PaintDoc;
     if (cancelled || !this.remote) this.clearTail();
     if (cancelled) {
+      this.qs.finish(true);
       this.remote = null;
       const r = s.cancel();
       if (r) doc.markDirty(this.strokeId || doc.active, r);
       doc.settle();
     } else {
-      this.feed(this.input.up(e), true);
+      const tail = this.input.up(e);
+      // a snapped shape ends where it is: the raw lift samples are not part of it
+      this.feed(this.qs.shape ? [] : tail, true);
       const patch = s.finish();
+      this.qs.finish(false);
       if (patch instanceof Promise) this.landStroke(patch, doc, this.tool, this.colour.get());
       else if (patch) {
         doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : this.tool === 'smudge' ? 'Smudge' : 'Paint');
@@ -2235,6 +2357,7 @@ export class PaintView {
     }
     this.stroke = null;
     this.strokePointer = -1;
+    this.qsPointer = -1;
     this.endPenTool();
     if (this.cursorBox) this.dirtyScreen(this.cursorBox);
   }
@@ -2245,6 +2368,15 @@ export class PaintView {
     this.tool = this.penTool;
     this.penTool = null;
     this.syncChrome();
+  }
+
+  /** A pen barrel button pressed on the picture: the job the person gave it in Preferences > Pen and Tablet. */
+  private barrelAction(act: BarrelAction, e: PointerEvent): void {
+    if (act === 'eyedropper') this.showLoupe(e.clientX, e.clientY, true, e.pointerId);
+    else if (act === 'cycle') this.cycleTool();
+    else if (act === 'undo') this.undo();
+    else if (act === 'pan') this.pan = { x: e.clientX, y: e.clientY, ox: this.view.ox, oy: this.view.oy, id: e.pointerId };
+    else if (act === 'menu') { if (!this.stroke) this.clip.openMenu(e.clientX, e.clientY); }
   }
 
   /** Pen barrel button: Paint, Smudge, Erase in turn. */

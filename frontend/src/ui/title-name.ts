@@ -11,8 +11,8 @@ import { t } from './i18n';
 export function movieLabel(engine: Engine): string {
   const m = engine.movie;
   if (!m) return '';
-  const name = !engine.libraryName && m.name === 'Untitled Movie' ? t('Untitled') : m.name;
-  return `${engine.modified ? '• ' : ''}${name}`;
+  // every movie lives in the Theater from creation and saves itself: no unsaved dot, no "Untitled" state
+  return !engine.libraryName && m.name === 'Untitled Movie' ? t('Untitled') : m.name;
 }
 
 export class TitleName {

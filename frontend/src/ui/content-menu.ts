@@ -14,6 +14,7 @@ import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
 import { EdRows } from './content-menu-ed';
+import '../styles/timeline-menu.css';
 
 const MASKS: Array<[MaskMode, string]> = [['none', 'None'], ['clipping', 'Clipping'], ['alpha', 'Alpha'], ['luminance', 'Luminance']];
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -193,7 +194,7 @@ export class ContentMenu {
     });
     this.lip = popRow('audio', 'Lip-sync from Sound...');
     this.lip.el.addEventListener('click', () => { this.pop.hide(); this.onLipsync?.(); });
-    this.soundRow = popRow('audio', 'Sound: fades, pan, normalize...');
+    this.soundRow = popRow('audio', 'Sound options...');
     this.soundRow.el.addEventListener('click', () => { this.pop.hide(); this.onSound?.(); });
     this.shapeRow = popRow('shape', 'Shape options...');
     this.shapeRow.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'shape-options' })); });
@@ -236,8 +237,31 @@ export class ContentMenu {
     this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
     this.ed = new EdRows(engine, this.pop, () => this.ids, () => this.pop.hide());
     this.opacityBox = opacity;
-    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, this.parents.row.el, ...this.xform.rows, popSep(),
-      ...this.ed.rows, this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, this.separate.el, this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+    // Sections with submenus keep the menu short: Transform, Time, Convert and More; a section with nothing to offer hides.
+    const [sizeRow, speedRow, freezeRow, transitionRow, keyToolsRow] = this.ed.rows;
+    const sTransform = this.section('rotate', 'Transform', [...this.xform.rows, sizeRow, this.parents.row.el]);
+    const sTime = this.section('fillDuration', 'Time', [speedRow, freezeRow, transitionRow]);
+    const sConvert = this.section('flipbook', 'Convert', [this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.separate.el]);
+    const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
+    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
+      sTransform, sTime, sConvert, sMore, popSep(),
+      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+  }
+
+  private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
+
+  /** A submenu row holding `kids`; hidden by syncSections when every child is gone. */
+  private section(iconName: string, label: string, kids: HTMLElement[]): HTMLElement {
+    const row = popRow(iconName, label, { sub: true });
+    const panel = Popover.panel('fm-pop fm-cm-sub fm-pop-sub');
+    panel.append(...kids);
+    this.pop.attachSub(row.el, panel);
+    this.sections.push({ row, kids });
+    return row.el;
+  }
+
+  private syncSections(): void {
+    for (const s of this.sections) setClass(s.row.el, 'is-gone', s.kids.every((k) => k.classList.contains('is-gone') || k.hidden));
   }
 
   open(x: number, y: number): void {
@@ -364,5 +388,6 @@ export class ContentMenu {
     for (const n of [this.blend.el, this.mask.el, this.highlight.el, this.parents.row.el, ...this.xform.rows]) setClass(n, 'is-gone', audioOnly);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     this.del.setDisabled(none);
+    this.syncSections();
   }
 }

@@ -6,11 +6,22 @@ import { baseAngle, tiltShape } from '../paint/dynamics';
 import { getTip } from '../paint/tips';
 import { libTipImage } from '../paint/tips-lib';
 import { type FeelOverride, type OutlineStyle } from '../paint/feel';
+import { penRuntime } from '../paint/pen-device';
 import type { Brush, RGB } from '../paint/types';
 import { el, q, setClass, setText } from './dom';
 import { Popover } from './popover';
 
 const KEY = 'formmorpheus.paint.feel';
+const PEN_KEY = 'formmorpheus.pen';
+
+/** The pen runtime (settings, saved devices, arbiter) reads and writes this browser's storage. */
+export function attachPenStorage(): void {
+  penRuntime.attachStorage({
+    read: () => { try { return localStorage.getItem(PEN_KEY); } catch { return null; } },
+    write: (s) => { try { localStorage.setItem(PEN_KEY, s); } catch { /* this session only */ } },
+  });
+}
+attachPenStorage();
 
 /** Per-brush overrides kept in this browser (the brush id is the key). */
 export class FeelStore {

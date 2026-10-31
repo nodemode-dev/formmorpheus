@@ -34,6 +34,8 @@ export class TransformRows {
     this.flipV.setDisabled(none);
     this.reset.setDisabled(none || cs.every((c) => !!c && tops.isDefaultTransform(c.transform)));
     for (const r of this.rows) setClass(r, 'is-gone', false);
+    // Reset puts the Compose transform back and leaves keyframes alone: it only belongs to Compose
+    setClass(this.reset.el, 'is-gone', this.engine.mode !== 'compose');
   }
 }
 
@@ -54,7 +56,8 @@ export class StageBoxMenu {
   open(x: number, y: number, ids: string[]): void {
     this.ids = ids;
     this.rows.patch();
-    this.anchor.setDisabled(this.engine.mode === 'perform');
+    // the anchor works in Perform and Keyframe; Compose always turns and scales about the content centre
+    this.anchor.setDisabled(this.engine.mode === 'compose');
     this.pop.showAt(x, y);
   }
 }

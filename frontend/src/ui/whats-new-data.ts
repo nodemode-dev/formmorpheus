@@ -5,6 +5,19 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.15.0', name: 'Pens and tablets, brush presets and a closer feel',
+    additions: [
+      { title: 'Pen tablets', text: 'Pressure, tilt, the eraser end and barrel buttons, with a test pad, a pressure curve and palm rejection in Preferences.', command: 'settings' },
+      { title: 'Pen Link', text: 'Draw from a tablet\'s browser with its pen pressure and tilt, over your own network, paired by a code.', command: 'pen-link' },
+      { title: 'Brush presets', text: 'Brush files bring their settings, folders and textures, with a preview of every brush before it lands.', command: 'new-flipbook' },
+      { title: 'Real oil and watercolor', text: 'Oil streaks hair by hair and picks up the paint below; watercolor pools at its edges and bleeds while wet.', command: 'new-flipbook' },
+      { title: 'Saves itself', text: 'New movies appear in the Theater at once and every change is saved as you work.', command: 'home' },
+      { title: 'QuickShape', text: 'Hold at the end of a stroke to snap it to a line, arc, ellipse, rectangle or polygon.', command: 'new-flipbook' },
+      { title: 'Track headers', text: 'Names, hide, lock, mute and solo beside the tracks, and drops that make a new track.', command: 'home' },
+      { title: 'Perform retakes', text: 'Retake, a pre-roll and a punch range, and keys to turn and scale with a mouse.', command: 'mode-keyframe' },
+    ],
+  },
+  {
     version: '0.14.0', name: 'Effects, titles, shapes and sound post',
     additions: [
       { title: 'Effects library', text: 'Drop shadow, glow, color correction, vignette, pixelate, blurs, motion blur, chroma and luma key, chromatic aberration and mirror, all keyable, reorderable and copyable.', command: 'mode-keyframe' },

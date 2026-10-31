@@ -330,7 +330,7 @@ export class GestureHub {
     reg?.end?.(i);
     if (!i.moved && i.ms < TAP_MS && !this.repeated && this.prefs.undoGestures && !(reg?.own)) {
       const which = i.fingers === 2 ? 'undo' : i.fingers === 3 ? 'redo' : null;
-      if (which) { toast(t(which === 'undo' ? 'Undo' : 'Redo'), 'info', { ms: 900 }); this.act(which); }
+      if (which) this.act(which);   // the undo banner (ui/undo-banner) names the step
     }
     // four fingers tapped: the full-screen preview, in and out
     if (!i.moved && i.fingers === 4 && i.ms < TAP_MS) document.dispatchEvent(new CustomEvent('fm:command', { detail: 'stage-fullscreen' }));
@@ -346,8 +346,8 @@ export class GestureHub {
     if (!this.prefs.undoGestures || !this.actions) return;
     this.repeated = false;
     const which = n === 2 ? 'undo' : 'redo';
+    this.repeat.delay = loadPaintPrefs().undoDelay;
     this.repeat.start(() => {
-      if (!this.repeated) toast(t(which === 'undo' ? 'Undo' : 'Redo'), 'info', { ms: 900 });
       this.repeated = true;
       this.act(which);
     }, false);

@@ -5,7 +5,7 @@ import { el, patchList, q, setClass, setHidden, setText } from './dom';
 import { t, tn } from './i18n';
 import { brushStore, IMPORTED_ID, type BrushLib, type BrushSet } from './brush-store';
 import { renderBrushPreview } from '../paint/preview';
-import { importBrushFile } from '../io/brush-import';
+import { importFileWithPreview } from './brush-import-dialog';
 import { exportBrush, exportBrushLib, exportBrushSet, fileNameFor } from '../io/brush-export';
 import { brushThumb, brushThumbs } from './brush-thumb';
 import { openBrushStudio } from './brush-studio';
@@ -81,7 +81,8 @@ export class BrushPanel {
 
   private readonly onDown = (e: PointerEvent): void => {
     const t = e.target as Node | null;
-    if (!t || this.root.contains(t) || this.anchor?.contains(t)) {
+    // the import preview opens over the panel; working in it must not close the panel
+    if (!t || this.root.contains(t) || this.anchor?.contains(t) || (t as HTMLElement).closest?.('.cv-scrim')) {
       if (t && !this.menuEl.hidden && !this.menuEl.contains(t)) this.closeMenu();
       if (t && !this.libMenuEl.hidden && !this.libMenuEl.contains(t) && !(t as HTMLElement).closest?.('.fm-bp-libname')) this.closeLibMenu();
       return;
@@ -89,7 +90,7 @@ export class BrushPanel {
     this.close();
   };
   private readonly onKey = (e: KeyboardEvent): void => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || (e.target as HTMLElement | null)?.closest?.('.cv-scrim')) return;
     e.stopPropagation();
     if (!this.closeInner()) this.close();
   };
@@ -584,16 +585,11 @@ export class BrushPanel {
     let added = 0, failed = 0, last = '', plain = false;
     for (const f of files) {
       try {
-        const r = await importBrushFile(f);
-        if (r.sets && r.sets.length) {
-          brushStore.addImportedLibrary(r.libName ?? f.name.replace(/\.[^.]+$/, ''), r.sets);
-          added += r.brushes.length;
-          this.activeSet = brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT;
-        } else if (r.brushes.length && r.setName) {
-          const sid = brushStore.addImportedSet(r.setName, r.brushes);
-          this.activeSet = sid; added += r.brushes.length;
-        } else if (r.brushes.length) {
-          plain = true; brushStore.addImported(r.brushes); added += r.brushes.length; } else failed++;
+        const r = await importFileWithPreview(f);
+        if (r.cancelled) continue;
+        if (!r.added) { failed++; continue; }
+        added += r.added;
+        if (r.firstSet) this.activeSet = r.firstSet; else plain = true;
       } catch (e) { failed++; last = e instanceof Error ? e.message : ''; }
     }
     if (added) { if (plain) { brushStore.setActiveLib(brushStore.libOf(IMPORTED_ID)); this.activeSet = IMPORTED_ID; } this.searchEl.value = ''; this.revealPending = true; this.sync(); this.listEl.scrollTop = 0; }

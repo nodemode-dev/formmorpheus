@@ -7,7 +7,7 @@
   --fm-hl-blue: #3e63dd;
   --fm-hl-purple: #8e4ec6;
   --fm-hl-pink: #d6409f;
-  --fm-pop-row-h: 36px;
+  --fm-pop-row-h: 38px;
 }
 
 .fm-pop {
@@ -19,17 +19,36 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-1);
-  background: var(--glass-bg);
+  background: var(--glass-menu-bg);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-menu-filter);
+  backdrop-filter: var(--glass-menu-filter);
   color: var(--text-primary);
   font-size: var(--fs-14);
   will-change: transform;
+  /* the card grows from the anchor: popover.ts sets --fm-ox and --fm-oy (px, inside the card) */
+  transform-origin: var(--fm-ox, 0) var(--fm-oy, 0);
 }
 .fm-pop[hidden], .fm-pop [hidden] { display: none; }
+
+/* Open motion (FV-209): an already-mounted card turns from display:none to shown, so only `scale` and `opacity` move
+   (the card's own position is a transform, and `scale` composes with it). Closing is instant: nothing lingers over the
+   next thing pressed. */
+@keyframes fm-pop-in { from { opacity: 0; scale: 0.96; } to { opacity: 1; scale: 1; } }
+@keyframes fm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fm-rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fm-pill-in { from { opacity: 0; scale: 0.9; } to { opacity: 1; scale: 1; } }
+.fm-pop:not([hidden]), .cv-menu:not([hidden]) { animation: fm-pop-in var(--dur-pop) var(--ease-glass) backwards; }
+.cv-menu { transform-origin: var(--fm-ox, 0) var(--fm-oy, 0); }
+.cv-menu.cv-menu { border-radius: var(--radius-pop); }
+.cv-menu.cv-menu .cv-menu-item { border-radius: var(--radius-lg); }
+/* the big card (Movie Settings) takes the big radius */
+.fm-pop.fm-ms { border-radius: var(--radius-2xl); }
+@media (prefers-reduced-motion: reduce) {
+  .fm-pop:not([hidden]), .cv-menu:not([hidden]) { animation: none; }
+}
 .fm-pop-sub { z-index: var(--z-context); min-width: 188px; }
 
 .fm-pop-row {
@@ -40,7 +59,7 @@
   height: var(--fm-pop-row-h);
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-row);
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -131,17 +150,9 @@
 
 .fm-tm-list { display: grid; }
 
-.fm-ms { padding: var(--space-2); max-height: calc(100vh - 48px); overflow-y: auto; overscroll-behavior: contain; }
+/* Movie settings: one fixed-size panel; the scrolling body and the bottom tab bar are in movie-settings.css */
 .fm-ms-head { padding: var(--space-3) var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-.fm-ms-art { display: grid; justify-items: center; gap: var(--space-1); padding: var(--space-2); border-radius: var(--radius-lg); background: var(--surface-raised); }
-.fm-ms-art img { width: 100%; max-height: 150px; object-fit: contain; border-radius: var(--radius-md); background: var(--surface-field); }
-.fm-ms-art img:not([src]) { visibility: hidden; height: 80px; }
-.fm-ms-art-cap { color: var(--text-muted); font-size: var(--fs-11); }
 .fm-ms-input.fm-ms-wide { width: 150px; }
-.fm-ms-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); margin-bottom: var(--space-2); border-radius: var(--radius-pill); background: var(--surface-field); }
-.fm-ms-tab { height: 30px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-13); cursor: default; }
-.fm-ms-tab:hover { color: var(--text-primary); }
-.fm-ms-tab.is-active { background: var(--accent-color); color: var(--text-on-accent); }
 .fm-ms-pane { display: grid; gap: var(--space-1); }
 .fm-ms-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fm-pop-row-h); padding: var(--space-1) var(--space-3); border-radius: var(--radius-lg); background: var(--surface-raised); }
 .fm-ms-label { flex: none; color: var(--text-primary); font-size: var(--fs-14); }
@@ -191,3 +202,24 @@
 .fm-nm-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); background: var(--surface-field); }
 .fm-nm-segbtn { height: 26px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); cursor: default; }
 .fm-nm-segbtn.is-active { background: var(--accent-color); color: var(--text-on-accent); }
+
+/* Create menu (FV-204): "Add new", four icon tiles, then Photo, Video, File and More rows */
+.fm-create { padding: var(--space-3) var(--space-2) var(--space-2); }
+.fm-cr-title { padding: 0 var(--space-2) var(--space-2); color: var(--text-primary); font-size: var(--fs-16, 16px); font-weight: 600; }
+.fm-cr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1); padding-bottom: var(--space-2); }
+.fm-cr-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  height: 66px; padding: 0; border: 0; border-radius: var(--radius-row);
+  background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--fs-12); cursor: default;
+  animation: fm-fade-in var(--dur-pop) var(--ease-glass) backwards; animation-delay: calc(var(--i, 0) * 20ms);
+}
+.fm-cr-tile:hover { background: var(--accent-soft); }
+.fm-cr-tile:disabled { opacity: 0.4; pointer-events: none; }
+.fm-cr-tile:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.fm-cr-glyph { display: inline-flex; color: var(--accent-color); }
+.fm-cr-row { height: 40px; }
+.fm-cr-row .fm-pop-label { order: 1; }
+.fm-cr-rowicon { order: 2; display: inline-flex; flex: none; color: var(--text-secondary); }
+.fm-cr-row .fm-pop-tail { order: 3; }
+.fm-cr-more { min-width: 200px; }
+@media (prefers-reduced-motion: reduce) { .fm-cr-tile { animation: none; } }

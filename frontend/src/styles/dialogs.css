@@ -239,7 +239,12 @@
 /* ── Phase 21, steps 4 and 5: dialogs as the target's (UI_SPEC.md sections 4 and 7, s02 and s24): the app blurred behind
    a rounded card with a hairline border; the one primary action white, the others dark and bordered. ── */
 .cv-scrim { background: rgba(8, 6, 14, 0.45); backdrop-filter: blur(14px) saturate(0.9); -webkit-backdrop-filter: blur(14px) saturate(0.9); }
-.cv-dialog { border: 1px solid var(--line-3); border-radius: 14px; background: var(--surface-2); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+.cv-dialog { border: 1px solid var(--line-3); border-radius: var(--radius-2xl); background: var(--surface-2); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+/* Open motion (FV-209): the scrim fades and the card rises 8 px, on the already-mounted nodes (hidden turns to shown).
+   The card's own drag offset is the `translate` property, so the rise uses `transform` and the two compose. */
+.cv-scrim:not([hidden]):not(.cv-scrim-through) { animation: fm-fade-in var(--dur-fast) var(--ease-glass) backwards; }
+.cv-scrim:not([hidden]) > .cv-dialog { animation: fm-rise-in var(--dur-dialog) var(--ease-glass) backwards; }
+@media (prefers-reduced-motion: reduce) { .cv-scrim:not([hidden]), .cv-scrim:not([hidden]) > .cv-dialog { animation: none; } }
 .cv-dialog-head .cv-dialog-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
 .cv-dialog-head [data-close] { border-radius: 50%; background: var(--surface-raised); }
 .cv-dialog-foot { border-top: 0; }

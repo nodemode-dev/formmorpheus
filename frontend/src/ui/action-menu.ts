@@ -1,6 +1,8 @@
 // Keyframe mode menus: the Action menu on the Playhead pill, the parameter cards, and the lane context menu.
 import type { Engine } from '../engine/engine';
-import { baseValues, easeCurve, evalLane, kindSpec, KEY_KINDS, laneOf, type ChannelSpec } from '../engine/keys';
+import { baseValues, easeCurve, evalLane, kindSpec, KEY_KINDS, laneFrames, laneOf, type ChannelSpec } from '../engine/keys';
+import { locate } from '../engine/model';
+import { setEasePreview } from './key-lanes';
 import * as keyOps from '../engine/key-ops';
 import type { KeyClip } from '../engine/key-ops';
 import * as ops from '../engine/ops';
@@ -74,7 +76,7 @@ interface Card {
 }
 
 /** A card slider being recorded in Perform mode. */
-interface CardTake { id: string; kind: KeyKind; channel: string; rec: Recorder; start: number; last: number | null; tag: string }
+interface CardTake { id: string; kind: KeyKind; channel: string; rec: Recorder; start: number; last: number | null; tag: string; /** History depth and Playhead frame when the take began (for Retake). */ before: number; from: number }
 
 const ADVANCED = new Set(['offsetX', 'offsetY', 'travel']);
 type View = 'action' | 'motion' | 'filter' | 'card';
@@ -129,41 +131,55 @@ export class ActionMenu {
     this.shapeBtn.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'shape-options' })); });
     setHidden(this.shapeBtn, true);
 
-    const motion = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Motion</span></div><div class="fm-ka-list"></div></div>');
+    // two steps, as the reference: Action! (Move, Filter) then the list of that choice, with a way back
+    const back = (): HTMLButtonElement => el<HTMLButtonElement>(`<button class="fm-ka-back" type="button" aria-label="Back" title="Back">${icon('chevronLeft', 16)}</button>`);
+    const motion = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Move</span></div><div class="fm-ka-list"></div></div>');
     q(motion, '.fm-ka-tico').innerHTML = kindSpec('move').icon;
+    const mback = back();
+    mback.addEventListener('click', () => this.show('action'));
+    q(motion, '.fm-ka-title').prepend(mback);
     const mlist = q(motion, '.fm-ka-list');
     this.groups.fill(mlist, MOTION_GROUPS, ['move', 'warp', 'distort', 'bones', 'time', 'textanim'], (k) => this.kindRow(k));
 
-    const filter = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Live Filters</span></div><div class="fm-ka-list"></div></div>');
+    const filter = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Filter</span></div><div class="fm-ka-list"></div></div>');
     q(filter, '.fm-ka-tico').innerHTML = SPARKLE;
+    const fback = back();
+    fback.addEventListener('click', () => this.show('action'));
+    q(filter, '.fm-ka-title').prepend(fback);
     const flist = q(filter, '.fm-ka-list');
     this.groups.fill(flist, FILTER_GROUPS, KEY_KINDS.filter((k) => k.group === 'filter').map((k) => k.kind), (k) => this.kindRow(k));
     flist.appendChild(this.groups.emptyNote);
 
-    // one step: the Move and Live Filters lists sit in the Action menu itself, grouped
-    const group = (title: string, list: HTMLElement): HTMLElement => {
-      const g = el('<div class="fm-ka-grp"><div class="fm-ka-ghead"></div></div>');
-      setText(q(g, '.fm-ka-ghead'), title);
-      g.appendChild(list);
-      action.appendChild(g);
-      return g;
-    };
-    this.moveGrp = group('Move', mlist);
-    this.filterGrp = group('Live Filters', flist);
+    this.moveGrp = motion;
+    this.filterGrp = filter;
     this.passHint = el('<div class="fm-ka-hint" hidden><span class="fm-ka-hint-text">Filters need a normal blend. A Passthrough group has no picture of its own.</span><button class="fm-ka-hint-fix" type="button">Use Normal</button></div>');
-    this.filterGrp.insertBefore(this.passHint, flist);
-    this.filterGrp.insertBefore(this.stack.root, flist);
-    action.insertBefore(this.groups.search, this.moveGrp);
+    filter.insertBefore(this.passHint, flist);
+    filter.insertBefore(this.stack.root, flist);
+    filter.insertBefore(this.groups.search, this.passHint);
     q(this.passHint, '.fm-ka-hint-fix').addEventListener('click', () => {
       const t = targetOf(this.engine);
       if (t) this.engine.run('Blend Mode', (m) => ops.patchContent(m, [t.c.id], { blend: 'normal' }));
       this.paintKeyed();
     });
-    setHidden(this.moveBtn, true);
-    setHidden(this.filterBtn, true);
     this.views = { action, motion, filter };
     this.pop.body.append(action, motion, filter, this.cardHost);
     setHidden(this.cardHost, true);
+    // the parameter card stays open while the Stage or the Timeline is worked: only Escape, a press elsewhere or a mode change closes it
+    this.pop.keep = (t) => this.view === 'card' && !!t.closest('.fm-stage, .fm-timeline');
+    engine.on('mode', () => this.pop.hide());
+    engine.on('selection', () => { if (this.pop.isOpen && !targetOf(this.engine)) this.pop.hide(); });
+    // typing on the first step goes straight to the search over every filter
+    this.pop.el.addEventListener('keydown', (e) => {
+      if (this.view !== 'action' || e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || (e.target as Element).closest('input')) return;
+      const t = targetOf(this.engine);
+      if (!t || t.c.kind === 'audio') return;
+      this.show('filter');
+      const input = q<HTMLInputElement>(this.groups.search, 'input');
+      input.value = e.key;
+      input.focus();
+      input.dispatchEvent(new Event('input'));
+      e.preventDefault();
+    });
     this.pop.onHide(() => { this.anchor = null; this.cardKind = null; this.endRec(); this.cardTag = null; });
     for (const ev of ['time', 'movie', 'selection'] as const) engine.on(ev, () => { if (this.pop.isOpen && this.view === 'card') this.syncCard(); });
     engine.on('movie', () => { if (this.pop.isOpen) this.paintKeyed(); });
@@ -182,9 +198,9 @@ export class ActionMenu {
     if (this.pop.isOpen) { this.pop.hide(); return; }
     this.anchor = anchor;
     const audio = t.c.kind === 'audio';
-    setHidden(this.moveGrp, audio);
-    setHidden(this.filterGrp, audio);
-    setHidden(this.groups.search, audio);
+    // a sound has Level only; any other content has Move and Filter
+    setHidden(this.moveBtn, audio);
+    setHidden(this.filterBtn, audio);
     setHidden(this.levelBtn, !audio);
     setHidden(this.shapeBtn, !(t.c.kind === 'shape' || t.c.kind === 'solid' || t.c.kind === 'adjust'));
     this.show('action');
@@ -428,7 +444,7 @@ export class ActionMenu {
   private beginRec(kind: KeyKind, channel: string): void {
     const t = targetOf(this.engine);
     if (this.engine.mode !== 'perform' || !t || this.take) return;
-    this.take = { id: t.c.id, kind, channel, rec: new Recorder(kind, [channel]), start: t.c.start, last: null, tag: this.cardTag ?? `kc-rec-${Date.now()}` };
+    this.take = { id: t.c.id, kind, channel, rec: new Recorder(kind, [channel]), start: t.c.start, last: null, tag: this.cardTag ?? `kc-rec-${Date.now()}`, before: this.engine.history.past.length, from: this.engine.frame };
     perform.setRecording(true);
     this.engine.play();
     const stop = (): void => { window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); this.endRec(); };
@@ -458,6 +474,7 @@ export class ActionMenu {
     this.engine.stop();
     this.commitTake(r, perform.filtering);
     perform.setRecording(false);
+    perform.markTake(r.before, this.engine.history.past.length, r.from);
     this.engine.endGesture();
   }
 
@@ -504,7 +521,8 @@ export class ActionMenu {
       const wide = row.ch.min <= -1000;
       const lim = row.ch.unit === 'px' ? Math.max(m.width, m.height) : 360;
       const big = !wide && row.ch.unit === '%' && row.ch.max >= 5;
-      const lo = wide ? Math.min(-lim, v) : row.ch.min, hi = wide ? Math.max(lim, v) : big ? Math.max(4, v) : row.ch.max;
+      // a signed scale (a flip) starts its slider at the lowest value shown, not at -2000 percent
+      const lo = wide ? Math.min(-lim, v) : row.ch.id.startsWith('scale') ? Math.min(0, v) : row.ch.min, hi = wide ? Math.max(lim, v) : big ? Math.max(4, v) : row.ch.max;
       if (row.range.min !== String(lo)) row.range.min = String(lo);
       if (row.range.max !== String(hi)) row.range.max = String(hi);
       if (document.activeElement !== row.range && row.range.valueAsNumber !== v) row.range.value = String(v);
@@ -590,6 +608,7 @@ export class LaneMenu {
     this.setAll = popRow(null, 'Set all easings', { sub: true });
     this.del = popRow(null, 'Delete', { danger: true });
 
+    this.pop.onHide(() => setEasePreview(null));
     this.pop.attachSub(this.setEase.el, this.easePanel(false));
     this.pop.attachSub(this.setAll.el, this.easePanel(true));
     this.reverse.el.addEventListener('click', () => this.edit('Reverse Keyframes', (c, k) => keyOps.reverseKeys(c, k)));
@@ -636,7 +655,15 @@ export class LaneMenu {
     setClass(this.setEase.el, 'is-gone', false);
     this.setEase.setDisabled(ctx.prev === null);
     this.del.setLabel(onKey ? 'Delete keyframe' : `Delete ${label}`);
-    this.pop.showAt(px, py);
+    // clear of the lane row (its easing name and ticks stay in view): below the pointer, or above it when the screen ends first
+    this.pop.showAt(px, py + 22);
+    const box = this.pop.el.getBoundingClientRect();
+    if (box.top < py + 14) this.pop.showAt(px, py - 22 - box.height);
+    // the stretch between the two keys shows its easing name and tick markers while the menu is open
+    const m = this.engine.movie, lane = m ? locate(m, ctx.id)?.content.keys.find((l) => l.kind === ctx.kind) : undefined;
+    const frames = lane ? laneFrames(lane, ctx.channel ?? undefined) : [];
+    const next = ctx.prev === null ? undefined : frames.find((f) => f > (ctx.prev as number));
+    setEasePreview(next === undefined || ctx.prev === null ? null : { id: ctx.id, kind: ctx.kind, channel: ctx.channel, a: ctx.prev, b: next });
   }
 
   private edit(label: string, fn: (c: Content, kind: KeyKind) => Content): void {

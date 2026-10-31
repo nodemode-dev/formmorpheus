@@ -12,6 +12,7 @@ import { kindSpec, laneFrames } from '../engine/keys';
 import { contentName, redrawOnLanguage, secondsLabel } from './canvas-words';
 import { t } from './i18n';
 import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
+import { keyHome, keyTip, snapKeyFrame } from './key-snap';
 import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
@@ -26,6 +27,11 @@ import { setFade } from '../media/audio-edit';
 import { TimelineEd } from './timeline-ed';
 import { MasterMeter, drawTrackMeter } from './audio-meter';
 import { srcFrame } from '../engine/retime';
+import * as lockOps from '../engine/lock-ops';
+import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
+import { TrackHeads } from './timeline-heads';
+import { loadView, saveView } from './timeline-view';
+import { toast } from './toast';
 
 const RULER_H = 28;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
@@ -36,7 +42,9 @@ const MIN_BLOCK_H = 26;
 const MAX_BLOCK_H = 110;
 const FREE_RED = '#e5484d';
 const MINI_H = 14;
-const LEFT = 14;
+const LEFT_BASE = 14;
+/** Frame zero's x: the base gutter plus the width of the track header column when it shows. */
+let LEFT = LEFT_BASE;
 const RIGHT = 24;
 const TOP_PAD = 26;
 const EDGE = 7;
@@ -58,7 +66,7 @@ export interface TimelineHooks {
 type Drag =
   | { kind: 'scrub' }
   | { kind: 'zoom'; x0: number; ppf0: number; anchorFrame: number; moved?: boolean }
-  | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean }
+  | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean; id: string; lane0: number; s0: number; gx: number; gy: number; px: number; py: number; insert: number | null; blocked: boolean; want: number; wantLane: number }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
   | { kind: 'fade'; id: string; which: 'in' | 'out'; tag: string }
   | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; applied: number; moved: boolean; tag: string }
@@ -117,6 +125,7 @@ export class TimelineView {
       <div class="fm-tl-zoom" role="group" aria-label="Timeline zoom">
         <span class="fm-zoom-grp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg><button type="button" data-act="zh-out" title="Zoom Timeline out (time)" aria-label="Zoom Timeline out (time)">${icon('minus', 14)}</button><button type="button" data-act="zh-in" title="Zoom Timeline in (time)" aria-label="Zoom Timeline in (time)">${icon('plus', 14)}</button></span>
         <span class="fm-zoom-grp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></svg><button type="button" data-act="zv-out" title="Shorter tracks" aria-label="Shorter tracks">${icon('minus', 14)}</button><button type="button" data-act="zv-in" title="Taller tracks" aria-label="Taller tracks">${icon('plus', 14)}</button></span>
+        <span class="fm-zoom-grp"><button class="fm-heads-btn" type="button" data-act="heads" title="Track headers: show, narrow, hide" aria-label="Track headers"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5.5 9h.01M5.5 13h.01"/></svg></button></span>
       </div>
       <div class="fm-modes" role="tablist" aria-label="Mode">
         <button class="fm-mode" type="button" role="tab" data-mode="compose">${icon('compose', 18)}<span>Compose</span></button>
@@ -184,9 +193,25 @@ export class TimelineView {
   private readonly peakNorm = new WeakMap<object, number>();
   /** Snapping, markers and transition handles (ui/timeline-ed.ts). */
   private readonly ed: TimelineEd;
+  /** The track header column (off by default). */
+  private readonly heads: TrackHeads;
+  /** Any track on solo: other tracks' sound blocks dim. */
+  private anySolo = false;
+  /** The message of the last refused move (for the toast on a blocked drop). */
+  private lastErr = '';
+  /** A saved view waiting for the first fit of a reopened movie. */
+  private pendingView: ReturnType<typeof loadView> = null;
+  private viewKey = '';
+  private viewTimer = 0;
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
+    this.heads = new TrackHeads(this.lanes, engine, {
+      laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, laneAt: (y) => this.laneAt(y),
+      layout: () => this.headsLayout(),
+    });
+    LEFT = LEFT_BASE + (this.heads.width ? this.heads.width + 4 : 0);
+    setClass(q(this.root, '.fm-heads-btn'), 'is-on', this.heads.mode !== 'off');
     this.ed = new TimelineEd(engine, {
       fx: (f) => this.fx(f), xf: (x) => this.xf(x), laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, ppf: () => this.ppf,
       ruler: this.ruler, tracks: this.tracksCanvas, schedule: () => this.schedule(),
@@ -210,7 +235,7 @@ export class TimelineView {
     });
     for (const ev of ['pointerup', 'pointerleave', 'pointercancel'] as const) this.multiBtn.addEventListener(ev, () => window.clearTimeout(this.reloadTimer));
     this.multiBtn.addEventListener('click', (e) => { if (this.reloadHeld) { this.reloadHeld = false; e.stopImmediatePropagation(); } }, true);
-    this.ruler.addEventListener('dblclick', (e) => this.zoomToFrames(e.clientX));
+    this.ruler.addEventListener('dblclick', (e) => this.zoomToFrames(e.clientX, e.ctrlKey || e.metaKey));
     this.keyPill.addEventListener('click', () => {
       const sel = this.engine.selected;
       const c = sel.length === 1 ? sel[0] : null;
@@ -269,7 +294,7 @@ export class TimelineView {
     engine.on('time', () => this.schedule());
     engine.on('mode', (m) => this.syncMode(m));
     engine.on('playing', (on) => this.syncPlay(on));
-    engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.schedule(); } });
+    engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.pendingView = id ? loadView(id) : null; this.viewKey = ''; this.schedule(); } });
     redrawOnLanguage(() => this.schedule());
     document.addEventListener('nm:ui-settings-changed', () => { this.pal = null; this.thumbs = new WeakMap(); this.schedule(); });
     cameraMode.onChange(() => {
@@ -333,13 +358,14 @@ export class TimelineView {
   }
 
   /** Double-click: zoom to frame level around the click (frame numbers show), or back to the whole movie. */
-  private zoomToFrames(clientX: number): void {
+  private zoomToFrames(clientX: number, back = false): void {
     const m = this.engine.movie;
     if (!m || this.width <= 0) return;
-    if (this.ppf >= 20) { this.fit(); return; }
+    // each double-click steps in by three, around the click; Ctrl (or Cmd) double-click returns to the whole movie
+    if (back) { this.fit(); return; }
     const r = this.lanes.getBoundingClientRect();
     const x = clientX - r.left, anchor = this.xf(x);
-    this.ppf = Math.min(MAX_PPF, 24);
+    this.ppf = Math.min(MAX_PPF, this.ppf * 3);
     this.start = Math.max(0, anchor - (x - LEFT) / this.ppf);
     this.fitted = true;
     this.schedule();
@@ -462,6 +488,77 @@ export class TimelineView {
     else if (act === 'zh-out') this.zoomBy(1 / 1.4);
     else if (act === 'zv-in') this.zoomRows(1.25);
     else if (act === 'zv-out') this.zoomRows(0.8);
+    else if (act === 'heads') { this.heads.cycle(); toast(this.heads.mode === 'off' ? 'Track headers hidden' : this.heads.mode === 'full' ? 'Track headers shown' : 'Track headers narrow', 'info', { ms: 1100 }); }
+  }
+
+  /** The header column changed width: frame zero moves with it, the zoom and scroll stay. */
+  private headsLayout(): void {
+    const m = this.engine.movie;
+    const wasFit = !!m && this.start === 0 && Math.abs(this.ppf - (this.width - LEFT - RIGHT) / Math.max(1, m.duration)) < 0.002;
+    LEFT = LEFT_BASE + (this.heads.width ? this.heads.width + 4 : 0);
+    setClass(q(this.root, '.fm-heads-btn'), 'is-on', this.heads.mode !== 'off');
+    if (wasFit) this.fit();
+    this.schedule();
+  }
+
+  /** Header column mode, for the View menu: 'off', 'full' or 'slim'. */
+  headersMode(): 'off' | 'full' | 'slim' { return this.heads.mode; }
+  setHeaders(mode: 'off' | 'full' | 'slim'): void { this.heads.set(mode); }
+  cycleHeaders(): void { this.heads.cycle(); }
+
+  /** Track height to the smallest, or back to the default (the collapsed and expanded views). */
+  collapseTracks(): void { this.setRowHeight(MIN_BLOCK_H); this.scrollY = 0; }
+  expandTracks(): void { this.setRowHeight(44); }
+
+  /** Zoom so frames `from` to `to` (end exclusive) fill the view. */
+  zoomTo(from: number, to: number): void {
+    const m = this.engine.movie;
+    if (!m || this.width <= 0) return;
+    const span = Math.max(2, to - from);
+    this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), (this.width - LEFT - RIGHT) / (span * 1.06)));
+    this.start = Math.max(0, from - span * 0.03);
+    this.fitted = true;
+    this.schedule();
+  }
+
+  /** Zoom to the selected blocks. */
+  zoomToSelection(): void {
+    const sel = this.engine.selected;
+    if (!sel.length) { toast('Select something to zoom to it.', 'info', { ms: 1400 }); return; }
+    this.zoomTo(Math.min(...sel.map((c) => c.start)), Math.max(...sel.map(end)));
+  }
+
+  /** Zoom to the loop range. */
+  zoomToLoop(): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    if (m.loopFrom === undefined || m.loopTo === undefined) { toast('Set a loop range first (Alt+I and Alt+O).', 'info', { ms: 1600 }); return; }
+    this.zoomTo(m.loopFrom, m.loopTo + 1);
+  }
+
+  /** First fit of a movie: the saved view when there is one, else the whole movie. */
+  private autoFit(): void {
+    const v = this.pendingView;
+    this.pendingView = null;
+    this.fit();
+    if (!v || v.fit || this.width <= 0) return;
+    const m = this.engine.movie;
+    if (!m) return;
+    this.ppf = Math.min(MAX_PPF, Math.max(this.minPpf(m), v.ppf));
+    this.start = Math.max(0, Math.min(v.start, m.duration));
+    this.setRowHeight(v.row);
+  }
+
+  /** Writes the view when it changed (after a pause, so a drag does not write on every move). */
+  private rememberView(m: Movie): void {
+    const k = `${m.id}|${this.ppf.toFixed(3)}|${this.start.toFixed(1)}|${BLOCK_H}`;
+    if (k === this.viewKey || this.pendingView) return;
+    this.viewKey = k;
+    window.clearTimeout(this.viewTimer);
+    this.viewTimer = window.setTimeout(() => {
+      const fitPpf = Math.min(MAX_PPF, Math.max(MIN_PPF, (this.width - LEFT - RIGHT) / Math.max(1, m.duration)));
+      saveView(m.id, { ppf: this.ppf, start: this.start, row: BLOCK_H, fit: Math.abs(this.ppf - fitPpf) < 0.002 && this.start === 0 && BLOCK_H === 44 });
+    }, 400);
   }
 
   /** Track height by a factor (the on-screen buttons and the vertical-only zoom commands). */
@@ -485,7 +582,7 @@ export class TimelineView {
       if (c.width !== pw) c.width = pw;
       if (c.height !== ph) c.height = ph;
     }
-    if (!this.fitted) this.fit();
+    if (!this.fitted) this.autoFit();
     this.draw();
   }
 
@@ -515,9 +612,12 @@ export class TimelineView {
     const m = this.engine.movie;
     setHidden(this.empty, !m || m.tracks.length > 0);
     if (!m || this.width <= 0) { this.clear(); return; }
-    if (!this.fitted) this.fit();
+    if (!this.fitted) this.autoFit();
+    this.anySolo = m.tracks.some((t) => t.solo);
     this.drawRuler(m);
     this.drawTracks(m);
+    this.heads.patch(m);
+    this.rememberView(m);
     setText(this.readout, `${timecode(this.engine.frame, m.fps)} · ${this.engine.frame + 1} / ${m.duration}`);
     this.placePill(m);
     this.placeKeyPill(m);
@@ -552,11 +652,11 @@ export class TimelineView {
     const second = Math.max(1, Math.round(fps));
     const secondsSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300].map((s) => s * second);
     const frameSteps = [1, 2, 5, 10, Math.max(1, Math.round(fps / 2)), second].sort((a, b) => a - b);
-    // from about 6 px a frame there is room for frame numbers, so they show without a double-click zoom
-    const bySeconds = second * this.ppf >= 40 && this.ppf < 6;
+    // zoomed out (under 3 px a frame) the ruler counts seconds; zoomed in it counts frames, and from 20 px a frame every tick has its number
+    const bySeconds = this.ppf < 3;
     const major = bySeconds
       ? secondsSteps.find((s) => s * this.ppf >= 56) ?? secondsSteps[secondsSteps.length - 1]
-      : frameSteps.find((s) => s * this.ppf >= 56) ?? second;
+      : this.ppf >= 20 ? 1 : frameSteps.find((s) => s * this.ppf >= 56) ?? second;
     const minor = major >= fps ? Math.max(1, Math.round(major / (major >= fps * 5 ? 5 : fps >= 10 ? 4 : 2))) : Math.max(1, Math.round(major / 5));
     return { major, minor, seconds: bySeconds };
   }
@@ -700,6 +800,7 @@ export class TimelineView {
       c.stroke();
       c.restore();
     }
+    if (this.drag?.kind === 'move' && this.drag.moved) this.drawMoveCues(c, m, this.drag, p);
     const px = Math.round(this.fx(this.engine.frame)) + 0.5;
     c.strokeStyle = this.engine.mode === 'perform' ? p.accent : p.playhead;
     c.lineWidth = 1.5;
@@ -720,6 +821,23 @@ export class TimelineView {
     }
     c.lineWidth = 1;
     this.ed.drawTracks(c, m, p, this.height);
+  }
+
+  /** While a block is dragged: a dashed placeholder where it began, a ghost under the pointer, a red outline where a blocked drop was aimed, a line where a new track would be made. */
+  private drawMoveCues(c: CanvasRenderingContext2D, m: Movie, d: Extract<Drag, { kind: 'move' }>, p: Palette): void {
+    const at = locate(m, d.id);
+    if (!at) return;
+    const item = at.content;
+    const w = this.fx(end(item)) - this.fx(item.start);
+    const origin = { x: this.fx(d.s0), y: this.laneTop(d.lane0), w, h: BLOCK_H };
+    const ghost = { x: d.px - d.gx, y: d.py - d.gy, w, h: BLOCK_H };
+    const blocked = d.blocked ? { x: this.fx(d.s0 + d.want), y: this.laneTop(Math.max(0, Math.min(m.tracks.length - 1, d.wantLane))), w, h: BLOCK_H } : null;
+    let insertY: number | null = null;
+    if (d.insert !== null) {
+      const n = m.tracks.length;
+      insertY = d.insert >= n ? this.laneTop(n - 1) + BLOCK_H + LANE_GAP / 2 + 3 : d.insert <= 0 ? this.laneTop(0) - LANE_GAP / 2 - 3 : this.laneTop(d.insert) - LANE_GAP / 2;
+    }
+    drawLift(c, { origin, ghost, blocked, insertY }, this.width, p.accent, FREE_RED, item.highlight === 'none' ? p.block : p.hl[item.highlight], t('New track'));
   }
 
   /** A dashed link from each block that follows a parent to the parent's block, at the child's first visible frame. */
@@ -808,7 +926,11 @@ export class TimelineView {
     this.drawThumbs(c, m, item, x0, y, w);
     if (item.kind === 'audio') drawSoundOverlay(c, item, x0, y, w, BLOCK_H, this.ppf, selected, 'rgba(0,0,0,.38)', p.accent);
     if (t.hidden) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(x0, y, w, BLOCK_H); }
+    const sounds = this.hasSound(m, item);
+    // a sound that will not be heard (muted, or another track on solo) is dimmed
+    if (sounds && (t.mute || (this.anySolo && !t.solo))) { c.fillStyle = 'rgba(0,0,0,.42)'; c.fillRect(x0, y, w, BLOCK_H); }
     c.restore();
+    if (t.locked) drawLockHatch(c, x0, y, w, BLOCK_H, p.text);
     // a Multi-select pick is outlined red, as its lasso trail is
     c.strokeStyle = selected ? (this.multi ? '#e5484d' : p.accent) : p.blockLine;
     c.lineWidth = selected ? 2 : 1;
@@ -818,7 +940,7 @@ export class TimelineView {
     if (w > 46) {
       const label = contentName(item.name);
       c.font = '600 10px Inter, system-ui, sans-serif';
-      const tw = Math.min(w - 16, c.measureText(label).width + 24);
+      const tw = Math.min(w - 16, c.measureText(label).width + 24 + (item.kind === 'group' ? 14 : 0));
       c.fillStyle = p.chip;
       this.round(c, x0 + 5, y + 5, tw, 15, 4);
       c.fill();
@@ -834,6 +956,21 @@ export class TimelineView {
       c.clip();
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
+      if (item.kind === 'group') drawChevron(c, x0 + tw - 8, y + 12.5, this.opened.has(item.id), p.text);
+      if (t.locked) {
+        c.fillStyle = p.text;
+        c.fillRect(x0 + w - 17, y + BLOCK_H - 13, 9, 7);
+        c.strokeStyle = p.text;
+        c.lineWidth = 1.5;
+        c.beginPath(); c.arc(x0 + w - 12.5, y + BLOCK_H - 13, 3, Math.PI, 0); c.stroke();
+        c.lineWidth = 1;
+      }
+    }
+    if (sounds && w > 30) {
+      const mx = Math.min(x1, this.width - 8);
+      if (t.mute) drawSoundMark(c, mx, y, 'mute', p.chip, p.text, p.accent);
+      else if (t.solo) drawSoundMark(c, mx, y, 'solo', p.chip, p.text, p.accent);
+      else if (this.anySolo) drawSoundMark(c, mx, y, 'quiet', p.chip, p.text, p.accent);
     }
     if (item.kind === 'video' && w > 24) {
       // film sprocket holes along the top and bottom edges
@@ -862,12 +999,16 @@ export class TimelineView {
     }
     if (selected && w > 16) {
       // Free Trim turns the grabbed edges red and taller
-      const free = this.freeTrim(), hh = free ? Math.min(BLOCK_H - 6, 26) : 16;
-      c.fillStyle = free ? FREE_RED : p.accent;
-      this.round(c, x0 + 2, y + BLOCK_H / 2 - hh / 2, free ? 4 : 3, hh, 1.5);
-      c.fill();
-      this.round(c, x1 - (free ? 6 : 5), y + BLOCK_H / 2 - hh / 2, free ? 4 : 3, hh, 1.5);
-      c.fill();
+      // bracket handles, solid once armed (Free Trim, or an edge held down)
+      const armed = this.freeTrim() || (this.drag?.kind === 'trim' && this.drag.id === item.id);
+      if (w > 40) drawBrackets(c, x0, x1, y, BLOCK_H, armed, armed ? FREE_RED : p.accent);
+      else {
+        c.fillStyle = armed ? FREE_RED : p.accent;
+        this.round(c, x0 + 2, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+        c.fill();
+        this.round(c, x1 - 5, y + BLOCK_H / 2 - 8, 3, 16, 1.5);
+        c.fill();
+      }
     }
     if (item.kind === 'group' && this.opened.has(item.id)) this.drawInner(c, item, x0, w, y + BLOCK_H + 4, p);
   }
@@ -1036,6 +1177,19 @@ export class TimelineView {
     setHidden(this.editPill, y < -20 || y > this.height);
   }
 
+  /** A block that makes sound: a sound block, or a video with sound still up. */
+  private hasSound(m: Movie, item: Content): boolean {
+    return item.kind === 'audio' || (item.kind === 'video' && item.volume > 0 && !!item.asset && !!m.assets[item.asset]?.hasAudio);
+  }
+
+  /** The name chip of a block: its width, or 0 when the block is too short to show one. */
+  private chipWidth(item: Content, w: number): number {
+    if (w <= 46) return 0;
+    const c = this.tracksCanvas.getContext('2d') as CanvasRenderingContext2D;
+    c.font = '600 10px Inter, system-ui, sans-serif';
+    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.kind === 'group' ? 14 : 0));
+  }
+
   private round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
     c.beginPath();
     c.roundRect(x, y, Math.max(0, w), Math.max(0, h), Math.min(r, w / 2, h / 2));
@@ -1052,7 +1206,8 @@ export class TimelineView {
     const t = m.tracks[index];
     if (!t) return null;
     const ly = y - this.laneTop(index);
-    if (ly < 0 || ly > BLOCK_H) return { track: t, index, item: null, edge: null, x, y };
+    // a locked track cannot be picked: its blocks answer as empty lane (the track menu unlocks it)
+    if (ly < 0 || ly > BLOCK_H || t.locked) return { track: t, index, item: null, edge: null, x, y };
     for (const item of t.content) {
       const x0 = this.fx(item.start), x1 = this.fx(end(item));
       if (x < x0 - EDGE || x > x1 + EDGE) continue;
@@ -1137,6 +1292,24 @@ export class TimelineView {
     const r = this.tracksCanvas.getBoundingClientRect();
     const x = e.clientX - r.left;
     const h = this.hit(e);
+    if (h?.item && !this.addsToSelection(e)) {
+      // the name chip: its checkbox hides or shows the track and its chevron opens a group; neither selects or moves the Playhead
+      const bx = this.fx(h.item.start), cw = this.chipWidth(h.item, Math.max(3, this.fx(end(h.item)) - bx));
+      const lx = x - bx, ly = h.y - this.laneTop(h.index);
+      if (cw > 0 && ly >= 2 && ly <= 23 && !h.edge) {
+        if (lx >= 3 && lx <= 24) {
+          const tr = h.track;
+          this.engine.run(tr.hidden ? 'Show Track' : 'Hide Track', (mv) => ops.setTrackHidden(mv, tr.id, !tr.hidden));
+          return;
+        }
+        if (h.item.kind === 'group' && this.engine.mode === 'compose' && lx >= cw - 15 && lx <= cw + 1) {
+          if (this.opened.has(h.item.id)) this.opened.delete(h.item.id); else this.opened.add(h.item.id);
+          this.layoutFor = null;
+          this.schedule();
+          return;
+        }
+      }
+    }
     if (!h?.edge && Math.abs(x - this.fx(m.duration) - 4) < 6) {
       this.tracksCanvas.setPointerCapture(e.pointerId);
       this.drag = { kind: 'duration', x0: e.clientX, d0: m.duration, tag: `dur-${Date.now()}` };
@@ -1185,7 +1358,11 @@ export class TimelineView {
       if (additive) this.engine.toggleSelect(h.item.id);
       else if (!this.engine.selection.content.includes(h.item.id)) this.engine.select([h.item.id], h.track.id);
       if (!additive) this.engine.seek(Math.max(h.item.start, Math.min(end(h.item) - 1, Math.floor(this.xf(x)))));
-      this.drag = { kind: 'move', x0: e.clientX, y0: e.clientY, applied: 0, appliedTrack: 0, tag: `move-${Date.now()}`, moved: false };
+      this.drag = {
+        kind: 'move', x0: e.clientX, y0: e.clientY, applied: 0, appliedTrack: 0, tag: `move-${Date.now()}`, moved: false,
+        id: h.item.id, lane0: h.index, s0: h.item.start, gx: x - this.fx(h.item.start), gy: h.y - this.laneTop(h.index),
+        px: x, py: h.y, insert: null, blocked: false, want: 0, wantLane: h.index,
+      };
       if (!additive && (onLine || e.pointerType !== 'touch')) {
         // held still (mouse or pen: anywhere on the block; a finger: on the Playhead line): its options, with Split at the Playhead
         const px = e.clientX, py = e.clientY;
@@ -1264,6 +1441,7 @@ export class TimelineView {
     if (!this.engine.selection.content.includes(c.id) || this.engine.selection.content.length !== 1) this.engine.select([c.id], track.id);
     const last = c.duration - 1;
     if (hit.key !== null) {
+      keyHome.frame = this.engine.frame;
       this.engine.seek(c.start + hit.key);
       this.drag = { kind: 'key', id: c.id, lk: hit.slot.lane.kind, channel: hit.row.channel, from0: hit.key, cur: hit.key, base: c, x0: e.clientX, tag: `key-${Date.now()}` };
     } else {
@@ -1349,7 +1527,10 @@ export class TimelineView {
     if (d.kind === 'key') {
       const c = this.engine.selected.find((it) => it.id === d.id);
       if (!c) return;
-      const to = Math.max(0, Math.min(c.duration - 1, Math.round(d.from0 + (e.clientX - d.x0) / this.ppf)));
+      // snaps to the Playhead and to keys of other lanes (Alt: off); a tooltip names the frame
+      const near = snapKeyFrame(this.engine, c, d.lk, Math.max(0, Math.min(c.duration - 1, Math.round(d.from0 + (e.clientX - d.x0) / this.ppf))), this.ppf, e.altKey);
+      const to = near.frame;
+      if (to !== d.from0 || d.cur !== d.from0) keyTip.show(e.clientX, e.clientY, `Frame ${c.start + to}${near.to === 'playhead' ? ' · Playhead' : near.to === 'key' ? ' · key' : ''}`);
       if (to === d.cur) return;
       this.cancelLongPress();
       const base = d.base, kind = d.lk, from0 = d.from0, channel = d.channel ?? undefined;
@@ -1375,14 +1556,25 @@ export class TimelineView {
       this.schedule();
     } else if (d.kind === 'move') {
       let total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
-      const lanes = Math.round((e.clientY - d.y0) / STRIDE);
       if (!d.moved && Math.abs(e.clientX - d.x0) < 3 && Math.abs(e.clientY - d.y0) < 3) return;
       d.moved = true;
+      const cr = this.tracksCanvas.getBoundingClientRect();
+      d.px = e.clientX - cr.left;
+      d.py = e.clientY - cr.top;
       const ids = this.engine.selection.content;
       total = this.ed.snapMove(m, ids, d.tag, d.applied, total, e);
+      d.want = total;
+      const tgt = this.moveTarget(m, d.py);
+      d.insert = tgt.insert;
+      d.wantLane = tgt.insert !== null ? d.lane0 + d.appliedTrack : tgt.lane;
+      // between lanes or past the last one the drop makes a new track; the block stays on its last lane until then
+      const lanes = tgt.insert !== null ? d.appliedTrack : tgt.lane - d.lane0;
       const step = total - d.applied, laneStep = lanes - d.appliedTrack;
-      if (!step && !laneStep) return;
-      if (this.tryRun('Move Content', (mv) => ops.moveContent(mv, ids, step, laneStep), d.tag)) { d.applied = total; d.appliedTrack = lanes; }
+      if (tgt.insert !== null) d.blocked = false;
+      if (step || laneStep) {
+        if (this.tryRun('Move Content', (mv) => ops.moveContent(mv, ids, step, laneStep), d.tag)) { d.applied = total; d.appliedTrack = lanes; d.blocked = false; } else d.blocked = true;
+      }
+      this.schedule();
     } else if (d.kind === 'inner') {
       const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
       if (!d.moved && Math.abs(e.clientX - d.x0) < 3) return;
@@ -1411,7 +1603,7 @@ export class TimelineView {
       const f0 = this.xf(Math.min(d.x0, d.x1)), f1 = this.xf(Math.max(d.x0, d.x1));
       const l0 = this.laneAt(Math.min(d.y0, d.y1)), l1 = this.laneAt(Math.max(d.y0, d.y1));
       const ids = new Set(d.base);
-      m.tracks.forEach((t, i) => { if (i < l0 || i > l1) return; for (const c of t.content) if (end(c) > f0 && c.start < f1) ids.add(c.id); });
+      m.tracks.forEach((t, i) => { if (i < l0 || i > l1 || t.locked) return; for (const c of t.content) if (end(c) > f0 && c.start < f1) ids.add(c.id); });
       this.engine.select([...ids]);
       this.schedule();
     } else if (d.kind === 'lasso') {
@@ -1423,6 +1615,7 @@ export class TimelineView {
       const next = new Set(d.base), base = new Set(d.base);
       m.tracks.forEach((t, i) => {
         const y0 = this.laneTop(i);
+        if (t.locked) return;
         for (const c of t.content) {
           const a = this.fx(c.start), b = this.fx(end(c));
           if (!lassoTouches(d.pts, a, y0, Math.max(3, b - a), BLOCK_H)) continue;
@@ -1460,8 +1653,23 @@ export class TimelineView {
   private tryRun(label: string, fn: (m: Movie) => Movie, tag: string): boolean {
     const m = this.engine.movie;
     if (!m) return false;
-    try { fn(m); } catch (err) { if (err instanceof ops.OpError) return false; throw err; }
+    try { fn(m); } catch (err) { if (err instanceof ops.OpError) { this.lastErr = err.message; return false; } throw err; }
     return this.engine.run(label, fn, tag);
+  }
+
+  /** Where a dragged block aims at height `py`: the lane under it, or a gap (between lanes, above the first, below the last) where a new track would be made. */
+  private moveTarget(m: Movie, py: number): { lane: number; insert: number | null } {
+    this.layout(m);
+    const n = m.tracks.length;
+    const v = py + this.scrollY - TOP_PAD;
+    const lane = Math.max(0, Math.min(n - 1, this.laneAt(py)));
+    if (v < -6) return { lane: 0, insert: 0 };
+    if (v > this.totalH - LANE_GAP + 8) return { lane: n - 1, insert: n };
+    for (let i = 0; i < n - 1; i++) {
+      const gapTop = this.tops[i] + this.rowH[i] - LANE_GAP;
+      if (v >= gapTop + 2 && v <= gapTop + LANE_GAP - 2) return { lane, insert: i + 1 };
+    }
+    return { lane, insert: null };
   }
 
   private pointerUp(e: PointerEvent): void {
@@ -1484,6 +1692,16 @@ export class TimelineView {
     // a tap on a key (no drag) opens its values
     if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform') this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
+    if (d.kind === 'move' && d.moved && e.type === 'pointerup') {
+      const ids = this.engine.selection.content, at = d.insert, extra = d.want - d.applied;
+      if (at !== null) {
+        // dropped between lanes or past the last: the block goes onto a new track made there
+        this.engine.run('Move Content', (mv) => lockOps.moveToNewTrack(mv, ids, extra, at), d.tag);
+      } else if (d.blocked) {
+        toast(this.lastErr === 'Track is locked' ? 'Track is locked' : 'No room on that track', 'info', { ms: 1600 });
+      }
+    }
+    if (d.kind === 'key') keyTip.hide();
     if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !this.addsToSelection(e)) {
       const h = this.hit(e);
@@ -1512,8 +1730,11 @@ export class TimelineView {
 
   private doubleClick(e: MouseEvent): void {
     const h = this.hit(e);
-    if (h?.item) this.hooks.edit(h.item);
-    else this.zoomToFrames(e.clientX);
+    const editable = !!h?.item && (h.item.kind === 'text' || h.item.kind === 'drawing' || h.item.kind === 'flipbook' || h.item.kind === 'shape' || h.item.kind === 'solid' || h.item.kind === 'adjust');
+    // a block that cannot be edited (or Alt held) zooms to itself; empty lane steps the zoom in
+    if (h?.item && (e.altKey || !editable)) this.zoomTo(h.item.start, end(h.item));
+    else if (h?.item) this.hooks.edit(h.item);
+    else this.zoomToFrames(e.clientX, e.ctrlKey || e.metaKey);
   }
 
   private clampScroll(y: number, m: Movie): number {

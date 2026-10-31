@@ -14,7 +14,9 @@ export class Popover {
   private readonly subs = new Map<HTMLElement, HTMLElement>();
   private readonly hideFns: Array<() => void> = [];
   private open = false;
-  private readonly down = (e: PointerEvent): void => {
+  /** Set by a card that stays open for presses on these targets (it still closes on Escape or any other outside press). */
+  keep: ((target: Element) => boolean) | null = null;
+  private readonly down =(e: PointerEvent): void => {
     const t = e.target as Node | null;
     if (!t || this.el.contains(t) || this.anchor?.contains(t)) return;
     // the Color panel opened from a popover is part of it
@@ -23,6 +25,8 @@ export class Popover {
     if (t instanceof Element && t.closest('.fm-warp-h')) return;
     // a dropdown list opened from a select inside the card sits in the overlay layer, outside the card
     if (t instanceof Element && t.closest('.cv-dd-pop')) return;
+    // a card that asked to stay open while the Stage or Timeline is worked (the keyframe parameter card)
+    if (t instanceof Element && this.keep?.(t)) return;
     for (const p of this.subs.keys()) if (p.contains(t)) return;
     this.hide();
   };
@@ -32,8 +36,7 @@ export class Popover {
     if (document.querySelector('.cv-dd-pop:not([hidden])')) return;
     e.preventDefault();
     e.stopPropagation();
-    // a submenu in view closes first; the menu itself on the next Escape
-    for (const p of this.subs.keys()) if (!p.hidden) { this.closeSubs(); return; }
+    // one Escape closes the menu with any submenu the pointer happens to have open (hide closes them)
     this.hide();
   };
   private readonly blur = (): void => this.hide();
@@ -68,8 +71,9 @@ export class Popover {
   showFor(anchor: HTMLElement, side: 'above' | 'below'): void {
     this.anchor = anchor;
     this.reveal();
-    const r = anchor.getBoundingClientRect(), box = this.el.getBoundingClientRect();
-    this.place(r.left, side === 'above' ? r.top - box.height - GAP : r.bottom + GAP);
+    // offset sizes, not getBoundingClientRect: the open animation scales the card, and that must not shift its place
+    const r = anchor.getBoundingClientRect(), h = this.el.offsetHeight;
+    this.place(r.left, side === 'above' ? r.top - h - GAP : r.bottom + GAP, r.left + r.width / 2, side === 'above' ? r.top : r.bottom);
   }
 
   hide(): void {
@@ -93,14 +97,29 @@ export class Popover {
 
   openSub(row: HTMLElement, panel: HTMLElement): void {
     this.subs.set(panel, row);
-    for (const [p, r] of this.subs) if (p !== panel) { p.hidden = true; setClass(r, 'is-open', false); }
+    // a submenu opened from a row inside another submenu leaves that parent open (Timeline block menu sections)
+    for (const [p, r] of this.subs) if (p !== panel && !p.contains(row)) { p.hidden = true; setClass(r, 'is-open', false); }
+    const parent = row.closest<HTMLElement>('.fm-pop');
+    if (parent && parent !== this.el && !parent.dataset.nest) {
+      parent.dataset.nest = '1';
+      // hovering a plain row of a submenu closes the submenus opened from it
+      parent.addEventListener('pointerover', (e) => {
+        const hit = (e.target as HTMLElement).closest<HTMLElement>('.fm-pop-row');
+        if (!hit || hit.hasAttribute('data-sub') || !parent.contains(hit)) return;
+        for (const [p, r] of this.subs) if (parent.contains(r) && !p.hidden) { p.hidden = true; setClass(r, 'is-open', false); }
+      });
+    }
     panel.hidden = false;
     setClass(row, 'is-open', true);
-    const r = row.getBoundingClientRect(), box = panel.getBoundingClientRect();
-    const right = r.right + 2, left = r.left - box.width - 2;
-    const x = right + box.width + MARGIN <= window.innerWidth ? right : Math.max(MARGIN, left);
-    const y = Math.max(MARGIN, Math.min(r.top - 6, window.innerHeight - box.height - MARGIN));
+    const r = row.getBoundingClientRect(), bw = panel.offsetWidth, bh = panel.offsetHeight;
+    const right = r.right + 2, left = r.left - bw - 2;
+    const toRight = right + bw + MARGIN <= window.innerWidth;
+    const x = toRight ? right : Math.max(MARGIN, left);
+    const y = Math.max(MARGIN, Math.min(r.top - 6, window.innerHeight - bh - MARGIN));
     panel.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    // the submenu grows from the row it opened beside
+    panel.style.setProperty('--fm-ox', toRight ? '0px' : `${bw}px`);
+    panel.style.setProperty('--fm-oy', `${Math.round(Math.max(0, Math.min(bh, r.top + r.height / 2 - y)))}px`);
   }
 
   closeSubs(): void {
@@ -116,11 +135,14 @@ export class Popover {
     window.addEventListener('blur', this.blur);
   }
 
-  private place(x: number, y: number): void {
-    const box = this.el.getBoundingClientRect();
-    const nx = Math.max(MARGIN, Math.min(x, window.innerWidth - box.width - MARGIN));
-    const ny = Math.max(MARGIN, Math.min(y, window.innerHeight - box.height - MARGIN));
-    this.el.style.transform = `translate(${Math.round(nx)}px, ${Math.round(ny)}px)`;
+  /** `ox, oy` is the point the card grows from (the anchor's edge, or the press point); it defaults to `x, y`. */
+  private place(x: number, y: number, ox = x, oy = y): void {
+    const w = this.el.offsetWidth, h = this.el.offsetHeight;
+    const nx = Math.round(Math.max(MARGIN, Math.min(x, window.innerWidth - w - MARGIN)));
+    const ny = Math.round(Math.max(MARGIN, Math.min(y, window.innerHeight - h - MARGIN)));
+    this.el.style.transform = `translate(${nx}px, ${ny}px)`;
+    this.el.style.setProperty('--fm-ox', `${Math.round(Math.max(0, Math.min(w, ox - nx)))}px`);
+    this.el.style.setProperty('--fm-oy', `${Math.round(Math.max(0, Math.min(h, oy - ny)))}px`);
   }
 }
 

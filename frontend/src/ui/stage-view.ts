@@ -36,6 +36,9 @@ import { Fringe } from './stage-fringe';
 import { StageGuides } from './stage-guides';
 import { guideLines } from '../engine/guides';
 import { DragCache, pictureSig, sameSig } from './stage-drag-cache';
+import { fromCentre, toCentre } from './stage-compose';
+import { StageHud } from './stage-hud';
+import { toast } from './toast';
 import '../styles/stage-box.css';
 
 /** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
@@ -51,7 +54,7 @@ const boxed = (c: Content): boolean => c.kind !== 'audio' && !(c.kind === 'adjus
 const SIDES: ReadonlyArray<{ axis: 'x' | 'y'; sign: 1 | -1 }> = [{ axis: 'y', sign: -1 }, { axis: 'x', sign: 1 }, { axis: 'y', sign: 1 }, { axis: 'x', sign: -1 }];
 
 /** Where a content sits on the Stage: its transform, or its animated values in Keyframe and Perform modes. */
-interface Pose { x: number; y: number; sx: number; sy: number; rot: number; px?: number; py?: number; kx: number; ky: number; fx: 1 | -1; fy: 1 | -1 }
+interface Pose { x: number; y: number; sx: number; sy: number; rot: number; px?: number; py?: number; kx: number; ky: number; fx: 1 | -1; fy: 1 | -1; /** The content's stored anchor (Compose edits about the centre but keeps it). */ p0x: number; p0y: number }
 
 /** A Perform gesture in flight: what is recorded, and the pen twist so far. */
 interface Rec {
@@ -63,11 +66,23 @@ interface Rec {
   twistSum: number;
   /** Rotation channel joins the take once the pen has twisted. */
   twisted: boolean;
+  /** The Playhead frame the take starts recording at (pre-roll rolls in before it). */
+  armedAt: number;
+  /** The last frame a punch range lets the take reach (null: no punch). */
+  punchTo: number | null;
+  /** Mouse modifiers: the pointer's last place, the move held back while a modifier is down, and the turn and scale they added. */
+  prev: [number, number] | null;
+  frozen: [number, number];
+  turn: number;
+  zoom: number;
+  held: { r: boolean; s: boolean };
+  /** History depth when the take began, for Retake. */
+  before: number;
 }
 
 type Grab =
   | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Pose>; anchors: Map<string, { s: [number, number]; w: [number, number] }>; tag: string; rec?: Rec; snap?: { box: Box; xs: number[]; ys: number[] } }
-  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string; rec?: Rec }
+  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string; rec?: Rec; click?: { x: number; y: number; i: number } }
   | { kind: 'stretch'; id: string; base: Pose; axis: 'x' | 'y'; sign: 1 | -1; tag: string; rec?: undefined }
   | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string; rec?: Rec };
 
@@ -79,7 +94,7 @@ export class StageView {
   readonly root = el(`<div class="fm-stage" aria-label="Stage">
     <div class="fm-stage-space">
     <canvas class="fm-stage-canvas"></canvas>
-    <svg class="fm-stage-box" hidden><polygon class="fm-box-line"/><line class="fm-box-stem"/><circle class="fm-box-rot" r="6"/><circle class="fm-box-h" data-h="0" r="5"/><circle class="fm-box-h" data-h="1" r="5"/><circle class="fm-box-h" data-h="2" r="5"/><circle class="fm-box-h" data-h="3" r="5"/><rect class="fm-box-s" data-s="0" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="1" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="2" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="3" x="-4" y="-4" width="8" height="8" rx="2"/><g class="fm-box-more"><title>Transform options</title><circle r="11"/><circle class="d" cx="-5" r="1.4"/><circle class="d" r="1.4"/><circle class="d" cx="5" r="1.4"/></g><line class="fm-snap-v"/><line class="fm-snap-h"/></svg>
+    <svg class="fm-stage-box" hidden><polygon class="fm-box-line"/><line class="fm-box-stem"/><circle class="fm-box-rot" r="6"/><circle class="fm-box-ring" r="17"/><circle class="fm-box-h" data-h="0" r="5"/><circle class="fm-box-h" data-h="1" r="5"/><circle class="fm-box-h" data-h="2" r="5"/><circle class="fm-box-h" data-h="3" r="5"/><rect class="fm-box-s" data-s="0" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="1" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="2" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="3" x="-4" y="-4" width="8" height="8" rx="2"/><g class="fm-box-more"><title>Transform options</title><circle r="11"/><circle class="d" cx="-5" r="1.4"/><circle class="d" r="1.4"/><circle class="d" cx="5" r="1.4"/></g><line class="fm-snap-v"/><line class="fm-snap-h"/></svg>
     </div>
     <div class="fm-tc-bar"><div class="fm-timecode"></div><div class="fm-stage-undo"><button class="fm-stage-ubtn" type="button" data-cmd="undo" title="Undo" aria-label="Undo">${icon('undo', 14)}</button><button class="fm-stage-ubtn" type="button" data-cmd="redo" title="Redo" aria-label="Redo">${icon('redo', 14)}</button></div></div>
     <div class="fm-stage-empty" hidden></div>
@@ -126,6 +141,13 @@ export class StageView {
   private bg = '#0a0a0a';
   private readonly boxMenu: StageBoxMenu;
   private nudgeTimer = 0;
+  /** Numeric readout by the pointer and the "Snapping on" chip while a handle is dragged. */
+  private readonly hud: StageHud;
+  /** The corner node whose rotation ring is showing (Keyframe and Perform), or null. */
+  private ringAt: number | null = null;
+  private lastClient: [number, number] = [0, 0];
+  /** The first Compose edit of a content that has a Move lane says so once. */
+  private composeToldFor = '';
   private readonly textStage: TextStage;
   /** The Shape tool, pen and path node editing (ui/shape-stage.ts); the app drives its tool from commands. */
   readonly shapeStage: ShapeStage;
@@ -151,6 +173,11 @@ export class StageView {
     engine.on('movie', () => this.scheduleSoft());
     this.banner = new PerformBanner(engine);
     this.root.appendChild(this.banner.root);
+    this.hud = new StageHud(this.root);
+    engine.on('selection', () => { this.ringAt = null; });
+    window.addEventListener('keydown', (e) => this.recKey(e, true), true);
+    window.addEventListener('keyup', (e) => this.recKey(e, false), true);
+    window.addEventListener('blur', () => { this.modsHeld.r = false; this.modsHeld.s = false; });
     this.warp = new WarpOverlay(this.space, engine);
     this.paths = new PathView(this.space, engine);
     this.paths.sectors = (c) => {
@@ -189,7 +216,7 @@ export class StageView {
     this.root.addEventListener('dblclick', dbl);
     this.bones = new BonesOverlay(this.space, engine);
     bonesMode.onChange(() => this.schedule());
-    engine.on('mode', () => { this.cancelRecording(); this.schedule(); });
+    engine.on('mode', () => { this.cancelRecording(); this.ringAt = null; this.schedule(); });
     engine.on('time', () => this.sampleHold());
     document.addEventListener('nm:ui-settings-changed', () => { this.readColours(); this.schedule(); });
     this.canvas.addEventListener('pointerdown', (e) => this.down(e));
@@ -384,24 +411,41 @@ export class StageView {
 
   private keyed(): boolean { return this.engine.mode !== 'compose'; }
 
-  /** Whether `c` is posed by its keys: any Keyframe or Perform mode, or Compose for a block that already has a Move lane (its box follows the keyed pose and a drag keys it). */
-  private keyedFor(c: Content | undefined): boolean {
-    return this.keyed() || (!!c && laneOf(c, 'move') !== null);
+  /** Whether `c` is posed by its keys: Keyframe and Perform only. Compose edits the base transform and never writes a key, even on a block with a Move lane. */
+  private keyedFor(_c?: Content): boolean {
+    return this.keyed();
   }
 
-  private keyedIds(ids: string[]): boolean {
-    const m = this.engine.movie;
-    return this.keyed() || (!!m && ids.some((id) => this.keyedFor(locate(m, id)?.content)));
+  private keyedIds(_ids: string[]): boolean {
+    return this.keyed();
   }
 
   private pose(c: Content): Pose {
     if (this.keyedFor(c)) {
       const a = animate(c, this.engine.frame - c.start);
       const kx = c.transform.stretchX ?? 1, ky = c.transform.stretchY ?? 1;
-      return { x: a.x, y: a.y, sx: a.scaleX / kx, sy: a.scaleY / ky, rot: a.rotation, px: a.px, py: a.py, kx, ky, fx: a.flipH ? -1 : 1, fy: a.flipV ? -1 : 1 };
+      return { x: a.x, y: a.y, sx: a.scaleX / kx, sy: a.scaleY / ky, rot: a.rotation, px: a.px, py: a.py, kx, ky, fx: a.flipH ? -1 : 1, fy: a.flipV ? -1 : 1, p0x: a.px ?? 0, p0y: a.py ?? 0 };
     }
-    const t = c.transform;
-    return { x: t.x, y: t.y, sx: t.scale, sy: t.scale, rot: t.rotation, px: c.pivot?.x, py: c.pivot?.y, kx: t.stretchX ?? 1, ky: t.stretchY ?? 1, fx: t.flipH ? -1 : 1, fy: t.flipV ? -1 : 1 };
+    // Compose turns and scales about the content centre whatever the anchor: the pose is the same picture seen about the centre
+    const t = c.transform, kx = t.stretchX ?? 1, ky = t.stretchY ?? 1, fx = t.flipH ? -1 : 1, fy = t.flipV ? -1 : 1;
+    const p0x = c.pivot?.x ?? 0, p0y = c.pivot?.y ?? 0;
+    const [x, y] = toCentre(t.x, t.y, t.rotation, t.scale * kx * fx, t.scale * ky * fy, p0x, p0y);
+    return { x, y, sx: t.scale, sy: t.scale, rot: t.rotation, kx, ky, fx, fy, p0x, p0y };
+  }
+
+  /** Compose: the stored x and y for a transform edited about the content centre (the anchor is kept, the picture lands where the edit put it). */
+  private store(b: Pose, x0: number, y0: number, rot: number, mx: number, my: number): { x: number; y: number } {
+    const [x, y] = fromCentre(x0, y0, rot, mx, my, b.p0x, b.p0y);
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  /** The first Compose edit of a content that has a Move lane explains why its picture may not follow the box. */
+  private composeNote(ids: string[]): void {
+    const m = this.engine.movie;
+    const c = m ? locate(m, ids[0])?.content : null;
+    if (!c || !laneOf(c, 'move') || this.composeToldFor === c.id) return;
+    this.composeToldFor = c.id;
+    toast('Compose edits the base transform. This content has keyframes, which still drive it; change them in Keyframe mode.', 'info', { ms: 6000 });
   }
 
   /** Write Move keys at the Playhead for each content (creating the lane the first time). */
@@ -486,6 +530,11 @@ export class StageView {
     stem.setAttribute('x2', rx.toFixed(1)); stem.setAttribute('y2', ry.toFixed(1));
     const rot = q(this.box as unknown as HTMLElement, '.fm-box-rot');
     rot.setAttribute('cx', rx.toFixed(1)); rot.setAttribute('cy', ry.toFixed(1));
+    // Keyframe and Perform: the rotation ring sits around the corner node that was tapped
+    const ring = q(this.box as unknown as HTMLElement, '.fm-box-ring');
+    const at = this.keyed() ? this.ringAt : null;
+    setClass(ring as unknown as HTMLElement, 'is-on', at !== null);
+    if (at !== null && pts[at]) { ring.setAttribute('cx', pts[at][0].toFixed(1)); ring.setAttribute('cy', pts[at][1].toFixed(1)); }
   }
 
   private local(e: PointerEvent): [number, number] {
@@ -515,34 +564,65 @@ export class StageView {
     if (sel.length === 1 && target.classList.contains('fm-box-s')) {
       const side = SIDES[Number((target as SVGElement).dataset.s)] ?? SIDES[0];
       this.grab = { kind: 'stretch', id: sel[0].id, base: this.pose(sel[0]), axis: side.axis, sign: side.sign, tag };
-    } else if (sel.length === 1 && target.classList.contains('fm-box-rot')) {
+    } else if (sel.length === 1 && (target.classList.contains('fm-box-rot') || target.classList.contains('fm-box-ring'))) {
       const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, cy = v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale;
       const [qx, qy] = this.parentPt(m, c.id, x, y);
       this.grab = { kind: 'rotate', id: c.id, base: p, a0: Math.atan2(qy - cy, qx - cx), tag };
     } else if (sel.length === 1 && target.classList.contains('fm-box-h')) {
       const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, cy = v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale;
       const [qx, qy] = this.parentPt(m, c.id, x, y);
-      this.grab = { kind: 'scale', id: c.id, base: p, d0: Math.hypot(qx - cx, qy - cy) || 1, tag };
+      this.grab = { kind: 'scale', id: c.id, base: p, d0: Math.hypot(qx - cx, qy - cy) || 1, tag, click: { x: e.clientX, y: e.clientY, i: Number((target as SVGElement).dataset.h) } };
     } else {
       const hitId = this.pick(m, x, y);
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
       // Perform keeps its one content when the pen lands off it: the take is a drag, not a click
-      if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) { this.engine.select([]); return; }
+      if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) {
+        // press and hold outside the box, then drag: moves the selected content with the box out of the way (a click or a quick drag still deselects)
+        if (sel.length === 1) {
+          const pend = { x: e.clientX, y: e.clientY, pointer: e.pointerId, timer: 0 };
+          pend.timer = window.setTimeout(() => this.beginOutside(sel[0].id, tag), 420);
+          this.pend = pend;
+          (e.currentTarget as Element).setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+        this.engine.select([]);
+        return;
+      }
       const ids = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c)).map((c) => c.id);
       if (!ids.length) return;
-      const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
-      const anchors = new Map(ids.map((id) => {
-        const p = base.get(id) as Pose, c = (locate(m, id) as NonNullable<ReturnType<typeof locate>>).content;
-        const s: [number, number] = [v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale];
-        return [id, { s, w: mapPt(this.sm(m, c), s[0], s[1]) }] as const;
-      }));
-      this.grab = { kind: 'move', x0: x, y0: y, ids, base, anchors, tag, snap: this.snapTargets(m, v, ids) };
+      this.grab = this.moveGrab(m, v, ids, x, y, tag);
     }
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     this.grabPointer = e.pointerId;
     this.slop = e.pointerType === 'touch' ? [e.clientX, e.clientY] : null;
     e.preventDefault();
     this.beginRec(e);
+  }
+
+  /** A press on empty Stage with one content selected, waiting to become a hold-outside move. */
+  private pend: { x: number; y: number; pointer: number; timer: number } | null = null;
+  private modsHeld = { r: false, s: false };
+
+  private moveGrab(m: Movie, v: View, ids: string[], x: number, y: number, tag: string): Grab {
+    const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
+    const anchors = new Map(ids.map((id) => {
+      const p = base.get(id) as Pose, c = (locate(m, id) as NonNullable<ReturnType<typeof locate>>).content;
+      const s: [number, number] = [v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale];
+      return [id, { s, w: mapPt(this.sm(m, c), s[0], s[1]) }] as const;
+    }));
+    return { kind: 'move', x0: x, y0: y, ids, base, anchors, tag, snap: this.snapTargets(m, v, ids) };
+  }
+
+  /** The hold outside the box was long enough: the drag that follows moves the selected content. */
+  private beginOutside(id: string, tag: string): void {
+    const p = this.pend, m = this.engine.movie, v = this.view;
+    this.pend = null;
+    if (!p || !m || !v || this.grab || !locate(m, id)) return;
+    this.grabPointer = p.pointer;
+    this.slop = null;
+    this.grab = this.moveGrab(m, v, [id], ...this.nav.local({ clientX: p.x, clientY: p.y }), tag);
+    this.root.style.cursor = 'move';
   }
 
   /** Perform mode: a drag on one content records. The movie plays from the Playhead while the pen is down. */
@@ -552,16 +632,38 @@ export class StageView {
     const id = g.kind === 'move' ? (g.ids.length === 1 ? g.ids[0] : null) : g.id;
     const at = id ? locate(m, id) : null;
     if (!id || !at) return;
-    g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' && loadPrefs().penRoll ? e.twist : null, twistSum: 0, twisted: false };
+    let armedAt = this.engine.frame, punchTo: number | null = null;
+    // a punch range: the take records only inside the movie's loop range
+    if (perform.punch && m.loopFrom !== undefined && m.loopTo !== undefined && m.loopTo >= m.loopFrom) {
+      armedAt = Math.max(armedAt, Math.floor(m.loopFrom));
+      punchTo = Math.floor(m.loopTo);
+    }
+    g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' && loadPrefs().penRoll ? e.twist : null, twistSum: 0, twisted: false, armedAt, punchTo, prev: null, frozen: [0, 0], turn: 0, zoom: 0, held: { r: this.modsHeld.r, s: this.modsHeld.s }, before: this.engine.history.past.length };
     perform.setRecording(true);
-    // a take ends at the movie's end: playback stops there instead of looping under the pen
+    // a take ends at the movie's end (or the punch-out): playback stops there instead of looping under the pen
     this.offWrap?.();
     this.offWrap = this.engine.on('wrap', () => {
-      const last = (this.engine.movie?.duration ?? 1) - 1;
+      const last = punchTo ?? (this.engine.movie?.duration ?? 1) - 1;
       this.engine.stop();
       queueMicrotask(() => this.engine.seek(last));
     });
+    // pre-roll: the movie rolls in from a few frames earlier, recording starts at the frame the pen came down on
+    if (perform.preroll > 0) this.engine.seek(Math.max(0, armedAt - perform.preroll));
     this.engine.play();
+  }
+
+  /** R or Ctrl turns and S scales the content during a take; the keys must not reach the app's shortcuts meanwhile. */
+  private recKey(e: KeyboardEvent, down: boolean): void {
+    const k = e.key.toLowerCase();
+    // remembered even with no take running: a key held before the pen comes down still counts
+    if (k === 'r') this.modsHeld.r = down;
+    else if (k === 's') this.modsHeld.s = down;
+    const r = this.grab?.rec;
+    if (!r || (k !== 'r' && k !== 's')) return;
+    r.held.r = this.modsHeld.r;
+    r.held.s = this.modsHeld.s;
+    if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); e.stopPropagation(); }
+    perform.setMod(r.held.r || e.ctrlKey ? 'rotating' : r.held.s ? 'scaling' : '');
   }
 
   private recordMove(g: Grab, r: Rec, m: Movie, v: View, x: number, y: number, e: PointerEvent): void {
@@ -574,25 +676,42 @@ export class StageView {
     }
     if (e.pointerType === 'pen') r.twist = e.twist;
     const roll = r.twisted && perform.roll > 0 ? r.twistSum * perform.roll : 0;
+    // mouse modifiers: R or Ctrl turns with the horizontal axis, S scales with the vertical one; the move is held back meanwhile
+    const turning = r.held.r || e.ctrlKey, zooming = r.held.s;
+    perform.setMod(turning ? 'rotating' : zooming ? 'scaling' : '');
+    const [qx, qy] = r.prev ?? [x, y];
+    if (turning) r.turn += (x - qx) * perform.rotDegPerPx;
+    if (zooming) r.zoom += (qy - y) * 0.004;
+    if (turning || zooming) { r.frozen[0] += (x - qx) / v.scale; r.frozen[1] += (y - qy) / v.scale; }
+    r.prev = [x, y];
+    // linear, so the scale can pass through zero and mirror
+    const k = 1 + r.zoom, spin = roll + r.turn;
     const vals: Record<string, number> = {};
+    let hud: { x: number; y: number; sx: number; sy: number; rot: number } | null = null;
     if (g.kind === 'move') {
       const b = g.base.get(g.ids[0]) as Pose;
       const [rx, ry] = this.moveDelta(g, m, g.ids[0], x, y, v);
-      vals.x = Math.round(b.x + rx);
-      vals.y = Math.round(b.y + ry);
-      if (roll) vals.rotation = Math.round((b.rot + roll) * 10) / 10;
+      vals.x = Math.round(b.x + rx - r.frozen[0]);
+      vals.y = Math.round(b.y + ry - r.frozen[1]);
+      if (spin) vals.rotation = Math.round((b.rot + spin) * 10) / 10;
+      if (r.zoom) { vals.scaleX = Math.round(b.sx * k * 1000) / 1000; vals.scaleY = Math.round(b.sy * k * 1000) / 1000; }
+      hud = { x: vals.x, y: vals.y, sx: vals.scaleX ?? b.sx, sy: vals.scaleY ?? b.sy, rot: vals.rotation ?? b.rot };
     } else if (g.kind === 'scale') {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       const ratio = Math.hypot(x - cx, y - cy) / g.d0;
-      vals.scaleX = Math.round(Math.max(0.01, b.sx * ratio) * 1000) / 1000;
-      vals.scaleY = Math.round(Math.max(0.01, b.sy * ratio) * 1000) / 1000;
-      if (roll) vals.rotation = Math.round((b.rot + roll) * 10) / 10;
+      vals.scaleX = Math.round(Math.sign(b.sx || 1) * Math.max(0.01, Math.abs(b.sx) * ratio) * k * 1000) / 1000;
+      vals.scaleY = Math.round(Math.sign(b.sy || 1) * Math.max(0.01, Math.abs(b.sy) * ratio) * k * 1000) / 1000;
+      if (spin) vals.rotation = Math.round((b.rot + spin) * 10) / 10;
+      hud = { x: b.x, y: b.y, sx: vals.scaleX, sy: vals.scaleY, rot: vals.rotation ?? b.rot };
     } else if (g.kind === 'rotate') {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
-      vals.rotation = Math.round((b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI + roll) * 10) / 10;
+      vals.rotation = Math.round((b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI + spin) * 10) / 10;
+      if (r.zoom) { vals.scaleX = Math.round(b.sx * k * 1000) / 1000; vals.scaleY = Math.round(b.sy * k * 1000) / 1000; }
+      hud = { x: b.x, y: b.y, sx: vals.scaleX ?? b.sx, sy: vals.scaleY ?? b.sy, rot: vals.rotation };
     }
+    if (hud) this.hud.show(e.clientX, e.clientY, hud);
     r.last = vals;
     this.sampleRec(g, r);
   }
@@ -602,6 +721,9 @@ export class StageView {
     if (!r.last) return;
     // the take ends where its block can grow no more: playback stops there and nothing is keyed past it
     const mv = this.engine.movie;
+    // pre-roll and punch-in: nothing is taken before the frame the take is armed at, nothing after the punch-out
+    if (this.engine.frame < r.armedAt) return;
+    if (r.punchTo !== null && this.engine.frame > r.punchTo) { if (this.engine.playing) this.engine.stop(); return; }
     if (mv && this.engine.frame - r.start >= roomFor(mv, r.id)) { if (this.engine.playing) this.engine.stop(); return; }
     r.rec.add(this.engine.frame - r.start, r.last);
     this.commitRec(g, r, 0);
@@ -627,10 +749,11 @@ export class StageView {
     g.rec = undefined;
     this.offWrap?.();
     this.offWrap = null;
-    if (r.last) r.rec.add(this.engine.frame - r.start, r.last);
+    if (r.last && this.engine.frame >= r.armedAt && (r.punchTo === null || this.engine.frame <= r.punchTo)) r.rec.add(this.engine.frame - r.start, r.last);
     this.engine.stop();
     this.commitRec(g, r, perform.filtering);
     perform.setRecording(false);
+    perform.markTake(r.before, this.engine.history.past.length, r.armedAt);
   }
 
   private cancelRecording(): void {
@@ -653,12 +776,15 @@ export class StageView {
 
   private move(e: PointerEvent): void {
     const g = this.grab, m = this.engine.movie, v = this.view;
+    // moved before the hold was long enough: an ordinary drag on empty Stage, which deselects
+    if (this.pend && !g && e.pointerId === this.pend.pointer && Math.hypot(e.clientX - this.pend.x, e.clientY - this.pend.y) > 6) { this.dropPend(true); return; }
     if (!g || !m || !v || e.pointerId !== this.grabPointer) return;
     // a finger has to leave its landing spot before a drag starts, so a pinch beginning on content moves nothing
     if (this.slop) {
       if (Math.hypot(e.clientX - this.slop[0], e.clientY - this.slop[1]) < TOUCH_SLOP) return;
       this.slop = null;
     }
+    this.lastClient = [e.clientX, e.clientY];
     let [x, y] = this.local(e);
     // scale and rotate read the pointer in the content's parent space, so they hold under a moving parent
     if (g.kind !== 'move') [x, y] = this.parentPt(m, g.id, x, y);
@@ -667,14 +793,17 @@ export class StageView {
       let [dx, dy] = this.moveDelta(g, m, g.ids[0], x, y, v);
       const first = g.base.get(g.ids[0]) as Pose;
       let snapV: number | null = null, snapH: number | null = null;
+      // frame snapping needs the held modifier (Shift, or a second finger); the preference brings back always-on snapping to the frame
+      const modifier = snapMod(e);
+      this.hud.snapping(modifier && !e.altKey);
       if (!e.altKey) {
         const tol = SNAP_PX / v.scale;
-        if (snapMod(e) && g.snap) {
+        if (modifier && g.snap) {
           // the snap modifier: the content's edges and centre against the frame and the other contents
           const b = g.snap.box;
           const s = snapBox({ l: b.l + dx, t: b.t + dy, r: b.r + dx, b: b.b + dy }, g.snap.xs, g.snap.ys, tol);
           dx += s.dx; dy += s.dy; snapV = s.gx; snapH = s.gy;
-        } else {
+        } else if (loadPrefs().stageSnapAlways) {
           const nx = first.x + dx, ny = first.y + dy;
           for (const target of [0, -m.width / 4, m.width / 4]) if (Math.abs(nx - target) < tol) { dx = target - first.x; snapV = m.width / 2 + target; break; }
           for (const target of [0, -m.height / 4, m.height / 4]) if (Math.abs(ny - target) < tol) { dy = target - first.y; snapH = m.height / 2 + target; break; }
@@ -689,13 +818,18 @@ export class StageView {
         }
       }
       this.snapLines(m, v, snapV, snapH);
+      this.hud.show(e.clientX, e.clientY, { x: first.x + dx, y: first.y + dy, sx: first.sx, sy: first.sy, rot: first.rot });
       if (this.keyedIds(g.ids)) {
         this.writeKeys('Move Keyframe', g.ids, (id) => { const b = g.base.get(id) as Pose; const [ex, ey] = id === g.ids[0] ? [dx, dy] : this.moveDelta(g, m, id, x, y, v); return { x: Math.round(b.x + ex), y: Math.round(b.y + ey), scaleX: b.sx, scaleY: b.sy, rotation: b.rot }; }, g.tag);
         return;
       }
+      this.composeNote(g.ids);
       this.engine.run('Move', (mv) => {
         let out = mv;
-        for (const id of g.ids) { const b = g.base.get(id) as Pose; const [ex, ey] = id === g.ids[0] ? [dx, dy] : this.moveDelta(g, m, id, x, y, v); out = ops.patchContent(out, [id], { transform: { x: Math.round(b.x + ex), y: Math.round(b.y + ey) } }); }
+        for (const id of g.ids) {
+          const b = g.base.get(id) as Pose; const [ex, ey] = id === g.ids[0] ? [dx, dy] : this.moveDelta(g, m, id, x, y, v);
+          out = ops.patchContent(out, [id], { transform: this.store(b, b.x + ex, b.y + ey, b.rot, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy) });
+        }
         return out;
       }, g.tag);
     } else if (g.kind === 'stretch') {
@@ -704,25 +838,36 @@ export class StageView {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       const ratio = Math.hypot(x - cx, y - cy) / g.d0;
+      this.hud.snapping(false);
       if (this.keyedIds([g.id])) {
-        const sx = Math.round(Math.max(0.01, b.sx * ratio) * 1000) / 1000, sy = Math.round(Math.max(0.01, b.sy * ratio) * 1000) / 1000;
+        // a flipped (negative) scale stays flipped while it is scaled
+        const sx = Math.round(Math.sign(b.sx || 1) * Math.max(0.01, Math.abs(b.sx) * ratio) * 1000) / 1000, sy = Math.round(Math.sign(b.sy || 1) * Math.max(0.01, Math.abs(b.sy) * ratio) * 1000) / 1000;
+        this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx, sy, rot: b.rot });
         this.writeKeys('Scale Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: sx, scaleY: sy, rotation: b.rot }), g.tag);
         return;
       }
-      const k = Math.max(0.01, ratio * b.sx);
-      this.engine.run('Scale', (mv) => ops.patchContent(mv, [g.id], { transform: { scale: Math.round(k * 1000) / 1000 } }), g.tag);
+      const k = Math.round(Math.max(0.01, ratio * b.sx) * 1000) / 1000;
+      this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: k, sy: k, rot: b.rot });
+      this.composeNote([g.id]);
+      this.engine.run('Scale', (mv) => ops.patchContent(mv, [g.id], { transform: { ...this.store(b, b.x, b.y, b.rot, k * b.kx * b.fx, k * b.ky * b.fy), scale: k } }), g.tag);
     } else {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       let deg = b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
-      if (snapMod(e)) deg = snapAngle(deg, this.keyedIds([g.id]) ? 30 : 15);
+      const snapping = snapMod(e);
+      if (snapping) deg = snapAngle(deg, this.keyedIds([g.id]) ? 30 : 15);
+      this.hud.snapping(snapping);
       if (this.keyedIds([g.id])) {
         const r = Math.round(deg * 10) / 10;
+        this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: b.sx, sy: b.sy, rot: r });
         this.writeKeys('Rotate Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: b.sx, scaleY: b.sy, rotation: r }), g.tag);
         return;
       }
       deg = ((deg % 360) + 540) % 360 - 180;
-      this.engine.run('Rotate', (mv) => ops.patchContent(mv, [g.id], { transform: { rotation: Math.round(deg * 10) / 10 } }), g.tag);
+      const rr = Math.round(deg * 10) / 10;
+      this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: b.sx, sy: b.sy, rot: rr });
+      this.composeNote([g.id]);
+      this.engine.run('Rotate', (mv) => ops.patchContent(mv, [g.id], { transform: { ...this.store(b, b.x, b.y, rr, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy), rotation: rr } }), g.tag);
     }
   }
 
@@ -768,26 +913,31 @@ export class StageView {
     const pv = (g.axis === 'x' ? b.px : b.py) ?? 0;
     const base = g.axis === 'x' ? b.sx : b.sy, k = g.axis === 'x' ? b.kx : b.ky, f = g.axis === 'x' ? b.fx : b.fy;
     const grabbed = g.sign * half, opposite = -g.sign * half;
-    const aOpp = base * k * f * (opposite - pv);
-    let s = (u - aOpp) / (grabbed - opposite);
-    const floor = 0.02 * base;
-    // Compose lets the side cross the opposite one (a flip); keyed modes stop at a sliver
+    // the handles are drawn from the signed key scale, so keyed stretching reads it without the base flip
     const keyedNow = this.keyedFor(c);
-    if (keyedNow) s = Math.max(floor, s * f) * f;
-    else if (Math.abs(s) < floor) s = (s < 0 ? -1 : 1) * floor;
+    const aOpp = base * k * (keyedNow ? 1 : f) * (opposite - pv);
+    let s = (u - aOpp) / (grabbed - opposite);
+    const floor = 0.02 * Math.abs(base);
+    // the side may cross the opposite one: the content flips (a negative scale in Keyframe and Perform, a flip in Compose); only a sliver is held back
+    if (Math.abs(s) < floor) s = (s < 0 ? -1 : 1) * floor;
     const shift = aOpp - s * (opposite - pv);
     const nx = b.x + (g.axis === 'x' ? shift * cs : -shift * sn), ny = b.y + (g.axis === 'x' ? shift * sn : shift * cs);
     const round = (n: number): number => Math.round(n);
+    const shown = { x: nx, y: ny, sx: g.axis === 'x' ? s / k : b.sx, sy: g.axis === 'y' ? s / k : b.sy, rot: b.rot };
+    this.hud.snapping(false);
+    this.hud.show(this.lastClient[0], this.lastClient[1], shown);
     if (keyedNow) {
-      const mag = Math.round((Math.abs(s) / k) * 1000) / 1000;
-      this.writeKeys('Stretch Keyframe', [g.id], () => ({ x: round(nx), y: round(ny), scaleX: g.axis === 'x' ? mag : b.sx, scaleY: g.axis === 'y' ? mag : b.sy, rotation: b.rot }), g.tag);
+      const val = Math.round((s / k) * 1000) / 1000;
+      this.writeKeys('Stretch Keyframe', [g.id], () => ({ x: round(nx), y: round(ny), scaleX: g.axis === 'x' ? val : b.sx, scaleY: g.axis === 'y' ? val : b.sy, rotation: b.rot }), g.tag);
       return;
     }
     const nk = Math.abs(s) / base;
+    this.composeNote([g.id]);
     this.engine.run('Stretch', (mv) => ops.updateContent(mv, g.id, (cc) => {
       const t = cc.transform;
       const sx = g.axis === 'x' ? nk : t.stretchX ?? 1, sy = g.axis === 'y' ? nk : t.stretchY ?? 1;
-      const next = tops.withStretch({ ...t, x: round(nx), y: round(ny) }, sx, sy);
+      const at = this.store(b, nx, ny, b.rot, g.axis === 'x' ? s : b.sx * b.kx * b.fx, g.axis === 'y' ? s : b.sy * b.ky * b.fy);
+      const next = tops.withStretch({ ...t, x: at.x, y: at.y }, sx, sy);
       if (g.axis === 'x') next.flipH = s < 0; else next.flipV = s < 0;
       return { ...cc, transform: next };
     }), g.tag);
@@ -821,8 +971,27 @@ export class StageView {
     this.nudgeTimer = window.setTimeout(() => this.engine.endGesture(), 700);
   }
 
+  /** Ends a press on empty Stage that never became a move; a click or a quick drag deselects. */
+  private dropPend(deselect: boolean): void {
+    const p = this.pend;
+    if (!p) return;
+    window.clearTimeout(p.timer);
+    this.pend = null;
+    for (const t of [this.canvas, this.box] as Element[]) { try { t.releasePointerCapture(p.pointer); } catch { /* not held */ } }
+    if (deselect) this.engine.select([]);
+  }
+
   private up(e: PointerEvent): void {
+    if (this.pend && !this.grab && e.pointerId === this.pend.pointer) { this.dropPend(e.type === 'pointerup'); return; }
     if (!this.grab || e.pointerId !== this.grabPointer) return;
+    this.root.style.removeProperty('cursor');
+    const g = this.grab;
+    // a click on a corner node (no drag) in Keyframe and Perform shows or hides its rotation ring
+    if (g.kind === 'scale' && g.click && this.keyed() && Math.hypot(e.clientX - g.click.x, e.clientY - g.click.y) < 4) {
+      this.ringAt = this.ringAt === g.click.i ? null : g.click.i;
+      this.hard = true;
+    }
+    this.hud.release();
     this.endRec(this.grab);
     this.grab = null;
     this.engine.endGesture();

@@ -1,0 +1,93 @@
+/* Draw & Paint interface, v0.15.0: size bubble with a stroke sample, Finish menu, QuickShape menu, threshold line,
+   blend list groups, layer swipe, filter screen, flipbook More menu. */
+
+.fm-paint-hud { width: 176px; }
+.fm-paint-hud-dot {
+  width: 160px; height: 56px; margin: 0 auto; border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 38%, var(--surface-2));
+}
+.fm-paint-hud.is-plain .fm-paint-hud-dot { display: none; }
+
+.fm-paint-menu .fm-paint-menu-arrow { margin-left: auto; display: inline-flex; opacity: 0.7; }
+.fm-paint-menu .fm-paint-menu-sub { padding-left: var(--space-3); }
+.fm-paint-menu .fm-paint-menu-danger { color: var(--danger-color, #ff5a36); }
+.fm-paint-menu .fm-pop-row { display: flex; align-items: center; }
+
+/* Flipbook strip: the reference's six controls in the header, the rest behind More */
+.fm-fs-head { position: relative; }
+.fm-fs-more {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: var(--z-menu);
+  display: flex; flex-direction: column; gap: 2px; min-width: 190px; padding: var(--space-2);
+  border-radius: 14px; background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+  cursor: default;
+}
+.fm-fs-more[hidden] { display: none; }
+.fm-fs-more .fm-fs-ib { width: auto; justify-content: flex-start; gap: var(--space-3); height: 32px; padding: 0 var(--space-3); color: var(--text-primary); }
+.fm-fs-more .fm-fs-iblab { font-size: var(--fs-12); font-weight: 500; }
+.fm-fs-more [data-act="hide"] .icon { transform: none; }
+
+/* layers: grouped blend list, swipe actions */
+.fm-lp-blendhead { padding: var(--space-2) var(--space-3) 2px; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.fm-lp-blendshort { margin-left: auto; margin-right: var(--space-2); font-size: var(--fs-11); color: var(--text-muted); }
+.fm-lp-blends .fm-pop-row.is-checked .fm-lp-blendshort { color: inherit; }
+.fm-lp-acts { position: absolute; right: 0; top: 0; bottom: 0; display: flex; gap: 2px; padding: 4px; border-radius: var(--radius-lg); background: var(--glass-bg); z-index: 2; }
+.fm-lp-acts[hidden] { display: none; }
+.fm-lp-acts button { border: 0; border-radius: var(--radius-md); padding: 0 var(--space-3); background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--fs-12); cursor: pointer; }
+.fm-lp-acts button.is-danger { background: var(--danger-color, #ff5a36); color: #fff; }
+
+/* filter screen: dimmed interface, title chip, bottom pill of sliders, right cluster of tiles */
+.fm-paint.is-filtering .fm-paint-bar, .fm-paint.is-filtering .fm-paint-side { opacity: 0.35; pointer-events: none; transition: opacity 0.12s ease; }
+.fm-ptools.is-filters {
+  inset: 0; left: 0; right: 0; top: 0; bottom: 0; transform: none; max-width: none;
+  padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none;
+}
+.fm-paint.has-strip .fm-ptools.is-filters { bottom: 0; }
+.fm-ptools.is-filters .fm-ptools-modes { display: none; }
+.fm-ptools.is-filters .fm-ptools-title { display: none; }
+.fm-ptools.is-filters .fm-ptools-params {
+  position: absolute; left: 50%; bottom: var(--space-4); transform: translateX(-50%); pointer-events: auto;
+  min-width: 340px; max-width: calc(100% - 140px); padding: var(--space-3) var(--space-4); border-radius: 22px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+}
+.fm-paint.has-strip .fm-ptools.is-filters .fm-ptools-params { bottom: 152px; }
+.fm-ptools.is-filters .fm-ptools-actions {
+  position: absolute; right: var(--space-4); top: 50%; transform: translateY(-50%);
+  flex-direction: column; flex-wrap: nowrap; gap: var(--space-2); pointer-events: auto;
+}
+.fm-ptools-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  width: 58px; height: 58px; padding: 0; border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-color) 14%, var(--glass-bg)); border: 1px solid var(--glass-border);
+  color: var(--text-primary); box-shadow: var(--glass-shadow); font-size: 10.5px;
+}
+.fm-ptools-tile:hover { background: color-mix(in srgb, var(--accent-color) 28%, var(--glass-bg)); }
+.fm-ptools-tile[data-act="apply"] { background: var(--accent-color); color: var(--text-on-accent); }
+.fm-ptools-tile[data-act="preview"] { height: 66px; }
+.fm-ptools.is-filters .fm-fthr { pointer-events: none; }
+.fm-ptools.is-filters .fm-fthr .fm-thr-title { margin-right: var(--space-3); }
+
+/* threshold readout: the toast above the picture and its progress line */
+.fm-thr {
+  position: absolute; left: 50%; top: calc(var(--fm-paint-bar-h) + var(--space-3)); transform: translateX(-50%);
+  min-width: 190px; padding: 8px 14px 10px; border-radius: 14px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+  color: var(--text-primary); font-size: 13px; z-index: var(--z-menu); pointer-events: none;
+}
+.fm-thr[hidden] { display: none; }
+.fm-thr-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.fm-thr-title { font-weight: 600; }
+.fm-thr-val { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fm-thr-line.is-off { display: none; }
+.fm-thr-row > .fm-thr-title { flex: none; }
+.fm-thr-line { position: relative; height: 3px; margin-top: 7px; border-radius: 2px; background: color-mix(in srgb, var(--text-primary) 18%, transparent); overflow: hidden; }
+.fm-thr-line > i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--v, 0) * 100%); background: var(--accent-color); }
+.fm-thr-pill {
+  pointer-events: auto; border: 0; border-radius: 999px; padding: 3px 10px; font-size: 12px;
+  background: color-mix(in srgb, var(--accent-color) 30%, var(--surface-1)); color: var(--text-primary); cursor: pointer;
+}
+.fm-thr.is-continue { pointer-events: auto; }
+.fm-thr-tick { pointer-events: auto; border: 0; background: transparent; color: var(--accent-color); cursor: pointer; display: inline-flex; padding: 2px; }
+
+/* Select: the candidate region while the threshold slides */
+.fm-paint.is-select-pick .fm-paint-canvas { cursor: crosshair; }
