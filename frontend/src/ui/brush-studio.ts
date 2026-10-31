@@ -12,6 +12,7 @@ import type { Brush, Raster, RGB, TipImage } from '../paint/types';
 import {
   PadRunner, demoStrokes, renderPad, type PadEvent, type PadPaint, type PadStroke,
 } from '../paint/studio-render';
+import { renderStampPreview } from '../paint/stamp-preview';
 import { buildPickRow, type PickRow } from './brush-pick';
 import { buildCurvePanel, type CurvePanel } from './brush-studio-curves';
 import {
@@ -96,6 +97,8 @@ class BrushStudio {
   private readonly discardBar: HTMLElement;
   private readonly undoBtn: HTMLButtonElement;
   private readonly resetBtn: HTMLButtonElement;
+  private stampEl: HTMLCanvasElement | null = null;
+  private stampKey = '';
   private readonly titleEl: HTMLElement;
   private readonly copyEl: HTMLInputElement;
   private readonly fileEl: HTMLInputElement;
@@ -137,6 +140,7 @@ class BrushStudio {
             <label class="fm-bs-pf is-select"><span>Tool</span><select data-p="tool"><option value="paint">Paint</option><option value="smudge">Smudge</option></select></label>
             <label class="fm-bs-pf is-select"><span>Paper</span><select data-p="paper"><option value="paper">Light</option><option value="dark">Dark</option></select></label>
             <label class="fm-bs-pf is-check"><input type="checkbox" data-p="sim"><span>Simulate pen pressure</span></label>
+            <canvas class="fm-bs-stamp" width="72" height="72" style="width:36px;height:36px;border-radius:4px" title="Stamp preview" aria-label="Stamp preview"></canvas>
             <span class="fm-bs-grow"></span>
             <button type="button" class="fm-bs-btn" data-a="sample" title="Add the sample strokes">${ICON_WAVE}<span>Sample strokes</span></button>
             <button type="button" class="fm-bs-btn" data-a="clear" title="Clear pad">${ICON_CLEAR}<span>Clear pad</span></button>
@@ -446,6 +450,25 @@ class BrushStudio {
     this.undoBtn.disabled = this.hist.length === 0;
     this.resetBtn.disabled = !this.dirty();
     this.refreshTitle();
+    this.drawStamp();
+  }
+
+  /** The stamp preview: one dab of the draft brush at full pressure, redrawn only when the brush or colors change. */
+  private drawStamp(): void {
+    const cv = this.stampEl ?? (this.stampEl = q<HTMLCanvasElement>(this.root, '.fm-bs-stamp'));
+    const c = this.paint.color;
+    const key = `${JSON.stringify(this.draft, (k, v) => (k === 'data' || k === 'grainImage' || k === 'signature' ? undefined : v))}|${c.r},${c.g},${c.b}|${this.wrap.classList.contains('is-paper')}`;
+    if (key === this.stampKey) return;
+    this.stampKey = key;
+    const g = cv.getContext('2d');
+    if (!g) return;
+    const r = renderStampPreview(this.draft, cv.width, c);
+    g.fillStyle = this.wrap.classList.contains('is-paper') ? '#f4f1ea' : '#26262b';
+    g.fillRect(0, 0, cv.width, cv.height);
+    const tmp = document.createElement('canvas');
+    tmp.width = r.width; tmp.height = r.height;
+    tmp.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(r.data), r.width, r.height), 0, 0);
+    g.drawImage(tmp, 0, 0);
   }
 
   private refreshTitle(): void {

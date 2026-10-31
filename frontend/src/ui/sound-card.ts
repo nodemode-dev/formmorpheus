@@ -7,9 +7,11 @@ import { locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Content } from '../engine/types';
 import type { AudioEngine } from '../media/audio';
-import { MAX_LEVEL, normalize, setFade, setMute, setSolo } from '../media/audio-edit';
+import { MAX_LEVEL, normalize, normalizeLoudness, setFade, setMute, setSolo } from '../media/audio-edit';
+import { LUFS_PRESETS } from '../media/loudness';
 import { el, q, setClass, setDisabled, setHidden, setText } from './dom';
 import { t } from './i18n';
+import { soundFxCard } from './sound-fx-card';
 import '../styles/voice.css';
 
 const X = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -30,6 +32,7 @@ export class SoundCard {
   private readonly keyLevel: HTMLButtonElement;
   private readonly keyPan: HTMLButtonElement;
   private readonly norm: HTMLButtonElement;
+  private readonly loud: HTMLSelectElement;
   private readonly scrub: HTMLButtonElement;
   private readonly mute: HTMLButtonElement;
   private readonly solo: HTMLButtonElement;
@@ -76,10 +79,18 @@ export class SoundCard {
     this.mute = btn('Mute track');
     this.solo = btn('Solo track');
     const keys = el<HTMLElement>('<div class="fm-snd-btns"></div>');
-    keys.append(this.keyLevel, this.keyPan, this.norm);
+    this.loud = el<HTMLSelectElement>('<select class="cv-input" aria-label="Normalize to loudness"></select>');
+    this.loud.append(new Option(t('Normalize to loudness...'), ''), ...LUFS_PRESETS.map((v) => new Option(`${v} LUFS`, String(v))));
+    this.loud.addEventListener('change', () => { const v = Number(this.loud.value); this.loud.value = ''; if (v) void this.normalizeLoud(v); });
+    keys.append(this.keyLevel, this.keyPan, this.norm, this.loud);
     const tracks = el<HTMLElement>('<div class="fm-snd-btns"></div>');
     tracks.append(this.mute, this.solo, this.scrub);
-    body.append(lv.row, pn.row, fi.row, fo.row, keys, tracks);
+    const fxRow = el<HTMLElement>('<div class="fm-snd-btns"></div>');
+    const fxBlock = btn('Block effects...'), fxTrack = btn('Track effects...');
+    fxRow.append(fxBlock, fxTrack);
+    fxBlock.addEventListener('click', () => { if (this.id) soundFxCard(this.engine).show({ kind: 'block', id: this.id }); });
+    fxTrack.addEventListener('click', () => { const tr = this.track(); if (tr) soundFxCard(this.engine).show({ kind: 'track', id: tr.id }); });
+    body.append(lv.row, pn.row, fi.row, fo.row, keys, tracks, fxRow);
     (document.getElementById('overlay-root') ?? document.body).appendChild(this.root);
 
     const tag = (k: string): string => `sound-${k}-${this.id}`;
@@ -168,6 +179,18 @@ export class SoundCard {
     }));
   }
 
+  /** Brings the block to a target integrated loudness: one undo step. */
+  private async normalizeLoud(target: number): Promise<void> {
+    const c = this.block();
+    const m = this.engine.movie;
+    if (!c || !m || !c.asset) return;
+    const a = this.audio();
+    await a.decode(c.asset);
+    const f = m.fps;
+    const measured = a.lufsIn(c.asset, c.offset / f, (c.offset + c.duration) / f);
+    this.engine.run('Normalize Loudness', (mv) => normalizeLoudness(mv, c.id, measured, target));
+  }
+
   private async normalizeNow(): Promise<void> {
     const c = this.block();
     const m = this.engine.movie;
@@ -204,6 +227,7 @@ export class SoundCard {
     setClass(this.solo, 'is-on', !!tr?.solo);
     setClass(this.scrub, 'is-on', this.audio().scrubbing);
     setDisabled(this.norm, !c.asset);
+    setDisabled(this.loud, !c.asset);
   }
 
   private audioLevelAt(c: Content, local: number): number {

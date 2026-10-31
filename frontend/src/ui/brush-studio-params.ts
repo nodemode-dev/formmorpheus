@@ -64,6 +64,21 @@ function wet(key: 'dilution' | 'charge' | 'attack' | 'pull' | 'grade' | 'blur' |
   };
 }
 
+/** A field of the material (depth, gloss, metal, light angle). The material is removed again when it does nothing. */
+function shine(key: 'depth' | 'gloss' | 'metal' | 'light', label: string, def: number): NumParam {
+  const isAngle = key === 'light';
+  return {
+    kind: 'num', id: `shine.${key}`, label, min: 0, max: isAngle ? 360 : 1, step: isAngle ? 1 : 0.01, def, mul: isAngle ? 1 : 100, unit: isAngle ? '°' : '%',
+    needs: { shine: { depth: 0.5, gloss: 0.5, metal: 0 } },
+    get: (b) => b.shine?.[key] ?? def,
+    set: (b, v) => {
+      const s = { depth: 0, gloss: 0, metal: 0, ...(b.shine ?? {}) };
+      s[key] = v;
+      if (s.depth <= 0 && s.gloss <= 0 && s.metal <= 0) delete b.shine; else b.shine = s;
+    },
+  };
+}
+
 type CdKey = keyof NonNullable<Brush['colorDyn']>;
 function cd(key: CdKey, label: string, signed = false): NumParam {
   return {
@@ -259,6 +274,10 @@ export const SECTIONS: Section[] = [
   {
     id: 'materials', label: 'Materials', params: [
       top('bump', 'Relief', 0, 1, 0.01, 0, { needs: GRAIN_NEEDS }),
+      shine('depth', 'Depth', 0),
+      shine('gloss', 'Gloss', 0),
+      shine('metal', 'Metallic', 0),
+      shine('light', 'Light angle', 135),
     ],
   },
 ];

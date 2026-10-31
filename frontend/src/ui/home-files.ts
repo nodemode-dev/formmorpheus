@@ -243,7 +243,7 @@ export class HomeFiles {
     const n = el(`<div class="cv-hf-item" role="listitem">
       <span class="cv-hf-check">${icon('check', 12)}</span>
       <button class="cv-hf-open" type="button"><span class="cv-hf-thumb"><img class="cv-hf-img" alt="" decoding="async" draggable="false" hidden><span class="cv-hf-glyph">${icon('fileImage', 22)}</span></span><span class="cv-hf-name"></span><span class="cv-hf-kind"></span><span class="cv-hf-size"></span><span class="cv-hf-when"></span></button>
-      <button class="cv-hf-remove" type="button" title="Remove from Recent" aria-label="Remove from Recent">${icon('close', 12)}</button>
+      <button class="cv-hf-remove" type="button" tabindex="-1" title="Remove from Recent" aria-label="Remove from Recent">${icon('close', 12)}</button>
     </div>`);
     this.fillRow(n, i);
     return n;

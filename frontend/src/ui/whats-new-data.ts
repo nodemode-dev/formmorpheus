@@ -5,6 +5,18 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.14.0', name: 'Effects, titles, shapes and sound post',
+    additions: [
+      { title: 'Effects library', text: 'Drop shadow, glow, color correction, vignette, pixelate, blurs, motion blur, chroma and luma key, chromatic aberration and mirror, all keyable, reorderable and copyable.', command: 'mode-keyframe' },
+      { title: 'Rich titles', text: 'Style single words, add a shadow or a background box, and build text on letter by letter, word by word or as a typewriter.', command: 'add-text' },
+      { title: 'Shapes and solids', text: 'Draw shapes with gradient fills and animated strokes, fill the movie with a solid, and color-correct everything below with an Adjustment block.', command: 'home' },
+      { title: 'Sound post', text: 'EQ, compressor, reverb, ducking, level meters with loudness, normalize, and sound-only exports.', command: 'record-audio' },
+      { title: 'Delivery', text: 'Export presets, size targets, vertical reframing with a focus point, watermarks, animated WebP and APNG, and layered PSD.', command: 'export' },
+      { title: 'Drawing and Flipbooks', text: 'Painting runs in the background, wet paint drags, shine, palettes, and Flipbook timing with an exposure sheet and an underlay.', command: 'new-flipbook' },
+      { title: 'Stage guides', text: 'Grid, thirds, safe areas and guides you drag from the rulers.', command: 'stage-options' },
+    ],
+  },
+  {
     version: '0.13.0', name: 'Brush Studio, real wet paint, sound recording and editing tools',
     additions: [
       { title: 'Brush Studio', text: 'Edit every part of a brush on a live drawing pad: stroke, taper, shape, grain, rendering, wet mix, color dynamics, pressure curves and more.', command: 'new-flipbook' },

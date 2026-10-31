@@ -8,6 +8,7 @@ import { BACKSTAGE_DEFAULT } from '../engine/render';
 import type { OnionSettings } from '../engine/types';
 import type { RGB } from '../paint/types';
 import { ColourPanel } from './colour-panel';
+import { GuidesSection } from './stage-guides-panel';
 import { el, q, setClass, setStyleVar, setText } from './dom';
 import { t } from './i18n';
 import { sliderRow, toggleRow, type Row } from './panels/controls';
@@ -98,7 +99,10 @@ export class StageOptionsBody {
     setText(head, t('Onion skins'));
     const o = this.onion;
     sec.append(head, o.enabled.el, o.backward.el, o.forward.el, o.opacity.el, o.tint.el, o.blend.el);
+    this.guides = new GuidesSection(engine);
+    this.el.appendChild(this.guides.el);
   }
+  private readonly guides: GuidesSection;
 
   sync(): void {
     const m = this.engine.movie;
@@ -113,6 +117,7 @@ export class StageOptionsBody {
     const o = { ...defaultOnion(), ...(m.onion ?? {}) }, w = this.onion;
     w.enabled.set(o.enabled); w.backward.set(o.backFrames); w.forward.set(o.foreFrames);
     w.opacity.set(o.opacity); w.tint.set(o.tint); w.blend.set(o.blendPrimary);
+    this.guides.sync();
   }
 }
 

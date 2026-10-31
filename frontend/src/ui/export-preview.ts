@@ -3,8 +3,9 @@
 // It renders a few low-resolution frames of the chosen settings (ping pong order, background, GIF colors and
 // dither, picture type) and must be rendered again after a setting changes.
 import type { Movie } from '../engine/types';
-import type { Renderer, View } from '../engine/render';
+import type { Renderer } from '../engine/render';
 import { GifWriter, quantize } from '../export/gif';
+import { drawDelivery, loadWatermark } from '../export/reframe';
 import type { ExportOptions } from '../export/types';
 import { el, q, setClass, setDisabled, setStyleVar, setText } from './dom';
 
@@ -22,6 +23,8 @@ export interface PreviewDeps {
   renderer: Renderer;
   /** Fires when the preview turns stale or fresh, so the dialog can note it. */
   onState?: (state: PreviewState) => void;
+  /** A drag on a Fill (crop) preview moved the focus point (fractions of the movie frame). */
+  onFocus?: (x: number, y: number) => void;
 }
 
 export type PreviewState = 'none' | 'stale' | 'rendering' | 'fresh';
@@ -95,24 +98,61 @@ export class ExportPreview {
       this.draw();
     }, { passive: false });
     this.win.addEventListener('pointerdown', (e) => {
-      if (this.zoom <= 1) return;
+      if (this.zoom <= 1) {
+        // Fill (crop): dragging the picture moves the crop's focus point
+        if (!this.canFocus()) return;
+        this.win.setPointerCapture(e.pointerId);
+        this.focusing = true;
+        setClass(this.win, 'is-pan', true);
+        return;
+      }
       this.win.setPointerCapture(e.pointerId);
       setClass(this.win, 'is-pan', true);
     });
     this.win.addEventListener('pointermove', (e) => {
       if (!this.win.hasPointerCapture(e.pointerId)) return;
       const r = this.win.getBoundingClientRect();
+      if (this.focusing) { this.dragFocus((e.movementX / r.width) * WIN_W, (e.movementY / r.height) * WIN_H); return; }
       this.panX += (e.movementX / r.width) * WIN_W;
       this.panY += (e.movementY / r.height) * WIN_H;
       this.clampPan();
       this.draw();
     });
-    this.win.addEventListener('pointerup', () => setClass(this.win, 'is-pan', false));
+    this.win.addEventListener('pointerup', () => {
+      setClass(this.win, 'is-pan', false);
+      if (this.focusing) { this.focusing = false; if (this.needsRender) void this.render(); }
+    });
     this.win.addEventListener('dblclick', () => { this.zoom = 1; this.panX = 0; this.panY = 0; this.draw(); });
     this.paintState();
   }
 
   get status(): PreviewState { return this.state; }
+
+  private focusing = false;
+
+  private canFocus(): boolean {
+    return !!this.deps.onFocus && this.spec?.opts.fit === 'cover' && this.bitmaps.length > 0;
+  }
+
+  /** Moves the crop focus by a drag of (dx, dy) canvas px on the preview: the picture follows the pointer. */
+  private dragFocus(dx: number, dy: number): void {
+    const o = this.spec?.opts, m = this.deps.movie(), b = this.bitmaps[this.current];
+    if (!o || !m || !b || !this.deps.onFocus) return;
+    const fitScale = Math.min(WIN_W / b.width, WIN_H / b.height);
+    const outPerCanvas = o.width / (b.width * fitScale);
+    const k = Math.max(o.width / m.width, o.height / m.height);
+    const f = o.focus ?? { x: 0.5, y: 0.5 };
+    const fw = m.width * k, fh = m.height * k;
+    const nx = fw > o.width ? f.x - (dx * outPerCanvas) / fw : f.x;
+    const ny = fh > o.height ? f.y - (dy * outPerCanvas) / fh : f.y;
+    // the old picture follows the pointer until the preview is drawn again
+    if (fw > o.width) this.shiftX += dx;
+    if (fh > o.height) this.shiftY += dy;
+    this.draw();
+    this.deps.onFocus(Math.min(1, Math.max(0, nx)), Math.min(1, Math.max(0, ny)));
+  }
+  private shiftX = 0;
+  private shiftY = 0;
 
   /** The dialog reports what the settings give now: the preview turns stale when that differs from what it last drew. */
   setSpec(spec: PreviewSpec | null): void {
@@ -150,8 +190,9 @@ export class ExportPreview {
     const count = Math.min(total, SAMPLES);
     const k = Math.min(1, LONG_SIDE / Math.max(o.width, o.height));
     const pw = Math.max(2, Math.round(o.width * k)), ph = Math.max(2, Math.round(o.height * k));
-    const scale = Math.min(pw / movie.width, ph / movie.height);
-    const view: View = { scale, ox: (pw - movie.width * scale) / 2, oy: (ph - movie.height * scale) / 2, width: pw, height: ph };
+    // the preview places the frame exactly as the export will (bars, crop around the focus, or the blurred fill) and lays the watermark over it
+    const dv = { width: pw, height: ph, fit: o.fit, focus: o.focus, watermark: o.watermark };
+    const wm = await loadWatermark(o.watermark);
     const canvas = new OffscreenCanvas(pw, ph);
     const ctx = canvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     const steps: number[] = [];
@@ -164,7 +205,7 @@ export class ExportPreview {
         if (my !== this.token) { fail(); return; }
         const f = frameAt(steps[i], o.from, o.to);
         await this.deps.renderer.prepareFrame(movie, f);
-        this.deps.renderer.drawFrame(ctx, movie, f, view, { backstage: false, background: movie.background, transparentChecker: null, keepAlpha: spec.keepAlpha, exact: true });
+        drawDelivery(this.deps.renderer, ctx, movie, f, dv, spec.keepAlpha, wm);
         if (o.format === 'gif') raw.push(ctx.getImageData(0, 0, pw, ph));
         else if (spec.lossy) {
           const blob = await canvas.convertToBlob({ type: spec.lossy === 'jpg' ? 'image/jpeg' : 'image/webp', quality: { low: 0.6, medium: 0.8, high: 0.92, 'very-high': 0.98 }[o.quality] });
@@ -198,7 +239,7 @@ export class ExportPreview {
     this.size = [pw, ph];
     this.renderedKey = spec.key;
     setClass(this.root, 'has-alpha', spec.keepAlpha);
-    this.zoom = 1; this.panX = 0; this.panY = 0;
+    this.zoom = 1; this.panX = 0; this.panY = 0; this.shiftX = 0; this.shiftY = 0;
     this.current = Math.min(this.current, out.length - 1);
     this.drawBar();
     this.show(this.current);
@@ -260,7 +301,7 @@ export class ExportPreview {
     const fit = Math.min(WIN_W / b.width, WIN_H / b.height) * this.zoom;
     const w = b.width * fit, h = b.height * fit;
     c.imageSmoothingEnabled = this.zoom < 2;
-    c.drawImage(b, WIN_W / 2 - w / 2 + this.panX, WIN_H / 2 - h / 2 + this.panY, w, h);
+    c.drawImage(b, WIN_W / 2 - w / 2 + this.panX + this.shiftX, WIN_H / 2 - h / 2 + this.panY + this.shiftY, w, h);
     setText(this.cap, `${this.size[0]} x ${this.size[1]} · ${this.steps[this.current] + 1} / ${this.total}`);
   }
 

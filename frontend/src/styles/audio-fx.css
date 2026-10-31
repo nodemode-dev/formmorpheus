@@ -1,0 +1,40 @@
+/* Sound effects card and level meters */
+.fm-master-meter { width: 176px; height: 14px; flex: none; cursor: pointer; --fm-meter-track: var(--border-light); }
+.fm-sfx {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + 220px);
+  z-index: var(--z-companion);
+  width: 340px;
+  /* the card sits 220px up: its top stays under the menu bar whatever the window height */
+  max-height: calc(100vh - 220px - var(--space-4) - 56px);
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+}
+.fm-sfx[hidden], .fm-sfx [hidden] { display: none; }
+.fm-sfx-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); font-weight: 600; }
+.fm-sfx-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-sfx-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: var(--radius-sm); line-height: 0; }
+.fm-sfx-x:hover { color: var(--text-primary); background: var(--surface-raised); }
+.fm-sfx-top { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.fm-sfx-preset { flex: 1; min-width: 0; }
+.fm-sfx-chk, .fm-sfx-sech { display: flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); cursor: pointer; }
+.fm-sfx-chk input, .fm-sfx-sech input { margin: 0; accent-color: var(--accent-color); }
+.fm-sfx-sec { padding: var(--space-2) 0; border-top: 1px solid var(--border-light); }
+.fm-sfx-sech { font-weight: 600; color: var(--text-primary); }
+.fm-sfx-sec:not(.is-on) .fm-sfx-secb { opacity: .5; }
+.fm-sfx-secb { margin-top: var(--space-1); }
+.fm-sfx-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 64px; gap: var(--space-2); align-items: center; margin-bottom: 2px; }
+.fm-sfx-lab { color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-sfx-row input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-sfx-row .cv-input { grid-column: 2 / 4; width: 100%; }
+.fm-sfx-val { color: var(--text-secondary); font-size: var(--fs-12); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fm-sfx-curve { display: block; width: 100%; height: 54px; margin-bottom: var(--space-1); border-radius: var(--radius-sm); background: var(--bg-input); border: 1px solid var(--border-light); }

@@ -14,7 +14,7 @@ const active = (t: Track, frame: number): Content | undefined => t.content.find(
 
 /** What the picture at `frame` depends on: movie-wide fields, and the objects of each visible track's content (and its parents). Equal lists draw the same picture. */
 export function pictureSig(m: Movie, frame: number, skip?: readonly string[]): unknown[] {
-  const out: unknown[] = [frame, m.width, m.height, m.background, m.transparent, m.backstage, m.camera, m.assets, m.tracks.length];
+  const out: unknown[] = [frame, m.width, m.height, m.background, m.transparent, m.backstage, m.camera, m.assets, m.tracks.length, m.fps, m.duration, m.motionBlur];
   for (const t of m.tracks) {
     out.push(t.hidden, t.screen);
     if (t.hidden) continue;

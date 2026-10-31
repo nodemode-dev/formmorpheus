@@ -3,6 +3,7 @@ import { content as makeContent, flipTrack, textColorFor, uid } from '../engine/
 import * as ops from '../engine/ops';
 import { Renderer } from '../engine/render';
 import { convertToFlipbook } from '../ui/flip-convert';
+import { setFlipServices } from '../ui/flip-services';
 import type { Asset, Content } from '../engine/types';
 import { api, capabilities, onServiceChange } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
@@ -15,6 +16,8 @@ import { VideoPool } from '../media/video';
 import { firstFrames, planPrefetch } from '../media/plan';
 import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
+import { ShapePanel } from '../ui/shape-panel';
+import { shapeCommands, SHAPE_CREATE_ITEMS } from '../ui/shape-commands';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
@@ -50,6 +53,7 @@ import { CameraLane } from '../ui/camera-lane';
 import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
 import { GraphEditor } from '../ui/graph-editor';
+import { MediaBin } from '../ui/media-bin';
 import { TitleTools } from '../ui/titlebar-tools';
 import { TitleName, movieLabel } from '../ui/title-name';
 import { Tips } from '../ui/tips';
@@ -89,7 +93,7 @@ const SHELL = `<div class="cv-app fm-app">
 const FLIP_RATES = [6, 8, 12, 15, 24, 30];
 const FLIP_FPS_MENU = { label: 'Flipbook at frame rate', items: FLIP_RATES.map((n) => `add-flipbook-${n}`) };
 /** The Create menu: what to make, then what to bring in. */
-const CREATE_ITEMS = ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', '-', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file', '-', 'record-audio'];
+const CREATE_ITEMS = ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, '-', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file', '-', 'record-audio'];
 const CUSTOM_TITLE_KEY ='formmorpheus.customTitleBar';
 const stored = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const store = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
@@ -121,6 +125,7 @@ export function startApp(): void {
   };
   setTimeout(() => syncGpu(prefs.gpu), 1500);
   const audio = new AudioEngine((id) => engine.assets.get(id), () => timeline?.refreshThumbs());
+  setFlipServices(engine, (id) => audio.peaks(id), (id) => audio.decode(id));
   // the sound card's clock drives playback whenever sound plays, so pictures and sound cannot drift apart
   engine.setTicker({ now: () => audio.now(), request: (fn) => requestAnimationFrame(fn), cancel: (id) => cancelAnimationFrame(id) });
   engine.on('playing', (on) => { const m = engine.movie; if (on && m) audio.play(m, engine.frame, 1); else audio.stop(); });
@@ -164,11 +169,14 @@ export function startApp(): void {
     graph: (id, kind, channel) => graphEditor.open(id, kind, channel),
   });
   const graphEditor = new GraphEditor(timeline.root, engine);
+  const mediaBin = new MediaBin(engine, { renderer, video, timeline: () => timeline, stageWrap: () => q(root, '.fm-stage-wrap') });
   new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);
   const textCard = new TextCard(engine);
   stage.onEditTextStyle = (id, x, y) => textCard.open({ x, y }, id, 'format');
+  const shapePanel = new ShapePanel(engine);
+  stage.onEditShape = (id, x, y) => shapePanel.open({ x, y }, id);
   textCard.onImportFont = () => { commands.run('import-font'); };
   const exportDialog = new ExportDialog({
     engine,
@@ -422,6 +430,7 @@ export function startApp(): void {
       return;
     }
     if (c.kind === 'drawing' || c.kind === 'flipbook') await paint.open(c.id);
+    if (c.kind === 'shape' || c.kind === 'solid' || c.kind === 'adjust') shapePanel.open(mid(), c.id);
   }
 
   const aboutDialog = new AboutDialog();
@@ -510,6 +519,7 @@ export function startApp(): void {
     { id: 'stage-background', label: 'Background Color...', enabled: has, run: () => stageOptions.pickBackground(stageAt()) },
     { id: 'stage-timecode', label: 'Timecode', enabled: has, checked: () => engine.movie?.timecode !== false, run: () => engine.run('Timecode', (m) => ops.patchMovie(m, { timecode: m.timecode === false })) },
     { id: 'graph-editor', label: 'Graph Editor', keys: ['Alt+Mod+G'], enabled: has, run: () => graphEditor.toggle() },
+    { id: 'media-bin', label: 'Media Bin', keys: ['Alt+Mod+B'], enabled: has, checked: () => mediaBin.isOpen, run: () => mediaBin.toggle() },
     { id: 'movie-settings', label: 'Movie Settings...', keys: ['Mod+J'], enabled: has, run: () => movieSettings.toggle(q(root, '[data-act="settings"]')) },
     { id: 'fit-to-content', label: 'Fit Duration to Content', enabled: has, run: () => engine.run('Fit to Content', (m) => ops.fitToContent(m)) },
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
@@ -540,6 +550,7 @@ export function startApp(): void {
   const mid = (): { x: number; y: number } => { const r = q(root, '.fm-stage-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
   commands.add(
     ...add,
+    ...shapeCommands(engine, () => stage?.shapeStage ?? null, shapePanel, mid),
     ...paint.paintCommands(),
     ...pushCommands(engine),
     ...loopCommands(engine),
@@ -566,8 +577,8 @@ export function startApp(): void {
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
-    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-snap', 'marker-add', 'marker-prev', 'marker-next', 'marker-clear', 'graph-editor', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-snap', 'marker-add', 'marker-prev', 'marker-next', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {

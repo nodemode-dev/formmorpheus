@@ -5,13 +5,16 @@
 import type { RGB } from '../paint/types';
 import '../styles/rw-extras.css';
 import { el, q, patchList, setClass, setHidden, setStyleVar, setText, setValue } from './dom';
+import { toast } from './toast';
+import { downloadBlob } from '../io/api';
+import { exportPalette, FORMAT_EXT, parsePaletteFile, paletteFromPixels, type PaletteFormat, type Rgb } from '../io/palette-io';
 
 type Mode = 'disc' | 'classic' | 'harmony' | 'value' | 'palettes';
 type Harmony = 'complementary' | 'split' | 'analogous' | 'triadic' | 'tetradic';
 interface Palette { id: string; name: string; colors: (RGB | null)[] }
 
 const KEY = 'formmorpheus.colour';
-const SLOTS = 27;
+const SLOTS = 30;
 const HIST_MAX = 10;
 const DISC = 224, RING = 22, ROUT = DISC / 2, DISC_IN = ROUT - RING - 6;
 const HW = 188, HWR = HW / 2;
@@ -218,6 +221,14 @@ const TEMPLATE = `
       <div class="fm-col-palbar">
         <div class="fm-col-seg" role="tablist"><button type="button" class="is-on" data-view="compact">Compact</button><button type="button" data-view="cards">Cards</button></div>
         <button type="button" class="fm-col-plus" title="New palette from History" aria-label="New palette from History">+</button>
+      </div>
+      <div class="fm-col-palio">
+        <button type="button" class="fm-col-iob" data-io="import" title="Import a palette file (.swatches, .ase, .gpl, .fmpal)">Import</button>
+        <select class="fm-col-fmt" aria-label="Export format"><option value="swatches">.swatches</option><option value="ase">.ase</option><option value="gpl">.gpl</option><option value="fmpal">.fmpal</option></select>
+        <button type="button" class="fm-col-iob" data-io="export" title="Export the default palette">Export</button>
+        <button type="button" class="fm-col-iob" data-io="image" title="New palette from the colors of a picture">Image</button>
+        <input class="fm-col-kn" type="number" min="5" max="30" step="1" value="16" aria-label="Number of colors from the image" title="Colors">
+        <input class="fm-col-file" type="file" hidden>
       </div>
       <div class="fm-col-pl"></div>
     </section>
@@ -645,6 +656,7 @@ export class ColourPanel {
       this.renderPalettes(); this.save();
       n.pl.scrollTop = n.pl.scrollHeight;
     });
+    this.wirePaletteIo(r);
 
     // swatch clicks, long press and context menu (delegated)
     r.addEventListener('click', (e) => {
@@ -897,6 +909,60 @@ export class ColourPanel {
       update: fill,
     });
     this.markSelected();
+  }
+
+  /** Palette files in and out and a palette from a picture (io/palette-io.ts). Wired once at creation. */
+  private wirePaletteIo(r: HTMLElement): void {
+    const file = q<HTMLInputElement>(r, '.fm-col-file'), fmt = q<HTMLSelectElement>(r, '.fm-col-fmt'), kn = q<HTMLInputElement>(r, '.fm-col-kn');
+    let mode: 'import' | 'image' = 'import';
+    const add = (name: string, cols: Rgb[]): void => {
+      let nm = name.slice(0, 32) || 'Palette', k = 2;
+      while (this.pals.some((x) => x.name === nm)) nm = `${name.slice(0, 28)} ${k++}`;
+      const colors: (RGB | null)[] = Array.from({ length: SLOTS }, (_, i) => (cols[i] ? { r: cols[i].r, g: cols[i].g, b: cols[i].b } : null));
+      this.pals.push({ id: 'u' + Date.now().toString(36) + this.pals.length, name: nm, colors });
+    };
+    for (const b of Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-iob'))) {
+      b.addEventListener('click', () => {
+        const act = b.dataset.io;
+        if (act === 'export') {
+          const p = this.pals[this.active] ?? this.pals[0];
+          const f = fmt.value as PaletteFormat;
+          const cols = p.colors.filter((c): c is RGB => !!c);
+          if (!cols.length) { toast('This palette has no colors to export.', 'error'); return; }
+          const bytes = exportPalette({ name: p.name, colors: cols }, f);
+          downloadBlob(new Blob([bytes.slice().buffer as ArrayBuffer], { type: 'application/octet-stream' }), `${p.name.replace(/[\\/:*?"<>|]/g, '_') || 'Palette'}.${FORMAT_EXT[f]}`);
+          return;
+        }
+        mode = act === 'image' ? 'image' : 'import';
+        file.accept = mode === 'image' ? 'image/*' : '.swatches,.ase,.gpl,.fmpal,.json,.zip';
+        file.value = '';
+        file.click();
+      });
+    }
+    file.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      void (async () => {
+        try {
+          if (mode === 'image') {
+            const bmp = await createImageBitmap(f);
+            const s = Math.min(1, 256 / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * s)), h = Math.max(1, Math.round(bmp.height * s));
+            const c = document.createElement('canvas'); c.width = w; c.height = h;
+            const g = c.getContext('2d', { willReadFrequently: true });
+            if (!g) throw new Error('The picture could not be read.');
+            g.drawImage(bmp, 0, 0, w, h); bmp.close();
+            const cols = paletteFromPixels(g.getImageData(0, 0, w, h).data, w, h, clamp(parseInt(kn.value, 10) || 16, 5, 30));
+            if (!cols.length) throw new Error('The picture has no colors.');
+            add(f.name.replace(/\.[^.]+$/, ''), cols);
+          } else {
+            for (const p of parsePaletteFile(new Uint8Array(await f.arrayBuffer()), f.name)) add(p.name, p.colors);
+          }
+          this.active = this.pals.length - 1;
+          this.renderPalettes(); this.save();
+          this.n.pl.scrollTop = this.n.pl.scrollHeight;
+        } catch (e) { toast(e instanceof Error ? e.message : 'The file could not be read.', 'error'); }
+      })();
+    });
   }
 
   /** Rename on click, Duplicate, and drag-to-reorder for one palette card. Wired once at creation. */

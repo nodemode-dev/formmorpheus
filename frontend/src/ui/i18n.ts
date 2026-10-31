@@ -93,7 +93,12 @@ function tp(text: string): string {
   const whole = t(text);
   if (whole !== text || current === 'en') return whole;
   const m = /^(.*\S) \(([^()]+)\)$/.exec(text);
-  if (!m) return text;
+  if (!m) {
+    // "<label> value": the name of a number box beside a slider, composed from its translated parts.
+    const v = /^(.*\S) value$/.exec(text);
+    if (v) { const head = tp(v[1]!), tail = t('value'); if (tail !== 'value') return `${head} ${tail}`; }
+    return text;
+  }
   const head = t(m[1]!), group = t(m[2]!);
   return head === m[1] && group === m[2] ? text : `${head} (${group})`;
 }

@@ -1,0 +1,12 @@
+/* Stage tools of the Key and Radial Blur effects: the centre handle and the eyedropper cursor */
+.fm-fx-ov { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: var(--z-raised); }
+.fm-fx-ov[hidden] { display: none; }
+.fm-fx-h, .fm-fx-v { stroke: var(--accent-color); stroke-width: 1.5; }
+.fm-fx-ring { fill: transparent; stroke: var(--accent-color); stroke-width: 1.75; pointer-events: all; cursor: grab; }
+.fm-fx-ring:hover { fill: color-mix(in srgb, var(--accent-color) 30%, transparent); }
+.fm-fx-dot { fill: var(--accent-color); }
+.fm-fx-picking, .fm-fx-picking * { cursor: crosshair !important; }
+.fm-kc-swatch[data-pick] { grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; }
+.fm-kc-pickbtn { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; width: 26px; height: 26px; border-radius: var(--radius-sm, 6px); border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.fm-kc-pickbtn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.fm-kc-pickbtn.is-on { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent, #fff); }

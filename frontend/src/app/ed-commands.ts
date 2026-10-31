@@ -5,7 +5,9 @@ import * as ops from '../engine/ops';
 import type { Content } from '../engine/types';
 import { canSize, sizeContent, type SizeMode } from '../engine/fit-ops';
 import { addMarker, markerAtFrame, stepMarker } from '../engine/marker-ops';
-import { canRetime } from '../engine/retime';
+import { canRetime, srcFrame } from '../engine/retime';
+import * as inner from '../engine/group-inner-ops';
+import { defaultTransition, TRANSITION_KINDS } from '../engine/transitions';
 import * as rt from '../engine/retime-ops';
 import { setImportSize, importSize } from '../media/import-size';
 import type { Command } from '../ui/commands';
@@ -82,7 +84,27 @@ export function edCommands(engine: Engine): Command[] {
     keyTool('keys-cycle', 'Cycle Keys with Offset', 'Cycle Keys', (c) => cycleKeys(c, 'offset')),
     keyTool('keys-thin', 'Thin Keys', 'Thin Keys', (c) => thinKeys(c, 0.03)),
     keyTool('keys-orient', 'Turn Along Motion Path', 'Auto-orient', (c) => autoOrient(c)),
+    // a transition between two touching blocks inside the selected group, at the cut nearest the Playhead
+    ...TRANSITION_KINDS.map((k): Command => ({
+      id: `group-transition-${k.id}`, label: `Group Transition: ${k.label}`, enabled: () => !!innerCut(),
+      run: () => {
+        const b = innerCut(), fps = engine.movie?.fps ?? 24;
+        if (b) engine.run('Transition', (m) => inner.setInnerTransition(m, b.id, defaultTransition(k.id, fps)));
+      },
+    })),
+    {
+      id: 'group-transition-none', label: 'Group Transition: None', enabled: () => !!innerCut(true),
+      run: () => { const b = innerCut(true); if (b) engine.run('Transition', (m) => inner.setInnerTransition(m, b.id, null)); },
+    },
   ];
+  /** The inner block that starts the cut nearest the Playhead in the one selected group (`having`: one with a transition). */
+  function innerCut(having = false): Content | null {
+    const g = engine.selected.length === 1 && engine.selected[0].kind === 'group' ? engine.selected[0] : null;
+    if (!g || !engine.isOver(g)) return null;
+    const local = srcFrame(g, engine.frame - g.start);
+    const b = inner.cutNear(g, local);
+    return b && (!having || b.transition) ? b : null;
+  }
   function keyTool(id: string, label: string, undo: string, fn: (c: Content) => Content): Command {
     return {
       id, label, enabled: () => engine.selected.some((c) => keyCount(c) > 0),

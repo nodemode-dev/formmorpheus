@@ -6,6 +6,9 @@ import { ensureTextFont, familyFaces, fontCatalog, previewFont } from '../media/
 import { el, q, setClass, setText } from './dom';
 import { icon } from './icons';
 import { Popover } from './popover';
+import { TextFxPanes } from './text-fx-panes';
+import { textSel } from './text-sel';
+import { diffText, shiftRuns } from '../engine/text-rich';
 
 const ALIGNS: Array<[TextStyle['align'], string, string]> = [['left', 'alignLeftEdge', 'Align left'], ['center', 'alignHcenterEdge', 'Align centre'], ['right', 'alignRightEdge', 'Align right'], ['justify', 'alignJustify', 'Justify']];
 const CAPS: Array<[TextStyle['caps'] | '', string, string]> = [['', 'Aa', 'Normal case'], ['upper', 'AA', 'All caps'], ['lower', 'aa', 'Lower case'], ['small', 'Aa', 'Small caps']];
@@ -46,6 +49,7 @@ export class TextCard {
   private readonly wrapW: HTMLInputElement;
   private readonly wrapAuto: HTMLButtonElement;
   private weightKey = '';
+  private readonly rich: TextFxPanes;
   /** Called when Import font is pressed (the app opens its file picker). */
   onImportFont: (() => void) | null = null;
 
@@ -85,7 +89,11 @@ export class TextCard {
     q<HTMLButtonElement>(root, '[data-f="importFont"]').addEventListener('click', () => this.onImportFont?.());
 
     const tabBar = q(root, '.fm-tc-tabs');
-    for (const [id, label] of [['fonts', 'Fonts'], ['format', 'Format']] as const) {
+    // Spans, Effects and Animate: styled words, shadow and box, build on / off (ui/text-fx-panes.ts)
+    this.rich = new TextFxPanes(engine, () => this.id);
+    const paneHost = q(root, '.fm-tc-panes');
+    paneHost.append(this.rich.spans, this.rich.effects, this.rich.animate);
+    for (const [id, label] of [['fonts', 'Fonts'], ['format', 'Format'], ['spans', 'Spans'], ['effects', 'Effects'], ['animate', 'Animate']] as const) {
       const b = el<HTMLButtonElement>(`<button class="fm-tc-tab" type="button" role="tab" aria-selected="false">${label}</button>`);
       b.addEventListener('click', () => this.showTab(id));
       this.tabs.set(id, b);
@@ -140,7 +148,16 @@ export class TextCard {
     mkToggle(q(root, '[data-g="lines"]'), this.flags, 'vertical', icon('tTypeV', 16), 'Vertical text', () => this.commit({ vertical: this.cur()?.vertical ? undefined : true }, 'vertical'));
 
     // events
-    this.area.addEventListener('input', () => { const c = this.cur(); if (c) void ensureTextFont({ ...c, text: this.area.value }); this.commit({ text: this.area.value }, 'text'); });
+    this.area.addEventListener('input', () => {
+      const c = this.cur();
+      if (c) void ensureTextFont({ ...c, text: this.area.value });
+      // spans follow the edit: letters typed or cut before a span move it
+      const d = c ? diffText(c.text, this.area.value) : null;
+      const runs = c && d ? shiftRuns(c.runs, d.at, d.removed, d.added) : undefined;
+      this.commit({ text: this.area.value, runs }, 'text');
+    });
+    const mark = (): void => { if (this.id) textSel.set(this.id, this.area.selectionStart, this.area.selectionEnd); };
+    for (const ev of ['select', 'keyup', 'mouseup', 'input']) this.area.addEventListener(ev, mark);
     this.area.addEventListener('change', () => this.endGesture());
     this.weight.addEventListener('change', () => { void this.setFace(Number(this.weight.value)); this.endGesture(); });
     this.color.addEventListener('input', () => { this.commit({ color: this.color.value }, 'color'); setText(this.hex, this.color.value.toUpperCase()); });
@@ -163,16 +180,19 @@ export class TextCard {
     this.showTab('fonts');
   }
 
-  open(anchor: HTMLElement | { x: number; y: number }, contentId: string, tab: 'fonts' | 'format' = 'fonts'): void {
+  open(anchor: HTMLElement | { x: number; y: number }, contentId: string, tab: 'fonts' | 'format' | 'spans' | 'effects' | 'animate' = 'fonts'): void {
     const m = this.engine.movie;
     const at = m ? locate(m, contentId) : null;
     if (!at || at.content.kind !== 'text' || !at.content.text) return;
     this.id = contentId;
-    this.showTab(tab);
+    // Edit Style from the inline editor with words selected goes to the Spans tab
+    this.showTab(tab === 'format' && textSel.range(contentId) ? 'spans' : tab);
     this.sync(true);
     if (anchor instanceof HTMLElement) this.pop.showFor(anchor, 'below');
     else this.pop.showAt(anchor.x, anchor.y);
     this.fit();
+    // a range picked in the inline editor stays picked: the Spans tab styles it
+    if (textSel.range(contentId)) return;
     this.area.focus();
     this.area.select();
   }
@@ -287,6 +307,7 @@ export class TextCard {
     if (!c || !c.text) return;
     const t = c.text;
     this.syncFonts(t);
+    this.rich.sync(t);
     if (first) this.faces.get(t.font)?.scrollIntoView({ block: 'nearest' });
     if (this.area.value !== t.text && document.activeElement !== this.area) this.area.value = t.text;
     // variants of the family

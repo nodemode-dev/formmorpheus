@@ -62,6 +62,9 @@ export class MovieSettings {
   private readonly playback = select(PLAYBACK);
   private readonly addKey = input('checkbox');
   private readonly loopVisible = input('checkbox');
+  private readonly mbOn = input('checkbox');
+  private readonly mbShutter = input('number');
+  private readonly mbSamples = input('number');
   private forceCustom = false;
   private readonly undoSteps = select(UNDO_STEPS);
   private readonly recentUndo = select([['100', '100%'], ['75', '75%'], ['50', '50%'], ['25', '25%'], ['10', '10%']]);
@@ -115,7 +118,8 @@ export class MovieSettings {
     this.panes[0].append(row('Name', this.name), row('Resolution', size), row('Frame rate', this.fps), this.fpsCustomRow, row('Duration', durWrap), row('', fitBtn));
 
     this.panes[1].append(this.stage.el);
-    this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)));
+    this.panes[2].append(row('Playback', this.playback), row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)), row('Motion blur', toggleOf(this.mbOn)), row('Shutter angle', this.mbShutter), row('Motion blur maximum samples', this.mbSamples));
+    this.mbShutter.min = '0'; this.mbShutter.max = '720'; this.mbSamples.min = '2'; this.mbSamples.max = '64';
     this.undoSteps.value = String(loadPrefs().undoDepth);
     this.undoSteps.addEventListener('change', () => {
       const p = updatePrefs({ undoDepth: Number(this.undoSteps.value) });
@@ -233,6 +237,11 @@ export class MovieSettings {
     this.playback.addEventListener('change', () => this.run('Playback', { playback: this.playback.value as PlaybackMode }));
     this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
+    const mb = (): void => {
+      const sh = this.mbShutter.valueAsNumber, sm = this.mbSamples.valueAsNumber;
+      this.run('Motion Blur', { motionBlur: { on: this.mbOn.checked, shutter: Number.isFinite(sh) ? sh : 180, samples: Number.isFinite(sm) ? sm : 16 } });
+    };
+    for (const n of [this.mbOn, this.mbShutter, this.mbSamples]) n.addEventListener('change', mb);
   }
 
   /** A new frame rate retimes every block and key to keep its length in seconds, so a movie with content asks first. */
@@ -274,5 +283,8 @@ export class MovieSettings {
     this.put(this.playback, m.playback, true);
     setChecked(this.addKey, m.addKeyAtStart);
     setChecked(this.loopVisible, !!m.loopVisible);
+    setChecked(this.mbOn, !!m.motionBlur?.on);
+    this.put(this.mbShutter, String(m.motionBlur?.shutter ?? 180), force);
+    this.put(this.mbSamples, String(m.motionBlur?.samples ?? 16), force);
   }
 }

@@ -1,0 +1,37 @@
+/* Effect stack, grouped Action menu lists and their search field. */
+.fm-fxs { margin: 0 var(--space-1) var(--space-2); padding: var(--space-2); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.fm-fxs[hidden], .fm-fxs-name[hidden], .fm-fxs-presets[hidden], .fm-fxs-row[hidden] { display: none; }
+.fm-fxs-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.fm-fxs-title { color: var(--text-secondary); font-size: var(--fs-11); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.fm-fxs-acts { display: inline-flex; gap: 4px; }
+.fm-fxs-btn { padding: 2px var(--space-2); border: 0; border-radius: var(--radius); background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: var(--fs-11); cursor: pointer; }
+.fm-fxs-btn:disabled { opacity: 0.4; cursor: default; }
+.fm-fxs-btn.is-primary { background: var(--accent-color); color: #fff; }
+.fm-fxs-name { display: flex; gap: var(--space-1); margin-top: var(--space-2); }
+.fm-fxs-in { flex: 1; min-width: 0; padding: 3px var(--space-2); border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12)); border-radius: var(--radius); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-12, 12px); }
+.fm-fxs-list { display: flex; flex-direction: column; margin-top: var(--space-1); }
+.fm-fxs-row { display: flex; align-items: center; border-radius: var(--radius); }
+.fm-fxs-row.is-dragging { background: var(--accent-soft); }
+.fm-fxs-grip { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); cursor: grab; touch-action: none; }
+.fm-fxs-row.is-dragging .fm-fxs-grip { cursor: grabbing; }
+.fm-fxs-open { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; height: 28px; padding: 0 var(--space-1); border: 0; border-radius: var(--radius); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-13, 13px); text-align: left; cursor: pointer; }
+.fm-fxs-open:hover { background: var(--accent-soft); }
+.fm-fxs-ico { display: inline-flex; color: var(--accent-color); }
+.fm-fxs-ico svg { width: 16px; height: 16px; }
+.fm-fxs-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-2); }
+.fm-fxs-chip { display: inline-flex; align-items: center; border-radius: 999px; background: var(--accent-soft); }
+.fm-fxs-apply { padding: 2px var(--space-2); border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-11); cursor: pointer; }
+.fm-fxs-del { display: inline-flex; padding: 3px 6px 3px 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.fm-fxs-del:hover { color: var(--text-primary); }
+
+/* the Content menu's Opacity and Volume boxes honor [hidden] (a sound has no Opacity) */
+.fm-cm-opacity[hidden] { display: none; }
+/* a long Action menu scrolls inside the window instead of running off the bottom */
+.fm-ka .fm-ka-view:not([hidden]) { max-height: calc(100vh - 150px); overflow-y: auto; overscroll-behavior: contain; }
+.fm-ka-search { margin: 0 var(--space-1) var(--space-1); }
+.fm-ka-search input { box-sizing: border-box; width: 100%; padding: 6px var(--space-2); border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12)); border-radius: var(--radius); background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-13, 13px); }
+.fm-ka-sub { display: grid; }
+.fm-ka-shead { padding: var(--space-2) var(--space-2) 2px; color: var(--text-secondary); font-size: var(--fs-11); font-weight: 600; }
+.fm-ka-shead[hidden], .fm-ka-krow.is-miss { display: none; }
+.fm-ka-empty { padding: var(--space-2); color: var(--text-secondary); font-size: var(--fs-12, 12px); }
+.fm-ka-empty[hidden] { display: none; }

@@ -11,6 +11,7 @@ const PATTERNS: Array<{ re: RegExp; key: string; kind: boolean }> = [
   { re: /^(.+) performance$/, key: '{name} performance', kind: true },
   { re: /^(.+) keyframe$/, key: '{name} keyframe', kind: true },
   { re: /^(.+) option$/, key: '{name} option', kind: true },
+  { re: /^Record (.+)$/, key: 'Record {name}', kind: false },
   { re: /^Add (.+)$/, key: 'Add {name}', kind: false },
 ];
 

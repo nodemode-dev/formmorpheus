@@ -13,6 +13,11 @@ import { Popover, popRow, popSep, type PopRow } from './popover';
 import { WarpCard } from './warp-card';
 import { warpMode } from './warp-view';
 import { bonesMode } from './bones-view';
+import '../engine/fx';
+import { eyedropButton } from './fx-stage-tools';
+import { ActionGroups, FILTER_GROUPS, MOTION_GROUPS } from './action-groups';
+import { FxStack } from './fx-stack';
+import { buildCurves, buildSwatch, groupHead, type CurvesExtra, type Swatch } from './fx-params';
 
 export const CLAPPER = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 6.4l16.8-3.3.8 3.9-16.8 3.3z"/><path d="M4 11h16v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8.4 4.6l1.6 3.2M13.6 3.6l1.6 3.2"/></svg>';
 const SPARKLE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4l1.8 4.6L16.4 10.4 11.8 12.2 10 16.8 8.2 12.2 3.6 10.4 8.2 8.6z"/><path d="M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg>';
@@ -63,6 +68,9 @@ interface Card {
   seg: Map<string, HTMLButtonElement>;
   toggles: Map<string, HTMLButtonElement>;
   extra?: WarpCard;
+  /** Registry effects: color swatches (by color id) and the curve editor. */
+  swatches?: Map<string, Swatch>;
+  curves?: CurvesExtra;
 }
 
 /** A card slider being recorded in Perform mode. */
@@ -84,11 +92,15 @@ export class ActionMenu {
   private readonly moveBtn: HTMLButtonElement;
   private readonly filterBtn: HTMLButtonElement;
   private readonly levelBtn: HTMLButtonElement;
+  /** Shape, Solid and Adjustment content: opens the Shape panel (ui/shape-panel.ts). */
+  private readonly shapeBtn: HTMLButtonElement;
   private readonly moveGrp: HTMLElement;
   private readonly filterGrp: HTMLElement;
   private readonly passHint: HTMLElement;
   private readonly cards = new Map<KeyKind, Card>();
   private readonly cardHost = el('<div class="fm-kc-host"></div>');
+  private readonly groups = new ActionGroups();
+  private readonly stack: FxStack;
   private view: View = 'action';
   private cardKind: KeyKind | null = null;
   private anchor: HTMLElement | null = null;
@@ -98,6 +110,7 @@ export class ActionMenu {
 
   constructor(private readonly engine: Engine, private readonly state: KeyState) {
     this.pop = new Popover('fm-ka');
+    this.stack = new FxStack(engine, (k) => this.choose(k));
     const action = el('<div class="fm-ka-view"><div class="fm-ka-title">Action</div><div class="fm-ka-btns"></div></div>');
     const btns = q(action, '.fm-ka-btns');
     const mk = (label: string, svg: string): HTMLButtonElement => {
@@ -112,19 +125,20 @@ export class ActionMenu {
     this.moveBtn.addEventListener('click', () => this.show('motion'));
     this.filterBtn.addEventListener('click', () => this.show('filter'));
     this.levelBtn.addEventListener('click', () => this.choose('volume'));
+    this.shapeBtn = mk('Shape', kindSpec('shape').icon);
+    this.shapeBtn.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'shape-options' })); });
+    setHidden(this.shapeBtn, true);
 
     const motion = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Motion</span></div><div class="fm-ka-list"></div></div>');
     q(motion, '.fm-ka-tico').innerHTML = kindSpec('move').icon;
     const mlist = q(motion, '.fm-ka-list');
-    mlist.appendChild(this.kindRow('move'));
-    mlist.appendChild(this.kindRow('warp'));
-    mlist.appendChild(this.kindRow('distort'));
-    mlist.appendChild(this.kindRow('bones'));
+    this.groups.fill(mlist, MOTION_GROUPS, ['move', 'warp', 'distort', 'bones', 'time', 'textanim'], (k) => this.kindRow(k));
 
     const filter = el('<div class="fm-ka-view" hidden><div class="fm-ka-title"><span class="fm-ka-tico"></span><span>Live Filters</span></div><div class="fm-ka-list"></div></div>');
     q(filter, '.fm-ka-tico').innerHTML = SPARKLE;
     const flist = q(filter, '.fm-ka-list');
-    for (const k of KEY_KINDS) if (k.group === 'filter') flist.appendChild(this.kindRow(k.kind));
+    this.groups.fill(flist, FILTER_GROUPS, KEY_KINDS.filter((k) => k.group === 'filter').map((k) => k.kind), (k) => this.kindRow(k));
+    flist.appendChild(this.groups.emptyNote);
 
     // one step: the Move and Live Filters lists sit in the Action menu itself, grouped
     const group = (title: string, list: HTMLElement): HTMLElement => {
@@ -138,6 +152,8 @@ export class ActionMenu {
     this.filterGrp = group('Live Filters', flist);
     this.passHint = el('<div class="fm-ka-hint" hidden><span class="fm-ka-hint-text">Filters need a normal blend. A Passthrough group has no picture of its own.</span><button class="fm-ka-hint-fix" type="button">Use Normal</button></div>');
     this.filterGrp.insertBefore(this.passHint, flist);
+    this.filterGrp.insertBefore(this.stack.root, flist);
+    action.insertBefore(this.groups.search, this.moveGrp);
     q(this.passHint, '.fm-ka-hint-fix').addEventListener('click', () => {
       const t = targetOf(this.engine);
       if (t) this.engine.run('Blend Mode', (m) => ops.patchContent(m, [t.c.id], { blend: 'normal' }));
@@ -168,8 +184,11 @@ export class ActionMenu {
     const audio = t.c.kind === 'audio';
     setHidden(this.moveGrp, audio);
     setHidden(this.filterGrp, audio);
+    setHidden(this.groups.search, audio);
     setHidden(this.levelBtn, !audio);
+    setHidden(this.shapeBtn, !(t.c.kind === 'shape' || t.c.kind === 'solid' || t.c.kind === 'adjust'));
     this.show('action');
+    this.groups.reset();
     this.paintKeyed();
     this.pop.showFor(anchor, 'above');
     this.reposition();
@@ -190,6 +209,7 @@ export class ActionMenu {
   editKey(anchor: HTMLElement, kind: KeyKind): void {
     const t = targetOf(this.engine);
     if (!t || kind === 'bones' || !laneOf(t.c, kind)) return;
+    if (kind === 'shape') { document.dispatchEvent(new CustomEvent('fm:command', { detail: 'shape-options' })); return; }
     this.anchor = anchor;
     this.cardTag = null;
     this.show('action');
@@ -228,13 +248,17 @@ export class ActionMenu {
   private paintKeyed(): void {
     const t = targetOf(this.engine);
     setHidden(this.passHint, !(t && t.c.kind === 'group' && t.c.blend === 'passthrough'));
+    this.stack.sync(t ? t.c : null);
     for (const [kind, r] of this.keyRows) {
       const on = !!t && laneOf(t.c, kind) !== null;
       setClass(r.wrap, 'is-keyed', on);
       setHidden(r.clear, !on);
+      if (kind === 'time') setHidden(r.wrap, !t || !(t.c.kind === 'video' || t.c.kind === 'flipbook' || t.c.kind === 'group'));
+      if (kind === 'textanim') setHidden(r.wrap, !t || t.c.kind !== 'text');
     }
+    this.groups.refresh();
     const has = (kinds: KeyKind[]): boolean => !!t && kinds.some((k) => laneOf(t.c, k) !== null);
-    setClass(this.moveBtn, 'is-keyed', has(['move', 'warp', 'distort', 'bones']));
+    setClass(this.moveBtn, 'is-keyed', has(['move', 'warp', 'distort', 'bones', 'time']));
     setClass(this.filterBtn, 'is-keyed', has(KEY_KINDS.filter((k) => k.group === 'filter').map((k) => k.kind)));
     setClass(this.levelBtn, 'is-keyed', has(['volume']));
   }
@@ -305,11 +329,32 @@ export class ActionMenu {
 
     const main = el('<div class="fm-kc-rows"></div>');
     const adv = el('<div class="fm-kc-rows fm-kc-adv" hidden></div>');
-    for (const ch of spec.channels) (ADVANCED.has(ch.id) ? adv : main).appendChild(this.rowFor(card, ch));
+    if (spec.fx) root.dataset.fx = '1';
+    const heads = new Map<HTMLElement, string>();
+    for (const ch of spec.channels) {
+      const box = ADVANCED.has(ch.id) || ch.adv ? adv : main;
+      if (ch.group && heads.get(box) !== ch.group) { heads.set(box, ch.group); box.appendChild(groupHead(ch.group)); }
+      if (ch.swatch) {
+        const sid = ch.swatch;
+        const sw = buildSwatch(ch.label.replace(/ red$/, ''), () => { this.tag = `kc-${Date.now()}`; }, (rgb) => this.write(kind, { [sid + 'R']: rgb[0], [sid + 'G']: rgb[1], [sid + 'B']: rgb[2] }), () => { this.engine.endGesture(); this.tag = null; });
+        (card.swatches ?? (card.swatches = new Map())).set(sid, sw);
+        if (sid === 'key') { sw.root.appendChild(eyedropButton(this.engine, 'Pick color from Stage')); sw.root.dataset.pick = '1'; }
+        main.appendChild(sw.root);
+      }
+      box.appendChild(this.rowFor(card, ch));
+    }
     root.appendChild(main);
-    if (adv.childElementCount || (spec.options ?? []).some((o) => !o.choices)) {
+    if (spec.custom === 'curves') {
+      card.curves = buildCurves({
+        begin: () => { this.tag = `kc-${Date.now()}`; },
+        end: () => { this.engine.endGesture(); this.tag = null; },
+        set: (id, value) => this.setOption(kind, id, value),
+      });
+      root.appendChild(card.curves.root);
+    }
+    if (adv.childElementCount || (spec.options ?? []).some((o) => !o.choices && !o.hidden)) {
       for (const opt of spec.options ?? []) {
-        if (opt.choices) continue;
+        if (opt.choices || opt.hidden) continue;
         const t = el<HTMLButtonElement>('<button class="fm-kc-toggle" type="button" role="switch" aria-checked="false"><span class="fm-kc-tlabel"></span><span class="fm-kc-switch"></span></button>');
         setText(q(t, '.fm-kc-tlabel'), opt.label);
         t.addEventListener('click', () => this.setOption(kind, opt.id, t.getAttribute('aria-checked') !== 'true'));
@@ -440,7 +485,7 @@ export class ActionMenu {
     this.engine.run(`${kindSpec(kind).label} option`, (m) => ops.updateContent(m, c.id, (cc) => {
       const base = laneOf(cc, kind) ? cc : ensureLane(cc, kind, local, m.addKeyAtStart, ease);
       return keyOps.setLaneOption(base, kind, id, value);
-    }));
+    }), this.tag);
   }
 
   /** Patch the open card to the values at the Playhead. */
@@ -467,7 +512,14 @@ export class ActionMenu {
       setText(row.pill, fmt(row.ch, v));
     }
     const spec = kindSpec(kind);
+    if (card.swatches) for (const [sid, sw] of card.swatches) sw.set([vals[sid + 'R'] ?? 0, vals[sid + 'G'] ?? 0, vals[sid + 'B'] ?? 0]);
+    if (card.curves) {
+      const o: Record<string, string | number | boolean> = {};
+      for (const opt of spec.options ?? []) o[opt.id] = lane?.options[opt.id] ?? opt.def;
+      card.curves.sync(o);
+    }
     for (const opt of spec.options ?? []) {
+      if (opt.hidden) continue;
       const cur = lane?.options[opt.id] ?? opt.def;
       if (opt.choices) for (const [choice, b] of card.seg) setClass(b, 'is-active', cur === choice);
       else {

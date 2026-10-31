@@ -1,0 +1,47 @@
+/* Shape panel and the Shape tool on the Stage. */
+.fm-shp { max-height: calc(100vh - var(--cv-status-h, 28px) - 16px); overflow-y: auto; }
+.fm-shp-title { font-size: var(--fs-14); font-weight: 600; color: var(--text-primary); }
+.fm-shp-rows { display: grid; gap: var(--space-2); }
+.fm-shp-row { grid-template-columns: 92px minmax(0, 1fr) 64px 24px; }
+.fm-shp-row.is-bare { grid-template-columns: minmax(0, 1fr) 60px 24px; }
+.fm-shp-row.is-bare .fm-shp-lab { display: none; }
+.fm-shp-row > :nth-child(2):last-child { grid-column: auto; }
+.fm-shp-lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-shp-key { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; }
+.fm-shp-key:hover { color: var(--text-primary); background: var(--accent-soft); }
+.fm-shp-key.is-keyed { color: var(--accent-color); }
+.fm-shp-key.is-keyed svg path { fill: currentColor; }
+.fm-shp-hint { color: var(--text-muted); font-size: var(--fs-12); line-height: 1.4; }
+.fm-shp-hint[hidden] { display: none; }
+.fm-shp-types { flex-wrap: wrap; }
+.fm-shp-stops { display: grid; gap: var(--space-2); }
+.fm-shp-stop { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; column-gap: var(--space-2); }
+.fm-shp-stop[hidden] { display: none; }
+.fm-shp-stopat { min-width: 0; }
+.fm-shp-del { width: 24px; padding: 0; }
+.fm-shp-mask { display: grid; gap: var(--space-2); }
+.fm-shp-keyc { color: var(--text-muted); font-size: var(--fs-12); }
+.fm-tc-mini.is-on { background: var(--accent-color); color: var(--text-on-accent, #fff); border-color: var(--accent-color); }
+
+/* Shape tool strip on the Stage */
+.fm-shtool { position: absolute; left: var(--space-3); top: 50%; transform: translateY(-50%); z-index: var(--z-selected); display: grid; gap: 2px; padding: 3px; border-radius: var(--radius-md); background: var(--bg-secondary); border: 1px solid var(--border-light); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); }
+.fm-shtool[hidden] { display: none; }
+.fm-shtool-btn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.fm-shtool-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.fm-shtool-btn.is-on { background: var(--accent-color); color: var(--text-on-accent, #fff); }
+.fm-shtool-btn .icon { display: block; }
+.fm-shtool-sep { height: 1px; margin: 2px 4px; background: var(--border-light); }
+.fm-shtool-sub { display: grid; gap: 2px; }
+.fm-shtool-sub[hidden] { display: none; }
+
+/* Draw preview and path node overlay (SVG over the Stage space) */
+.fm-shov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: var(--z-selected); }
+.fm-shov [hidden] { display: none; }
+.fm-stage.is-shape-tool .fm-stage-canvas, .fm-stage.is-shape-tool .fm-stage-box { cursor: crosshair; }
+.fm-shov-prev { fill: color-mix(in srgb, var(--accent-color) 18%, transparent); stroke: var(--accent-color); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.fm-shov-seg { fill: none; stroke: var(--accent-color); stroke-width: 1; opacity: 0.8; }
+.fm-shov-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: copy; }
+.fm-shov-node { fill: var(--bg-secondary); stroke: var(--accent-color); stroke-width: 1.75; pointer-events: all; cursor: grab; }
+.fm-shov-node.is-sel { fill: var(--accent-color); }
+.fm-shov-h { fill: var(--accent-color); stroke: var(--bg-secondary); stroke-width: 1; pointer-events: all; cursor: grab; }
+.fm-shov-stem { stroke: var(--accent-color); stroke-width: 1; opacity: 0.7; }

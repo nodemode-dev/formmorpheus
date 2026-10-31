@@ -29,6 +29,7 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { search?: string
   new MutationObserver(() => label()).observe(select, { childList: true, subtree: true });
   btn.title = select.title;
   select.classList.add('cv-dd-native');
+  select.tabIndex = -1;   // the button is the one tab stop
   select.after(btn);
   const host = document.getElementById('overlay-root');
   if (host) host.appendChild(pop); else document.body.appendChild(pop);

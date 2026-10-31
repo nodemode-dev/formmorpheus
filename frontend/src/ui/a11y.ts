@@ -59,6 +59,15 @@ function roles(n: HTMLElement): void {
   if (n.classList.contains('cv-tabs') && !n.hasAttribute('role')) { n.setAttribute('role', 'tablist'); if (!n.hasAttribute('aria-label')) n.setAttribute('aria-label', t('Movies')); }
   if (n.classList.contains('cv-st-bar') && !n.hasAttribute('aria-label')) n.setAttribute('aria-label', t('Progress'));
   if (n.classList.contains('cv-tab') && !n.hasAttribute('role')) n.setAttribute('role', 'tab');
+  if (n.classList.contains('cv-home-main') && !n.hasAttribute('role')) { n.setAttribute('role', 'main'); n.setAttribute('aria-label', t('Movies')); }
+  // The Home navigation is one tab stop; arrows move inside it (see onKey).
+  if (n.classList.contains('cv-home-nav') && !n.hasAttribute('data-rove')) {
+    n.setAttribute('data-rove', '');
+    const items = Array.from(n.querySelectorAll<HTMLElement>('.cv-home-nav-item, .cv-home-brand'));
+    const stop = n.querySelector<HTMLElement>('.cv-home-nav-item.is-active') ?? items[0];
+    for (const i of items) i.tabIndex = i === stop ? 0 : -1;
+    n.addEventListener('focusin', (e) => { const f = e.target; if (f instanceof HTMLElement && items.includes(f)) for (const i of items) i.tabIndex = i === f ? 0 : -1; });
+  }
   if (n.classList.contains('fm-tl-tracks')) {
     n.tabIndex = 0;
     n.setAttribute('role', 'application');
@@ -78,6 +87,8 @@ function syncInert(): void {
   set('.cv-main > .fm-stage-wrap', paintOn && !homeOn);
   set('.cv-main > .fm-stage-wrap > :not(.cv-home)', homeOn);
   set('.cv-main > .fm-paint', homeOn);
+  const skip = document.querySelector<HTMLElement>('.fm-skip'), mode = homeOn ? 'home' : paintOn ? 'paint' : 'timeline';
+  if (skip && skip.dataset.mode !== mode) { skip.dataset.mode = mode; skip.textContent = t(homeOn ? 'Skip to movies' : paintOn ? 'Skip to drawing tools' : 'Skip to Timeline'); }
 }
 
 function enhance(root: Element): void {
@@ -183,6 +194,25 @@ function onKey(e: KeyboardEvent): void {
       return;
     }
   }
+  // Home: arrows through the navigation column and across the file cards; Delete removes a card from its list.
+  const nav = target.closest<HTMLElement>('.cv-home-nav[data-rove]');
+  const card = target.closest<HTMLElement>('.cv-hf-open');
+  if (nav || card) {
+    const list = nav ? Array.from(nav.querySelectorAll<HTMLElement>('.cv-home-nav-item, .cv-home-brand')).filter((x) => x.getClientRects().length > 0)
+      : Array.from(card!.closest('.cv-home-page')?.querySelectorAll<HTMLElement>('.cv-hf-open') ?? []).filter((x) => x.getClientRects().length > 0);
+    const at = list.indexOf(target as HTMLElement);
+    const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (at >= 0 && step && !(nav && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))) {
+      e.preventDefault(); e.stopPropagation();
+      list[(at + step + list.length) % list.length].focus();
+      return;
+    }
+    if (card && e.key === 'Delete') {
+      const rm = card.parentElement?.querySelector<HTMLElement>('.cv-hf-remove');
+      if (rm && !rm.hidden) { e.preventDefault(); rm.click(); }
+      return;
+    }
+  }
   // Arrow keys across tabs.
   const tab = target.closest<HTMLElement>('[role="tab"]');
   if (tab && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End')) {
@@ -266,6 +296,23 @@ export function installA11y(engine: Engine): void {
   document.body.appendChild(host);
   live = host.firstElementChild as HTMLElement;
   const desc = host.lastElementChild as HTMLElement;
+  // A skip link, the first tab stop: past the menu bar and navigation straight to the movie cards (Home) or the Timeline.
+  const skip = document.createElement('button');
+  skip.type = 'button';
+  skip.className = 'fm-skip';
+  skip.textContent = t('Skip to movies');
+  document.body.insertBefore(skip, document.body.firstChild);
+  skip.addEventListener('click', () => {
+    const home = document.querySelector<HTMLElement>('.cv-home');
+    const paint = document.querySelector<HTMLElement>('.fm-paint');
+    // in Draw & Paint the Timeline is inert under the drawing surface: the link goes to the tools
+    const pick = home && !home.hidden
+      ? Array.from(home.querySelectorAll<HTMLElement>('.cv-home-page:not([hidden]) .cv-hf-open, .cv-home-page:not([hidden]) .cv-home-action, .cv-home-page:not([hidden]) .cv-th-select')).find((x) => x.getClientRects().length > 0)
+      : paint && !paint.hidden
+        ? Array.from(paint.querySelectorAll<HTMLElement>('.fm-paint-mode, .fm-paint-tool')).find((x) => x.getClientRects().length > 0)
+        : document.querySelector<HTMLElement>('.fm-tl-tracks');
+    pick?.focus();
+  });
   const toasts = document.getElementById('toast-root');
   if (toasts) { toasts.setAttribute('role', 'log'); toasts.setAttribute('aria-live', 'polite'); toasts.setAttribute('aria-relevant', 'additions'); }
 

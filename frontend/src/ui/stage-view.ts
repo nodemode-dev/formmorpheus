@@ -19,6 +19,7 @@ import { BonesOverlay, bonesMode } from './bones-view';
 import { PathView } from './path-view';
 import { mapPt, screenMat, stageMovie, unmapPt } from './stage-world';
 import { CameraOverlay, cameraMode } from './camera-view';
+import { FxStageTools } from './fx-stage-tools';
 import type { Mat } from '../engine/transform';
 import * as tops from '../engine/transform-ops';
 import { icon } from './icons';
@@ -27,9 +28,13 @@ import { anchorMode } from './anchor-mode';
 import { boxOf, frameLines, snapAngle, snapBox, type Box } from './stage-snap';
 import { fontEpoch, layoutText } from '../engine/text-layout';
 import { TextStage } from './text-stage';
+import { ShapeStage } from './shape-stage';
+import { stageBox } from '../engine/shape-ops';
 import type { TextStyle } from '../engine/types';
 import { GestureCache } from './stage-gesture-cache';
 import { Fringe } from './stage-fringe';
+import { StageGuides } from './stage-guides';
+import { guideLines } from '../engine/guides';
 import { DragCache, pictureSig, sameSig } from './stage-drag-cache';
 import '../styles/stage-box.css';
 
@@ -38,6 +43,9 @@ function textCentre(s: TextStyle, m: Movie): { x: number; y: number } {
   const r = layoutText(s, m).inner;
   return { x: r.x + r.w / 2 - m.width / 2, y: r.y + r.h / 2 - m.height / 2 };
 }
+
+/** Content with a picture to grab on the Stage: not a sound, and not an Adjustment that has no mask outline. */
+const boxed = (c: Content): boolean => c.kind !== 'audio' && !(c.kind === 'adjust' && !c.shape);
 
 /** Side node directions in handle order: top, right, bottom, left. */
 const SIDES: ReadonlyArray<{ axis: 'x' | 'y'; sign: 1 | -1 }> = [{ axis: 'y', sign: -1 }, { axis: 'x', sign: 1 }, { axis: 'y', sign: 1 }, { axis: 'x', sign: -1 }];
@@ -92,6 +100,9 @@ export class StageView {
   private readonly bones: BonesOverlay;
   private readonly paths: PathView;
   private readonly camera: CameraOverlay;
+  /** Grid, thirds, safe areas, guide lines and rulers (ui/stage-guides.ts). */
+  private readonly guides: StageGuides;
+  private readonly fxTools: FxStageTools;
   private view: View | null = null;
   /** The last picture can stand in during a view gesture; any other change marks it stale. */
   private readonly gesture: GestureCache;
@@ -116,6 +127,10 @@ export class StageView {
   private readonly boxMenu: StageBoxMenu;
   private nudgeTimer = 0;
   private readonly textStage: TextStage;
+  /** The Shape tool, pen and path node editing (ui/shape-stage.ts); the app drives its tool from commands. */
+  readonly shapeStage: ShapeStage;
+  /** Set by the app: opens the Shape panel near a screen point. */
+  onEditShape: ((id: string, x: number, y: number) => void) | null = null;
   /** Set by the app: opens the Text style card for an id near a screen point. */
   onEditTextStyle: ((id: string, x: number, y: number) => void) | null = null;
 
@@ -149,6 +164,8 @@ export class StageView {
     };
     anchorMode.onChange(() => this.schedule());
     this.camera = new CameraOverlay(this.space, engine);
+    this.guides = new StageGuides(this.space, this.root, engine, { local: (e) => this.nav.local(e), turned: () => this.nav.spaceBox().deg !== 0 });
+    this.fxTools = new FxStageTools(this.root, this.space, engine, renderer, this.nav);
     cameraMode.onChange(() => this.schedule());
     warpMode.onChange(() => this.schedule());
     this.textStage = new TextStage(this.space, engine, {
@@ -159,6 +176,7 @@ export class StageView {
       editStyle: (id, x, y) => this.onEditTextStyle?.(id, x, y),
       focus: () => this.root.focus({ preventScroll: true }),
     });
+    this.shapeStage = new ShapeStage(this.space, this.root, engine, { view: () => this.view, point: (e) => this.nav.local(e), focus: () => this.root.focus({ preventScroll: true }) });
     window.addEventListener('fm:fonts', () => { this.frames.clear(); this.hard = true; this.schedule(); });
     const dbl = (e: MouseEvent): void => {
       const m = this.engine.movie;
@@ -166,6 +184,7 @@ export class StageView {
       const id = this.pick(m, ...this.nav.local(e));
       const c = id ? locate(m, id)?.content : null;
       if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); this.textStage.showMenu(e.clientX, e.clientY); }
+      else if (id && c && (c.kind === 'shape' || c.kind === 'solid')) { this.engine.select([id]); this.onEditShape?.(id, e.clientX, e.clientY); }
     };
     this.root.addEventListener('dblclick', dbl);
     this.bones = new BonesOverlay(this.space, engine);
@@ -288,12 +307,14 @@ export class StageView {
     this.view = { scale: view.scale / this.dpr, ox: view.ox / this.dpr, oy: view.oy / this.dpr, width: this.width, height: this.height };
     if (reuse) {
       this.camera.sync(preview ? null : this.view);
+      this.guides.sync(this.view, preview);
       this.drawBox(m);
       return;
     }
     setText(this.tc, stamp(this.engine.frame, m.fps));
     this.tc.hidden = preview || m.timecode === false;
     this.camera.sync(preview ? null : this.view);
+    this.guides.sync(this.view, preview);
     this.drawBox(m);
   }
 
@@ -363,8 +384,18 @@ export class StageView {
 
   private keyed(): boolean { return this.engine.mode !== 'compose'; }
 
+  /** Whether `c` is posed by its keys: any Keyframe or Perform mode, or Compose for a block that already has a Move lane (its box follows the keyed pose and a drag keys it). */
+  private keyedFor(c: Content | undefined): boolean {
+    return this.keyed() || (!!c && laneOf(c, 'move') !== null);
+  }
+
+  private keyedIds(ids: string[]): boolean {
+    const m = this.engine.movie;
+    return this.keyed() || (!!m && ids.some((id) => this.keyedFor(locate(m, id)?.content)));
+  }
+
   private pose(c: Content): Pose {
-    if (this.keyed()) {
+    if (this.keyedFor(c)) {
       const a = animate(c, this.engine.frame - c.start);
       const kx = c.transform.stretchX ?? 1, ky = c.transform.stretchY ?? 1;
       return { x: a.x, y: a.y, sx: a.scaleX / kx, sy: a.scaleY / ky, rot: a.rotation, px: a.px, py: a.py, kx, ky, fx: a.flipH ? -1 : 1, fy: a.flipV ? -1 : 1 };
@@ -400,7 +431,8 @@ export class StageView {
     const hw = (size.w / 2) * t.sx * t.kx * v.scale, hh = (size.h / 2) * t.sy * t.ky * v.scale;
     const a = (t.rot * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
     const S = this.sm(m, c);
-    const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : canvasCentreOffset(c, m);
+    const sb = stageBox(c, this.engine.frame, m);
+    const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : sb ? { x: sb.cx, y: sb.cy } : canvasCentreOffset(c, m);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x0, y0]) => {
       // the box centre is the canvas centre, which sits off the movie centre for a Drawing with its own canvas
       const x = x0 + (dc.x * v.scale - pvx) * t.sx * t.kx * t.fx, y = y0 + (dc.y * v.scale - pvy) * t.sy * t.ky * t.fy;
@@ -409,6 +441,8 @@ export class StageView {
   }
 
   private extent(m: Movie, c: Content): { w: number; h: number } {
+    const sb = stageBox(c, this.engine.frame, m);
+    if (sb) return { w: sb.w, h: sb.h };
     if (c.kind === 'image' && c.asset && m.assets[c.asset]) return { w: m.assets[c.asset].width, h: m.assets[c.asset].height };
     if (c.kind === 'text' && c.text) {
       const r = layoutText(c.text, m).inner;
@@ -420,11 +454,13 @@ export class StageView {
 
   private drawBox(m: Movie): void {
     // a sound has no picture: no transform box
-    const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
+    const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
     this.textStage.sync();
+    this.shapeStage.sync();
     const warpShown = this.warp.sync(this.view, sel), bonesShown = this.bones.sync(this.view, sel);
     const handles = warpShown || bonesShown;
     this.paths.sync(handles ? null : this.view, sel);
+    this.fxTools.sync(handles ? null : this.view, sel);
     const show = sel.length === 1 && !!this.view && !handles;
     hideSvg(this.box, !show);
     setClass(this.box as unknown as HTMLElement, 'is-keyed', this.keyed());
@@ -463,7 +499,7 @@ export class StageView {
     if (!m || !v || e.button !== 0 || this.grab || this.nav.preview) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
-    const sel = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
+    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
     const tag = `stage-${Date.now()}`;
     this.root.focus({ preventScroll: true });
     if (sel.length === 1 && target.closest('.fm-box-more')) {
@@ -492,7 +528,7 @@ export class StageView {
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
       // Perform keeps its one content when the pen lands off it: the take is a drag, not a click
       if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) { this.engine.select([]); return; }
-      const ids = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c)).map((c) => c.id);
+      const ids = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c)).map((c) => c.id);
       if (!ids.length) return;
       const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
       const anchors = new Map(ids.map((id) => {
@@ -609,7 +645,7 @@ export class StageView {
     for (const t of m.tracks) {
       if (t.hidden) continue;
       const c = t.content.find((it) => this.engine.frame >= it.start && this.engine.frame < end(it));
-      if (!c || c.kind === 'audio') continue;
+      if (!c || !boxed(c)) continue;
       if (inside(this.corners(m, c), x, y)) return c.id;
     }
     return null;
@@ -642,10 +678,18 @@ export class StageView {
           const nx = first.x + dx, ny = first.y + dy;
           for (const target of [0, -m.width / 4, m.width / 4]) if (Math.abs(nx - target) < tol) { dx = target - first.x; snapV = m.width / 2 + target; break; }
           for (const target of [0, -m.height / 4, m.height / 4]) if (Math.abs(ny - target) < tol) { dy = target - first.y; snapH = m.height / 2 + target; break; }
+          // guides pull the content's edges and centre (the frame's own centre and quarters win when both are near)
+          const gl = guideLines(m.width, m.height, m.guides);
+          if (g.snap && (gl.xs.length || gl.ys.length)) {
+            const b = g.snap.box;
+            const s = snapBox({ l: b.l + dx, t: b.t + dy, r: b.r + dx, b: b.b + dy }, snapV === null ? gl.xs : [], snapH === null ? gl.ys : [], tol);
+            if (snapV === null && s.gx !== null) { dx += s.dx; snapV = s.gx; }
+            if (snapH === null && s.gy !== null) { dy += s.dy; snapH = s.gy; }
+          }
         }
       }
       this.snapLines(m, v, snapV, snapH);
-      if (this.keyed()) {
+      if (this.keyedIds(g.ids)) {
         this.writeKeys('Move Keyframe', g.ids, (id) => { const b = g.base.get(id) as Pose; const [ex, ey] = id === g.ids[0] ? [dx, dy] : this.moveDelta(g, m, id, x, y, v); return { x: Math.round(b.x + ex), y: Math.round(b.y + ey), scaleX: b.sx, scaleY: b.sy, rotation: b.rot }; }, g.tag);
         return;
       }
@@ -660,7 +704,7 @@ export class StageView {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       const ratio = Math.hypot(x - cx, y - cy) / g.d0;
-      if (this.keyed()) {
+      if (this.keyedIds([g.id])) {
         const sx = Math.round(Math.max(0.01, b.sx * ratio) * 1000) / 1000, sy = Math.round(Math.max(0.01, b.sy * ratio) * 1000) / 1000;
         this.writeKeys('Scale Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: sx, scaleY: sy, rotation: b.rot }), g.tag);
         return;
@@ -671,8 +715,8 @@ export class StageView {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
       let deg = b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
-      if (snapMod(e)) deg = snapAngle(deg, this.keyed() ? 30 : 15);
-      if (this.keyed()) {
+      if (snapMod(e)) deg = snapAngle(deg, this.keyedIds([g.id]) ? 30 : 15);
+      if (this.keyedIds([g.id])) {
         const r = Math.round(deg * 10) / 10;
         this.writeKeys('Rotate Keyframe', [g.id], () => ({ x: b.x, y: b.y, scaleX: b.sx, scaleY: b.sy, rotation: r }), g.tag);
         return;
@@ -697,6 +741,8 @@ export class StageView {
     if (!first) return undefined;
     const toMovie = (pts: [number, number][]): Box => boxOf(pts.map(([px, py]) => [(px - v.ox) / v.scale, (py - v.oy) / v.scale] as const));
     const { xs, ys } = frameLines(m.width, m.height);
+    const gl = guideLines(m.width, m.height, m.guides);
+    xs.push(...gl.xs); ys.push(...gl.ys);
     for (const t of m.tracks) {
       if (t.hidden) continue;
       for (const c of t.content) {
@@ -726,12 +772,13 @@ export class StageView {
     let s = (u - aOpp) / (grabbed - opposite);
     const floor = 0.02 * base;
     // Compose lets the side cross the opposite one (a flip); keyed modes stop at a sliver
-    if (this.keyed()) s = Math.max(floor, s * f) * f;
+    const keyedNow = this.keyedFor(c);
+    if (keyedNow) s = Math.max(floor, s * f) * f;
     else if (Math.abs(s) < floor) s = (s < 0 ? -1 : 1) * floor;
     const shift = aOpp - s * (opposite - pv);
     const nx = b.x + (g.axis === 'x' ? shift * cs : -shift * sn), ny = b.y + (g.axis === 'x' ? shift * sn : shift * cs);
     const round = (n: number): number => Math.round(n);
-    if (this.keyed()) {
+    if (keyedNow) {
       const mag = Math.round((Math.abs(s) / k) * 1000) / 1000;
       this.writeKeys('Stretch Keyframe', [g.id], () => ({ x: round(nx), y: round(ny), scaleX: g.axis === 'x' ? mag : b.sx, scaleY: g.axis === 'y' ? mag : b.sy, rotation: b.rot }), g.tag);
       return;
@@ -761,10 +808,10 @@ export class StageView {
   /** Move the selection by movie pixels; a burst of nudges is one undo step. */
   nudge(dx: number, dy: number): void {
     const m = this.engine.movie;
-    const sel = this.engine.selected.filter((c) => c.kind !== 'audio' && this.engine.isOver(c));
+    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
     if (!m || !sel.length) return;
     const ids = sel.map((c) => c.id), tag = `nudge-${ids.join()}`;
-    if (this.keyed()) {
+    if (this.keyedIds(ids)) {
       const base = new Map(sel.map((c) => [c.id, this.pose(c)]));
       this.writeKeys('Nudge Keyframe', ids, (id) => { const b = base.get(id) as Pose; return { x: b.x + dx, y: b.y + dy, scaleX: b.sx, scaleY: b.sy, rotation: b.rot }; }, tag);
     } else {

@@ -8,6 +8,8 @@ import type { Content } from '../engine/types';
 import { ensureTextFont } from '../media/fonts';
 import { setClass } from './dom';
 import { TextEditMenu } from './text-edit-menu';
+import { RichCaret } from './text-rich-edit';
+import { diffText, shiftRuns } from '../engine/text-rich';
 
 /** What the Stage lends the text tools. */
 export interface TextStageHooks {
@@ -26,6 +28,7 @@ export interface TextStageHooks {
 export class TextStage {
   private readonly ta = document.createElement('textarea');
   private readonly menu = new TextEditMenu();
+  private readonly caret: RichCaret;
   private id = '';
   private drag: { id: string; sign: 1 | -1; pointer: number; tag: string } | null = null;
   private readonly onMove = (e: PointerEvent): void => this.moveWrap(e);
@@ -39,6 +42,8 @@ export class TextStage {
     ta.setAttribute('aria-label', 'Edit text');
     ta.wrap = 'off';
     space.appendChild(ta);
+    // caret and selection drawn from the shared layout once the text has styled spans; also reports the selection to the Spans tab
+    this.caret = new RichCaret(space, ta, () => { /* the Stage redraws on the movie change */ });
     ta.addEventListener('input', () => this.push());
     ta.addEventListener('blur', () => this.stop());
     ta.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -84,6 +89,7 @@ export class TextStage {
     this.id = '';
     this.engine.endGesture();
     this.ta.hidden = true;
+    this.caret.stop();
   }
 
   /** The typed text goes into the movie as one merged undo step. */
@@ -94,7 +100,11 @@ export class TextStage {
     this.engine.run('Edit Text', (m) => ops.updateContent(m, id, (c) => {
       if (!c.text) return c;
       void ensureTextFont({ ...c.text, text: value }); // brings in the faces of any other script typed
-      return { ...c, name: value.split('\n')[0].slice(0, 40) || c.name, text: { ...c.text, text: value } };
+      // spans follow the edit (engine/text-rich.ts shiftRuns)
+      const d = diffText(c.text.text, value), runs = shiftRuns(c.text.runs, d.at, d.removed, d.added);
+      const next = { ...c.text, text: value, ...(runs ? { runs } : {}) };
+      if (!runs) delete next.runs;
+      return { ...c, name: value.split('\n')[0].slice(0, 40) || c.name, text: next };
     }), `text-${id}-text`);
   }
 
@@ -121,6 +131,7 @@ export class TextStage {
     if (!m || !v || !at || !s) return;
     const lay = layoutText(s, m);
     const pts = this.hooks.corners(at.content);
+    this.caret.update(this.id, s, lay, pts as Array<[number, number]>);
     const iw = Math.max(1, lay.inner.w), ih = Math.max(1, lay.inner.h);
     const ex = [(pts[1][0] - pts[0][0]) / iw, (pts[1][1] - pts[0][1]) / iw], ey = [(pts[3][0] - pts[0][0]) / ih, (pts[3][1] - pts[0][1]) / ih];
     const slack = s.size;

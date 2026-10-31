@@ -3,6 +3,7 @@ import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import { browserHasAac } from '../export/run';
 import { startExportAuto as startExport } from '../export/worker-host';
+import { AUDIO_BPS, movieFrameAt, outFps, stepsFor } from '../export/delivery';
 import { jobCapabilities, startEngineExport, type EngineTarget, type JobCapabilities } from '../export/engine-jobs';
 import { pictureHasAlpha } from '../export/still-formats';
 import type { AudioKind, ExportFormat, ExportJob, ExportOptions, ExportProgress, PictureExt, ProresProfile } from '../export/types';
@@ -10,9 +11,11 @@ import { ExportPreview, type PreviewSpec } from './export-preview';
 import { parseTime, timecode } from '../engine/time';
 import { downloadBlob } from '../io/api';
 import { Dialog } from './dialogs';
+import { ExportExtras } from './export-extra';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 import { t } from './i18n';
 import { toast } from './toast';
+import { AudioExportDialog } from './audio-export-dialog';
 
 const KEY = 'formmorpheus.export';
 
@@ -29,7 +32,7 @@ type Tab = 'share' | 'advanced';
 type Preset = 'movie' | '480' | '720' | '1080' | '2160' | 'custom';
 type Quality = ExportOptions['quality'];
 type Gif = ExportOptions['gif'];
-type Kind = 'video' | 'gif' | 'still' | 'frames';
+type Kind = 'video' | 'gif' | 'still' | 'frames' | 'webp-anim' | 'apng' | 'psd';
 type Codec = 'h264' | 'hevc' | 'prores' | 'vp9';
 type Container = 'mp4' | 'mov' | 'webm';
 
@@ -40,7 +43,7 @@ interface Saved {
   frameMs: number; smoothness: number; intensity: number; tab: Tab;
 }
 
-const KINDS: { id: Kind; label: string }[] = [{ id: 'video', label: 'Video' }, { id: 'gif', label: 'Animated GIF' }, { id: 'still', label: 'Current frame' }, { id: 'frames', label: 'Frames as images' }];
+const KINDS: { id: Kind; label: string }[] = [{ id: 'video', label: 'Video' }, { id: 'gif', label: 'Animated GIF' }, { id: 'webp-anim', label: 'Animated WebP' }, { id: 'apng', label: 'Animated PNG' }, { id: 'still', label: 'Current frame' }, { id: 'psd', label: 'Layered PSD (current frame)' }, { id: 'frames', label: 'Frames as images' }];
 const CODECS: { id: Codec; label: string }[] = [{ id: 'h264', label: 'H.264' }, { id: 'hevc', label: 'HEVC (H.265)' }, { id: 'prores', label: 'Apple ProRes' }, { id: 'vp9', label: 'VP9 (WebM)' }];
 const PROFILES: { id: ProresProfile; label: string }[] = [
   { id: 'proxy', label: 'ProRes 422 Proxy' }, { id: 'lt', label: 'ProRes 422 LT' }, { id: '422', label: 'ProRes 422' }, { id: 'hq', label: 'ProRes 422 HQ' },
@@ -115,6 +118,7 @@ const TILES: Tile[] = [
   { id: 'png-frames', label: 'Frames as images', sub: 'A PNG for every frame', icon: TILE_ICONS.frames },
   { id: 'still', label: 'Current frame', sub: 'A single PNG still', icon: TILE_ICONS.still },
   { id: 'fmo', label: 'Movie file', sub: 'Smaller, keep editing (.fmo)', icon: TILE_ICONS.fmo },
+  { id: 'audio', label: 'Sound only', sub: 'WAV, M4A, Opus, or one file per track', icon: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>') },
   { id: 'fmo-history', label: 'Movie file with full history', sub: 'Every undo step (.fmo)', icon: TILE_ICONS.fmo },
 ];
 
@@ -123,6 +127,13 @@ const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 export class ExportDialog {
   private readonly dlg = new Dialog('Export', 960);
   private readonly state: Saved = load();
+  private readonly extras: ExportExtras = new ExportExtras({
+    applyKind: (p) => this.applyKind(p),
+    current: () => ({ kind: this.state.kind, codec: this.state.codec, container: this.state.container, quality: this.state.quality }),
+    changed: () => { this.readForm(); this.sync(); },
+    measure: () => this.measureSize(),
+  });
+  private sampleJob: ExportJob | null = null;
   private readonly rows = new Map<string, HTMLElement>();
   private readonly tabs: HTMLButtonElement[] = [];
   private readonly shareBox = el<HTMLElement>('<div class="fm-ex-tiles"></div>');
@@ -178,6 +189,7 @@ export class ExportDialog {
   }
   private engineJob: ReturnType<Engine['startJob']> | null = null;
   private busy = false;
+  private audioDlg: AudioExportDialog | null = null;
   private aspect = 16 / 9;
 
   constructor(private readonly deps: ExportDeps) {
@@ -199,7 +211,10 @@ export class ExportDialog {
       b.addEventListener('click', () => this.quick(t.id));
       this.shareBox.appendChild(b);
     }
-    this.preview = new ExportPreview({ movie: () => this.deps.engine.movie, renderer: this.deps.renderer });
+    this.preview = new ExportPreview({
+      movie: () => this.deps.engine.movie, renderer: this.deps.renderer,
+      onFocus: (x, y) => { this.extras.setFocus(x, y); this.readForm(); this.sync(); },
+    });
     this.buildAdvanced();
     this.advBox.append(this.preview.root, this.formBox);
     body.append(seg, this.shareBox, this.advBox, this.runBox, this.notes);
@@ -221,7 +236,38 @@ export class ExportDialog {
     if (this.state.tab === 'advanced') this.autoPreview();
   }
 
-  close(): void { this.dlg.close(); }
+  close(): void { this.sampleJob?.cancel(); this.dlg.close(); }
+
+  /** A short sample of the current settings is encoded and the whole file's size is worked out from it (the Measure button). */
+  private async measureSize(): Promise<{ bytes: number; key: string } | null> {
+    const movie = this.deps.engine.movie;
+    if (!movie || this.sampleJob) return null;
+    this.readForm();
+    const o = this.build();
+    if (ENGINE[o.format] || o.format === 'psd' || o.format === 'png-still') return null;
+    const key = this.optsKey(o);
+    const total = stepsFor(o, movie.fps), rate = outFps(o, movie.fps);
+    const take = Math.min(total, Math.max(6, Math.round(rate * 1.5)));
+    const i0 = Math.max(0, Math.floor((total - take) / 2));
+    const first = movieFrameAt(i0, o, movie.fps);
+    const span = Math.max(2, Math.ceil((take * movie.fps) / rate));
+    const from = Math.max(o.from, Math.min(first, o.to - 1)), to = Math.min(o.to, from + span);
+    if (to <= from) return null;
+    const sample: ExportOptions = { ...o, from, to, pingpong: false, includeAudio: false, targetBytes: undefined };
+    const job = startExport({ movie, renderer: this.deps.renderer, audio: null }, sample);
+    this.sampleJob = job;
+    try {
+      const res = await job.result;
+      const per = res.blob.size / stepsFor(sample, movie.fps);
+      const sec = total / rate;
+      return { bytes: per * total + (o.includeAudio ? (AUDIO_BPS / 8) * sec : 0), key };
+    } catch { return null; } finally { this.sampleJob = null; }
+  }
+
+  /** The settings that decide a file's size (a watermark picture counts by its length). */
+  private optsKey(o: ExportOptions): string {
+    return JSON.stringify({ ...o, watermark: o.watermark ? { ...o.watermark, image: o.watermark.image ? o.watermark.image.length : 0 } : undefined });
+  }
 
   private caps: JobCapabilities | null = null;
 
@@ -291,6 +337,7 @@ export class ExportDialog {
     const chipsRow = this.row('chips', '', this.palChips);
     const F = this.formBox;
     F.append(
+      ...this.extras.rows.slice(1, 3),
       this.row('kind', 'Format', this.kind),
       this.row('codec', 'Video codec', this.codec),
       this.row('profile', 'ProRes type', this.profile),
@@ -306,6 +353,7 @@ export class ExportDialog {
       this.row('audiokind', 'Audio encoding', this.audioKind),
       this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background')),
       this.row('quality', 'Quality', this.quality),
+      ...this.extras.rows.slice(3),
       gifHead,
       this.row('duration', 'Frame duration', this.duration),
       this.row('gmode', 'Playback', this.gmode),
@@ -340,8 +388,9 @@ export class ExportDialog {
       this.palette.value = list.join(' ');
       change();
     });
-    this.width.addEventListener('input', () => this.dim('w'));
-    this.height.addEventListener('input', () => this.dim('h'));
+    this.preset.addEventListener('change', () => this.extras.clearSize());
+    this.width.addEventListener('input', () => { this.extras.clearSize(); this.dim('w'); });
+    this.height.addEventListener('input', () => { this.extras.clearSize(); this.dim('h'); });
   }
 
   /** The palette's colors as small swatches, patched in place (click one to remove it). */
@@ -428,7 +477,7 @@ export class ExportDialog {
     s.intensity = num(this.intensity.valueAsNumber, 0, 100, 50);
     s.palOn = this.palOn.checked;
     // the GIF Playback control and the video one are the same choice: whichever is on screen wins
-    s.pingpong = (s.kind === 'gif' ? this.gmode : this.mode).value === 'pingpong';
+    s.pingpong = (s.kind === 'gif' || s.kind === 'webp-anim' || s.kind === 'apng' ? this.gmode : this.mode).value === 'pingpong';
     // video: the container follows the codec
     if (s.codec === 'prores') s.container = 'mov'; else if (s.codec === 'vp9') s.container = 'webm'; else if (s.container === 'webm') s.container = 'mp4';
     this.container.value = s.container;
@@ -454,16 +503,42 @@ export class ExportDialog {
     const s = this.state;
     const video = VIDEO.includes(this.format());
     const fix = (w: number, h: number): [number, number] => (video ? [even(w), even(h)] : [Math.max(1, Math.round(w)), Math.max(1, Math.round(h))]);
-    if (s.preset === 'movie') return fix(m.width, m.height);
-    if (s.preset === 'custom') return fix(s.customW, s.customH);
+    // a delivery preset's box or long edge, and the resolution scale, apply on top of the resolution choice
+    const dx = (w: number, h: number): [number, number] => this.extras.size([w, h], video);
+    if (s.preset === 'movie') return dx(m.width, m.height);
+    if (s.preset === 'custom') return dx(s.customW, s.customH);
     const short = Number(s.preset) || 1080, k = short / Math.min(m.width, m.height);
-    return fix(m.width * k, m.height * k);
+    return dx(...fix(m.width * k, m.height * k));
+  }
+
+  /** What the delivery rows need to know to show their size estimate. */
+  private extraInfo(w: number, h: number) {
+    const m = this.deps.engine.movie as NonNullable<Engine['movie']>;
+    const s = this.state, r = this.range(), n = r.to - r.from;
+    return {
+      kind: s.kind, codec: s.codec, width: w, height: h, baseSteps: s.pingpong && n >= 3 ? n + n - 2 : n, movieFps: m.fps,
+      audio: s.audio && this.audioKindOn(), quality: s.quality, alpha: s.alpha && m.transparent, picture: s.kind === 'still' || s.kind === 'frames' ? s.picture : undefined,
+      layers: m.tracks.filter((t) => !t.hidden && t.content.some((c) => r.from >= c.start && r.from < c.start + c.duration)).length,
+      aspect: m.width / m.height,
+    };
+  }
+
+  private audioKindOn(): boolean { return this.state.kind === 'video'; }
+
+  /** A delivery preset picks a format: set the dialog's own controls to match. */
+  private applyKind(p: { kind?: string; codec?: string; container?: string; quality?: ExportOptions['quality'] }): void {
+    const s = this.state;
+    if (p.kind) { s.kind = p.kind as Kind; this.kind.value = s.kind; }
+    if (p.codec) { s.codec = p.codec as Codec; this.codec.value = s.codec; }
+    if (p.container) { s.container = p.container as Container; this.container.value = s.container; }
+    if (p.quality) { s.quality = p.quality; this.quality.value = s.quality; }
+    this.sync();
   }
 
   private range(): { from: number; to: number; error: string } {
     const m = this.deps.engine.movie;
     if (!m) return { from: 0, to: 1, error: '' };
-    if (this.state.kind === 'still') { const f = Math.min(Math.max(0, this.deps.engine.frame), Math.max(0, m.duration - 1)); return { from: f, to: f + 1, error: '' }; }
+    if (this.state.kind === 'still' || this.state.kind === 'psd') { const f = Math.min(Math.max(0, this.deps.engine.frame), Math.max(0, m.duration - 1)); return { from: f, to: f + 1, error: '' }; }
     if (this.rangeSel.value === 'whole') return { from: 0, to: Math.max(1, m.duration), error: '' };
     const a = parseTime(this.inField.value, m.fps), b = parseTime(this.outField.value, m.fps);
     if (a === null || b === null) return { from: 0, to: Math.max(1, m.duration), error: 'Type the in and out as timecodes, for example 00:02:00 or 48.' };
@@ -478,8 +553,8 @@ export class ExportDialog {
     const m = this.deps.engine.movie;
     if (!m) return;
     const s = this.state, show = (id: string, on: boolean): void => { const r = this.rows.get(id); if (r) setHidden(r, !on); };
-    const still = s.kind === 'still', gif = s.kind === 'gif', video = s.kind === 'video', frames = s.kind === 'frames';
-    const pic = still || frames;
+    const still = s.kind === 'still' || s.kind === 'psd', gif = s.kind === 'gif' || s.kind === 'webp-anim' || s.kind === 'apng', video = s.kind === 'video', frames = s.kind === 'frames';
+    const pic = s.kind === 'still' || frames;
     show('codec', video);
     show('profile', video && s.codec === 'prores');
     show('container', video);
@@ -492,13 +567,14 @@ export class ExportDialog {
     show('audio', video);
     show('audiokind', video && this.audio.checked);
     show('alpha', m.transparent && this.alphaOk());
-    show('quality', (video && s.codec !== 'prores') || (pic && (s.picture === 'jpg' || s.picture === 'webp')));
-    for (const id of ['gifhead', 'duration', 'dither', 'colorstep', 'palon', 'loop']) show(id, gif);
-    show('smooth', gif && s.dither === 'ordered');
-    show('intensity', gif && s.dither === 'ordered');
-    show('palette', gif && s.palOn);
-    show('chips', gif && s.palOn);
-    show('threshold', gif && m.transparent && this.alpha.checked);
+    show('quality', (video && s.codec !== 'prores') || (pic && (s.picture === 'jpg' || s.picture === 'webp')) || s.kind === 'webp-anim');
+    const isGif = s.kind === 'gif';
+    for (const id of ['gifhead', 'duration', 'dither', 'colorstep', 'palon', 'loop']) show(id, isGif);
+    show('smooth', isGif && s.dither === 'ordered');
+    show('intensity', isGif && s.dither === 'ordered');
+    show('palette', isGif && s.palOn);
+    show('chips', isGif && s.palOn);
+    show('threshold', isGif && m.transparent && this.alpha.checked);
     setHidden(this.colors, this.colorStep.value !== 'custom');
     // choices that do not apply to the chosen codec, patched in place
     const opt = (sel: HTMLSelectElement, value: string, on: boolean): void => { const o = Array.from(sel.options).find((x) => x.value === value); if (o && o.hidden !== !on) { o.hidden = !on; o.disabled = !on; } };
@@ -511,6 +587,7 @@ export class ExportDialog {
     this.paintChips();
     setHidden(q(this.rows.get('dims') as HTMLElement, '.fm-ex-dims'), this.state.preset !== 'custom');
     const [w, h] = this.outSize();
+    this.extras.sync(this.extraInfo(w, h), this.state.tab === 'advanced' ? this.optsKey(this.build()) : '');
     if (this.state.preset !== 'custom') { setText(this.size, `${w} x ${h}`); setHidden(this.size, false); } else setHidden(this.size, true);
     setText(this.thresholdValue, String(this.state.alphaThreshold));
     const r = this.range();
@@ -525,6 +602,7 @@ export class ExportDialog {
   private format(): ExportFormat {
     const s = this.state;
     if (s.kind === 'gif') return 'gif';
+    if (s.kind === 'webp-anim' || s.kind === 'apng' || s.kind === 'psd') return s.kind;
     if (s.kind === 'still') return 'png-still';
     if (s.kind === 'frames') return `${s.picture}-frames` as ExportFormat;
     if (s.codec === 'vp9') return 'webm';
@@ -543,7 +621,7 @@ export class ExportDialog {
   /** Whether the chosen format can carry a transparent background. */
   private alphaOk(): boolean {
     const s = this.state;
-    if (s.kind === 'gif') return true;
+    if (s.kind === 'gif' || s.kind === 'webp-anim' || s.kind === 'apng' || s.kind === 'psd') return true;
     if (s.kind === 'video') return s.codec === 'vp9' || (s.codec === 'prores' && (s.profile === '4444' || s.profile === '4444xq'));
     return pictureHasAlpha(s.picture);
   }
@@ -554,9 +632,9 @@ export class ExportDialog {
     const pal = s.palOn ? s.palette.match(/#[0-9a-fA-F]{6}\b/g) : null;
     const format = this.format();
     const video = s.kind === 'video';
-    return {
+    const o: ExportOptions = {
       format, width, height, from: r.from, to: r.to,
-      pingpong: s.pingpong && s.kind !== 'still', includeAudio: s.audio && video,
+      pingpong: s.pingpong && s.kind !== 'still' && s.kind !== 'psd', includeAudio: s.audio && video,
       alpha: s.alpha && m.transparent && this.alphaOk(), quality: s.quality,
       gif: {
         colors: s.colors, dither: s.dither, palette: pal && pal.length ? pal : null, alphaThreshold: s.alphaThreshold, loop: s.loop, timing: s.timing,
@@ -565,6 +643,7 @@ export class ExportDialog {
       picture: s.kind === 'still' || s.kind === 'frames' ? s.picture : undefined, tiffDeflate: s.tiffDeflate,
       audioCodec: s.audioKind, proresProfile: s.codec === 'prores' ? s.profile : undefined,
     };
+    return this.extras.patch(o, this.extraInfo(width, height));
   }
 
   private fromForm(): ExportOptions {
@@ -580,7 +659,7 @@ export class ExportDialog {
     const spec: PreviewSpec = {
       opts: o, keepAlpha: o.alpha && pictureHasAlpha(ext),
       lossy: ext === 'jpg' ? 'jpg' : ext === 'webp' ? 'webp' : null,
-      key: JSON.stringify([o.format, o.width, o.height, o.from, o.to, o.pingpong, o.alpha, o.quality, o.format === 'gif' ? [o.gif.colors, o.gif.dither, o.gif.palette, o.gif.alphaThreshold, o.gif.smoothness, o.gif.intensity] : 0, ext,this.deps.engine.movie.background]),
+      key: JSON.stringify([o.format, o.width, o.height, o.from, o.to, o.pingpong, o.alpha, o.quality, o.format === 'gif' ? [o.gif.colors, o.gif.dither, o.gif.palette, o.gif.alphaThreshold, o.gif.smoothness, o.gif.intensity] : 0, ext, this.deps.engine.movie.background, o.fps ?? 0, o.fit ?? '', o.focus ?? 0, o.watermark ? [o.watermark.kind, o.watermark.text, o.watermark.image?.length, o.watermark.pos, o.watermark.opacity, o.watermark.size] : 0]),
     };
     this.preview.setSpec(spec);
   }
@@ -590,6 +669,7 @@ export class ExportDialog {
   private quick(id: string): void {
     const m = this.deps.engine.movie;
     if (!m || this.busy) return;
+    if (id === 'audio') { (this.audioDlg ??= new AudioExportDialog({ engine: this.deps.engine, audio: this.deps.audio, saveOutput: this.deps.saveOutput })).open(); return; }
     if (id === 'fmo' || id === 'fmo-history') { this.deps.exportFmo?.(id === 'fmo-history'); if (!this.deps.exportFmo) toast('Saving the movie file is not available here.'); this.close(); return; }
     const base = this.fromFormDefaults();
     if (id === 'mp4') this.start({ ...base, format: 'mp4', includeAudio: true, quality: 'high' });

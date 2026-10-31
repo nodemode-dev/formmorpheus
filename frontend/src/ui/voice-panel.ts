@@ -192,7 +192,7 @@ export class VoicePanel {
     this.replace.checked = o.replace;
     this.muteEarlier.checked = o.muteEarlier;
     const m = this.engine.movie;
-    this.stopFrame.value = String(o.stopFrame > 0 ? o.stopFrame : Math.min(m?.duration ?? 1, this.engine.frame + 1 + Math.round((m?.fps ?? 24) * 5)));
+    this.stopFrame.value = String(o.stopFrame > 0 ? o.stopFrame : Math.min(m?.duration ?? 1, this.engine.frame + Math.round((m?.fps ?? 24) * 5)));
   }
 
   private async connect(deviceId: string): Promise<void> {
@@ -251,7 +251,7 @@ export class VoicePanel {
     setDisabled(this.stopFrame, !idle || this.stopAt.value !== 'frame');
     if (m && idle) {
       const s = this.engine.frame;
-      setText(this.startLine, `${t('Starts at frame')} ${s + 1} · ${clock(s / m.fps)}`);
+      setText(this.startLine, `${t('Starts at frame')} ${s} ·${clock(s / m.fps)}`);
       if (!this.rec.open && this.err.hidden) setText(this.status, t('Waiting for the microphone...'));
     }
   }
@@ -264,7 +264,7 @@ export class VoicePanel {
     const a = this.audio();
     this.engine.stop();
     this.startFrame = this.engine.frame;
-    this.stopAtFrame = this.opts.stopAt === 'end' ? m.duration : this.opts.stopAt === 'frame' ? Math.min(m.duration, Math.max(this.startFrame + 1, Math.round(Number(this.stopFrame.value) || 0) - 1)) : Number.POSITIVE_INFINITY;
+    this.stopAtFrame = this.opts.stopAt === 'end' ? m.duration : this.opts.stopAt === 'frame' ? Math.min(m.duration, Math.max(this.startFrame + 1, Math.round(Number(this.stopFrame.value) || 0))) : Number.POSITIVE_INFINITY;
     const playFrom = Math.max(0, this.startFrame - Math.round(this.opts.preRoll * m.fps));
     this.wasScrub = a.scrubbing;
     a.setScrub(false);

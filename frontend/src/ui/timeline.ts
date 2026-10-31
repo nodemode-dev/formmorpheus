@@ -24,6 +24,7 @@ import { loadPrefs } from './prefs';
 import { drawSoundOverlay, fadeFramesFor, fadeHandleAt, waveGain } from './timeline-sound';
 import { setFade } from '../media/audio-edit';
 import { TimelineEd } from './timeline-ed';
+import { MasterMeter, drawTrackMeter } from './audio-meter';
 import { srcFrame } from '../engine/retime';
 
 const RULER_H = 28;
@@ -87,7 +88,7 @@ interface Palette {
   hl: Record<Highlight, string>;
 }
 
-const KIND_ICON: Record<Content['kind'], string> = { drawing: 'drawing', flipbook: 'flipbook', image: 'image', video: 'video', audio: 'audio', text: 'text', group: 'group' };
+const KIND_ICON: Record<Content['kind'], string> = { drawing: 'drawing', flipbook: 'flipbook', image: 'image', video: 'video', audio: 'audio', text: 'text', group: 'group', shape: 'shape', solid: 'solid', adjust: 'adjust' };
 
 export class TimelineView {
   readonly root = el(`<section class="fm-timeline" aria-label="Timeline">
@@ -104,6 +105,7 @@ export class TimelineView {
         <button class="fm-ghost-btn" type="button" data-act="fwd" title="Next frame" aria-label="Next frame">${icon('stepForward', 16)}</button>
       </div>
       <div class="fm-transport-right">
+        <canvas class="fm-master-meter" aria-label="Master level"></canvas>
         <span class="fm-frame-readout"></span>
         <button class="fm-round-btn is-strong" type="button" data-act="create" title="Create" aria-label="Create">${icon('plus', 18)}</button>
       </div>
@@ -189,6 +191,7 @@ export class TimelineView {
       fx: (f) => this.fx(f), xf: (x) => this.xf(x), laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, ppf: () => this.ppf,
       ruler: this.ruler, tracks: this.tracksCanvas, schedule: () => this.schedule(),
     });
+    new MasterMeter(q<HTMLCanvasElement>(this.root, '.fm-master-meter'), () => this.audio);
     this.actionMenu = new ActionMenu(engine, this.keyState);
     this.laneMenu = new LaneMenu(engine, this.keyState);
     this.keyMenu = new KeySelMenu(engine, this.keySel, () => this.schedule());
@@ -654,6 +657,7 @@ export class TimelineView {
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
+      if (this.audio && this.engine.playing) drawTrackMeter(c, this.audio.meter(t.id), 1, y, 4, BLOCK_H, p.accent);
       if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined, (it, lf) => this.laneThumb(m, it, lf));
     }
     this.drawLinks(c, m, p.accent);

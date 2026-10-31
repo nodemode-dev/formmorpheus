@@ -10,6 +10,10 @@ import { flipDuration } from '../engine/flip-ops';
 import { reducedMotion } from './a11y';
 import { FlipPreview } from './flip-preview';
 import { FlipSelect, Lasso } from './flip-select';
+import { FlipTools, type NumberMode } from './flip-tools';
+import { FlipXSheet } from './flip-xsheet';
+import { shootOn } from '../engine/flip-time';
+import '../styles/flip-time.css';
 import { ScrubWheel } from './flip-wheel';
 import { loadPrefs } from './prefs';
 import { BLEND_MODES, HIGHLIGHTS, type BlendMode, type Content, type FlipTrack, type FlipbookFrame, type Highlight } from '../engine/types';
@@ -66,7 +70,14 @@ const ICO = {
   mini: svg('<rect x="3" y="14" width="18" height="6" rx="2"/><path d="M12 11V4m-3 3 3-3 3 3"/>'),
   prev: svg('<path d="M15 6l-6 6 6 6"/>'),
   next: svg('<path d="M9 6l6 6-6 6"/>'),
+  sheet: svg('<rect x="4" y="3.5" width="16" height="17" rx="2.4"/><path d="M4 8.5h16M9.5 8.5v12M14.5 8.5v12M4 13h16"/>'),
+  timing: svg('<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4.4l2.8 1.6M9.5 3h5"/>'),
+  under: svg('<rect x="3.5" y="4.5" width="14" height="11" rx="2"/><path d="M8 19.5h12.5V9"/><path d="M3.5 12l3.6-3.2 4.4 4"/>'),
 };
+const NUM_KEY = 'formmorpheus.flip.numbers';
+function loadNumbers(): NumberMode {
+  try { const v = localStorage.getItem(NUM_KEY); return v === 'frame' || v === 'off' ? v : 'drawing'; } catch { return 'drawing'; }
+}
 const glyph = (s: string, size = 16): string => `<span class="icon" style="width:${size}px;height:${size}px" aria-hidden="true">${s}</span>`;
 
 interface RowItem { t: FlipTrack; r: number }
@@ -132,6 +143,10 @@ export class FlipStrip {
   private stepHeld = false;
   /** The scrub wheel with Scrub Lock in the strip's header. */
   readonly wheel: ScrubWheel;
+  /** Timing and reference popovers, and the exposure sheet (a panel above the strip). */
+  private readonly tools: FlipTools;
+  readonly xsheet: FlipXSheet;
+  private numbers: NumberMode = loadNumbers();
 
   constructor(private readonly host: StripHost) {
     this.root = el<HTMLElement>(
@@ -140,6 +155,9 @@ export class FlipStrip {
         `<button class="fm-fs-ib fm-fs-step" data-act="prev" type="button" title="Previous drawing (hold for the first)" aria-label="Previous drawing">${glyph(ICO.prev, 16)}</button>` +
         `<button class="fm-fs-ib fm-fs-step" data-act="next" type="button" title="Next drawing (hold for the last)" aria-label="Next drawing">${glyph(ICO.next, 16)}</button>` +
         `<span class="fm-fs-grip" aria-hidden="true"></span><span class="fm-fs-wheelslot"></span>` +
+        `<button class="fm-fs-ib" data-act="sheet" type="button" title="Exposure sheet: frames by tracks, holds, sound and notes" aria-label="Exposure sheet">${glyph(ICO.sheet, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="timing" type="button" title="Timing: shoot on twos, reverse and append, cycle, inbetweens" aria-label="Timing">${glyph(ICO.timing, 18)}</button>` +
+        `<button class="fm-fs-ib" data-act="under" type="button" title="Reference underlay and light table" aria-label="Reference underlay">${glyph(ICO.under, 18)}</button>` +
         `<button class="fm-fs-ib has-lab" data-act="mini" type="button" title="Mini Flipbook: a small floating strip with a scrub wheel" aria-label="Mini Flipbook">${glyph(ICO.mini, 18)}<span class="fm-fs-iblab">Mini</span></button>` +
         `<button class="fm-fs-ib has-lab" data-act="preview" type="button" title="Mini preview: watch the loop while you draw" aria-label="Mini preview">${glyph(ICO.preview, 18)}<span class="fm-fs-iblab">Preview</span></button>` +
         `<button class="fm-fs-ib has-lab" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}<span class="fm-fs-iblab">Select</span></button>` +
@@ -168,6 +186,10 @@ export class FlipStrip {
     this.rowMenu = new Popover('fm-fs-menu', 232);
     this.cm = this.buildCellMenu();
     this.rm = this.buildRowMenu();
+    this.tools = new FlipTools(this.host, this.sel, { get: () => this.numbers, set: (m) => this.setNumbers(m) });
+    this.xsheet = new FlipXSheet(this.host, this.sel, () => this.paint());
+    this.xsheet.onChange = () => setClass(q(this.root, '[data-act="sheet"]'), 'is-on', this.xsheet.isOpen);
+    this.root.appendChild(this.xsheet.root);
     this.wire();
     this.previewBtn = q(this.root, '[data-act="preview"]');
     this.preview = new FlipPreview({
@@ -191,7 +213,15 @@ export class FlipStrip {
 
   refresh(): void { this.paint(); }
 
+  private setNumbers(m: NumberMode): void {
+    this.numbers = m;
+    try { localStorage.setItem(NUM_KEY, m); } catch { /* this session only */ }
+    this.paint();
+  }
+
   dispose(): void {
+    this.tools.dispose();
+    this.xsheet.dispose();
     window.clearTimeout(this.pressTimer);
     this.ro?.disconnect();
     this.preview.dispose();
@@ -270,6 +300,7 @@ export class FlipStrip {
     setHidden(this.root, !c);
     if (this.previewBtn) setClass(this.previewBtn, 'is-on', this.preview.isOn());
     this.preview.sync(!!c);
+    this.xsheet.refresh();
     this.onPaint?.(false);
   }
 
@@ -310,11 +341,14 @@ export class FlipStrip {
       setClass(cell, 'is-sel', this.sel.has(t.id, c.f.id));
       if ((cell.dataset.name ?? '') !== (c.f.name ?? '')) { if (c.f.name) { cell.dataset.name = c.f.name; cell.title = c.f.name; } else { delete cell.dataset.name; cell.removeAttribute('title'); } }
       setText(q(cell, '.fm-fs-hold'), hold > 1 ? `×${hold}` : '');
+      // numbering and labels: the drawing's number (or its first movie frame) and its name
+      const no = this.numbers === 'off' ? '' : `${this.numbers === 'frame' ? c.start + 1 : c.i + 1}${c.f.name ? ` ${c.f.name}` : ''}`;
+      setText(q(cell, '.fm-fs-no'), no);
       if (c.start + hold >= lo && c.start <= hi) this.drawCell(cell, c);
     };
     patchList(inner, cells, {
       key: (c) => c.f.id,
-      create: (c) => { const n = el<HTMLElement>(`<div class="fm-fs-cell"><span class="fm-fs-hold"></span><span class="fm-fs-trim" title="Drag to change how long the frame is held"></span></div>`); upd(n, c); return n; },
+      create: (c) => { const n = el<HTMLElement>(`<div class="fm-fs-cell"><span class="fm-fs-no"></span><span class="fm-fs-hold"></span><span class="fm-fs-trim" title="Drag to change how long the frame is held"></span></div>`); upd(n, c); return n; },
       update: upd,
     });
   }
@@ -393,7 +427,8 @@ export class FlipStrip {
     const f = t?.frames[i];
     if (!c || !t || !f) return;
     const w = this.curWithin();
-    if (!alt && f.hold > 1 && w < f.hold - 1) {
+    // a track that shoots on twos or more adds a whole new frame after the hold
+    if (!alt && !(t.shoot && t.shoot > 1) && f.hold > 1 && w < f.hold - 1) {
       this.host.run('Add frame', (x) => insertFrame(setHold(x, r, i, w + 1), r, i));
     } else if (i === t.frames.length - 1 && c.flip.length > 1) {
       this.host.run('Add frame', (x) => x.flip.reduce((acc, row, k) => insertFrame(acc, k, row.frames.length - 1), x));
@@ -1065,6 +1100,9 @@ export class FlipStrip {
       else if (act === 'frame') { if (frameHeld) { frameHeld = false; return; } this.addFrame(e.altKey); }
       else if (act === 'track') this.addTrack();
       else if (act === 'mini') this.onMini?.();
+      else if (act === 'sheet') this.xsheet.toggle();
+      else if (act === 'timing') this.tools.openTiming(q(this.root, '[data-act="timing"]'));
+      else if (act === 'under') this.tools.openUnderlay(q(this.root, '[data-act="under"]'));
       else if (act === 'hide') setClass(this.root, 'is-collapsed', !this.root.classList.contains('is-collapsed'));
       else if (act === 'prev' || act === 'next') { if (this.stepHeld) { this.stepHeld = false; return; } this.step(act === 'next' ? 1 : -1); }
       else if (act === 'multi') {
@@ -1286,6 +1324,8 @@ export class FlipStrip {
       case '}': this.host.run('Push frame', (x) => pushFrame(x, row, idx)); this.clampSel(row, idx + 1); return true;
       case '{': this.host.run('Pull frame', (x) => pullFrame(x, row, idx)); return true;
       case 'f': case 'F': this.host.run('Fill duration', (x) => fillFrame(x, row, idx)); return true;
+      // 1 to 4 re-time the open frame or the selection on ones, twos, threes, fours
+      case '1': case '2': case '3': case '4': { const n = Number(e.key); this.host.run(n === 1 ? 'Re-time on ones' : `Re-time on ${['', '', 'twos', 'threes', 'fours'][n]}`, (x) => shootOn(x, refs, n)); return true; }
       case 'Escape':
         if (this.sel.multi || this.sel.count) { this.sel.multi = false; this.sel.clear(); this.paint(); return true; }
         return false;
@@ -1298,7 +1338,7 @@ export class FlipStrip {
     const was = this.cellMenu.isOpen || this.rowMenu.isOpen;
     this.cellMenu.hide();
     this.rowMenu.hide();
-    return was;
+    return this.tools.closeAll() || was;
   }
 
   /** Cells into the open frame's hold the playhead sits at. */

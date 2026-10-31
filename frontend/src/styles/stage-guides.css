@@ -1,0 +1,19 @@
+/* Stage guides: grid, thirds, safe areas, guide lines and rulers (drawing aids, never exported) */
+.fm-gd { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: var(--z-base); }
+.fm-gd[hidden], .fm-gd [hidden] { display: none; }
+.fm-gd-grid { fill: none; stroke: var(--accent-color); stroke-width: 1; stroke-opacity: .38; }
+.fm-gd-grid.is-minor { stroke-opacity: .16; }
+.fm-gd-thirds { fill: none; stroke: #fff; stroke-width: 1; stroke-opacity: .55; stroke-dasharray: 4 4; }
+.fm-gd-safe { fill: none; stroke-width: 1.25; stroke-dasharray: 6 4; }
+.fm-gd-safe.is-title { stroke: #5ad1ff; stroke-opacity: .85; }
+.fm-gd-safe.is-action { stroke: #ffd24a; stroke-opacity: .85; }
+.fm-gd-safe.is-vertical { stroke: #ff6ad5; stroke-opacity: .85; }
+.fm-gd-vis { stroke: #19c2c9; stroke-width: 1; stroke-opacity: .95; }
+.fm-gd-hit { stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: col-resize; }
+.fm-gd-line[data-axis="y"] .fm-gd-hit { cursor: row-resize; }
+.fm-gd-ruler { position: absolute; z-index: var(--z-selected); touch-action: none; }
+.fm-gd-ruler[hidden] { display: none; }
+.fm-gd-ruler.is-top { left: 0; top: 0; cursor: row-resize; }
+.fm-gd-ruler.is-left { left: 0; top: 0; cursor: col-resize; }
+.fm-so-btn { margin: var(--space-1) var(--space-3); padding: 4px var(--space-3); border: 0; border-radius: var(--radius); background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: var(--fs-12, 12px); cursor: pointer; }
+.fm-so-btn:disabled { opacity: .4; cursor: default; }

@@ -12,4 +12,5 @@ export const frCA: Record<string, string> = {
   'Welcome. Five steps take you from an empty movie to a finished video. The tutorials walk you through each one inside the app, on a practice movie.': "Bienvenue. Cinq étapes vous mènent d'un film vide à une vidéo terminée. Les tutoriels vous guident dans chacune à l'intérieur de l'application, sur un film d'entraînement.",
   'Use headphones when the movie’s sound plays, or the microphone hears it too. Takes are saved as WAV sound in the movie file.': "Utilisez des écouteurs quand le son du film est lu, sinon le microphone l'entend aussi. Les prises sont enregistrées en son WAV dans le fichier du film.",
   'This page cannot reach a microphone. Recording needs the desktop app or a secure (https or localhost) page.': "Cette page ne peut pas accéder à un microphone. L'enregistrement nécessite l'application de bureau ou une page sécurisée (https ou localhost).",
+  'Email-friendly under 25 MB': "Adapté au courriel, moins de 25 Mo", 'Frame sequence by timecode': "Séquence d\'images par code temporel", 'Media Bin': "Bac de médias",
 };

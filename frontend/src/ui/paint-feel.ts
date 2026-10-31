@@ -3,6 +3,8 @@
 // shape and tilt).
 
 import { baseAngle, tiltShape } from '../paint/dynamics';
+import { getTip } from '../paint/tips';
+import { libTipImage } from '../paint/tips-lib';
 import { type FeelOverride, type OutlineStyle } from '../paint/feel';
 import type { Brush, RGB } from '../paint/types';
 import { el, q, setClass, setText } from './dom';
@@ -142,13 +144,75 @@ export interface CursorShape {
   /** Stamp angle from barrel roll in degrees, 0 when not rolling. */
   roll: number;
   stroking: boolean;
+  /** A faint fill inside the tip outline (the hover fill); on unless false. */
+  fill?: boolean;
 }
 
 const luma = (c: RGB): number => (c.r * 0.299 + c.g * 0.587 + c.b * 0.114) / 255;
 
+// The cursor in the shape of the brush's own tip: the tip's alpha map cut at a threshold, a light line on its edge,
+// a dark line just outside it and a faint hover fill inside. One small sprite per tip, size, turn and colour.
+const SOLID_TIPS = new Set(['round', 'square', 'chisel', 'grain-round', 'bristle', 'chalk', 'blob', 'ring', 'leaf', 'star', 'blade', 'comb', 'sampled']);
+interface TipSprite { cv: HTMLCanvasElement; w: number }
+const sprites = new Map<string, TipSprite>();
+
+function tipSprite(b: Brush, dia: number, rn: number, angle: number, c: RGB, fill: boolean): TipSprite | null {
+  const img = b.tipId ? libTipImage(b.tipId) : undefined;
+  const shape = img ? 'sampled' : b.tip;
+  if (!SOLID_TIPS.has(shape)) return null;
+  const tip = getTip(shape, Math.min(384, Math.max(8, dia)), Math.min(0.5, b.softness * 0.5), rn, angle, img ?? b.tipImage);
+  const key = `${b.id}|${b.tipId ?? b.tip}|${tip.diameter}|${rn.toFixed(2)}|${angle.toFixed(2)}|${fill ? `${c.r},${c.g},${c.b}` : ''}`;
+  const hit = sprites.get(key);
+  if (hit) { sprites.delete(key); sprites.set(key, hit); return hit; }
+  const n = tip.size, m = n + 2;
+  const inside = new Uint8Array(m * m);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (tip.data[y * n + x] > 72) inside[(y + 1) * m + x + 1] = 1;
+  const cv = document.createElement('canvas');
+  cv.width = m; cv.height = m;
+  const cx = cv.getContext('2d');
+  if (!cx) return null;
+  const im = cx.createImageData(m, m), px = im.data;
+  for (let y = 0; y < m; y++) {
+    for (let x = 0; x < m; x++) {
+      const i = y * m + x;
+      const nb = (x > 0 ? inside[i - 1] : 0) + (x < m - 1 ? inside[i + 1] : 0) + (y > 0 ? inside[i - m] : 0) + (y < m - 1 ? inside[i + m] : 0);
+      const o = i * 4;
+      if (inside[i]) {
+        if (nb < 4) { px[o] = px[o + 1] = px[o + 2] = 255; px[o + 3] = 235; }
+        else if (fill) { px[o] = c.r; px[o + 1] = c.g; px[o + 2] = c.b; px[o + 3] = 44; }
+      } else if (nb > 0) { px[o + 3] = 150; }
+    }
+  }
+  cx.putImageData(im, 0, 0);
+  const sp = { cv, w: m * (dia / tip.diameter) };
+  sprites.set(key, sp);
+  if (sprites.size > 40) { const k = sprites.keys().next().value; if (k !== undefined) sprites.delete(k); }
+  return sp;
+}
+
 /** The outline of the brush at the pointer; the caller has set the base transform. */
 export function drawBrushCursor(ctx: CanvasRenderingContext2D, s: CursorShape): void {
   const b = s.brush;
+  if (b.cursor === 'none') return;
+  if (b.cursor === 'tip' || (s.style === 'brush' && b.cursor !== 'circle')) {
+    const t = tiltShape(b, s.tiltX, s.tiltY);
+    const rn = Math.min(1, Math.max(0.12, b.roundness * t.roundnessMul));
+    const ang = t.angle ?? (s.roll ? (s.roll * Math.PI) / 180 : baseAngle(b));
+    const sp = s.r > 2 ? tipSprite(b, 2 * s.r * t.sizeMul, rn, ang, s.colour, s.fill !== false) : null;
+    if (sp) {
+      ctx.save();
+      ctx.drawImage(sp.cv, s.x - sp.w / 2, s.y - sp.w / 2, sp.w, sp.w);
+      ctx.beginPath();
+      ctx.moveTo(s.x - 3, s.y); ctx.lineTo(s.x + 3, s.y);
+      ctx.moveTo(s.x, s.y - 3); ctx.lineTo(s.x, s.y + 3);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+  }
+  if (b.cursor === 'circle' && s.style === 'brush') s = { ...s, style: 'contrast' };
   let rx = s.r, ry = s.r, angle = 0;
   const square = b.tip === 'square' || b.tip === 'chisel';
   if (s.style === 'brush') {

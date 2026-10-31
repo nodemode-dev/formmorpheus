@@ -12,6 +12,13 @@
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; pointer-events: none;
 }
 
+.fm-skip {
+  position: fixed; top: 8px; left: 8px; z-index: var(--z-debug); padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--accent-color); background: var(--bg-tertiary); color: var(--text-primary);
+  font: inherit; transform: translateY(-200%); opacity: 0;
+}
+.fm-skip:focus { transform: none; opacity: 1; }
+
 /* Accent text on its own tint fails AA on the light themes (1.6 to 2.3); darken the text, keep the hue. */
 body.theme-light .fm-mode.is-active { color: color-mix(in srgb, var(--accent-color) 45%, #000); }
 body:not(.theme-light) .fm-mode.is-active { color: color-mix(in srgb, var(--accent-color) 85%, #fff); }

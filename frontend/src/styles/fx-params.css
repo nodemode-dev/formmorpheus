@@ -1,0 +1,11 @@
+/* Action menu cards of registry effects (engine/fx): scrolling card, section heads, color swatch, curve editor. */
+.fm-kc[data-fx] { max-height: min(80vh, 700px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.fm-kc-grouphead { padding: var(--space-1) var(--space-2) 0; color: var(--text-muted); font-size: var(--fs-10); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-kc-swatch { grid-template-columns: 72px minmax(0, 1fr); }
+.fm-kc-color { justify-self: end; width: 62px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: var(--radius-pill); background: var(--surface-field); cursor: pointer; }
+.fm-kc-color::-webkit-color-swatch-wrapper { padding: 2px 4px; }
+.fm-kc-color::-webkit-color-swatch { border: 0; border-radius: var(--radius-pill); }
+.fm-kc-curves { display: grid; gap: var(--space-2); padding: 0 var(--space-2); }
+.fm-kc-plot { width: 168px; justify-self: center; }
+.fm-kc-curvetabs .fm-kc-segbtn.is-set:not(.is-active)::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 4px; border-radius: 50%; background: var(--accent-color); vertical-align: middle; }
+.fm-kc-curves .fm-bc-reset { justify-self: center; }

@@ -19,12 +19,15 @@ import { baseDiameter, setPressureCurve } from '../paint/dynamics';
 import { PenInput } from '../paint/input';
 import { Stroke } from '../paint/stroke';
 import { PumpedStroke } from '../paint/pump';
-import type { Brush, Mask, PaintTool, Point, Rect, RGB } from '../paint/types';
+import { paintBridge, RemoteStroke } from './paint-bridge';
+import type { Brush, Mask, PaintTool, PixelPatch, Point, Rect, RGB } from '../paint/types';
 import { BrushPanel } from './brush-panel';
 import { ColourPanel } from './colour-panel';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { t as tr } from './i18n';
+import { historyLabel } from './history-label';
 import { FlipStrip, type StripHost } from './flip-strip';
+import { underlayView } from './flip-underlay';
 import { CropResizeDialog, bakeCanvas } from './paint-crop';
 import { CropSurface } from './paint-crop-surface';
 import { canvasOf, hasCanvas } from '../engine/canvas';
@@ -146,7 +149,10 @@ export class PaintView {
   private cursor: Point | null = null;
 
   private readonly input: PenInput;
-  private stroke: PumpedStroke | null = null;
+  private stroke: PumpedStroke | RemoteStroke | null = null;
+  /** The stroke the paint Worker is stamping, until its last pixels have landed. */
+  private remote: RemoteStroke | null = null;
+  private aheadNow: Parameters<Stroke['add']>[0][] = [];
   /** Frame request that stamps the samples a slow stroke left queued (paint/pump.ts). */
   private pumpReq = 0;
   /** Paint target of the live stroke: a layer id, or `mask:<id>` while a mask is painted. */
@@ -193,6 +199,8 @@ export class PaintView {
   /** Tinted onion frames, built once per frame and setting (rebuilding them on every repaint stalled strokes). */
   private readonly ghosts = new Map<string, { key: string; canvas: OffscreenCanvas }>();
   private pendingNav: { row: number; index: number } | null = null;
+  /** An undo or redo asked while a worker stroke was landing. */
+  private queuedHistory: 'undo' | 'redo' | null = null;
   private readonly parked = new Map<string, PaintDoc>();
   private readonly pending = new Map<string, number>();
   private readonly discarded = new WeakSet<PaintDoc>();
@@ -293,7 +301,14 @@ export class PaintView {
     });
     this.strip = new FlipStrip(this.stripHost());
     this.strip.onScrub = () => { if (this.onion().showWhileScrubbing === false) { this.full = true; this.redraw(); } };
+    underlayView.onRedraw = () => { this.full = true; this.redraw(); };
     this.mini = new FlipMini(this.strip, this.stripHost(), this.root);
+    // the movie closed: the paint worker's copy of the last layer and the underlay pictures go with it
+    this.engine.on('projects', () => {
+      if (this.engine.movie) return;
+      paintBridge()?.dispose();
+      underlayView.release();
+    });
     // an Undo or Redo from the status bar changes the frames under the open strip
     this.engine.on('movie', () => {
       if (!this.isOpen() || this.busy || this.ownRun) return;
@@ -428,8 +443,31 @@ export class PaintView {
   }
 
   /** Throws away a stroke in progress (navigation, Finish or Discard while the pen is down). */
+  /** The paint Worker has the last pixels of a stroke still to send: commit its undo step when they land. Until then the view is busy, so nothing reads or changes the layer. */
+  private landStroke(done: Promise<PixelPatch | null>, doc: PaintDoc, tool: PaintTool, col: RGB): void {
+    this.busy = true;
+    void done.then((patch) => {
+      this.remote = null;
+      this.clearTail();
+      if (patch && this.doc === doc) {
+        doc.commitPatch(patch, tool === 'erase' ? 'Erase' : tool === 'smudge' ? 'Smudge' : 'Paint');
+        if (tool === 'paint') this.colour.commit(col);
+        this.syncUndo();
+      }
+      this.busy = false;
+      const next = this.pendingNav;
+      this.pendingNav = null;
+      // an undo or redo asked while the pixels were landing runs now, on the committed step
+      const h = this.queuedHistory;
+      this.queuedHistory = null;
+      if (h && !next) { if (h === 'undo') this.undo(); else this.redo(); }
+      if (next) void this.gotoFrame(next.row, next.index); else this.flushQueued();
+    });
+  }
+
   private cancelStroke(): void {
     const s = this.stroke, doc = this.doc;
+    this.remote = null;
     this.stroke = null;
     this.strokePointer = -1;
     this.endPenTool();
@@ -463,6 +501,10 @@ export class PaintView {
     this.thumbs.clear();
     this.ghosts.clear();
     this.pendingNav = null;
+    this.queuedHistory = null;
+    // the worker holds a full copy of the last layer: release it with the surface
+    paintBridge()?.dispose();
+    underlayView.release();
     this.root.hidden = true;
     this.deps.onOpenChange(false);
   }
@@ -658,7 +700,7 @@ export class PaintView {
     this.cancelStroke();
     this.tools.finish();
     // edits that never read pixels (a blank frame, retimes, track settings) park the open frame and save it behind
-    await this.commitDoc(/^(Add frame|Add track|Frame duration|Track |Row mask|Invert row mask|Show track|Hide track|Move track|Rename track)/.test(label));
+    await this.commitDoc(/^(Add frame|Add track|Frame duration|Track |Row mask|Invert row mask|Show track|Hide track|Move track|Rename track|Re-time|Shoot on|Inbetween onion|Frame note|Move frame)/.test(label));
     const before = this.content();
     const openId = before?.flip[this.row]?.frames[this.index]?.id;
     const rowId = before?.flip[this.row]?.id;
@@ -951,6 +993,7 @@ export class PaintView {
     ctx.setTransform(this.rotM());
     ctx.transform(v.scale, 0, 0, v.scale, v.ox, v.oy);
     ctx.imageSmoothingQuality = 'high';
+    if (c.kind === 'flipbook' && c.underlay) underlayView.draw(ctx, c, m.fps, kv, this.playTimer ? this.playAt : flipStartOf(c.flip[this.row] ?? c.flip[0], this.index));
     // rows with a blend, clipping or mask draw through surfaces, as the Stage does
     const mixed = c.kind === 'flipbook' && flipHasRowMix(c);
     if (this.playTimer && c.kind === 'flipbook') {
@@ -1038,7 +1081,7 @@ export class PaintView {
   }
 
   /** The outline can grow with tilt for a brush-shaped outline, so its repaint box does too. */
-  private cursorExtent(r: number): number { return this.prefs.outline === 'brush' ? r * 2.6 : r; }
+  private cursorExtent(r: number): number { return this.prefs.outline === 'brush' ? r * 4.4 : r * 1.1; }
 
   private rollOn(b: Brush): boolean { return this.feel.get(b.id).roll ?? ROLL_NAME.test(b.name); }
 
@@ -1177,8 +1220,8 @@ export class PaintView {
     const d = this.doc;
     setDisabled(this.undoBtn, !d?.canUndo());
     setDisabled(this.redoBtn, !d?.canRedo());
-    setTitle(this.undoBtn, d?.undoLabel() ? `${tr('Undo')} ${tr(d.undoLabel() ?? '')}` : tr('Nothing to undo'));
-    setTitle(this.redoBtn, d?.redoLabel() ? `${tr('Redo')} ${tr(d.redoLabel() ?? '')}` : tr('Nothing to redo'));
+    setTitle(this.undoBtn, d?.undoLabel() ? `${tr('Undo')} ${historyLabel(d.undoLabel() ?? '')}` : tr('Nothing to undo'));
+    setTitle(this.redoBtn, d?.redoLabel() ? `${tr('Redo')} ${historyLabel(d.redoLabel() ?? '')}` : tr('Nothing to redo'));
   }
 
   private setColourChip(rgb: RGB): void {
@@ -1764,6 +1807,7 @@ export class PaintView {
 
   /** Undo and redo never run under a live stroke, transform or filter (their patches would be built on stale bytes). */
   private undo(): void {
+    if (this.busy || this.remote) { this.queuedHistory = 'undo'; return; }
     if (this.stroke) return;
     if (this.tools.mode() === 'transform' || this.tools.mode() === 'filters') { this.tools.cancel(); return; }
     if (this.doc?.undo()) this.syncUndo();
@@ -1771,6 +1815,7 @@ export class PaintView {
     else if (!this.busy && this.engine.history.canUndo && this.engine.history.undoLabel === 'Crop and resize') this.engine.undo();
   }
   private redo(): void {
+    if (this.busy || this.remote) { this.queuedHistory = 'redo'; return; }
     if (this.stroke || this.tools.mode() === 'transform' || this.tools.mode() === 'filters') return;
     if (this.doc?.redo()) this.syncUndo();
     else if (!this.busy && this.engine.history.canRedo && this.engine.history.redoLabel === 'Crop and resize') this.engine.redo();
@@ -1964,11 +2009,19 @@ export class PaintView {
       if (tool === 'erase') tool = 'paint';
     }
     this.strokeId = target.id;
-    this.stroke = new PumpedStroke(new Stroke(target.raster, target.id, {
+    const settings = {
       tool, brush: this.tool === 'smudge' ? { ...b, pickup: Math.max(0.02, Math.min(1, 1 - (st.strength ?? 0.5))) } : b, color, size: st.size, opacity: st.opacity,
       alphaLock: target.alphaLock, selection: this.selection, zoom: sc.zoom, dynamicScaling: sc.dynamic,
       seed: (Math.random() * 0x7fffffff) | 0, roll: this.rollOn(b), color2: this.colour.secondary(), viewRot: this.view.rot,
-    }));
+    };
+    // the stamping runs in the paint Worker when it can; else on this thread as before
+    const layerKey = target.id.startsWith('mask:') ? target.id.slice(5) : target.id;
+    const doc0 = doc;
+    this.aheadNow = [];
+    this.remote = paintBridge()?.begin({ id: target.id, raster: target.raster, version: () => doc0.layer(layerKey)?.version ?? -1 }, settings, {
+      landed: (r) => { if (r) doc0.markDirty(target.id, r); this.setTail(this.aheadNow); },
+    }) ?? null;
+    this.stroke = this.remote ?? new PumpedStroke(new Stroke(target.raster, target.id, settings));
     this.strokePointer = e.pointerId;
     this.feed(this.input.down(e));
   }
@@ -1986,6 +2039,7 @@ export class PaintView {
     const rect = s.drain(all ? Infinity : PUMP_MS);
     if (rect) doc.markDirty(this.strokeId || doc.active, rect);
     if (s.pending && !this.pumpReq) this.pumpReq = requestAnimationFrame(() => this.pump());
+    this.aheadNow = ahead;
     this.setTail(ahead);
   }
 
@@ -2001,12 +2055,19 @@ export class PaintView {
 
   /** The predicted points ride on screen as a thin tail until the real points replace them. */
   private setTail(ahead: Parameters<Stroke['add']>[0][]): void {
+    // with the paint Worker, samples it has not stamped yet ride on screen the same way, from the last stamped point
+    const rm = this.remote;
+    if (rm) {
+      const wait = rm.unconfirmed();
+      ahead = wait.length || ahead.length ? [...(wait.length > 120 ? wait.slice(-120) : wait), ...ahead] : ahead;
+      this.tailFrom = rm.confirmedPoint() ?? this.tailFrom;
+    }
     if (this.tool !== 'paint' || !this.tailFrom || !ahead.length) { this.clearTail(); return; }
     const b = this.brush(), st = this.state(b);
     const mv = this.engine.movie;
     const base = baseDiameter(b, st.size, mv ? Math.max(mv.width, mv.height) : 0);
     const [lo, hi] = b.pressureSize;
-    const r = this.tail.set(this.tailFrom, ahead, (s) => base * (lo + (hi - lo) * s.pressure), this.colour.get(), st.opacity);
+    const r = this.tail.set(this.tailFrom, ahead, (s) => base * (lo + (hi - lo) * s.pressure), this.colour.get(), rm ? st.opacity * Math.min(1, 0.3 + 0.7 * b.flow) * (1 - 0.5 * b.softness) : st.opacity);
     if (r) this.redraw(r);
   }
 
@@ -2156,15 +2217,17 @@ export class PaintView {
     if (!this.stroke || e.pointerId !== this.strokePointer) return;
     const s = this.stroke;
     const doc = this.doc as PaintDoc;
-    this.clearTail();
+    if (cancelled || !this.remote) this.clearTail();
     if (cancelled) {
+      this.remote = null;
       const r = s.cancel();
       if (r) doc.markDirty(this.strokeId || doc.active, r);
       doc.settle();
     } else {
       this.feed(this.input.up(e), true);
       const patch = s.finish();
-      if (patch) {
+      if (patch instanceof Promise) this.landStroke(patch, doc, this.tool, this.colour.get());
+      else if (patch) {
         doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : this.tool === 'smudge' ? 'Smudge' : 'Paint');
         if (this.tool === 'paint') this.colour.commit(this.colour.get());
         this.syncUndo();
