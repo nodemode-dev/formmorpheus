@@ -1,6 +1,21 @@
 // Brush import: .abr tip files and the companion painting app's .brush / .brushset zips
 // (a Brush.archive property list plus Shape.png and Grain.png). Each brush becomes one of
 // our brushes with a sampled tip; only the parameters that map cleanly are read.
+//
+// What is CONFIRMED (key names that several independent public write-ups of the format agree on; the value
+// scales are only confirmed where said):
+//   name, plotSpacing (stored squared: the spacing is its square root), paintSize, paintOpacity, minSize, maxSize,
+//   dynamicsPressureSize, dynamicsPressureOpacity, dynamicsJitterSize, dynamicsJitterOpacity, shapeScatter (random
+//   rotation per stamp), shapeRotation, shapeRandomise, shapeInverted (true: dark areas ink), textureInverted,
+//   textureScale, grainDepth, taperStartLength, dynamicsMix, bundledShapePath / bundledGrainPath (a built-in picture
+//   that is not in the file), uuid. Their names only (meaning inferred, scale unknown): dynamicsPressureShapeRoundness,
+//   dynamicsPressureShapeRoundnessMinimum, dynamicsTiltShapeRoundness, attackTilt, attackRoll, dualBlendMode,
+//   plotSpacingVersion, smudgeSize / smudgeOpacity / eraseSize / eraseOpacity (the tool sliders, not brush traits).
+// What is ASSUMED: every key matched by a loose pattern in mapEngine (speed, colour dynamics, wet mix, rendering mode,
+//   wet edges, burnout, fall off, shape count, bump), the plotJitter meaning (stroke path jitter), the 12 to 200 px
+//   reading of maxSize, and the pressure roundness sign. A brush records the keys it did not read (skippedKeys).
+// Our own files carry fmFormat 2 (plotSpacing squared, plotJitter = path jitter, shapeScatter = rotation jitter);
+// older exports of ours (wetPickup present, no fmFormat) keep the first meaning of those keys.
 
 import { safeUnzipOr } from './safe-unzip';
 import { parseAbr } from './abr';
@@ -10,6 +25,8 @@ import { cleanPoints } from '../paint/curves';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const MAX_TIP_SIDE = 512;
+/** Brushes read from one imported file; the rest count as skipped. */
+const MAX_BRUSHES = 1000;
 
 export interface ImportResult {
   brushes: Brush[];
@@ -19,7 +36,18 @@ export interface ImportResult {
   libName?: string;
   /** A brush set file: the name its brushset.plist gives (or the file's own name). */
   setName?: string;
+  /** Archive keys (lower case) present in the files but not read, most common first, at most 60. */
+  skippedKeys?: string[];
 }
+
+/** A key map that remembers which keys were read, so the rest can be reported as skipped. */
+class TrackMap extends Map<string, unknown> {
+  readonly used = new Set<string>();
+  override get(k: string): unknown { this.used.add(k); return super.get(k); }
+}
+
+/** Keys that are known and deliberately not brush traits (tool slider places, ids, built-in picture names). */
+const KNOWN_IGNORED = new Set(['name', 'uuid', 'paintsize', 'paintopacity', 'smudgesize', 'smudgeopacity', 'erasesize', 'eraseopacity', 'plotspacingversion', 'fmformat', 'bundledshapepath', 'bundledgrainpath']);
 
 // ---- property lists ----------------------------------------------------------
 
@@ -32,8 +60,10 @@ function parseBinaryPlist(buf: Uint8Array): unknown {
   const t = buf.length - 32;
   const offSize = v.getUint8(t + 6), refSize = v.getUint8(t + 7);
   const count = Number(v.getBigUint64(t + 8)), top = Number(v.getBigUint64(t + 16)), tableAt = Number(v.getBigUint64(t + 24));
-  if (count > 2_000_000 || tableAt + count * offSize > t) throw new Error('bad table');
-  const uint = (at: number, n: number): number => { let x = 0; for (let i = 0; i < n; i++) x = x * 256 + v.getUint8(at + i); return x; };
+  if (count > 2_000_000 || tableAt + count * offSize > t || offSize < 1 || offSize > 8 || refSize < 1 || refSize > 8 || top >= count) throw new Error('bad table');
+  const uint = (at: number, n: number): number => { if (n > 8 || at < 0 || at + n > buf.length) throw new Error('bad ref'); let x = 0; for (let i = 0; i < n; i++) x = x * 256 + v.getUint8(at + i); return x; };
+  // a length that reaches past the file is a damaged list, not a reason to loop for ever
+  const room = (n: number, unit: number, at: number): void => { if (!(n >= 0) || at + n * unit > t) throw new Error('bad length'); };
   const offsets: number[] = [];
   for (let i = 0; i < count; i++) offsets.push(uint(tableAt + i * offSize, offSize));
   const cache = new Map<number, unknown>();
@@ -41,6 +71,7 @@ function parseBinaryPlist(buf: Uint8Array): unknown {
     if (depth > 64) throw new Error('deep');
     if (cache.has(idx)) return cache.get(idx);
     let p = offsets[idx];
+    if (!(idx >= 0 && idx < count) || !(p < t)) throw new Error('bad ref');
     const m = v.getUint8(p++), hi = m >> 4;
     let lo = m & 15;
     const len = (): number => {
@@ -56,18 +87,20 @@ function parseBinaryPlist(buf: Uint8Array): unknown {
       case 1: { const n = 1 << lo; out = n <= 8 ? uint(p, n) : 0; break; }
       case 2: out = lo === 2 ? v.getFloat32(p) : v.getFloat64(p); break;
       case 3: out = v.getFloat64(p); break;
-      case 4: { const n = len(); out = buf.subarray(p, p + n); break; }
-      case 5: { const n = len(); let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(v.getUint8(p + i)); out = s; break; }
-      case 6: { const n = len(); let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(v.getUint16(p + i * 2)); out = s; break; }
+      case 4: { const n = len(); room(n, 1, p); out = buf.subarray(p, p + n); break; }
+      case 5: { const n = len(); room(n, 1, p); let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(v.getUint8(p + i)); out = s; break; }
+      case 6: { const n = len(); room(n, 2, p); let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(v.getUint16(p + i * 2)); out = s; break; }
       case 8: out = new Uid(uint(p, lo + 1)); break;
       case 10: case 12: {
         const n = len(), arr: unknown[] = [];
+        room(n, refSize, p);
         cache.set(idx, arr);
         for (let i = 0; i < n; i++) arr.push(read(uint(p + i * refSize, refSize), depth + 1));
         return arr;
       }
       case 13: {
         const n = len(), obj: Record<string, unknown> = {};
+        room(n, refSize * 2, p);
         cache.set(idx, obj);
         for (let i = 0; i < n; i++) {
           const k = read(uint(p + i * refSize, refSize), depth + 1);
@@ -115,7 +148,7 @@ export function parsePlist(bytes: Uint8Array): unknown {
 }
 
 /** Follows an NSKeyedArchiver graph (UID references, NS.keys / NS.objects) into plain values. */
-function unarchive(root: unknown): unknown {
+export function unarchive(root: unknown): unknown {
   const r = root as Record<string, unknown> | null;
   const objects = r && Array.isArray(r.$objects) ? (r.$objects as unknown[]) : null;
   if (!objects) return root;
@@ -170,6 +203,8 @@ function flatten(x: unknown, out: Map<string, unknown>, depth = 0): void {
 async function decodeGrey(bytes: Uint8Array, side: number | null): Promise<{ w: number; h: number; data: Uint8Array } | null> {
   try {
     const bmp = await createImageBitmap(new Blob([bytes.slice()]));
+    // a decompression-bomb picture is not read
+    if (bmp.width * bmp.height > 64e6) { bmp.close(); return null; }
     let w = bmp.width, h = bmp.height;
     if (side) { w = side; h = side; } else if (Math.max(w, h) > MAX_TIP_SIDE) { const k = MAX_TIP_SIDE / Math.max(w, h); w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k)); }
     const c = document.createElement('canvas');
@@ -207,7 +242,8 @@ const newId = (): string => `imp-${Date.now().toString(36)}-${(stampCount++).toS
 // ---- .abr ------------------------------------------------------------------------
 
 export function brushesFromAbr(buf: ArrayBuffer, base: string): ImportResult {
-  const tips = parseAbr(buf, base);
+  const all = parseAbr(buf, base);
+  const tips = all.slice(0, MAX_BRUSHES);
   const brushes: Brush[] = [];
   for (const t of tips) {
     const s = shrink(t.tip.w, t.tip.h, t.tip.data);
@@ -220,7 +256,7 @@ export function brushesFromAbr(buf: ArrayBuffer, base: string): ImportResult {
       tipImage: { w: s.w, h: s.h, data: s.data, key: id }, custom: true,
     });
   }
-  return { brushes, skipped: 0 };
+  return { brushes, skipped: all.length - tips.length };
 }
 
 // ---- .brush / .brushset ------------------------------------------------------------
@@ -232,7 +268,7 @@ function num(m: Map<string, unknown>, ...keys: string[]): number | null {
 
 /** First finite number whose (lower-case) key matches; keys are searched in map order. */
 function rx(m: Map<string, unknown>, re: RegExp): number | null {
-  for (const [k, v] of m) if (typeof v === 'number' && Number.isFinite(v) && re.test(k)) return v;
+  for (const [k, v] of m) if (typeof v === 'number' && Number.isFinite(v) && re.test(k)) { if (m instanceof TrackMap) m.used.add(k); return v; }
   return null;
 }
 
@@ -319,6 +355,9 @@ function mapStudio(m: Map<string, unknown>, b: Brush): void {
   set('roundJitterH', pos('fmRoundJitterH', 0, 1)); set('roundJitterV', pos('fmRoundJitterV', 0, 1));
   set('countJitter', pos('fmCountJitter', 0, 1)); set('spacingJitter', pos('fmSpacingJitter', 0, 1)); set('jitterLinear', pos('fmJitterLinear', 0, 1));
   set('speedSpacing', signed('fmSpeedSpacing', -1, 1));
+  // material (our own names): depth, gloss, metallic and the light angle in degrees
+  const sd = num(m, 'fmShineDepth') ?? 0, sg2 = num(m, 'fmShineGloss') ?? 0, sm = num(m, 'fmShineMetal') ?? 0, sl = num(m, 'fmShineLight');
+  if (sd > 0 || sg2 > 0 || sm > 0) b.shine = { depth: clamp(sd, 0, 1), gloss: clamp(sg2, 0, 1), metal: clamp(sm, 0, 1), ...(sl !== null && sl !== 135 ? { light: clamp(sl, 0, 360) } : {}) };
   const curves: NonNullable<Brush['curves']> = {};
   for (const [k, key] of [['size', 'fmcurvesize'], ['opacity', 'fmcurveopacity'], ['flow', 'fmcurveflow'], ['bleed', 'fmcurvebleed'], ['roundness', 'fmcurveroundness'], ['tilt', 'fmcurvetilt']] as const) {
     const s = m.get(key);
@@ -370,12 +409,24 @@ function mapStudio(m: Map<string, unknown>, b: Brush): void {
 
 /** The parameters we can use, from the archive's key names; absent ones keep the plain defaults. */
 export function brushFromParams(plist: unknown, name: string, tip: { w: number; h: number; data: Uint8Array } | null, grain: Uint8Array | null): Brush {
-  const m = new Map<string, unknown>();
+  return brushFromParamsEx(plist, name, tip, grain).brush;
+}
+
+/** As brushFromParams, with the lower-case names of the archive keys that were present and not read. */
+export function brushFromParamsEx(plist: unknown, name: string, tip: { w: number; h: number; data: Uint8Array } | null, grain: Uint8Array | null): { brush: Brush; skipped: string[] } {
+  const m = new TrackMap();
   flatten(plist, m);
   const id = newId();
   const nm = typeof m.get('name') === 'string' && String(m.get('name')).trim() ? String(m.get('name')).trim() : name;
-  const spacing = num(m, 'plotSpacing', 'spacing');
-  const jitter = num(m, 'plotJitter', 'shapeScatter', 'scatter');
+  // our own files: format 2 (this version) or an older export (wetPickup, no fmFormat); anything else is from elsewhere
+  const fmt = num(m, 'fmFormat') ?? (m.has('wetpickup') ? 1 : 0);
+  const rawSpacing = num(m, 'plotSpacing', 'spacing');
+  // plotSpacing is stored squared in files from elsewhere (a version key marks the modern layout); our format 1 stored it plain
+  const squared = fmt >= 2 || (fmt === 0 && m.has('plotspacingversion'));
+  const spacing = rawSpacing === null ? null : squared ? Math.sqrt(Math.max(0, rawSpacing)) : rawSpacing;
+  // plotJitter is the stroke path jitter; our format 1 stored the position scatter there
+  const plotJ = num(m, 'plotJitter'), shapeScatter = num(m, 'shapeScatter');
+  const jitter = fmt === 1 ? (plotJ ?? shapeScatter ?? num(m, 'scatter')) : num(m, 'fmScatter', 'scatter');
   const taper = Math.max(num(m, 'taperStartLength') ?? 0, num(m, 'taperEndLength') ?? 0, num(m, 'taperSize') ?? 0, num(m, 'taperOpacity') ?? 0);
   const tScale = num(m, 'textureScale', 'grainScale');
   const tDepth = num(m, 'textureDepth', 'grainDepth');
@@ -388,7 +439,8 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   const stab = num(m, 'stabilization', 'streamline', 'plotSmoothing', 'pressureSmoothing');
   const motion = num(m, 'motionFilter', 'motionFiltering');
   const expr = num(m, 'expression', 'motionFilteringExpression');
-  const rand = num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter');
+  // shapeScatter is a random turn per stamp in files from elsewhere and in format 2; shapeRandomise (a turn at the stroke start) is the closest we have in the others
+  const rand = fmt === 1 ? num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter') : Math.max(shapeScatter ?? 0, num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter') ?? 0) || null;
   const orient = m.get('orienttoscreen');
   const hasTip = !!tip;
   const b: Brush = {
@@ -402,6 +454,14 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   if (tip && m.get('shapeinverted') === true) tip = { w: tip.w, h: tip.h, data: tip.data.map((v) => 255 - v) };
   if (tip) { const s = shrink(tip.w, tip.h, tip.data); b.tipImage = { w: s.w, h: s.h, data: s.data, key: id }; }
   if (grain) b.grainImage = grain;
+  if (m.get('textureinverted') === true) b.grainInvert = true;
+  // stroke path jitter (files from elsewhere and format 2): a sideways slide per stamp
+  if (fmt !== 1 && plotJ !== null && plotJ > 0) b.pathJitter = clamp(plotJ, 0, 1);
+  // pressure and tilt roundness: the names are confirmed, the reading is assumed (the share the stamp keeps at the light end)
+  const prr = num(m, 'dynamicsPressureShapeRoundness'), prm = num(m, 'dynamicsPressureShapeRoundnessMinimum'), tlr = num(m, 'dynamicsTiltShapeRoundness');
+  if (prr !== null && prr > 0) b.pressureRoundness = clamp(prr - (prm ?? 0) * 0.5, 0, 1) || undefined;
+  if (tlr !== null && tlr > 0) b.tiltRoundness = clamp(tlr, 0, 1);
+  if (b.pressureRoundness === undefined) delete b.pressureRoundness;
   if (tScale !== null && (grain || tDepth !== null)) b.grainScale = clamp(tScale, 0.25, 4);
   mapEngine(m, b);
   // only our own key names: a generic name in a file from elsewhere means something else
@@ -419,10 +479,19 @@ export function brushFromParams(plist: unknown, name: string, tip: { w: number; 
   if (stab !== null) b.stabilization = clamp(stab <= 1 ? stab * 100 : stab, 0, 100);
   if (motion !== null) b.motionFilter = clamp(motion <= 1 ? motion * 100 : motion, 0, 100);
   if (expr !== null) b.expression = clamp(expr <= 1 ? expr * 100 : expr, 0, 100);
-  return b;
+  const skipped: string[] = [];
+  for (const k of m.keys()) if (!m.used.has(k) && !KNOWN_IGNORED.has(k)) skipped.push(k);
+  return { brush: b, skipped };
 }
 
-async function brushFromFolder(files: Record<string, Uint8Array>, dir: string, fallback: string): Promise<Brush | null> {
+/** Counts of the keys no brush read, across a whole import. */
+function tally(into: Map<string, number>, keys: string[]): void { for (const k of keys) into.set(k, (into.get(k) ?? 0) + 1); }
+function topKeys(m: Map<string, number>): string[] | undefined {
+  if (!m.size) return undefined;
+  return Array.from(m).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 60).map(([k]) => k);
+}
+
+async function brushFromFolder(files: Record<string, Uint8Array>, dir: string, fallback: string, seen?: Map<string, number>): Promise<Brush | null> {
   const key = Object.keys(files).find((k) => k === `${dir}Brush.archive`);
   if (!key) return null;
   let tree: unknown;
@@ -431,7 +500,9 @@ async function brushFromFolder(files: Record<string, Uint8Array>, dir: string, f
   const shape = pick('Shape.png'), grainPng = pick('Grain.png');
   const tip = shape ? await decodeGrey(shape, null) : null;
   const g = grainPng ? await decodeGrey(grainPng, 256) : null;
-  return brushFromParams(tree, fallback, tip, g ? g.data : null);
+  const r = brushFromParamsEx(tree, fallback, tip, g ? g.data : null);
+  if (seen) tally(seen, r.skipped);
+  return r.brush;
 }
 
 export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<ImportResult> {
@@ -440,6 +511,7 @@ export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<Im
   const dirs = new Set<string>();
   for (const k of Object.keys(files)) { if (/(^|\/)Brush\.archive$/i.test(k)) dirs.add(k.slice(0, k.length - 'Brush.archive'.length)); }
   const out: Brush[] = [];
+  const seenKeys = new Map<string, number>();
   let skipped = 0, n = 0;
   // brushset.plist lists the brush folders in the set's own order
   let order: string[] = [];
@@ -454,12 +526,14 @@ export async function brushesFromZip(buf: ArrayBuffer, base: string): Promise<Im
     } catch { /* sorted by folder */ }
   }
   const rank = (d: string): number => { const i = order.indexOf(d); return i < 0 ? order.length : i; };
-  for (const dir of Array.from(dirs).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))) {
+  const sortedDirs = Array.from(dirs).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+  skipped += Math.max(0, sortedDirs.length - MAX_BRUSHES);
+  for (const dir of sortedDirs.slice(0, MAX_BRUSHES)) {
     const folder = dir.replace(/\/$/, '').split('/').pop() ?? '';
-    const b = await brushFromFolder(files, dir, dirs.size === 1 ? base : `${base} ${++n}` || folder);
+    const b = await brushFromFolder(files, dir, dirs.size === 1 ? base : `${base} ${++n}` || folder, seenKeys);
     if (b) out.push(b); else skipped++;
   }
-  return { brushes: out, skipped, setName: listFile ? setName || base : undefined };
+  return { brushes: out, skipped, setName: listFile ? setName || base : undefined, skippedKeys: topKeys(seenKeys) };
 }
 
 /**
@@ -472,26 +546,33 @@ export async function brushesFromLib(buf: ArrayBuffer, base: string): Promise<Im
   const groups = new Map<string, Brush[]>();
   const add = (name: string, list: Brush[]): void => { if (list.length) groups.set(name, [...(groups.get(name) ?? []), ...list]); };
   let skipped = 0;
+  const have0 = (): number => Array.from(groups.values()).reduce((s, l) => s + l.length, 0);
+  const seenKeys = new Map<string, number>();
   for (const k of Object.keys(files).sort()) {
     const d = files[k];
     if (!/\.(brushset|brush)$/i.test(k) || d.length < 4 || d[0] !== 0x50 || d[1] !== 0x4b) continue;
     const nm = (k.split('/').pop() ?? k).replace(/\.[^.]+$/, '') || base;
+    if (have0() >= MAX_BRUSHES) { skipped++; continue; }
     try {
       const r = await brushesFromZip(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) as ArrayBuffer, nm);
       add(/\.brush$/i.test(k) ? (k.split('/').slice(-2, -1)[0] ?? base) : nm, r.brushes);
       skipped += r.skipped;
+      tally(seenKeys, r.skippedKeys ?? []);
     } catch { skipped++; }
   }
   const dirs = new Set<string>();
   for (const k of Object.keys(files)) if (/(^|\/)Brush\.archive$/i.test(k)) dirs.add(k.slice(0, k.length - 'Brush.archive'.length));
   let n = 0;
-  for (const dir of Array.from(dirs).sort()) {
+  const libDirs = Array.from(dirs).sort();
+  const have = (): number => Array.from(groups.values()).reduce((s, l) => s + l.length, 0);
+  skipped += Math.max(0, libDirs.length - Math.max(0, MAX_BRUSHES - have()));
+  for (const dir of libDirs.slice(0, Math.max(0, MAX_BRUSHES - have()))) {
     const parts = dir.split('/').filter(Boolean);
-    const b = await brushFromFolder(files, dir, `${parts[parts.length - 1] ?? base} ${++n}`);
+    const b = await brushFromFolder(files, dir, `${parts[parts.length - 1] ?? base} ${++n}`, seenKeys);
     if (b) add(parts.length >= 2 ? parts[parts.length - 2] : base, [b]); else skipped++;
   }
   const sets = Array.from(groups, ([name, brushes]) => ({ name, brushes }));
-  return { brushes: sets.flatMap((s) => s.brushes), skipped, sets, libName: base };
+  return { brushes: sets.flatMap((s) => s.brushes), skipped, sets, libName: base, skippedKeys: topKeys(seenKeys) };
 }
 
 /** Reads a brush file the person picked or dropped. */

@@ -105,29 +105,29 @@ def('chalk-dust', 'Chalk dust', 'Chalk', (b) => {
 
 // ---- bristle simulation: positions inside a ferrule profile, one soft dot per hair ---------------
 interface Bristle { rmin: number; rmax: number; gap: number; dry: number; splay: number; ragged: number; seed: number }
+// Each hair is a streak along the tip's y axis (the stroke direction when the brush follows the stroke), one hair
+// per stratified column across the width, so a dab never leaves a bare column (a white seam) or a bead chain:
+// neighbouring dabs lay the streaks end to end into continuous bristle lines.
 function bristles(shape: 'flat' | 'round' | 'filbert', n: number, o: Bristle): Fill {
   return (b) => {
     const r = rnd(o.seed);
-    const pts: [number, number][] = [];
-    for (let t = 0; t < n * 80 && pts.length < n; t++) {
-      const x = r() * 2 - 1, y = r() * 2 - 1;
-      const inside = shape === 'flat' ? Math.abs(x) < 0.9 && Math.abs(y) < 0.2
-        : shape === 'round' ? x * x + y * y < 0.5
-          : (x / 0.88) ** 2 + (y / 0.56) ** 2 < 1;
-      if (!inside) continue;
-      let ok = true;
-      for (const p of pts) if (Math.hypot(p[0] - x, p[1] - y) < o.gap) { ok = false; break; }
-      if (ok) pts.push([x, y]);
-    }
-    for (const [x, y] of pts) {
+    const xm = shape === 'flat' ? 0.9 : shape === 'round' ? 0.707 : 0.88;
+    const cols = Math.max(6, Math.round(n * (shape === 'round' ? 0.8 : 1)));
+    const colW = (2 * xm) / cols;
+    for (let i = 0; i < cols; i++) {
       if (r() < o.dry) continue;
-      const rad = (px(o.rmin + r() * (o.rmax - o.rmin)) - HALF) * 1.6;
-      const a = 0.6 + 0.4 * r();
-      const yy = y + (r() - 0.5) * o.ragged;
-      if (o.splay > 0) {
-        const len = o.splay * r();
-        stroke(b, px(x), px(yy), px(x * (1 + len)), px(yy * (1 + len)), rad, a, 0.3);
-      } else dot(b, px(x), px(yy), rad, a, 0.35);
+      const x = -xm + (i + 0.5 + (r() - 0.5) * 0.5) * colW;
+      const prof = shape === 'flat' ? 0.2 : shape === 'round' ? Math.sqrt(Math.max(0, 0.5 - x * x)) : 0.56 * Math.sqrt(Math.max(0, 1 - (x / 0.88) ** 2));
+      const h = Math.max(0.05, prof);
+      // hair thickness from the preset (thin hog hairs read as finer lines), never so thin that columns separate
+      const thick = (o.rmin + r() * (o.rmax - o.rmin)) / 0.05;
+      const rad = Math.max(2.2, colW * HALF * (0.62 + 0.22 * thick) * (0.9 + 0.2 * r()));
+      const a = 0.5 + 0.5 * r() * r() * 1.0 + 0.0;
+      const y0 = -h * (0.9 + 0.1 * r()) + (r() - 0.5) * o.ragged * 0.4;
+      let y1 = h * (0.9 + 0.1 * r()) + (r() - 0.5) * o.ragged * 0.4;
+      let x1 = x;
+      if (o.splay > 0) { const len = o.splay * r(); x1 = x * (1 + len); y1 *= 1 + len * 0.5; }
+      stroke(b, px(x), px(y0), px(x1), px(y1), rad, a, 0.25);
     }
   };
 }

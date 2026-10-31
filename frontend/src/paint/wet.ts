@@ -131,6 +131,7 @@ export class WetPaint {
   private stepF = 1;
   private dilScale = 1;
   private dragRate = 0;
+  private readonly kmean = new Float32Array(NB);
   private colI = new Int32Array(0);
   private colW = new Float32Array(0);
   private readonly kr = new Float32Array(NB);
@@ -149,6 +150,11 @@ export class WetPaint {
     this.cell = new Float32Array(this.G * this.G * CS);
   }
 
+  private snap: (Uint8ClampedArray | undefined)[] | null = null;
+  private tilesX = 0;
+  /** The stroke's untouched 64 px tiles: pick-up reads the canvas as it was before the stroke. */
+  setSource(snap: (Uint8ClampedArray | undefined)[], tilesX: number): void { this.snap = snap; this.tilesX = tilesX; }
+
   /** Set the colour of the paint on the brush (called per dab, colour dynamics move it). */
   setColour(r: number, g: number, b: number): void {
     if (r === this.bR && g === this.bG && b === this.bB) return;
@@ -165,7 +171,7 @@ export class WetPaint {
     this.stepF = stepF;
     const dil = Math.min(1, wet.dilution * (wet.wetJitter ? 1 - wet.wetJitter * this.rng() : 1));
     this.dilScale = 1 - dil * 0.5;
-    this.dragRate = wet.pull * stepF * 0.12;
+    this.dragRate = wet.pull * stepF * 0.38;
     const cell = this.cell, G = this.G, kb = this.kb;
     if (!this.started) {
       this.started = true;
@@ -173,20 +179,24 @@ export class WetPaint {
     }
     if (this.fixed) return;
     this.load = Math.max(0, this.load - (1 - wet.charge) * 0.05 * stepF);
-    const rf = Math.min(1, this.load * 0.28 * stepF);
+    // a brush that pulls holds on to what it picked up: less refill from the brush's own paint
+    const rf = Math.min(1, this.load * 0.28 * stepF * (1 - 0.6 * wet.pull) * (0.4 + 0.6 * wet.charge));
     const attack = wet.attack * Math.max(0, 1 - travel / (dia * 3));
     const pick = Math.min(0.9, (attack * 0.9 + wet.pull * 0.8) * stepF * 0.9 + (this.algo.glaze ? 0 : 0.02));
     const blur = wet.blur ? wet.blur * (wet.blurJitter ? 1 - wet.blurJitter * 0.9 * this.rng() : 1) : wet.blurJitter ? 1 - wet.blurJitter * 0.9 * this.rng() : 0;
     const { w, h, data } = this;
     const span = this.span, cs = span / G, q = cs * (0.25 + blur * 1.5);
     const kc = this.kc;
+    const sKb = steer(kb, 0);
     for (let j = 0; j < G; j++) {
       const v = (j + 0.5) / G - 0.5;
       for (let i = 0; i < G; i++) {
         const o = (j * G + i) * CS;
         // refill toward the brush's own paint
         if (rf > 0) {
-          for (let k = 0; k < NB; k++) cell[o + k] += (kb[k] - cell[o + k]) * rf;
+          // weighted by how strongly each pigment steers, like every other mix, so a dense blue does not drown a thin yellow
+          const wc = (1 - rf) * steer(cell, o), wn = rf * sKb, iw = 1 / (wc + wn);
+          for (let k = 0; k < NB; k++) cell[o + k] = (cell[o + k] * wc + kb[k] * wn) * iw;
           cell[o + 6] += (this.load - cell[o + 6]) * rf;
         }
         if (pick <= 0.002) continue;
@@ -199,10 +209,12 @@ export class WetPaint {
         const px = cx + u * span, py = cy + v * span;
         for (let t = 0; t < 4; t++) {
           const xx = Math.min(w - 1, Math.max(0, Math.round(px + ((t & 1) ? q : -q)))), yy = Math.min(h - 1, Math.max(0, Math.round(py + ((t & 2) ? q : -q))));
-          const di = (yy * w + xx) << 2, a = data[di + 3];
+          // the canvas as it was before this stroke (the undo tile), so the brush never re-reads its own trail
+          const tile = this.snap ? this.snap[(yy >> 6) * this.tilesX + (xx >> 6)] : undefined;
+          const src = tile ?? data, di = tile ? ((((yy & 63) << 6) | (xx & 63)) << 2) : (yy * w + xx) << 2, a = src[di + 3];
           if (a === 0) continue;
           const af = a / 255;
-          sr += DEC[data[di]] * af; sg += DEC[data[di + 1]] * af; sb += DEC[data[di + 2]] * af; sa += af;
+          sr += DEC[src[di]] * af; sg += DEC[src[di + 1]] * af; sb += DEC[src[di + 2]] * af; sa += af;
         }
         if (sa < 0.05) continue;
         const lr = sr / sa, lg = sg / sa, lb = sb / sa;
@@ -211,13 +223,26 @@ export class WetPaint {
         // paper-white picks up as barely any pigment (it would only dilute the stroke)
         let pg = (kc[0] + kc[1] + kc[2] + kc[3] + kc[4] + kc[5]) * 0.4;
         pg = pg > 1 ? 1 : pg < 0.02 ? 0.02 : pg;
-        const add = pick * sa * wr * pg;
+        const add = pick * sa * wr * pg * 0.4;
         const A = cell[o + 6];
         const tot = A + add;
         for (let k = 0; k < NB; k++) cell[o + k] = (cell[o + k] * A + kc[k] * add) / tot;
         cell[o + 6] = Math.min(1, A + add * 0.5);
       }
     }
+    // the stamp's average paint: a pixel is last set while the rim of the stamp passes it, so the rim shows the
+    // whole brush's load (not only its own cells, which have had little time to pick anything up)
+    const km2 = this.kmean;
+    let wsum = 0;
+    km2.fill(0);
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const u = (i + 0.5) / G - 0.5, v = (j + 0.5) / G - 0.5, rn = Math.hypot(u, v) * 2;
+      if (rn > 0.85) continue;
+      const o = (j * G + i) * CS, wgt = cell[o + 6];
+      for (let k = 0; k < NB; k++) km2[k] += cell[o + k] * wgt;
+      wsum += wgt;
+    }
+    if (wsum > 0) for (let k = 0; k < NB; k++) km2[k] /= wsum;
     if (this.dragRate > 0) {
       // each cell's colour in bytes, for the cheap drag path
       const out = this.rgb;
@@ -234,7 +259,7 @@ export class WetPaint {
     const { x0, y0, x1, y1, ab, bw, cov, sel, lock, opacity, cx, cy } = s;
     const algo = this.algo, G = this.G, cell = this.cell, fixed = this.fixed;
     const kr = this.kr, kc = this.kc, km = this.km, rgb = this.rgb, kb = this.kb;
-    const we = this.we, keep = Math.min(0.8, algo.keep + this.wet.pull * 0.2 + this.wet.attack * 0.1), gain = algo.gain;
+    const keep = Math.min(0.8, algo.keep + this.wet.pull * 0.2 + this.wet.attack * 0.1), gain = algo.gain;
     let cPig = 0, cSteer = 1;
     const stacking = algo.glaze && !!algo.stack, snap = s.snap, tilesX = s.tilesX;
     const grade = (this.wet.grade - 0.5) * 2;
@@ -310,6 +335,8 @@ export class WetPaint {
           const w00 = (1 - wx) * (1 - wy), w01 = wx * (1 - wy), w10 = (1 - wx) * wy, w11 = wx * wy;
           for (let k = 0; k < NB; k++) kr[k] = cell[o00 + k] * w00 + cell[o00 + CS + k] * w01 + cell[o10 + k] * w10 + cell[o10 + CS + k] * w11;
           A = cell[o00 + 6] * w00 + cell[o00 + CS + 6] * w01 + cell[o10 + 6] * w10 + cell[o10 + CS + 6] * w11;
+          const km2 = this.kmean;
+          for (let k = 0; k < NB; k++) kr[k] += (km2[k] - kr[k]) * 0.7;
         }
         if (sel) { const sv = sel[idx] / 255; f *= sv; dragT *= sv; }
         // chunky (grade above 0.5) or flat (below) deposit
@@ -319,9 +346,9 @@ export class WetPaint {
         if (dragT > 0) t += dragT * (Am * 1.5 > 1 ? 1 : Am * 1.5) * (1 - t);
         if (t <= 0.0003) continue;
         if (t > 1) t = 1;
-        // pigment strength: dilution thins it, wet edges pool it at the rim and lighten the centre
-        let ps = dil;
-        if (we > 0) ps *= 1 + we * (1.8 * Math.pow(1 - am, 1.5) - 0.5 * am * am * am);
+        // pigment strength: dilution thins it. The wet edges are not a per-dab effect (a pixel keeps the value of the
+        // last dab over it, which drew round holes); the stroke pools its rim when it ends (paint/wet-dry.ts).
+        const ps = dil;
         const di = idx << 2;
         // a glaze lays ONE film over the untouched pixel (from the undo tile), so its own overlaps never stack
         // Blending is the same: the mix is made against the untouched pixel with the reservoir's current
@@ -353,7 +380,14 @@ export class WetPaint {
           if (algo.glaze) {
             // the new film's absorption adds to what is there (stacking glazes add each dab's share)
             const tf = algo.stack ? dCov * Am * (sel ? sel[idx] / 255 : 1) : t;
-            for (let k = 0; k < NB; k++) km[k] = ca * (kc[k] + tf * kr[k] * ps * gain) + (1 - ca) * kr[k] * ps;
+            let dd = 0, sm = 0.5;
+            for (let k = 0; k < NB; k++) {
+              const nk = kr[k] * ps * gain * tf;
+              km[k] = ca * (kc[k] + nk) + (1 - ca) * kr[k] * ps;
+              dd += Math.abs(kc[k] - nk); sm += kc[k] + nk;
+            }
+            // two different glazes layered keep their chroma: a coarse spectrum greys a subtractive mix (pink over blue went muddy)
+            lift = 1 + 1.4 * (tf > 1 ? 1 : tf) * ca * (cPig * 3 > 1 ? 1 : cPig * 3) * (dd / sm);
           } else {
             // bare paper (no pigment) takes no part in the steering or the retention
             const pig = cPig, wc = ca * (1 - t * (1 - keep * pig)), wn = t, share = wn / (wc + wn);

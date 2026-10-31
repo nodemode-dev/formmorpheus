@@ -6,6 +6,7 @@
 import type { Brush } from './types';
 import { hasGrain } from './grains-lib';
 import { hasTip } from './tips-lib';
+import { dryResponse } from './dry-media';
 
 const parse = (s: string): Map<string, string> => {
   const m = new Map<string, string>();
@@ -205,7 +206,8 @@ const GRAINS: [RegExp, string][] = [
   [/bark/, 'bark'],
   [/paper tooth|faded print/, 'paper-cold-press'],
   [/granulate/, 'paper-rough'],
-  [/watercolor|wash|stain|bleed|dilute|tide|sky|puddle|wet/, 'watercolour-bloom'],
+  // paper tooth, not the bloom blobs: those read as round white holes in a wash (granulation needs fine tooth)
+  [/watercolor|wash|stain|bleed|dilute|tide|sky|puddle|wet/, 'paper-cold-press'],
   [/dry brush|dry-edge|dry script|dry ink/, 'dry-brush'],
   [/gouache|acrylic|blender/, 'paper-fine'],
   [/impasto|hog|oil|stiff|splay|streaky|worn comb|mixed|flat|fan|filbert|bristle|knife|sumi|fibre|fur|rough pad/, 'bristle-drag'],
@@ -229,7 +231,7 @@ const GRAINS: [RegExp, string][] = [
 
 const SET_GRAIN: Record<string, string> = {
   sketching: 'graphite-tooth', sketch: 'graphite-tooth', charcoals: 'charcoal-grit', chalk: 'chalk-pits',
-  water: 'watercolour-bloom', wash: 'watercolour-bloom', textures: 'noise-medium', texture: 'noise-medium',
+  water: 'paper-cold-press', wash: 'paper-cold-press', textures: 'noise-medium', texture: 'noise-medium',
   noise: 'noise-medium', materials: 'paper-fine',
 };
 
@@ -250,7 +252,8 @@ export function grainFor(b: Brush): string | undefined {
 }
 
 /** The starter brush with its library stamp and grain, and sizes that reach a large canvas. */
-export function withMaterials(b: Brush): Brush {
+export function withMaterials(b0: Brush): Brush {
+  const b = dryResponse(b0);
   const out: Brush = { ...b };
   const tip = tipFor(b);
   if (tip) out.tipId = tip;
@@ -263,9 +266,11 @@ export function withMaterials(b: Brush): Brush {
   // Stamps that scatter turn at random so the same specks do not trace tracks along the stroke.
   if (out.tipId && /^(air-spray|spatter|pastel-crumb|chalk-dust|sponge|charcoal|chalk-stick|stamp-wire)/.test(out.tipId) && !out.followStroke) out.rotationJitter = Math.max(out.rotationJitter, 1);
   // A wider slider range with the default sizes kept: presets shrink by the same factor the maximum grows.
+  // Line tools (pens, markers, liners) keep their own range: a pen that reaches 100 px at 45 percent is no pen.
   if (b.maxSize >= 24) {
-    out.maxSize = Math.round(b.maxSize * 2 * 10) / 10;
-    out.presets = b.presets.map((p) => ({ ...p, size: p.size / 2 }));
+    const f = /^(inking|drawing|outline|monoline|script|ink|calligraphy)$/i.test(b.set) ? 1 : 1.6;
+    out.maxSize = Math.round(b.maxSize * f * 10) / 10;
+    out.presets = b.presets.map((p) => ({ ...p, size: p.size / f }));
   }
   return out;
 }

@@ -152,6 +152,8 @@ export interface Brush {
   grainJitter?: number;
   /** 0 to 1: grain is lit as relief (light and dark flecks). */
   bump?: number;
+  /** Material: depth (a raised ridge), gloss (a glint) and metal (a tinted sheen), lit from `light` degrees. */
+  shine?: Shine;
 
   // ---- Authored library (paint/tips-lib.ts, grains-lib.ts) ----
   /** A library stamp by id; replaces `tip` while set. */
@@ -259,6 +261,8 @@ export interface Brush {
   jitterLinear?: number;
   /** -1 to 1: the gap between stamps grows (positive) or shrinks with pen speed. */
   speedSpacing?: number;
+  /** The cursor over the canvas for this brush: its own tip shape, a plain circle, or none. Unset: the global outline style. */
+  cursor?: 'tip' | 'circle' | 'none';
 }
 
 /** One pressure curve: flat x,y pairs from (0,y0) to (1,y1) with at most four nodes between; `speed` 0 (slow) to 1 (instant) is the response speed. */
@@ -267,6 +271,9 @@ export interface PenCurve { pts: number[]; speed?: number }
 export interface PenCurves { size?: PenCurve; opacity?: PenCurve; flow?: PenCurve; bleed?: PenCurve; roundness?: PenCurve; tilt?: PenCurve }
 
 export type GrainBlend = 'multiply' | 'subtract' | 'screen';
+
+/** Material of a stroke, all 0 to 1; `light` is the angle the light comes from in degrees (0 right, 90 above, 135 upper left). */
+export interface Shine { depth: number; gloss: number; metal: number; light?: number }
 
 export interface ColorDyn {
   stampHue?: number; stampSat?: number; stampBri?: number;

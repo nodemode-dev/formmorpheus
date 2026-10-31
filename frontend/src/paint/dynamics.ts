@@ -157,14 +157,16 @@ export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape
   const lean = shapeLean(brush, Math.min(1, Math.max(0, (info.lean - th) / (1 - th))));
   const k = Math.min(1, lean * 1.25) * brush.tilt;
   const flat = k >= 0.02;
+  // Shading with the side of the lead: the mark grows wide (also along the lean), softens, lightens and shows more
+  // of the paper's tooth, unless the brush sets its own tilt opacity, gradation or bleed.
   return {
-    roundnessMul: flat ? lerp(1, 0.32, k) : 1,
-    sizeMul: (flat ? lerp(1, 2.4, k) : 1) * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
+    roundnessMul: flat ? lerp(1, 0.42, k) : 1,
+    sizeMul: (flat ? lerp(1, 4, k) : 1) * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
     angle: flat ? info.azimuth : null,
     lean,
-    opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1,
-    gradation: (brush.tiltGradation ?? 0) * lean,
-    bleed: (brush.tiltBleed ?? 0) * lean,
+    opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1 - 0.3 * k,
+    gradation: (brush.tiltGradation ?? 0.45 * brush.tilt) * lean,
+    bleed: (brush.tiltBleed ?? 0.3 * brush.tilt) * lean,
   };
 }
 

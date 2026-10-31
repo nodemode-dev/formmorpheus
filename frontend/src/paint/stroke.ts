@@ -15,6 +15,8 @@ import { PenResponse, rollAmount, shapeLean } from './curves';
 import { WetPaint } from './wet';
 import type { WetStamp } from './wet';
 import { RENDER_ALGOS, WET_DEFAULT } from './render-modes';
+import { bakeShine, hasShine } from './shine';
+import { dryWash } from './wet-dry';
 
 /** Build-up per mode: scale on a dab's alpha, and whether coverage is capped at the strongest dab. */
 const MODES: Record<RenderMode, { k: number; uniform: boolean; heavy: boolean; wet?: WetMix }> = {
@@ -51,6 +53,23 @@ function scaleGrain(g: ArrayLike<number>, k: number): Float32Array {
       out[(y << 8) | x] = top + (bot - top) * ty;
     }
   }
+  return k > 1.001 ? seamless(out) : out;
+}
+
+/** A 256 x 256 tile made to wrap without a step at its edges: the tile and a copy shifted by half a tile are cross-faded
+ *  with a window that is 0 at the edges, so the stretched or turned grain no longer shows a seam every 256 px. */
+function seamless(t: Float32Array): Float32Array {
+  const out = new Float32Array(65536);
+  const w = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const s = Math.sin((Math.PI * (i + 0.5)) / 256); w[i] = s * s; }
+  for (let y = 0; y < 256; y++) {
+    const ya = y << 8, yb = ((y + 128) & 255) << 8, wy = w[y];
+    for (let x = 0; x < 256; x++) {
+      const xb = (x + 128) & 255, wx = w[x];
+      // four copies (none, shifted in x, in y, in both), each weighted so the tile's own edges carry no weight
+      out[ya | x] = wx * wy * t[ya | x] + (1 - wx) * wy * t[ya | xb] + wx * (1 - wy) * t[yb | x] + (1 - wx) * (1 - wy) * t[yb | xb];
+    }
+  }
   return out;
 }
 
@@ -66,7 +85,7 @@ function rotateGrain(g: ArrayLike<number>, rot: number): Float32Array {
       out[(y << 8) | x] = g[(sy << 8) | sx];
     }
   }
-  return out;
+  return rot % (Math.PI / 2) === 0 ? out : seamless(out);
 }
 
 interface P { x: number; y: number; p: number; tx: number; ty: number }
@@ -197,6 +216,7 @@ export class Stroke implements StrokeLike {
       this.wp = new WetPaint(this.w, this.h, this.data, {
         algo: br.render ? RENDER_ALGOS[br.render] : WET_DEFAULT, wet: br.wet ?? null, wetEdges: br.wetEdges ?? 0, baseDia: this.baseDia, rng: this.rng,
       });
+      this.wp.setSource(this.snap, this.tilesX);
     }
     if (PenResponse.wanted(br)) this.pen = new PenResponse(br);
     if (this.colour) {
@@ -235,6 +255,7 @@ export class Stroke implements StrokeLike {
         t[i] = dmin + (1 - dmin) * (x * x * (3 - 2 * x));
       }
       this.tooth = t;
+      if (br.grain > 0.2 && this.gblend === 0 && br.grainMode !== 'moving' && !br.grainOffsetJitter && !br.wet && !br.render && (br.grainMovement ?? 1) >= 1) this.capK = Math.min(0.85, br.grain * 0.85);
     } else this.tooth = null;
     this.taperLen = 0;
     this.endLen = 0;
@@ -342,6 +363,22 @@ export class Stroke implements StrokeLike {
     let patch: PixelPatch | null = null;
     if (this.hasDirty) {
       const rect: Rect = { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 };
+      const sh = this.s.brush.shine;
+      if (this.s.tool === 'paint' && this.wp && this.cov) {
+        // the wash dries: the rim pools and the pigment settles into the paper tooth
+        const br = this.s.brush, pool = br.wetEdges ?? 0, gran = this.tooth && pool > 0 ? 0.3 + br.grain * 0.7 : 0;
+        if (pool > 0 || gran > 0) {
+          dryWash({
+            data: this.data, w: this.w, x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1, cov: this.cov, snap: this.snap, tilesX: this.tilesX,
+            pool, gran, radius: Math.min(20, Math.max(2, this.baseDia * 0.09)), tooth: this.tooth, lock: this.s.alphaLock, sel: this.sel,
+          });
+        }
+      }
+      if (this.s.tool === 'paint' && this.cov && hasShine(sh)) {
+        bakeShine(this.data, this.w, this.h, this.cov, { x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1 }, sh, {
+          baseDia: this.baseDia, tooth: this.tooth, bump: this.s.brush.bump ?? 0, sel: this.sel, lock: this.s.alphaLock,
+        });
+      }
       const after = this.copyRect(rect, false);
       const before = this.copyRect(rect, true);
       patch = { layer: this.layerId, rect, before, after };
@@ -490,6 +527,9 @@ export class Stroke implements StrokeLike {
   }
 
   private alphaMul = 1;
+  /** Paper tooth as a ceiling on a pixel's coverage (canvas-anchored grain), so dry media never go solid however many dabs overlap. */
+  private capK = 0;
+  private capNow = 0;
   private roundAng = 0;
   private dabX = 0;
   private dabY = 0;
@@ -577,6 +617,7 @@ export class Stroke implements StrokeLike {
     const { brush, tool } = this.s;
     const opacity = brush.pressureOpacity || brush.curves?.opacity ? this.opBase * this.opRamp : this.opBase;
     this.dabPeak = flow;
+    this.capNow = this.capK > 0 ? Math.min(0.97, this.capK * 1.25 * (1 - 0.4 * Math.min(1, flow)) * (1 + this.leanGrain * 0.5)) : 0;
     let cx = x, cy = y;
     if (brush.scatter > 0) {
       cx += (this.rng() - 0.5) * 2 * brush.scatter * dia;
@@ -701,6 +742,7 @@ export class Stroke implements StrokeLike {
     const cv = cov!;
     const cr = this.colorR, cg = this.colorG, cb = this.colorB;
     const lock = this.s.alphaLock;
+    const capNow = this.capNow, tooth = this.tooth;
     for (let py = y0; py < y1; py++) {
       const rowO = (py - y0) * bw - x0;
       const trow = (py >> 6) * tilesX;
@@ -716,7 +758,8 @@ export class Stroke implements StrokeLike {
           const cq = cv[idx];
           if (cq >= 65500) continue; // saturated: pixel already holds its final value
           const c0 = cq / 65535;
-          const c = c0 + (1 - c0) * a;
+          let c = c0 + (1 - c0) * a;
+          if (capNow > 0) { const cap = 1 - capNow * (1 - tooth![((py & 255) << 8) | (px & 255)]); if (c > cap) c = cap > c0 ? cap : c0; }
           cv[idx] = (c * 65535 + 0.5) | 0;
           let f = c * opacity;
           if (sel) f *= sel[idx] / 255;
@@ -767,6 +810,7 @@ export class Stroke implements StrokeLike {
         let c: number;
         if (mode.uniform) c = a > c0 ? (a > 1 ? 1 : a) : c0;
         else { const aa = a * mode.k; c = c0 + (1 - c0) * (aa > 1 ? 1 : aa); }
+        if (this.capNow > 0 && this.tooth) { const cap = 1 - this.capNow * (1 - this.tooth[((py & 255) << 8) | (px & 255)]); if (c > cap) c = cap > c0 ? cap : c0; }
         cv[idx] = (c * 65535 + 0.5) | 0;
         const ci = idx * 3;
         // the stroke colour buffer is 8.8 fixed point (16 bit): a faint glaze step smaller than one level
@@ -968,6 +1012,9 @@ export class Stroke implements StrokeLike {
       }
     }
   }
+
+  /** The rectangle the latest add() or finish() changed (the paint Worker sends just that back). */
+  lastCallRect(): Rect | null { return this.callRect(); }
 
   private callRect(): Rect | null {
     if (!this.callDirty) return null;

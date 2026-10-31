@@ -10,6 +10,9 @@
 //   - setting names: name, plotSpacing, plotJitter, shapeScatter, shapeRandomise, shapeInverted, shapeRotation,
 //     shapeAzimuth, textureScale, textureMovement, maxOpacity, maxSize, dynamicsPressure*, dynamicsSpeed*,
 //     dynamicsJitter*, taper*, dynamicsWetAccumulation, dynamicsMix, dynamicsLoad.
+//   - more key names seen in several write-ups: paintSize, paintOpacity, shapeInverted, textureInverted, grainDepth,
+//     taperStartLength, bundledShapePath, bundledGrainPath, uuid; plotSpacing is stored squared (we write it so);
+//     shapeScatter is a random turn per stamp and plotJitter the stroke path jitter (we write them so, fmFormat 2).
 // formmorpheus's own assumption (a file from elsewhere may use other names or scales):
 //   - the settings class name, the value scales (maxSize 0 to 1 over 12 to 200 px, rotation in turns,
 //     pressure as 1 minus the low end), and every key for stabilization, motion filter, expression, texture
@@ -78,9 +81,11 @@ const finite = (v: number | undefined): v is number => typeof v === 'number' && 
 export function brushSettings(b: Brush): Record<string, number | boolean | string> {
   const s: Record<string, number | boolean | string> = {};
   const put = (k: string, v: number | boolean | string | undefined): void => { if (v !== undefined && (typeof v !== 'number' || Number.isFinite(v))) s[k] = v; };
-  put('plotSpacing', b.spacing);
-  put('plotJitter', b.scatter);
-  put('shapeRandomise', b.rotationJitter);
+  put('fmFormat', 2);
+  put('plotSpacing', b.spacing * b.spacing);   // stored squared, as in files from elsewhere (confirmed by public write-ups)
+  put('plotJitter', b.pathJitter ?? 0);        // stroke path jitter
+  if (b.scatter > 0) put('fmScatter', b.scatter);
+  put('shapeScatter', b.rotationJitter);       // a random turn per stamp
   put('orientToScreen', !b.followStroke);
   // maxSize is 0 to 1 over 12 to 200 px on import; the smallest size is its share of the largest
   const maxV = (b.maxSize - 12) / 188;
@@ -153,6 +158,10 @@ export function brushSettings(b: Brush): Record<string, number | boolean | strin
       const c = b.curves[k];
       if (c && c.pts.length >= 4 && c.pts.every((v) => Number.isFinite(v))) put(name, c.pts.map((v) => Math.round(v * 1e4) / 1e4).join(',') + (finite(c.speed) && c.speed < 1 ? `@${Math.round(c.speed * 1e3) / 1e3}` : ''));
     }
+  }
+  if (b.shine) {
+    put('fmShineDepth', b.shine.depth); put('fmShineGloss', b.shine.gloss); put('fmShineMetal', b.shine.metal);
+    if (finite(b.shine.light)) put('fmShineLight', b.shine.light);
   }
   nz('fmRollSize', b.rollSize); nz('fmRollOpacity', b.rollOpacity); pos('fmRollEdgeSoft', b.rollBleed);
   if (b.rollRelative) put('fmRollRelative', true);

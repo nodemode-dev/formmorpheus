@@ -108,7 +108,7 @@ const RAW_BRUSHES: Brush[] = [
   }),
   mk('fine-liner', 'Fine liner', 'Inking', {
     softness: 0, maxSize: 8, minSize: 0.8, spacing: 0.05, flow: 1,
-    pressureSize: [0.85, 1], smoothing: 0.4, pickup: 0.15,
+    pressureSize: [0.3, 1], pressureGamma: 0.85, smoothing: 0.4, pickup: 0.15,
   }),
   mk('dry-ink', 'Dry ink', 'Inking', {
     tip: 'bristle', softness: 0.1, maxSize: 64, minSize: 4, spacing: 0.06, flow: 0.95,
@@ -135,9 +135,11 @@ const RAW_BRUSHES: Brush[] = [
   mk('gouache', 'Gouache', 'Painting', {
     tip: 'blob', softness: 0.12, maxSize: 76, minSize: 5, spacing: 0.1, flow: 1,
     pressureSize: [0.7, 1], rotationJitter: 1, grain: 0.25, smoothing: 0.35, pickup: 0.45,
+    // opaque but still wet at the edges: a stroke over fresh paint takes a little of it along
+    render: 'uniform-blending', wet: { dilution: 0.04, charge: 0.9, attack: 0.2, pull: 0.3, grade: 0.55 },
   }),
   d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.05, 1, 0.6, 0.8, { followStroke: true, roundness: 0.9, grain: 0.3, smoothing: 0.35, pickup: 0.7, render: 'heavy-blending', wet: { dilution: 0.2, charge: 0.75, attack: 0.6, pull: 0.85, grade: 0.4 } }),
-  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85 }),
+  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
   d('fan-paint', 'Fan brush', 'Painting', 'comb', 0.35, 110, 18, 0.07, 0.8, 0.7, 0.7, { followStroke: true, roundness: 0.3, grain: 0.5, pickup: 0.6, rotationJitter: 0.04 }, 0.9),
   d('palette-knife', 'Palette knife', 'Painting', 'chisel', 0.02, 70, 12, 0.03, 1, 0.8, 1, { followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9 }),
   d('acrylic', 'Acrylic', 'Painting', 'round', 0.1, 80, 6, 0.06, 1, 0.55, 0.9, { grain: 0.15, smoothing: 0.35 }),
@@ -260,6 +262,11 @@ const RAW_BRUSHES: Brush[] = [
   d('brushed-metal', 'Brushed metal', 'Material', 'fibre', 0, 100, 20, 0.05, 0.5, 0.9, 1, { followStroke: true, roundness: 0.3, grain: 0.2 }, 0.8),
   d('concrete', 'Concrete', 'Material', 'sponge', 0.1, 120, 30, 0.25, 0.8, 0.9, 1, { rotationJitter: 1, grain: 0.7, grainScale: 2 }),
   d('fabric', 'Fabric weave', 'Material', 'cross', 0, 20, 6, 0.55, 1, 1, 1, { scatter: 0.1 }, 0.8),
+  // lit materials: the stroke is read as a raised ridge and lit (paint/shine.ts)
+  d('enamel', 'Glossy enamel', 'Material', 'round', 0.05, 70, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.5, gloss: 0.9, metal: 0 } }),
+  d('chrome', 'Chrome', 'Material', 'round', 0.05, 60, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.7, gloss: 0.8, metal: 1 } }),
+  d('gold-leaf', 'Gold leaf', 'Material', 'grunge', 0.05, 70, 10, 0.08, 1, 0.8, 1, { rotationJitter: 1, grain: 0.5, grainScale: 0.9, bump: 0.25, shine: { depth: 0.35, gloss: 0.6, metal: 0.9 } }),
+  d('thick-oil', 'Thick oil', 'Material', 'bristle', 0.02, 100, 14, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.6, grain: 0.55, grainScale: 1.5, bump: 0.6, shine: { depth: 1, gloss: 0.5, metal: 0 }, render: 'intense-blending', wet: { dilution: 0.04, charge: 0.8, attack: 0.5, pull: 0.55, grade: 0.3 } }),
 
   // Vintage
   d('letterpress', 'Letterpress', 'Vintage', 'grunge', 0, 50, 10, 0.1, 1, 0.9, 1, { grain: 0.5, rotationJitter: 0.5 }),
@@ -303,12 +310,16 @@ const RAW_BRUSHES: Brush[] = [
 
   // Water
   mk('watercolor-wash', 'Watercolor wash', 'Water', {
-    tip: 'blob', softness: 0.7, maxSize: 140, minSize: 10, spacing: 0.06, flow: 0.2,
-    pressureSize: [0.7, 1], pressureFlow: [0.35, 1], rotationJitter: 1, grain: 0.35, smoothing: 0.5, pickup: 0.4,
-  }, 0.75),
+    tip: 'blob', softness: 0.7, maxSize: 140, minSize: 10, spacing: 0.06, flow: 0.3,
+    pressureSize: [0.7, 1], pressureFlow: [0.35, 1], rotationJitter: 1, grain: 0.22, smoothing: 0.5, pickup: 0.4,
+    // a transparent wash: it never drags what is under it, its rim pools and it bleeds a little into neighbours
+    render: 'light-glaze', wetEdges: 0.6, wet: { dilution: 0.3, charge: 0.85, attack: 0.1, pull: 0.12, grade: 0.7, blur: 0.4 },
+  }, 0.9),
   mk('wet-blend', 'Wet blend', 'Water', {
     softness: 0.8, maxSize: 120, minSize: 8, spacing: 0.05, flow: 0.35,
     pressureSize: [0.7, 1], pressureFlow: [0.4, 1], grain: 0.1, smoothing: 0.4, pickup: 0.8,
+    // used as paint it is a blender: it carries what is under it a long way
+    render: 'intense-blending', wet: { dilution: 0.2, charge: 0.4, attack: 0.3, pull: 1, grade: 0.7, blur: 0.5 },
   }, 0.9),
   d('soft-wash', 'Soft wash', 'Water', 'blob', 0.9, 200, 30, 0.07, 0.1, 0.8, 0.4, { rotationJitter: 1, grain: 0.2, smoothing: 0.55 }, 0.7),
   d('wet-edge', 'Wet edge', 'Water', 'ring', 0.55, 80, 14, 0.06, 0.18, 0.7, 0.4, { smoothing: 0.5, grain: 0.2 }, 0.8),

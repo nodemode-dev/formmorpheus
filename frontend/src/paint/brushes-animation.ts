@@ -77,7 +77,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   OUTLINE('Brush outline', 'round', 0.06, 26, 2, 0.04, 1, 0.12, 0.9, { smoothing: 0.55, taper: 0.5, pressureGamma: 1.3, stabilization: 45 }),
   OUTLINE('Swell line', 'round', 0.02, 24, 2, 0.04, 1, 0.08, 1, { smoothing: 0.5, speedSize: -0.6, taper: 0.4, stabilization: 40 }),
   OUTLINE('Contour pen', 'round', 0.04, 12, 2, 0.04, 1, 0.3, 1, { smoothing: 0.6, stabilization: 60, taper: 0.2 }),
-  OUTLINE('Fine liner', 'round', 0, 5, 0.8, 0.04, 1, 0.7, 1, { smoothing: 0.5, stabilization: 40 }),
+  OUTLINE('Fine liner', 'round', 0, 5, 0.8, 0.04, 1, 0.3, 1, { pressureGamma: 0.85, smoothing: 0.5, stabilization: 40 }),
   OUTLINE('Marker outline', 'round', 0.04, 20, 4, 0.04, 0.95, 0.8, 0.9, { smoothing: 0.4, grain: 0.1 }, 0.9),
   OUTLINE('Dry-edge outline', 'round', 0.05, 16, 2, 0.04, 1, 0.3, 0.9, { grain: 0.8, grainScale: 0.6, smoothing: 0.45, taper: 0.3, stabilization: 30 }),
   OUTLINE('Inner line', 'round', 0.1, 7, 1, 0.04, 0.9, 0.3, 0.6, { taper: 0.8, taperEnd: 0.8, smoothing: 0.5, stabilization: 40 }, 0.9),
@@ -145,11 +145,11 @@ export const ANIMATION_BRUSHES: Brush[] = [
   // Paint
   PAINT('Flat paint', 'chisel', 0.04, 48, 8, 0.05, 1, 0.8, 0.8, { roundness: 0.35, baseRot: 0.8, grain: 0.2, render: 'uniform-glaze' }),
   PAINT('Round paint', 'round', 0.06, 42, 6, 0.05, 1, 0.5, 0.8, { grain: 0.2, wet: { dilution: 0.1, charge: 0.7, attack: 0.3, pull: 0.5, grade: 0.5 } }),
-  PAINT('Impasto', 'bristle', 0.04, 52, 10, 0.05, 1, 0.7, 0.9, { grain: 0.6, bump: 0.7, grainScale: 0.8, render: 'heavy-glaze', followStroke: true, roundness: 0.7 }),
+  PAINT('Impasto', 'bristle', 0.04, 52, 10, 0.05, 1, 0.7, 0.9, { grain: 0.6, bump: 0.7, grainScale: 0.8, render: 'heavy-glaze', followStroke: true, roundness: 0.7, shine: { depth: 0.9, gloss: 0.4, metal: 0 } }),
   PAINT('Gouache', 'round', 0.03, 40, 6, 0.05, 1, 0.7, 0.9, { grain: 0.15, render: 'uniform-glaze', colorDyn: { strokeBri: 0.06 } }),
   PAINT('Acrylic', 'round', 0.05, 38, 5, 0.05, 0.9, 0.6, 0.8, { grain: 0.3, render: 'intense-glaze', wetEdges: 0.2 }),
   PAINT('Oil blend', 'bristle', 0.06, 46, 8, 0.05, 1, 0.7, 0.9, { grain: 0.3, render: 'intense-blending', roundness: 0.8, followStroke: true, wet: { dilution: 0.15, charge: 0.7, attack: 0.55, pull: 0.8, grade: 0.45 } }),
-  PAINT('Knife', 'blade', 0.03, 48, 12, 0.05, 1, 0.8, 1, { followStroke: true, roundness: 0.3, render: 'uniform-blending', bump: 0.3, grain: 0.3 }),
+  PAINT('Knife', 'blade', 0.03, 48, 12, 0.05, 1, 0.8, 1, { followStroke: true, roundness: 0.3, render: 'uniform-blending', bump: 0.3, grain: 0.3, shine: { depth: 0.6, gloss: 0.55, metal: 0.15 } }),
   PAINT('Dab', 'blob', 0.1, 40, 8, 0.7, 1, 0.8, 0.9, { rotationJitter: 1, scatter: 0.1, jitterSize: 0.3, colorDyn: { stampBri: 0.15, stampHue: 0.04 } }),
   PAINT('Glaze', 'round', 0.3, 56, 12, 0.05, 0.5, 0.6, 0.3, { render: 'light-glaze', wet: { dilution: 0.5, charge: 0.9, attack: 0.1, pull: 0.2, grade: 0.7 } }, 0.7),
   PAINT('Mixed color', 'bristle', 0.06, 44, 8, 0.07, 0.9, 0.7, 0.8, { grain: 0.4, colorDyn: { stampHue: 0.1, stampSat: 0.15, stampBri: 0.2, strokeHue: 0.1, pressureBri: 0.4 }, render: 'intense-glaze' }),
@@ -167,7 +167,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   BRISTLE('Worn comb', 'comb', 0.04, 38, 8, 0.05, 0.85, 0.7, 0.5, { followStroke: true, grain: 0.7, burnout: 0.3, jitterOpacity: 0.3 }),
 
   // Wash
-  WASH('Watercolor', 'round', 0.45, 56, 12, 0.05, 0.4, 0.6, 0.3, { render: 'uniform-glaze', wetEdges: 0.8, grain: 0.3, grainScale: 1.4 }, 0.7),
+  WASH('Watercolor', 'round', 0.45, 56, 12, 0.05, 0.5, 0.6, 0.3, { render: 'uniform-glaze', wetEdges: 0.8, grain: 0.25, grainScale: 1.4 }, 0.92),
   WASH('Light wash', 'round', 0.6, 64, 16, 0.05, 0.3, 0.6, 0.2, { render: 'light-glaze', grain: 0.2 }, 0.6),
   WASH('Bleed', 'round', 0.5, 50, 10, 0.05, 0.45, 0.6, 0.3, { render: 'uniform-blending', wetEdges: 0.4, wet: { dilution: 0.4, charge: 0.6, attack: 0.5, pull: 0.8, grade: 0.4 } }, 0.7),
   WASH('Granulate', 'grain-round', 0.4, 52, 12, 0.05, 0.4, 0.6, 0.3, { render: 'uniform-glaze', grain: 1, grainScale: 0.7, grainMode: 'moving', wetEdges: 0.5 }, 0.7),
