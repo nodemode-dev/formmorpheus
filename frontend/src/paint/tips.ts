@@ -13,7 +13,10 @@ export interface Tip {
 }
 
 const MAX_TIP = 384;
-const CACHE_LIMIT = 96;
+/** Capped by bytes, not count: a brush that turns every dab (random angle, 3 degree buckets) misses a 96-entry cache each time and rebuilds a tip per dab. */
+const CACHE_BYTES = 96 * 1024 * 1024;
+const CACHE_MIN = 96;
+let cacheBytes = 0;
 const ANGLE_STEP = 3;
 const cache = new Map<string, Tip>();
 
@@ -75,9 +78,12 @@ export function getTip(shape: TipShape, diameter: number, softness: number, roun
   }
   const tip = buildTip(shape, d, soft, rn, ang, img);
   cache.set(key, tip);
-  if (cache.size > CACHE_LIMIT) {
+  cacheBytes += tip.data.byteLength;
+  while (cache.size > CACHE_MIN && cacheBytes > CACHE_BYTES) {
     const first = cache.keys().next().value;
-    if (first !== undefined) cache.delete(first);
+    if (first === undefined) break;
+    cacheBytes -= cache.get(first)!.data.byteLength;
+    cache.delete(first);
   }
   return tip;
 }

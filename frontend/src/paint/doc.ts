@@ -7,6 +7,7 @@ import { blendPixels, isPixelBlend } from '../engine/blend';
 import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
 import { PaintHistory, readRect, writeRect } from './history';
 import type { LayerSnapshot, PaintEntry, PaintHost, SnapLayer } from './history';
+import { cloneRaster, eachParkedTile, isParked, noteUse, parkRaster, parkedEmpty, rasterBytes, usedAt } from './tiles';
 import { BLEND_OP, SurfacePool, blockEnd, drawTree, isInside } from './layer-tree';
 import type { TreeHooks } from './layer-tree';
 
@@ -46,9 +47,17 @@ export type MaskFill = 'reveal' | 'hide';
 interface Mirror {
   canvas: OffscreenCanvas;
   ctx: OffscreenCanvasRenderingContext2D;
-  img: ImageData;
+  /** Null for a mirror made from a parked layer's tiles, until the layer is read flat. */
+  img: ImageData | null;
   dirty: Rect | null;
 }
+
+/** Layer pixels held flat past this are parked into tiles (4K layers are 33 MB each). */
+const DENSE_BUDGET = 512 * 1024 * 1024;
+/** A layer is parked again only after this long unread: a tool may hold its flat array. */
+const IDLE_MS = 60_000;
+/** Canvas copies of the layers kept alive at once. */
+const MIRROR_BUDGET = 768 * 1024 * 1024;
 
 const mirrors = new WeakMap<Raster, Mirror>();
 let counter = 1;
@@ -121,9 +130,8 @@ async function decodeRaster(blob: Blob, width: number, height: number, ctx: Offs
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(bmp, 0, 0, width, height);
   bmp.close();
-  const r = newRaster(width, height);
-  r.data.set(ctx.getImageData(0, 0, width, height).data);
-  return r;
+  // the read-back array is the raster (no second 33 MB copy)
+  return { width, height, data: ctx.getImageData(0, 0, width, height).data };
 }
 
 export class PaintDoc implements PaintHost {
@@ -149,6 +157,8 @@ export class PaintDoc implements PaintHost {
     mask: (l) => (l.mask && l.mask.on ? this.alphaOf(l.mask) : null),
   };
   private disposed = false;
+  private mirrorBytes = 0;
+  private readonly mirrorOrder = new Set<Raster>();
   /** Pixels marked dirty by a live stroke whose patch is not yet in history. */
   private uncommitted = false;
   private dirtCount = 0;
@@ -163,6 +173,7 @@ export class PaintDoc implements PaintHost {
 
   static async load(width: number, height: number, layers: DrawingLayer[], blobOf: (assetId: string) => Blob | undefined): Promise<PaintDoc> {
     const out: PaintLayer[] = [];
+    let flat = 0;
     let x: OffscreenCanvasRenderingContext2D | null = null;
     const ctx = (): OffscreenCanvasRenderingContext2D => (x ??= new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true })!);
     for (const d of layers) {
@@ -176,6 +187,11 @@ export class PaintDoc implements PaintHost {
         } catch {
           source = null;
         }
+      }
+      // a drawing with many big layers keeps the first ones flat and the rest as tiles of their ink (read again, they turn flat)
+      if (!d.group) {
+        flat += raster.width * raster.height * 4;
+        if (flat > DENSE_BUDGET / 2 && out.length > 0) parkRaster(raster);
       }
       const layer: PaintLayer = {
         id: d.id, name: d.name, visible: d.visible, opacity: d.opacity, blend: d.blend,
@@ -258,6 +274,7 @@ export class PaintDoc implements PaintHost {
     const l = this.activeLayer();
     if (this.maskEdit && l.mask) return { id: 'mask:' + l.id, raster: l.mask.raster, alphaLock: false, mask: true };
     if (l.group) return null;
+    noteUse(l.raster);
     return { id: l.id, raster: l.raster, alphaLock: l.alphaLock, mask: false };
   }
 
@@ -345,7 +362,7 @@ export class PaintDoc implements PaintHost {
     const copies = this.layers.slice(at, end).map((o, k): PaintLayer => {
       const c: PaintLayer = {
         ...o, id: map.get(o.id)!, source: null, version: counter++,
-        raster: o.group ? newRaster(1, 1) : { width: o.raster.width, height: o.raster.height, data: o.raster.data.slice() },
+        raster: o.group ? newRaster(1, 1) : cloneRaster(o.raster),
       };
       if (k === 0) c.name = o.name + (o.group ? ' copy' : ' copy');
       if (o.parent && map.has(o.parent)) c.parent = map.get(o.parent);
@@ -791,18 +808,78 @@ export class PaintDoc implements PaintHost {
     if (!m) {
       const canvas = new OffscreenCanvas(r.width, r.height);
       const ctx = canvas.getContext('2d')!;
-      const img = new ImageData(r.data as Uint8ClampedArray<ArrayBuffer>, r.width, r.height);
-      ctx.putImageData(img, 0, 0);
+      let img: ImageData | null = null;
+      // a parked layer fills its canvas from its tiles, so only the ink is copied and the flat array stays unmade
+      const tiled = eachParkedTile(r, (x, y, w, h, b) => ctx.putImageData(new ImageData(b as Uint8ClampedArray<ArrayBuffer>, w, h), x, y));
+      if (!tiled) {
+        img = new ImageData(r.data as Uint8ClampedArray<ArrayBuffer>, r.width, r.height);
+        ctx.putImageData(img, 0, 0);
+      }
       m = { canvas, ctx, img, dirty: null };
       mirrors.set(r, m);
+      this.mirrorBytes += r.width * r.height * 4;
     } else if (m.dirty) {
       const d = m.dirty;
       const x = Math.max(0, d.x), y = Math.max(0, d.y);
       const w = Math.min(r.width, d.x + d.w) - x, h = Math.min(r.height, d.y + d.h) - y;
+      // the flat array is replaced when a parked layer is read again, so the shared view is remade then
+      const data = r.data as Uint8ClampedArray<ArrayBuffer>;
+      if (!m.img || m.img.data !== data) m.img = new ImageData(data, r.width, r.height);
       if (w > 0 && h > 0) m.ctx.putImageData(m.img, 0, 0, x, y, w, h);
       m.dirty = null;
     }
+    this.mirrorOrder.delete(r);
+    this.mirrorOrder.add(r);
+    if (this.mirrorBytes > MIRROR_BUDGET) this.trimMirrors(r);
     return m;
+  }
+
+  /** Mirrors are only a cache of the rasters: the least recently drawn are closed (a composite uses each canvas at once, so closing an older one is safe). */
+  private trimMirrors(keep: Raster): void {
+    for (const r of this.mirrorOrder) {
+      if (this.mirrorBytes <= MIRROR_BUDGET) break;
+      if (r === keep) continue;
+      this.releaseMirror(r);
+    }
+  }
+
+  private releaseMirror(r: Raster): void {
+    const m = mirrors.get(r);
+    this.mirrorOrder.delete(r);
+    if (!m) return;
+    m.canvas.width = 0;
+    mirrors.delete(r);
+    this.mirrorBytes -= r.width * r.height * 4;
+  }
+
+  /** Layers whose pixels sit flat in memory are parked into tiles, least recently read first, once the flat ones pass the budget. */
+  private enforce(): void {
+    const now = Date.now();
+    let flat = 0;
+    const idle: PaintLayer[] = [];
+    for (const l of this.layers) {
+      if (l.group || isParked(l.raster) || l.raster.width * l.raster.height < 4096) continue;
+      flat += l.raster.width * l.raster.height * 4;
+      if (l.id !== this.active && now - usedAt(l.raster) > IDLE_MS) idle.push(l);
+    }
+    if (flat <= DENSE_BUDGET) return;
+    idle.sort((a, b) => usedAt(a.raster) - usedAt(b.raster));
+    for (const l of idle) {
+      if (flat <= DENSE_BUDGET) break;
+      const m = mirrors.get(l.raster);
+      if (m && m.dirty) continue;
+      if (parkRaster(l.raster)) flat -= l.raster.width * l.raster.height * 4;
+    }
+  }
+
+  /** Pixel memory right now: layers held flat, layers parked into tiles, and canvas mirrors. */
+  memory(): { flat: number; parked: number; mirrors: number } {
+    let flat = 0, tiles = 0;
+    for (const l of this.layers) {
+      if (l.group) continue;
+      if (isParked(l.raster)) tiles += rasterBytes(l.raster); else flat += l.raster.width * l.raster.height * 4;
+    }
+    return { flat, parked: tiles, mirrors: this.mirrorBytes };
   }
 
   private surfaces(): SurfacePool {
@@ -849,6 +926,7 @@ export class PaintDoc implements PaintHost {
     ctx.save();
     drawTree(ctx, this.layers, this.width, this.height, this.hooks, this.surfaces(), live ? { active: this.active, draw: live } : undefined, region);
     ctx.restore();
+    this.enforce();
   }
 
   private renderRaster(): Raster {
@@ -955,7 +1033,7 @@ export class PaintDoc implements PaintHost {
         pixels = null;
       } else if (l.source) {
         pixels = l.source;
-      } else if (!isTransparent(l.raster)) {
+      } else if (!(parkedEmpty(l.raster) || (!isParked(l.raster) && isTransparent(l.raster)))) {
         const blob = await this.mirror(l.raster).canvas.convertToBlob({ type: 'image/png' });
         const asset: Asset = {
           id: newAssetId(), kind: 'pixels', name: l.name, mime: 'image/png',
@@ -997,6 +1075,8 @@ export class PaintDoc implements PaintHost {
       const a = alphaMirrors.get(r);
       if (a) { a.canvas.width = 0; alphaMirrors.delete(r); }
     }
+    this.mirrorOrder.clear();
+    this.mirrorBytes = 0;
     for (const t of this.thumbs.values()) t.canvas.width = 0;
     for (const t of this.mthumbs.values()) t.canvas.width = 0;
     this.history.clear();

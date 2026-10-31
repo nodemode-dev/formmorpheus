@@ -119,10 +119,10 @@ function entryBytes(e: PaintEntry): number {
   for (const l of e.before.layers) {
     for (const r of l.mask ? [l.raster, l.mask.raster] : [l.raster]) {
       b.add(r);
-      if (!a.has(r)) n += r.data.byteLength;
+      if (!a.has(r)) n += r.width * r.height * 4;   // by size, not by `data`: reading it would unpark an idle layer, and the figure must not drift as layers park
     }
   }
-  for (const r of a) if (!b.has(r)) n += r.data.byteLength;
+  for (const r of a) if (!b.has(r)) n += r.width * r.height * 4;
   return n;
 }
 

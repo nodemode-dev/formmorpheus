@@ -41,7 +41,13 @@ export class MotionFilter {
 
   reset(): void { this.has = false; }
 
-  apply(s: PenSample, expression: number): PenSample {
+  apply(s: PenSample, expression: number, amount = 1): PenSample {
+    const out = this.step(s, expression);
+    if (amount >= 1 || out === s) return out;
+    return { ...out, x: s.x + (out.x - s.x) * amount, y: s.y + (out.y - s.y) * amount, pressure: s.pressure + (out.pressure - s.pressure) * amount };
+  }
+
+  private step(s: PenSample, expression: number): PenSample {
     if (!this.has) {
       this.x = s.x; this.y = s.y; this.p = s.pressure; this.t = s.time; this.has = true;
       return s;

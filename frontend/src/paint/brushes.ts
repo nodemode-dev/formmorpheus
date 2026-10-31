@@ -4,6 +4,7 @@
 
 import type { Brush, TipShape } from './types';
 import { ANIMATION_BRUSHES } from './brushes-animation';
+import { withMaterials } from './brush-materials';
 
 const BASE: Omit<Brush, 'id' | 'name' | 'set' | 'presets'> = {
   tip: 'round',
@@ -135,7 +136,7 @@ const RAW_BRUSHES: Brush[] = [
     tip: 'blob', softness: 0.12, maxSize: 76, minSize: 5, spacing: 0.1, flow: 1,
     pressureSize: [0.7, 1], rotationJitter: 1, grain: 0.25, smoothing: 0.35, pickup: 0.45,
   }),
-  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.05, 1, 0.6, 0.8, { followStroke: true, roundness: 0.9, grain: 0.3, smoothing: 0.35, pickup: 0.7 }),
+  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.05, 1, 0.6, 0.8, { followStroke: true, roundness: 0.9, grain: 0.3, smoothing: 0.35, pickup: 0.7, render: 'heavy-blending', wet: { dilution: 0.2, charge: 0.75, attack: 0.6, pull: 0.85, grade: 0.4 } }),
   d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.7, 1, { followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85 }),
   d('fan-paint', 'Fan brush', 'Painting', 'comb', 0.35, 110, 18, 0.07, 0.8, 0.7, 0.7, { followStroke: true, roundness: 0.3, grain: 0.5, pickup: 0.6, rotationJitter: 0.04 }, 0.9),
   d('palette-knife', 'Palette knife', 'Painting', 'chisel', 0.02, 70, 12, 0.03, 1, 0.8, 1, { followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9 }),
@@ -329,7 +330,7 @@ const RAW_BRUSHES: Brush[] = [
   d('spot-heal', 'Spot dab', 'Touch-ups', 'blob', 0.55, 36, 6, 0.35, 0.8, 0.9, 0.7, { rotationJitter: 1 }, 0.9),
 ];
 
-export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set }));
+export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => withMaterials(keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set })));
 
 export const BRUSH_SETS: string[] = ['Sketching', 'Drawing', 'Inking', 'Painting', 'Artistic', 'Calligraphy', 'Airbrushing', 'Textures', 'Abstract', 'Charcoals', 'Elements', 'Spraypaints', 'Materials', 'Vintage', 'Luminance', 'Industrial', 'Organic', 'Water'];
 /** Old Classic set names to current ones, for libraries saved before the rename. */
@@ -340,7 +341,7 @@ export const DEFAULT_SMUDGE = 'wet-blend';
 export const DEFAULT_ERASE = 'round-paint';
 
 /** Every starter brush: the Classic library, then the Animation library. */
-export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES.map(keepCorners)];
+export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES.map((b) => withMaterials(keepCorners(b)))];
 const starterMap = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
 
 const registry = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));

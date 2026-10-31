@@ -152,18 +152,142 @@ export interface Brush {
   grainJitter?: number;
   /** 0 to 1: grain is lit as relief (light and dark flecks). */
   bump?: number;
+
+  // ---- Authored library (paint/tips-lib.ts, grains-lib.ts) ----
+  /** A library stamp by id; replaces `tip` while set. */
+  tipId?: string;
+  /** A library grain by id; the paper grain is used while absent. */
+  grainId?: string;
+  /** 0 to 1: moving grain only. 0 drags with the stroke and smears, 1 renews at every stamp like a roller. */
+  grainMovement?: number;
+  /** 0 to 1: the floor the grain never cuts below (less contrast). */
+  grainDepthMin?: number;
+  /** Raised and pitted parts of the grain swap places. */
+  grainInvert?: boolean;
+  /** Tiles the grain this many times across its square (1 to 8); every repeat is seamless. */
+  grainRepeat?: number;
+  /** Blends the grain's edges so a picture repeats without a seam. */
+  grainSeamless?: boolean;
+  /** Sizes are fixed canvas pixels; absent means they scale with the canvas's long side (1920 px = 100%). */
+  sizeAbs?: boolean;
+
+  // ---- Brush Studio fields (all optional; written only when not default) ----
+  /** 0 to 1: each stamp slides sideways off the path (stroke path jitter). */
+  pathJitter?: number;
+  /** 0 to 1: pressure is low-pass filtered before it drives the stamp. */
+  pressureSmooth?: number;
+  /** Taper lengths used when the input is a pen (0 to 1); touch and mouse use `taper` / `taperEnd`. */
+  pTaper?: number;
+  pTaperEnd?: number;
+  /** 0 to 1: size at the very end of a taper as a share of the full size (absent: about 0.1). */
+  taperSize?: number;
+  /** 0 to 1: opacity lost at the very end of a taper. */
+  taperOpacity?: number;
+  /** 0 to 1: how pointed the taper tip is (0 blunt, 1 needle). */
+  taperTip?: number;
+  /** Mirror the stamp across its own axes. */
+  flipX?: boolean;
+  flipY?: boolean;
+  /** Stamp picture sampled without smoothing (crisp edges). */
+  tipSharp?: boolean;
+  /** 0 to 1: grain scales with the stamp size (0: fixed on the canvas). */
+  grainZoom?: number;
+  /** Grain turn in radians. */
+  grainRot?: number;
+  /** 0 to 1: random grain offset per stamp. */
+  grainOffsetJitter?: number;
+  /** How grain cuts into the stamp; absent is multiply. */
+  grainBlend?: GrainBlend;
+  /** -1 to 1 and -1 to 1: grain brightness and contrast. */
+  grainBright?: number;
+  grainContrast?: number;
+  /** 0 to 1: the edge of the stroke darkens. */
+  burntEdges?: number;
+  /** How the stroke lands on the layer; absent is normal. */
+  blend?: BlendMode;
+  /** 0 to 1: light colors glow over what is under them. */
+  lumBlend?: number;
+  /** 0 to 1: pressure widens the soft edge. */
+  pressureBleed?: number;
+  /** 0 to 1: opacity ramps up with pressure (the lowest share it starts from is 1 minus this). */
+  pressureOpacity?: number;
+  /** Degrees (0 to 80): the pen must lean past this angle before tilt reshapes the stamp. */
+  tiltAngle?: number;
+  /** -1 to 1: tilt lightens (negative) or deepens the stamp. */
+  tiltOpacity?: number;
+  /** 0 to 1: leaning builds grain (shading gradation). */
+  tiltGradation?: number;
+  /** 0 to 1: leaning softens the edge. */
+  tiltBleed?: number;
+  /** -1 to 1: leaning shrinks (negative) or grows the stamp. */
+  tiltSize?: number;
+  /** The stamp rotation stays put on screen while the canvas is turned. */
+  orientScreen?: boolean;
+  /** 0.2 to 1: size of the sample stroke in the brush list, as a share of the row. */
+  previewSize?: number;
+  /** Bounds of the opacity slider for this brush (0 to 1); absent is 0 and 1. */
+  minOpacity?: number;
+  maxOpacity?: number;
+  /** About this brush. */
+  author?: string;
+  /** ms since 1970. */
+  created?: number;
+  /** A small PNG data URL of a hand signature. */
+  signature?: string;
+
+  // ---- pen response and shape dynamics (optional; written only when not default) ----
+  /** Per-channel pressure curves and response speeds (see paint/curves.ts). */
+  curves?: PenCurves;
+  /** -1 to 1: barrel roll (pen twist) scales the size, the opacity and the edge softness. */
+  rollSize?: number;
+  rollOpacity?: number;
+  rollBleed?: number;
+  /** Barrel roll is measured against the stroke direction instead of the page. */
+  rollRelative?: boolean;
+  /** -1 to 1: pressure squashes the stamp (positive: light pressure is flatter). */
+  pressureRoundness?: number;
+  /** -1 to 1: leaning squashes the stamp. */
+  tiltRoundness?: number;
+  /** 0 to 1: random squash along the horizontal or the vertical axis per stamp. */
+  roundJitterH?: number;
+  roundJitterV?: number;
+  /** 0 to 1: random number of stamps per dab. */
+  countJitter?: number;
+  /** 0 to 1: random gap between stamps. */
+  spacingJitter?: number;
+  /** 0 to 1: stamps slide forward and back along the stroke. */
+  jitterLinear?: number;
+  /** -1 to 1: the gap between stamps grows (positive) or shrinks with pen speed. */
+  speedSpacing?: number;
 }
+
+/** One pressure curve: flat x,y pairs from (0,y0) to (1,y1) with at most four nodes between; `speed` 0 (slow) to 1 (instant) is the response speed. */
+export interface PenCurve { pts: number[]; speed?: number }
+
+export interface PenCurves { size?: PenCurve; opacity?: PenCurve; flow?: PenCurve; bleed?: PenCurve; roundness?: PenCurve; tilt?: PenCurve }
+
+export type GrainBlend = 'multiply' | 'subtract' | 'screen';
 
 export interface ColorDyn {
   stampHue?: number; stampSat?: number; stampBri?: number;
   strokeHue?: number; strokeSat?: number; strokeBri?: number;
+  /** 0 to 1: how far each stamp (or the whole stroke) leans toward the secondary color. */
+  stampSecondary?: number; strokeSecondary?: number;
   pressureHue?: number; pressureSat?: number; pressureBri?: number;
   tiltHue?: number; tiltSat?: number; tiltBri?: number;
 }
 
-export interface WetMix { dilution: number; charge: number; attack: number; pull: number; grade: number }
+export interface WetMix {
+  dilution: number; charge: number; attack: number; pull: number; grade: number;
+  /** 0 to 1: how wide the picked-up color is averaged. */
+  blur?: number;
+  /** 0 to 1: random blur width per stamp. */
+  blurJitter?: number;
+  /** 0 to 1: random wetness per stamp. */
+  wetJitter?: number;
+}
 
-export type RenderMode = 'light-glaze' | 'uniform-glaze' | 'intense-glaze' | 'heavy-glaze' | 'uniform-blending' | 'intense-blending';
+export type RenderMode = 'light-glaze' | 'uniform-glaze' | 'intense-glaze' | 'heavy-glaze' | 'uniform-blending' | 'intense-blending' | 'heavy-blending';
 
 export interface StrokeSettings {
   tool: PaintTool;
@@ -184,6 +308,12 @@ export interface StrokeSettings {
   seed: number;
   /** Barrel roll (pen twist) sets the stamp angle. */
   roll?: boolean;
+  /** The second color, for brushes that lean toward it. */
+  color2?: RGB;
+  /** Canvas rotation in radians, for brushes that stay oriented to the screen. */
+  viewRot?: number;
+  /** The long side brush sizes scale with (default: the raster's); previews pass 1920 to keep their sizes plain. */
+  sizeRef?: number;
 }
 
 /** A live stroke on one layer. `add` returns the changed rectangle (or null), `finish` the undo patch. */

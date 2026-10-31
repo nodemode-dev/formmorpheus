@@ -1,6 +1,7 @@
 // Pen dynamics: the global pressure curve, size and flow ranges, tilt, and the seeded PRNG.
 
 import type { Brush, Point } from './types';
+import { shapeLean } from './curves';
 
 // ---- pressure curve --------------------------------------------------------
 
@@ -98,9 +99,13 @@ export function applyPressure(p: number): number {
 
 export function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
 
-/** Diameter in canvas pixels for a 0..1 size slider value. */
-export function baseDiameter(brush: Brush, size: number): number {
-  return lerp(brush.minSize, brush.maxSize, Math.min(1, Math.max(0, size)));
+/** Size reference: a brush's sizes are canvas pixels on a 1920 px long side and scale with the canvas from there. */
+export const SIZE_REF = 1920;
+
+/** Diameter in canvas pixels for a 0..1 size slider value; `canvasLong` (the canvas's long side) scales it unless the brush is fixed. */
+export function baseDiameter(brush: Brush, size: number, canvasLong = 0): number {
+  const k = canvasLong > 0 && !brush.sizeAbs ? canvasLong / SIZE_REF : 1;
+  return lerp(brush.minSize, brush.maxSize, Math.min(1, Math.max(0, size))) * k;
 }
 
 export function pressureDiameter(base: number, brush: Brush, pressure: number): number {
@@ -134,20 +139,32 @@ export interface TiltShape {
   sizeMul: number;
   /** Angle override in radians, or null when the pen is upright. */
   angle: number | null;
+  /** 0 to 1 lean past the brush's tilt angle; opacityMul, gradation and bleed follow it. */
+  lean: number;
+  opacityMul: number;
+  gradation: number;
+  bleed: number;
 }
 
-const UPRIGHT: TiltShape = { roundnessMul: 1, sizeMul: 1, angle: null };
+const UPRIGHT: TiltShape = { roundnessMul: 1, sizeMul: 1, angle: null, lean: 0, opacityMul: 1, gradation: 0, bleed: 0 };
 
 /** How a leaning pen reshapes the dab, scaled by the brush's tilt amount. */
 export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape {
-  if (brush.tilt <= 0 || (tiltX === 0 && tiltY === 0)) return UPRIGHT;
+  const extra = !!(brush.tiltOpacity || brush.tiltGradation || brush.tiltBleed || brush.tiltSize);
+  if ((brush.tilt <= 0 && !extra) || (tiltX === 0 && tiltY === 0)) return UPRIGHT;
   const info = tiltInfo(tiltX, tiltY);
-  const k = Math.min(1, info.lean * 1.25) * brush.tilt;
-  if (k < 0.02) return UPRIGHT;
+  const th = Math.min(0.95, Math.max(0, (brush.tiltAngle ?? 0) / 90));
+  const lean = shapeLean(brush, Math.min(1, Math.max(0, (info.lean - th) / (1 - th))));
+  const k = Math.min(1, lean * 1.25) * brush.tilt;
+  const flat = k >= 0.02;
   return {
-    roundnessMul: lerp(1, 0.32, k),
-    sizeMul: lerp(1, 2.4, k),
-    angle: info.azimuth,
+    roundnessMul: flat ? lerp(1, 0.32, k) : 1,
+    sizeMul: (flat ? lerp(1, 2.4, k) : 1) * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
+    angle: flat ? info.azimuth : null,
+    lean,
+    opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1,
+    gradation: (brush.tiltGradation ?? 0) * lean,
+    bleed: (brush.tiltBleed ?? 0) * lean,
   };
 }
 
@@ -191,7 +208,32 @@ export function hsvToRgb(h: number, s: number, v: number, out: number[]): void {
 
 /** True when a brush needs the per-pixel stroke colour path (colour, wet mix, build-up modes, pooled edges, relief). */
 export function needsColourPath(b: Brush): boolean {
-  return !!(b.colorDyn || b.wet || b.render || (b.wetEdges ?? 0) > 0 || (b.bump ?? 0) > 0);
+  return !!(b.colorDyn || b.wet || b.render || (b.wetEdges ?? 0) > 0 || (b.bump ?? 0) > 0
+    || (b.burntEdges ?? 0) > 0 || (b.blend && b.blend !== 'normal') || (b.lumBlend ?? 0) > 0);
+}
+
+/** One channel of a separable blend, base and source 0..255. Unknown modes act as normal. */
+export function blendChannel(mode: string, b: number, s: number): number {
+  const bn = b / 255, sn = s / 255;
+  let r: number;
+  switch (mode) {
+    case 'multiply': r = bn * sn; break;
+    case 'screen': r = 1 - (1 - bn) * (1 - sn); break;
+    case 'overlay': r = bn < 0.5 ? 2 * bn * sn : 1 - 2 * (1 - bn) * (1 - sn); break;
+    case 'hard-light': r = sn < 0.5 ? 2 * bn * sn : 1 - 2 * (1 - bn) * (1 - sn); break;
+    case 'soft-light': r = sn < 0.5 ? bn - (1 - 2 * sn) * bn * (1 - bn) : bn + (2 * sn - 1) * (Math.sqrt(bn) - bn); break;
+    case 'darken': r = Math.min(bn, sn); break;
+    case 'lighten': r = Math.max(bn, sn); break;
+    case 'color-dodge': r = sn >= 1 ? 1 : Math.min(1, bn / (1 - sn)); break;
+    case 'color-burn': r = sn <= 0 ? 0 : 1 - Math.min(1, (1 - bn) / sn); break;
+    case 'linear-burn': r = Math.max(0, bn + sn - 1); break;
+    case 'difference': r = Math.abs(bn - sn); break;
+    case 'exclusion': r = bn + sn - 2 * bn * sn; break;
+    case 'add': r = Math.min(1, bn + sn); break;
+    case 'subtract': r = Math.max(0, bn - sn); break;
+    default: r = sn;
+  }
+  return r * 255;
 }
 
 // ---- seeded PRNG -----------------------------------------------------------

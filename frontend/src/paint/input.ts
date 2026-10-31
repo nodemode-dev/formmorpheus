@@ -24,6 +24,8 @@ export class PenInput {
   /** Motion filtering for the next stroke (tremor compensation); expression 0 to 1. */
   motion = false;
   expression = 0.5;
+  /** 0 to 1: how much of the filtered path replaces the raw one. */
+  motionAmount = 1;
   private readonly filter = new MotionFilter();
   private readonly toCanvas: PenInputOptions['toCanvas'];
   private active = false;
@@ -70,7 +72,7 @@ export class PenInput {
     const evs = list.length ? list : [e];
     for (const ev of evs) {
       const raw = this.sample(ev);
-      const s = this.motion ? this.filter.apply(raw, this.expression) : raw;
+      const s = this.motion ? this.filter.apply(raw, this.expression, this.motionAmount) : raw;
       this.lastPen = s;
       const o = this.follow(s);
       if (o) { out.push(o); this.lastOut = o; }

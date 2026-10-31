@@ -6,9 +6,15 @@
 // Undo bytes are snapshotted lazily per 64 px tile on first touch.
 
 import type { PenSample, PixelPatch, Raster, Rect, StrokeLike, StrokeSettings } from './types';
-import { baseAngle, baseDiameter, hsvToRgb, mulberry32, needsColourPath, pressureDiameter, pressureFlow, rgbToHsv, tiltInfo, tiltShape } from './dynamics';
+import { baseAngle, baseDiameter, blendChannel, hsvToRgb, mulberry32, needsColourPath, pressureDiameter, pressureFlow, rgbToHsv, tiltInfo, tiltShape } from './dynamics';
 import { getTip, grainTable } from './tips';
+import { brushGrain } from './grains-lib';
+import { libTipImage } from './tips-lib';
 import type { RenderMode, WetMix } from './types';
+import { PenResponse, rollAmount, shapeLean } from './curves';
+import { WetPaint } from './wet';
+import type { WetStamp } from './wet';
+import { RENDER_ALGOS, WET_DEFAULT } from './render-modes';
 
 /** Build-up per mode: scale on a dab's alpha, and whether coverage is capped at the strongest dab. */
 const MODES: Record<RenderMode, { k: number; uniform: boolean; heavy: boolean; wet?: WetMix }> = {
@@ -18,11 +24,12 @@ const MODES: Record<RenderMode, { k: number; uniform: boolean; heavy: boolean; w
   'heavy-glaze': { k: 1.8, uniform: false, heavy: true },
   'uniform-blending': { k: 1, uniform: true, heavy: false, wet: { dilution: 0.1, charge: 0.7, attack: 0.3, pull: 0.45, grade: 0.5 } },
   'intense-blending': { k: 1.8, uniform: false, heavy: false, wet: { dilution: 0.15, charge: 0.55, attack: 0.6, pull: 0.8, grade: 0.4 } },
+  'heavy-blending': { k: 2.4, uniform: false, heavy: true, wet: { dilution: 0.2, charge: 0.45, attack: 0.8, pull: 1, grade: 0.35 } },
 };
 const NORMAL_MODE = { k: 1, uniform: false, heavy: false };
 
 // Per-pixel stroke colour (rgb), reused between strokes; only read where coverage is non-zero.
-let poolCol: Uint8Array | null = null;
+let poolCol: Uint16Array | null = null;
 let poolColBusy = false;
 
 const TILE = 64;
@@ -42,6 +49,21 @@ function scaleGrain(g: ArrayLike<number>, k: number): Float32Array {
       const top = g[ya | xa] + (g[ya | xb] - g[ya | xa]) * tx;
       const bot = g[yb | xa] + (g[yb | xb] - g[yb | xa]) * tx;
       out[(y << 8) | x] = top + (bot - top) * ty;
+    }
+  }
+  return out;
+}
+
+/** The grain tile turned by `rot` radians about its centre, wrapping at the edges. */
+function rotateGrain(g: ArrayLike<number>, rot: number): Float32Array {
+  const out = new Float32Array(65536);
+  const c = Math.cos(rot), s = Math.sin(rot);
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 256; x++) {
+      const u = x - 128, v = y - 128;
+      const sx = ((Math.round(c * u + s * v + 128) % 256) + 256) % 256;
+      const sy = ((Math.round(-s * u + c * v + 128) % 256) + 256) % 256;
+      out[(y << 8) | x] = g[(sy << 8) | sx];
     }
   }
   return out;
@@ -76,10 +98,22 @@ export class Stroke implements StrokeLike {
   private readonly colorG: number;
   private readonly colorB: number;
   private readonly tooth: Float32Array | null;
-  private readonly taperLen: number;
+  private taperLen: number;
   private travel = 0;
-  private readonly endLen: number;
+  private endLen: number;
   private endScale = 1;
+  /** 1 outside the end taper, falling to 0 at its tip (shaped by the brush's taper tip). */
+  private endRamp = 1;
+  private startRamp = 1;
+  private readonly opBase: number;
+  private opRamp = 0;
+  private pSm = -1;
+  private readonly gblend: number;
+  private strokeSec = 0;
+  private dabPeak = 1;
+  private leanGrain = 0;
+  private bleedNow = 0;
+  private penKind = false;
   private readonly sel: Uint8Array | null;
   private readonly useCoverage: boolean;
 
@@ -105,10 +139,16 @@ export class Stroke implements StrokeLike {
 
   // colour path: stroke colour buffer, colour dynamics, wet mix, pen speed
   private readonly colour: boolean;
-  private colBuf: Uint8Array | null = null;
+  private colBuf: Uint16Array | null = null;
   private colPooled = false;
   private readonly mode: { k: number; uniform: boolean; heavy: boolean };
   private readonly wet: WetMix | null;
+  /** The real wet/glaze paint model (paint/wet.ts) when the brush has a wet mix or a rendering mode. */
+  private wp: WetPaint | null = null;
+  /** Per-channel pressure curves, when the brush has them. */
+  private pen: PenResponse | null = null;
+  private rollNow = 0;
+  private curDir: number | null = null;
   private readonly hsv0 = [0, 0, 0];
   private readonly strokeD = [0, 0, 0];
   private readonly tmp = [0, 0, 0];
@@ -134,7 +174,7 @@ export class Stroke implements StrokeLike {
     this.snap = new Array(this.tilesX * Math.ceil(this.h / TILE));
     this.rng = mulberry32(s.seed);
     const zoomK = s.dynamicScaling && s.zoom > 0 ? 1 / s.zoom : 1;
-    this.baseDia = baseDiameter(s.brush, s.size) * zoomK;
+    this.baseDia = baseDiameter(s.brush, s.size, s.sizeRef ?? Math.max(this.w, this.h)) * zoomK;
     this.colorR = s.color.r;
     this.colorG = s.color.g;
     this.colorB = s.color.b;
@@ -153,37 +193,68 @@ export class Stroke implements StrokeLike {
     this.wetR = this.colorR; this.wetG = this.colorG; this.wetB = this.colorB;
     this.wigA = (br.wiggle ?? 0) > 0 ? this.rng() * 6.28 : 0;
     this.wigB = (br.wiggle ?? 0) > 0 ? this.rng() * 6.28 : 0;
+    if (this.colour && (br.wet || br.render) && (!br.blend || br.blend === 'normal') && !br.lumBlend) {
+      this.wp = new WetPaint(this.w, this.h, this.data, {
+        algo: br.render ? RENDER_ALGOS[br.render] : WET_DEFAULT, wet: br.wet ?? null, wetEdges: br.wetEdges ?? 0, baseDia: this.baseDia, rng: this.rng,
+      });
+    }
+    if (PenResponse.wanted(br)) this.pen = new PenResponse(br);
     if (this.colour) {
-      if (!poolColBusy) {
-        if (!poolCol || poolCol.length !== this.w * this.h * 3) poolCol = new Uint8Array(this.w * this.h * 3);
+      if (this.wp) { /* the wet model keeps its own reservoir, no per-pixel stroke colour */ } else if (!poolColBusy) {
+        if (!poolCol || poolCol.length !== this.w * this.h * 3) poolCol = new Uint16Array(this.w * this.h * 3);
         poolColBusy = true;
         this.colBuf = poolCol;
         this.colPooled = true;
-      } else this.colBuf = new Uint8Array(this.w * this.h * 3);
+      } else this.colBuf = new Uint16Array(this.w * this.h * 3);
       rgbToHsv(this.colorR, this.colorG, this.colorB, this.hsv0);
       const cd = br.colorDyn;
       if (cd) {
         this.strokeD[0] = (this.rng() - 0.5) * (cd.strokeHue ?? 0);
         this.strokeD[1] = (this.rng() - 0.5) * (cd.strokeSat ?? 0);
         this.strokeD[2] = (this.rng() - 0.5) * (cd.strokeBri ?? 0);
+        if (cd.strokeSecondary) this.strokeSec = this.rng() * cd.strokeSecondary;
       }
     }
-    if (s.brush.grain > 0) {
-      let g: ArrayLike<number> = grainTable(s.seed);
-      const gi = s.brush.grainImage;
-      if (gi && gi.length === 65536) g = Float32Array.from(gi, (v) => v / 255);
-      const gs = s.brush.grainScale ?? 1;
-      if (gs !== 1) g = scaleGrain(g, gs);
+    this.opBase = br.minOpacity !== undefined || br.maxOpacity !== undefined
+      ? (br.minOpacity ?? 0) + (Math.max(br.minOpacity ?? 0, br.maxOpacity ?? 1) - (br.minOpacity ?? 0)) * s.opacity
+      : s.opacity;
+    this.gblend = br.grainBlend === 'subtract' ? 1 : br.grainBlend === 'screen' ? 2 : 0;
+    if (s.brush.grain > 0 || (s.brush.tiltGradation ?? 0) > 0 || (s.brush.bump ?? 0) > 0) {
+      let g: ArrayLike<number> = brushGrain(s.brush) ?? grainTable(s.seed);
+      const dmin = s.brush.grainDepthMin ?? 0;
+      const gs = (s.brush.grainScale ?? 1) * (s.brush.grainZoom ? Math.pow(Math.max(0.1, this.baseDia / 40), s.brush.grainZoom) : 1);
+      if (Math.abs(gs - 1) > 0.001) g = scaleGrain(g, Math.min(8, Math.max(0.1, gs)));
+      if (s.brush.grainRot) g = rotateGrain(g, s.brush.grainRot);
+      const gb = s.brush.grainBright ?? 0, gc = s.brush.grainContrast ?? 0;
+      const cm = gc >= 0 ? 1 + gc * 3 : 1 + gc * 0.8;
       const t = new Float32Array(g.length);
       for (let i = 0; i < g.length; i++) {
-        const x = Math.min(1, Math.max(0, (g[i] - 0.3) / 0.4));
-        t[i] = x * x * (3 - 2 * x);
+        let x = (g[i] - 0.3) / 0.4;
+        if (gb !== 0 || gc !== 0) x = (x - 0.5) * cm + 0.5 + gb * 0.5;
+        x = Math.min(1, Math.max(0, x));
+        t[i] = dmin + (1 - dmin) * (x * x * (3 - 2 * x));
       }
       this.tooth = t;
     } else this.tooth = null;
-    this.taperLen = (s.brush.taper ?? 0) > 0 ? (s.brush.taper ?? 0) * Math.max(24, this.baseDia * 5) : 0;
-    const te = s.brush.taperEnd ?? s.brush.taper ?? 0;
+    this.taperLen = 0;
+    this.endLen = 0;
+    this.setTaper(false);
+  }
+
+  /** Taper lengths: a pen uses the pressure taper when the brush has one, other input the touch taper. */
+  private setTaper(pen: boolean): void {
+    const b = this.s.brush;
+    const usePen = pen && (b.pTaper !== undefined || b.pTaperEnd !== undefined);
+    const ts = usePen ? (b.pTaper ?? 0) : (b.taper ?? 0);
+    const te = usePen ? (b.pTaperEnd ?? b.pTaper ?? 0) : (b.taperEnd ?? b.taper ?? 0);
+    this.taperLen = ts > 0 ? ts * Math.max(24, this.baseDia * 5) : 0;
     this.endLen = te > 0 ? te * Math.max(24, this.baseDia * 5) * 0.6 : 0;
+  }
+
+  /** Shapes a 0..1 ramp (1 = full size) by the brush's taper tip: 0 blunt, 1 needle. */
+  private shapeRamp(k: number): number {
+    const tip = this.s.brush.taperTip;
+    return tip === undefined ? k : Math.pow(k, 0.4 + tip * 2.2);
   }
 
   /** The thinning tail past the last point: dabs continue along the last direction, shrinking to a point. */
@@ -201,10 +272,12 @@ export class Stroke implements StrokeLike {
       this.acc = 0;
       if (pos >= L) break;
       const k = 1 - pos / L;
-      this.endScale = Math.max(0.1, k * k * (3 - 2 * k));
+      this.endRamp = this.shapeRamp(k * k * (3 - 2 * k));
+      this.endScale = this.s.brush.taperSize === undefined && this.s.brush.taperTip === undefined ? Math.max(0.1, this.endRamp) : (this.s.brush.taperSize ?? 0.1) + (1 - (this.s.brush.taperSize ?? 0.1)) * this.endRamp;
       this.dab(b.x + ux * pos, b.y + uy * pos, b.p, b.tx, b.ty, dir);
     }
     this.endScale = 1;
+    this.endRamp = 1;
   }
 
   // ---- StrokeLike ----------------------------------------------------------
@@ -217,7 +290,14 @@ export class Stroke implements StrokeLike {
       this.speed += (Math.min(1, v / 3) - this.speed) * 0.25;
     }
     this.lastT = sample.time; this.lastX = sample.x; this.lastY = sample.y;
-    const p: P = { x: sample.x, y: sample.y, p: Math.min(1, Math.max(0, sample.pressure)), tx: sample.tiltX, ty: sample.tiltY };
+    if (this.count === 0 && sample.kind === 'pen') { this.penKind = true; this.setTaper(true); }
+    let pr = Math.min(1, Math.max(0, sample.pressure));
+    const psm = this.s.brush.pressureSmooth;
+    if (psm) {
+      this.pSm = this.pSm < 0 ? pr : this.pSm + (pr - this.pSm) * (1 - 0.92 * psm);
+      pr = this.pSm;
+    }
+    const p: P = { x: sample.x, y: sample.y, p: pr, tx: sample.tiltX, ty: sample.tiltY };
     this.callDirty = false;
     if (this.count === 0) {
       this.first = p;
@@ -333,19 +413,45 @@ export class Stroke implements StrokeLike {
   private dab(x: number, y: number, pressure: number, tiltX: number, tiltY: number, dir: number | null): void {
     const { brush, tool, opacity } = this.s;
     const tilt = tiltShape(brush, tiltX, tiltY);
-    let dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pressure) * tilt.sizeMul);
+    const pn = this.pen;
+    if (pn) pn.update(pressure, this.lastStep, this.baseDia);
+    // barrel roll scales size, opacity and edge softness (only when the pen reports a twist)
+    let rollK = 1, rollOp = 1, rollBl = 0;
+    if (this.twist && (brush.rollSize || brush.rollOpacity || brush.rollBleed)) {
+      const ra = rollAmount(this.twist, dir, !!brush.rollRelative) - 0.5;
+      rollK = Math.max(0.2, 1 + (brush.rollSize ?? 0) * ra * 1.6);
+      rollOp = Math.max(0.05, 1 + (brush.rollOpacity ?? 0) * ra * 2);
+      rollBl = Math.max(0, (brush.rollBleed ?? 0) * (ra + 0.5));
+    }
+    let dia = Math.max(0.6, pressureDiameter(this.baseDia, brush, pn ? pn.size : pressure) * tilt.sizeMul * rollK);
     if (brush.speedSize) dia = Math.max(0.6, dia * Math.min(3, Math.max(0.25, 1 + brush.speedSize * (this.speed - 0.3) * 1.6)));
     if (brush.jitterSize) dia = Math.max(0.6, dia * (1 - brush.jitterSize * 0.7 * this.rng()));
     if (brush.fallOff) dia = Math.max(0.6, dia * (1 - brush.fallOff * 0.85 * Math.min(1, this.travel / (200 + 900 * (1 - brush.fallOff)))));
-    if (this.taperLen > 0) dia = Math.max(0.6, dia * (0.12 + 0.88 * Math.min(1, this.travel / this.taperLen)));
+    if (this.taperLen > 0) {
+      this.startRamp = this.shapeRamp(Math.min(1, this.travel / this.taperLen));
+      const ts = brush.taperSize ?? 0.12;
+      dia = Math.max(0.6, dia * (ts + (1 - ts) * this.startRamp));
+    }
     if (this.endScale < 1) dia = Math.max(0.6, dia * this.endScale);
     this.lastStep = Math.max(0.5, brush.spacing * dia);
+    if (brush.spacingJitter) this.lastStep *= Math.max(0.2, 1 + (this.rng() - 0.5) * 2 * brush.spacingJitter);
+    if (brush.speedSpacing) this.lastStep *= Math.max(0.25, 1 + brush.speedSpacing * (this.speed - 0.3) * 2.2);
     this.travel += this.lastStep;
-    let flow = Math.min(1, Math.max(0, brush.flow * pressureFlow(brush, pressure)));
+    let flow = Math.min(1, Math.max(0, brush.flow * pressureFlow(brush, pn ? pn.flow : pressure) * rollOp));
     if (brush.speedOpacity) flow *= Math.min(1.5, Math.max(0.05, 1 + brush.speedOpacity * (this.speed - 0.3) * 1.6));
     if (brush.jitterOpacity) flow *= 1 - brush.jitterOpacity * this.rng();
     if (brush.burnout) flow *= Math.max(0.03, 1 - brush.burnout * Math.min(1, this.travel / (150 + 1400 * (1 - brush.burnout))));
+    if (brush.taperOpacity) flow *= 1 - brush.taperOpacity * (1 - Math.min(this.startRamp, this.endRamp));
+    if (tilt.opacityMul !== 1) flow *= tilt.opacityMul;
+    const po = brush.pressureOpacity ?? (brush.curves?.opacity ? 1 : 0);
+    if (po) this.opRamp = Math.max(this.opRamp, 1 - po * (1 - (pn ? pn.opacity : pressure)));
+    this.bleedNow = (brush.pressureBleed ?? 0) * (pn ? pn.bleed : pressure) + tilt.bleed + rollBl;
+    this.leanGrain = tilt.gradation;
     if (flow <= 0.0005) return;
+    if (brush.pathJitter && dir !== null) {
+      const off = (this.rng() - 0.5) * brush.pathJitter * dia;
+      x += -Math.sin(dir) * off; y += Math.cos(dir) * off;
+    }
     if (brush.wiggle && dir !== null) {
       const amp = brush.wiggle * Math.max(3, dia * 0.7), tr = this.travel;
       const off = (Math.sin(tr * 0.045 + this.wigA) * 0.6 + Math.sin(tr * 0.113 + this.wigB) * 0.4) * amp;
@@ -355,16 +461,50 @@ export class Stroke implements StrokeLike {
       this.dabColour(x, y, dia, pressure, tiltX, tiltY);
       flow *= this.alphaMul;
     }
-    const n = Math.max(1, Math.min(16, Math.round(brush.shapeCount ?? 1)));
-    if (n === 1) { this.stamp(x, y, dia, flow, dir, tilt.angle, tilt.roundnessMul, tiltX, tiltY, 0); return; }
+    if (brush.jitterLinear && dir !== null) {
+      const off = (this.rng() - 0.5) * 2 * brush.jitterLinear * dia;
+      x += Math.cos(dir) * off; y += Math.sin(dir) * off;
+    }
+    // shape dynamics: count jitter, roundness by pressure and tilt, horizontal / vertical squash jitter
+    let n = Math.max(1, Math.min(16, Math.round(brush.shapeCount ?? 1)));
+    if (brush.countJitter && n > 1) n = Math.max(1, Math.round(n * (1 - brush.countJitter * this.rng())));
+    let rm = tilt.roundnessMul;
+    this.roundAng = 0;
+    if (brush.pressureRoundness) {
+      const v = pn ? pn.round : pressure, k = brush.pressureRoundness;
+      rm *= k > 0 ? 1 - k * (1 - v) * 0.9 : 1 + k * v * 0.9;
+    }
+    if (brush.tiltRoundness) rm *= Math.max(0.05, 1 - brush.tiltRoundness * shapeLean(brush, tiltInfo(tiltX, tiltY).lean) * 0.9);
+    if (brush.roundJitterH || brush.roundJitterV) {
+      const h = brush.roundJitterH ?? 0, v = brush.roundJitterV ?? 0;
+      const useV = v > 0 && (h <= 0 || this.rng() < 0.5);
+      rm *= 1 - (useV ? v : h) * 0.9 * this.rng();
+      if (useV) this.roundAng = Math.PI / 2;
+    }
+    if (n === 1) { this.stamp(x, y, dia, flow, dir, tilt.angle, rm, tiltX, tiltY, 0); return; }
     const sub = Math.max(0.6, dia * Math.max(0.3, 1 / Math.sqrt(n)));
     for (let k = 0; k < n; k++) {
       const r = dia * 0.5 * Math.sqrt(this.rng()), th = this.rng() * 6.2832;
-      this.stamp(x + Math.cos(th) * r, y + Math.sin(th) * r, sub, flow, dir, tilt.angle, tilt.roundnessMul, tiltX, tiltY, k);
+      this.stamp(x + Math.cos(th) * r, y + Math.sin(th) * r, sub, flow, dir, tilt.angle, rm, tiltX, tiltY, k);
     }
   }
 
   private alphaMul = 1;
+  private roundAng = 0;
+  private dabX = 0;
+  private dabY = 0;
+  private readonly wst: WetStamp = { x0: 0, y0: 0, x1: 0, y1: 0, ab: new Float32Array(0), bw: 0, cov: new Uint16Array(0), w: 0, sel: null, lock: false, opacity: 1, cx: 0, cy: 0, tooth: null, bump: 0, burnt: 0, peak: 1, snap: [], tilesX: 0 };
+
+  /** Composite one stamp with the wet / glaze paint model (paint/wet.ts). */
+  private applyWet(x0: number, y0: number, x1: number, y1: number, ab: Float32Array, bw: number, opacity: number): void {
+    const st = this.wst, br = this.s.brush;
+    st.x0 = x0; st.y0 = y0; st.x1 = x1; st.y1 = y1; st.ab = ab; st.bw = bw;
+    st.cov = this.cov!; st.w = this.w; st.sel = this.sel; st.lock = this.s.alphaLock; st.opacity = opacity;
+    st.cx = this.dabX; st.cy = this.dabY;
+    st.tooth = this.tooth; st.bump = br.bump ?? 0; st.burnt = br.burntEdges ?? 0; st.peak = this.dabPeak;
+    st.snap = this.snap; st.tilesX = this.tilesX;
+    this.wp!.paint(st);
+  }
 
   /** Colour of the next dab: colour dynamics first, then the wet mix on top. */
   private dabColour(x: number, y: number, dia: number, pressure: number, tiltX: number, tiltY: number): void {
@@ -380,12 +520,28 @@ export class Stroke implements StrokeLike {
       const br = hsv[2] + d[2] + (cd.stampBri ? (rg() - 0.5) * cd.stampBri : 0) + (cd.pressureBri ?? 0) * pc + (cd.tiltBri ?? 0) * lean;
       hsvToRgb(h, sa, br, this.tmp);
       r = this.tmp[0]; g = this.tmp[1]; b = this.tmp[2];
+      const c2 = this.s.color2;
+      if (c2 && (cd.stampSecondary || cd.strokeSecondary)) {
+        const k = Math.min(1, this.strokeSec + (cd.stampSecondary ? this.rng() * cd.stampSecondary : 0));
+        r += (c2.r - r) * k; g += (c2.g - g) * k; b += (c2.b - b) * k;
+      }
+    }
+    if (this.wp) {
+      // the wet model takes the dab colour and does its own mixing and dilution
+      this.dabX = x; this.dabY = y;
+      this.wp.setColour(r, g, b);
+      this.wp.prepare(x, y, dia, this.travel, brush.spacing);
+      this.alphaMul = 1;
+      return;
     }
     let mul = 1;
     const w = this.wet;
     if (w) {
       const sm = this.sm;
-      this.sampleCanvas(x, y, dia * 0.35);
+      let rad = dia * 0.35;
+      if (w.blur) rad *= 1 + w.blur * 4 * (w.blurJitter ? 1 - w.blurJitter * 0.9 * this.rng() : 1);
+      else if (w.blurJitter) rad *= 1 - w.blurJitter * 0.9 * this.rng();
+      this.sampleCanvas(x, y, rad);
       const stepF = Math.min(1, brush.spacing);
       if (sm[3] > 0.03) {
         const k = Math.min(1, w.pull * 0.5 * Math.min(1, stepF * 3) * sm[3]);
@@ -397,6 +553,7 @@ export class Stroke implements StrokeLike {
       const atk = w.attack * Math.max(0, 1 - this.travel / (dia * 3)) * 0.8 * sm[3];
       let m = Math.min(1, w.dilution * 0.5 + (1 - this.load) * 0.6 + atk + w.pull * 0.45 * sm[3]);
       m = Math.pow(m, 0.5 + w.grade);
+      if (w.wetJitter) m *= 1 - w.wetJitter * this.rng();
       r += (this.wetR - r) * m; g += (this.wetG - g) * m; b += (this.wetB - b) * m;
       mul = (1 - w.dilution * 0.5) * (0.4 + 0.6 * this.load);
     }
@@ -417,7 +574,9 @@ export class Stroke implements StrokeLike {
   }
 
   private stamp(x: number, y: number, dia: number, flow: number, dir: number | null, tiltAngle: number | null, tiltRound: number, tiltX: number, tiltY: number, _k: number): void {
-    const { brush, tool, opacity } = this.s;
+    const { brush, tool } = this.s;
+    const opacity = brush.pressureOpacity || brush.curves?.opacity ? this.opBase * this.opRamp : this.opBase;
+    this.dabPeak = flow;
     let cx = x, cy = y;
     if (brush.scatter > 0) {
       cx += (this.rng() - 0.5) * 2 * brush.scatter * dia;
@@ -431,12 +590,13 @@ export class Stroke implements StrokeLike {
       cx = odd ? Math.floor(cx) + 0.5 : Math.round(cx);
       cy = odd ? Math.floor(cy) + 0.5 : Math.round(cy);
     }
-    let angle = baseAngle(brush) + (brush.baseRot ?? 0);
+    let angle = baseAngle(brush) + (brush.baseRot ?? 0) - (brush.orientScreen && this.s.viewRot ? this.s.viewRot : 0);
     if (brush.followStroke && dir !== null) angle = dir + Math.PI / 2 + (brush.baseRot ?? 0);
     if (brush.azimuth && (tiltX || tiltY)) angle = tiltInfo(tiltX, tiltY).azimuth;
     if (tiltAngle !== null) angle = tiltAngle;
     if (this.s.roll && this.twist) angle = (this.twist * Math.PI) / 180;
     if (brush.rotationJitter > 0) angle += (this.rng() - 0.5) * Math.PI * 2 * brush.rotationJitter;
+    angle += this.roundAng;
     const rn = Math.min(1, Math.max(0.05, brush.roundness * tiltRound));
 
     const a = dia / 2, b = Math.max(0.4, a * rn);
@@ -453,7 +613,8 @@ export class Stroke implements StrokeLike {
     const ab = this.abuf;
 
     // Stage 1: tip alpha * flow * grain into the scratch buffer.
-    const tip = getTip(brush.tip, dia, px1 ? 0 : brush.softness, rn, angle, brush.tipImage);
+    const libTip = brush.tipId ? libTipImage(brush.tipId) : undefined;
+    const tip = getTip(libTip ? 'sampled' : brush.tip, dia, px1 ? 0 : Math.min(1, brush.softness + this.bleedNow), rn, angle, libTip ?? brush.tipImage);
     const scale = dia / tip.diameter;
     const inv = 1 / scale;
     const N = tip.size, td = tip.data;
@@ -461,17 +622,27 @@ export class Stroke implements StrokeLike {
     const tooth = this.tooth;
     let gk = brush.grain;
     if (brush.grainJitter) gk = Math.max(0, gk * (1 - brush.grainJitter * this.rng()));
+    if (this.leanGrain > 0) gk = Math.min(1, gk + this.leanGrain * (1 - gk));
     // Moving grain is anchored to the stamp, texturized grain to the canvas.
     const moving = brush.grainMode === 'moving';
-    const gy = moving ? ((this.rng() * 256) | 0) - y0 : 0, gx = moving ? ((this.rng() * 256) | 0) - x0 : 0;
+    const jit = brush.grainOffsetJitter ? brush.grainOffsetJitter * 256 : 0;
+    // Grain movement: 1 renews the grain at every stamp (roller), lower keeps most of it so it drags and smears.
+    const gm = brush.grainMovement ?? 1, g0 = gm < 1 ? this.s.seed & 255 : 0;
+    const gy = moving ? ((g0 + this.rng() * 256 * gm) | 0) - y0 : jit ? ((this.rng() * jit) | 0) : 0;
+    const gx = moving ? ((((g0 * 7) & 255) + this.rng() * 256 * gm) | 0) - x0 : jit ? ((this.rng() * jit) | 0) : 0;
+    const gb = this.gblend;
     const f255 = flow / 255;
+    const fX = !!brush.flipX, fY = !!brush.flipY, nn = !!brush.tipSharp;
+    const special = fX || fY || nn;
     for (let py = y0; py < y1; py++) {
-      const fy = (py + 0.5 - cy) * inv + off;
+      let fy = (py + 0.5 - cy) * inv + off;
+      if (fY) fy = 2 * off - fy;
+      if (nn) fy = Math.round(fy);
       const j0 = Math.floor(fy), wy = fy - j0;
       const rowO = (py - y0) * bw;
       const gRow = ((py + gy) & 255) << 8;
       const fxa = (x0 + 0.5 - cx) * inv + off, fxb = (x1 - 0.5 - cx) * inv + off;
-      if (j0 >= 0 && j0 + 1 < N && fxa >= 0 && fxb < N - 1) {
+      if (!special && j0 >= 0 && j0 + 1 < N && fxa >= 0 && fxb < N - 1) {
         // Interior row: every tap is inside the map.
         const r0 = j0 * N, r1 = r0 + N;
         for (let px = x0; px < x1; px++) {
@@ -480,13 +651,18 @@ export class Stroke implements StrokeLike {
           const top = td[r0 + i0] + (td[r0 + i0 + 1] - td[r0 + i0]) * wx;
           const bot = td[r1 + i0] + (td[r1 + i0 + 1] - td[r1 + i0]) * wx;
           let v = (top + (bot - top) * wy) * f255;
-          if (v > 0 && tooth) v *= 1 - gk + gk * tooth[gRow | ((px + gx) & 255)];
+          if (v > 0 && tooth) {
+            const tv = tooth[gRow | ((px + gx) & 255)];
+            v = gb === 0 ? v * (1 - gk + gk * tv) : gb === 1 ? v * Math.max(0, 1 - 2 * gk * (1 - tv)) : v + (flow - v) * gk * tv;
+          }
           ab[rowO + px - x0] = v;
         }
         continue;
       }
       for (let px = x0; px < x1; px++) {
-        const fx = (px + 0.5 - cx) * inv + off;
+        let fx = (px + 0.5 - cx) * inv + off;
+        if (fX) fx = 2 * off - fx;
+        if (nn) fx = Math.round(fx);
         const i0 = Math.floor(fx), wx = fx - i0;
         let v = 0;
         if (i0 >= -1 && i0 < N && j0 >= -1 && j0 < N) {
@@ -497,7 +673,10 @@ export class Stroke implements StrokeLike {
           const v11 = ib && jb ? td[(j0 + 1) * N + i0 + 1] : 0;
           const top = v00 + (v10 - v00) * wx, bot = v01 + (v11 - v01) * wx;
           v = (top + (bot - top) * wy) * f255;
-          if (v > 0 && tooth) v *= 1 - gk + gk * tooth[gRow | ((px + gx) & 255)];
+          if (v > 0 && tooth) {
+            const tv = tooth[gRow | ((px + gx) & 255)];
+            v = gb === 0 ? v * (1 - gk + gk * tv) : gb === 1 ? v * Math.max(0, 1 - 2 * gk * (1 - tv)) : v + (flow - v) * gk * tv;
+          }
         }
         ab[rowO + px - x0] = v;
       }
@@ -509,7 +688,8 @@ export class Stroke implements StrokeLike {
     }
 
     if (tool === 'paint') {
-      if (this.colour) this.applyPaintDyn(x0, y0, x1, y1, ab, bw, opacity);
+      if (this.wp) this.applyWet(x0, y0, x1, y1, ab, bw, opacity);
+      else if (this.colour) this.applyPaintDyn(x0, y0, x1, y1, ab, bw, opacity);
       else this.applyPaint(x0, y0, x1, y1, ab, bw, opacity);
     }
     else if (tool === 'erase') this.applyErase(x0, y0, x1, y1, ab, bw, opacity);
@@ -525,35 +705,39 @@ export class Stroke implements StrokeLike {
       const rowO = (py - y0) * bw - x0;
       const trow = (py >> 6) * tilesX;
       const yo = (py & 63) << 6;
-      for (let px = x0; px < x1; px++) {
-        const a = ab[rowO + px];
-        if (a < 0.0004) continue;
-        const idx = py * w + px;
-        const cq = cv[idx];
-        if (cq >= 65500) continue; // saturated: pixel already holds its final value
-        const c0 = cq / 65535;
-        const c = c0 + (1 - c0) * a;
-        cv[idx] = (c * 65535 + 0.5) | 0;
-        let f = c * opacity;
-        if (sel) f *= sel[idx] / 255;
+      // one 64 px tile of the undo snapshot at a time: no tile lookup per pixel
+      for (let px = x0; px < x1;) {
         const t = snap[trow + (px >> 6)]!;
-        const o = (yo | (px & 63)) << 2;
-        const ao = t[o + 3] / 255;
-        const di = idx << 2;
-        if (lock) {
-          if (ao === 0) continue;
-          data[di] = t[o] + (cr - t[o]) * f;
-          data[di + 1] = t[o + 1] + (cg - t[o + 1]) * f;
-          data[di + 2] = t[o + 2] + (cb - t[o + 2]) * f;
-        } else {
-          const oa = ao * (1 - f);
-          const outA = f + oa;
-          if (outA <= 0) continue;
-          const k = 1 / outA;
-          data[di] = (cr * f + t[o] * oa) * k;
-          data[di + 1] = (cg * f + t[o + 1] * oa) * k;
-          data[di + 2] = (cb * f + t[o + 2] * oa) * k;
-          data[di + 3] = outA * 255;
+        const tEnd = Math.min(x1, (px | 63) + 1);
+        for (; px < tEnd; px++) {
+          const a = ab[rowO + px];
+          if (a < 0.0004) continue;
+          const idx = py * w + px;
+          const cq = cv[idx];
+          if (cq >= 65500) continue; // saturated: pixel already holds its final value
+          const c0 = cq / 65535;
+          const c = c0 + (1 - c0) * a;
+          cv[idx] = (c * 65535 + 0.5) | 0;
+          let f = c * opacity;
+          if (sel) f *= sel[idx] / 255;
+          const o = (yo | (px & 63)) << 2;
+          const ao = t[o + 3] / 255;
+          const di = idx << 2;
+          if (lock) {
+            if (ao === 0) continue;
+            data[di] = t[o] + (cr - t[o]) * f;
+            data[di + 1] = t[o + 1] + (cg - t[o + 1]) * f;
+            data[di + 2] = t[o + 2] + (cb - t[o + 2]) * f;
+          } else {
+            const oa = ao * (1 - f);
+            const outA = f + oa;
+            if (outA <= 0) continue;
+            const k = 1 / outA;
+            data[di] = (cr * f + t[o] * oa) * k;
+            data[di + 1] = (cg * f + t[o + 1] * oa) * k;
+            data[di + 2] = (cb * f + t[o + 2] * oa) * k;
+            data[di + 3] = outA * 255;
+          }
         }
       }
     }
@@ -568,6 +752,9 @@ export class Stroke implements StrokeLike {
     const we = this.s.brush.wetEdges ?? 0;
     const bump = (this.s.brush.bump ?? 0) * 70;
     const tooth = bump > 0 ? this.tooth : null;
+    const burnt = this.s.brush.burntEdges ?? 0, lumB = this.s.brush.lumBlend ?? 0;
+    const bmode = this.s.brush.blend && this.s.brush.blend !== 'normal' ? this.s.brush.blend : null;
+    const peak = Math.max(0.001, this.dabPeak / 1);
     for (let py = y0; py < y1; py++) {
       const rowO = (py - y0) * bw - x0;
       const trow = (py >> 6) * tilesX;
@@ -582,23 +769,25 @@ export class Stroke implements StrokeLike {
         else { const aa = a * mode.k; c = c0 + (1 - c0) * (aa > 1 ? 1 : aa); }
         cv[idx] = (c * 65535 + 0.5) | 0;
         const ci = idx * 3;
-        if (c0 <= 0.0004) { col[ci] = cr; col[ci + 1] = cg; col[ci + 2] = cb; }
+        // the stroke colour buffer is 8.8 fixed point (16 bit): a faint glaze step smaller than one level
+        // used to round away and the colour stalled in bands
+        if (c0 <= 0.0004) { col[ci] = cr * 256 + 0.5; col[ci + 1] = cg * 256 + 0.5; col[ci + 2] = cb * 256 + 0.5; }
         else {
           const wt = a > 1 ? 1 : a;
           let tr = cr, tg = cg, tb = cb;
           if (mode.heavy) {
             const k = c0 * 0.6;
-            tr += (cr * col[ci] / 255 - cr) * k; tg += (cg * col[ci + 1] / 255 - cg) * k; tb += (cb * col[ci + 2] / 255 - cb) * k;
+            tr += (cr * col[ci] / 65280 - cr) * k; tg += (cg * col[ci + 1] / 65280 - cg) * k; tb += (cb * col[ci + 2] / 65280 - cb) * k;
           }
-          col[ci] = col[ci] + (tr - col[ci]) * wt + 0.5;
-          col[ci + 1] = col[ci + 1] + (tg - col[ci + 1]) * wt + 0.5;
-          col[ci + 2] = col[ci + 2] + (tb - col[ci + 2]) * wt + 0.5;
+          col[ci] = col[ci] + (tr * 256 - col[ci]) * wt + 0.5;
+          col[ci + 1] = col[ci + 1] + (tg * 256 - col[ci + 1]) * wt + 0.5;
+          col[ci + 2] = col[ci + 2] + (tb * 256 - col[ci + 2]) * wt + 0.5;
         }
         let cc = c;
         if (we > 0) { const c2 = c * c; cc = c * (1 - we * 0.5 * c2 * c2 * c2); }
         let f = cc * opacity;
         if (sel) f *= sel[idx] / 255;
-        let pr = col[ci], pg = col[ci + 1], pb = col[ci + 2];
+        let pr = col[ci] / 256, pg = col[ci + 1] / 256, pb = col[ci + 2] / 256;
         if (tooth) {
           const d = (tooth[((py & 255) << 8) | (px & 255)] - 0.5) * bump;
           pr += d; pg += d; pb += d;
@@ -607,6 +796,24 @@ export class Stroke implements StrokeLike {
         const o = (yo | (px & 63)) << 2;
         const ao = t[o + 3] / 255;
         const di = idx << 2;
+        if (burnt > 0) {
+          const edge = Math.max(1 - (a > peak ? 1 : a / peak), 1 - c);
+          const kb = 1 - burnt * 0.85 * Math.pow(edge, 0.6);
+          pr *= kb; pg *= kb; pb *= kb;
+        }
+        if (ao > 0 && (bmode || lumB > 0)) {
+          if (bmode) {
+            pr += (blendChannel(bmode, t[o], pr) - pr) * ao;
+            pg += (blendChannel(bmode, t[o + 1], pg) - pg) * ao;
+            pb += (blendChannel(bmode, t[o + 2], pb) - pb) * ao;
+          }
+          if (lumB > 0) {
+            const kk = lumB * ((0.3 * pr + 0.59 * pg + 0.11 * pb) / 255) * ao;
+            pr += (blendChannel('screen', t[o], pr) - pr) * kk;
+            pg += (blendChannel('screen', t[o + 1], pg) - pg) * kk;
+            pb += (blendChannel('screen', t[o + 2], pb) - pb) * kk;
+          }
+        }
         if (lock) {
           if (ao === 0) continue;
           data[di] = t[o] + (pr - t[o]) * f;

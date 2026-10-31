@@ -148,7 +148,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   PAINT('Impasto', 'bristle', 0.04, 52, 10, 0.05, 1, 0.7, 0.9, { grain: 0.6, bump: 0.7, grainScale: 0.8, render: 'heavy-glaze', followStroke: true, roundness: 0.7 }),
   PAINT('Gouache', 'round', 0.03, 40, 6, 0.05, 1, 0.7, 0.9, { grain: 0.15, render: 'uniform-glaze', colorDyn: { strokeBri: 0.06 } }),
   PAINT('Acrylic', 'round', 0.05, 38, 5, 0.05, 0.9, 0.6, 0.8, { grain: 0.3, render: 'intense-glaze', wetEdges: 0.2 }),
-  PAINT('Oil blend', 'bristle', 0.06, 46, 8, 0.05, 1, 0.7, 0.9, { grain: 0.3, render: 'intense-blending', roundness: 0.8, followStroke: true }),
+  PAINT('Oil blend', 'bristle', 0.06, 46, 8, 0.05, 1, 0.7, 0.9, { grain: 0.3, render: 'intense-blending', roundness: 0.8, followStroke: true, wet: { dilution: 0.15, charge: 0.7, attack: 0.55, pull: 0.8, grade: 0.45 } }),
   PAINT('Knife', 'blade', 0.03, 48, 12, 0.05, 1, 0.8, 1, { followStroke: true, roundness: 0.3, render: 'uniform-blending', bump: 0.3, grain: 0.3 }),
   PAINT('Dab', 'blob', 0.1, 40, 8, 0.7, 1, 0.8, 0.9, { rotationJitter: 1, scatter: 0.1, jitterSize: 0.3, colorDyn: { stampBri: 0.15, stampHue: 0.04 } }),
   PAINT('Glaze', 'round', 0.3, 56, 12, 0.05, 0.5, 0.6, 0.3, { render: 'light-glaze', wet: { dilution: 0.5, charge: 0.9, attack: 0.1, pull: 0.2, grade: 0.7 } }, 0.7),
