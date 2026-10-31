@@ -63,8 +63,14 @@ def _paths(session: str) -> tuple[Path, Path]:
 
 def _atomic(path: Path, data: bytes) -> None:
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.part")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _entry(session: str, fmo: Path, side: Path) -> dict:

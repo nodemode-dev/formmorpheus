@@ -339,9 +339,16 @@ async def write_project(name: str, request: Request) -> dict:
     body = await read_limited(request, config.MAX_PROJECT_BYTES, "The project is too large to save.")
     if body[:4] != b"PK\x03\x04":
         raise HTTPException(400, "That is not a formmorpheus project.")
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.part")
-    tmp.write_bytes(body)
-    os.replace(tmp, path)
+    # a part file per request, flushed to disk before the rename: a kill or a power cut leaves the old movie or the whole new one
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.part")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return entry(path)
 
 
