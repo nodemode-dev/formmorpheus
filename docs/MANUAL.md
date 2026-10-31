@@ -240,7 +240,7 @@ Open with Ctrl+, (File or Edit menu). The pages:
 - **General**: show Home at launch and when the last movie closes, What's New, Autosave, the settings and library folders, and Reset All Preferences.
 - **Interface**: theme (28 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
 - **Timeline**: undo steps, scrub speed (Precise, Medium or Fast, which also sets how fast scrubbing the frame strip moves), two and three-finger tap for undo and redo, and ask before deleting.
-- **Performance**: **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
+- **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
 
 ## Languages
 
@@ -249,6 +249,18 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 ## Crash recovery
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
+
+## New in 0.13.0
+
+**Brush Studio.** Right-click a brush and choose Edit Brush, or New brush in the brush panel's menu. A live drawing pad sits beside the brush's sections: Stroke path, Taper, Shape, Grain, Rendering, Wet mix, Color dynamics, Dynamics, Pencil, Pressure curves, Properties, Materials and About this brush. Every slider has a number, double-click a label to reset it, Undo last change and Reset brush step back, and a built-in brush is saved as a copy. Shape and Grain have libraries of tips and paper grains to pick from, and brush size can follow the canvas size.
+
+**Paint.** Wet brushes now carry paint: they pick up and mix the colors already on the canvas (blue over yellow makes green), drag them along and leave wet edges; the rendering modes really differ (glaze builds up thin films, blending mixes). Pencils, charcoal, chalk, bristles, sponges and airbrushes each have their own tip and grain. Big Drawings with many layers use less memory, and long strokes keep the screen moving.
+
+**Sound.** Create · Record sound... records a voice-over onto the Timeline: pick the input, watch the level, count in, and the movie plays while you record. Each take gets its own track; Use or Delete picks between them, and a punch-in can replace part of a selected sound. Content · Sound... sets level, pan, fade in and out, normalize, mute and solo; fades also have handles on the block.
+
+**Editing.** Blocks snap to other blocks, the Playhead, markers and keys (View · Snap, hold Ctrl or Cmd to move freely). M adds a marker at the Playhead; Alt with the period or comma jumps between them. Content · Speed changes speed (25% to 400%), reverses or freezes a block. Two blocks side by side on a track can have a crossfade, a dip to color, a wipe or a push between them, with a handle for its length. Pictures and video can Fit, Fill or keep their size. Keys can bounce, be elastic or overshoot, loop or ping-pong after the last key, turn along their path, and be thinned.
+
+**Help and keyboard.** Help · Help Center has guided tutorials that run inside the app on a practice movie, the manual, and Send an idea (saved as a note you can share). Every control can be reached with Tab and the arrow keys, screen readers hear names and changes, and the system's reduce motion setting turns off animations. Exports now render in the background, so the app stays responsive.
 
 ## New in 0.12.0
 
@@ -373,6 +385,9 @@ Ctrl is Cmd on macOS.
 | Zoom Timeline out | Ctrl+- |
 | Fit Timeline | Ctrl+0 |
 | Free Trim | hold Alt while trimming |
+| Move the selected block one frame earlier or later | Shift+Ctrl+Left, Shift+Ctrl+Right (with the Timeline focused) |
+| Move the selected block one track up or down | Shift+Ctrl+Up, Shift+Ctrl+Down (with the Timeline focused) |
+| Say the Playhead time | Alt+T |
 
 ### Draw and Paint
 
@@ -397,6 +412,18 @@ Ctrl is Cmd on macOS.
 | Repeat Undo or Redo | hold the button |
 
 On a touch screen, a two-finger tap undoes and a three-finger tap redoes (Preferences can turn this off).
+
+## Keyboard and screen readers
+
+Everything can be done without a mouse. Tab and Shift+Tab move through the controls in reading order, and a ring shows where focus is. Escape closes a menu, a popover or a dialog and puts focus back where it was; Enter runs the focused control.
+
+- **Menus:** F10 or Alt opens the menu bar. Left and Right move across it, Up and Down through a menu, Right opens a submenu, Escape steps back. Press A to open the Create menu and the arrows to choose.
+- **Popovers** (Content Options, Create, Stage Options and the like): Up and Down move through the rows, Home and End jump to the first and last, Escape closes.
+- **Dialogs** keep Tab inside themselves and give focus back when they close.
+- **The Timeline** is one labelled region ("Tracks"). Focus it with Tab, select blocks with Ctrl+A or Tab through their commands, then move the selected block: Shift+Ctrl+Left and Right by a frame, Shift+Ctrl+Up and Down by a track. Each move is spoken, as in "Text, track 2 / 3, frames 5 - 28". Alt+T says the Playhead time.
+- **Sliders** (brush size and opacity) take Up and Down for 1%, Shift for 10%, Home and End for the ends, and report their value.
+- Icon-only buttons are named after their tooltip, in the language of the interface. Notices are read out as they appear.
+- If your system asks for reduced motion, the reveal, the popover and menu transitions and flick momentum stop.
 
 ## Troubleshooting
 

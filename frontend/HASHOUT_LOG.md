@@ -2,7 +2,7 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.12.0
+Current build version: v0.13.0
 Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still open, second review round)
 
 ---
@@ -681,3 +681,10 @@ Stage view changes go through `scheduleView()`, which keeps the cached picture a
 - logged: v0.12.0 · 2026-10-30
 
 Playback cost here is per destination pixel (about 3 ns), not per source pixel: a proxy (downscaled source) cache was built, measured to give nothing and removed (`engine/proxy-cache.ts` and its `opts.proxy` hooks in render.ts; `composeLayer` keeps an ignored `_proxy` parameter its caller passes). What helped: `sparse.ts` scans each decoded bitmap of 160k px or more once for ink bands and clips the draw to them (axis-aligned, plain composite only), T200 cold 12 to 17.7 fps, UHD 20 to 23.7. The clip moves 4 to 11 anti-aliased edge pixels a frame by up to 16 levels, so exports and the export preview pass `exact: true` and draw whole. Dropping `willReadFrequently` on pooled surfaces measured no change and was reverted. The drag cache composites the tracks below and above the moved blocks once per gesture; the mid-drag picture can differ on about 1,000 low-alpha edge pixels (8-bit premultiplied storage of the above bitmap), gone at release. Stage redraws are keyed by a content signature, so a Timeline edit that changes nothing visible draws nothing; Timeline thumbnails are renewed once at pointerup (`thumbStale`). Video seeks decode samples and convert only frames kept in the window. Brush sync deletes only ids the window knew, runs under a Web Lock and tells other windows through a BroadcastChannel. The frame cache key carries the font epoch. Process: the brush-files builder rewrote `backend/app/routers/brushes.py` largely in place (320 lines added); reviewed by the review round, logged and kept.
+
+### Phases 32 to 35 (v0.13.0)
+- refers-to: src/engine/gpu/mesh.ts, gpu/tree.ts, render.ts :: needsCpu; src/export/export-worker.ts, worker-host.ts, worker-protocol.ts; src/ui/a11y.ts; src/engine/asset-gc.ts, io/fmo.ts :: MAX_SAVED_STEPS; src/ui/help-center.ts, tutorials.ts, tutorial-steps.ts; src/ui/brush-studio*.ts, paint/studio-render.ts; src/media/recorder.ts, audio-edit.ts, ui/voice-panel.ts, sound-card.ts; src/paint/grains-lib.ts, tips-lib.ts, brush-materials.ts, wet.ts, render-modes.ts, curves.ts, tiles.ts, pump.ts; src/engine/snap.ts, fit-ops.ts, marker-ops.ts, retime*.ts, time-stretch.ts, transitions.ts, transition-draw.ts, key-fast-ops.ts
+- kind: explainer
+- logged: v0.13.0 · 2026-10-31
+
+The owner judged parity by depth, not rows, so depth analyses (`DEPTH_GAPS_*.md` in the sidecar) drove the second half of this release. GPU: meshes (Warp, Distort, Bones) and layer trees / row masks left `needsCpu`; parity w/ the CPU raster is within rounding except a few hundred pixels of the discontinuous blends (hard mix, darker / lighter color) used as clip or group blends; on software GL the GPU is slower and the auto switch keeps it off. Transition frames bypass the GPU and mix on the CPU. Export renders in a Worker w/ the same `Run` and `Renderer`; sound is mixed on the main thread and sent as PCM; movies w/ video fall back to the main thread. Grains (54) and tips (79) are generated at runtime from seeded noise and cached, not shipped as images. Wet paint mixes in a Kubelka-Munk-style model written here; a big blending brush at 4K still costs about 2 s per 40 samples. Paint layers park as 128 px tiles when idle and unpark on first read, so the paint API is unchanged. Brush fields and their export keys are optional and `fm`-prefixed. Saved history keeps the newest 2,000 steps and halves on a string-size error. Process: no repo SEDO breach reported.

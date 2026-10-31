@@ -2,7 +2,7 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.12.0
+Current build version: v0.13.0
 Last updated: 2026-10-30 · brush libraries as files, recovery presence over a WebSocket, streamed duplicates
 
 ---
@@ -171,3 +171,10 @@ A stack is a folder `Library/<Stack>/<movie>.fmo`, one level deep; movie names s
 - logged: v0.12.0 · 2026-10-30
 
 Brush libraries live as `Brushes/<Library>/<Set>/<Brush>.brush` (the export format plus a `formmorpheus/` folder w/ the exact settings, tip and grain), w/ `.order.json` per level and a one-time migration of `brushes.json` (renamed `.migrated`). Only brushes the person made or changed get files. Deletes remove only `*.brush`, `.order.json` and `.*.part` and then an empty folder; symlinks are never followed; Windows device names (CON, NUL, COM1 and the rest) and paths over 240 characters are refused; names that differ only by case are a 409. The recovery presence moved from a held GET to a WebSocket: a held HTTP/1.1 request per window blocked shutdown and, at about six windows, used up the browser's connections per host. Its registry is per process, so the engine must run as one worker. All boot scripts pass a 3 s graceful shutdown. Duplicates and copies stream zip entries and publish w/ an exclusive create; copy-to never creates folders.
+
+### v0.13.0 · ideas, part sweep, atomic writes
+- refers-to: app/routers/ideas.py; app/core/partsweep.py; app/routers/library.py, recovery.py :: unique part files
+- kind: explainer
+- logged: v0.13.0 · 2026-10-31
+
+`/api/ideas` stores notes from the Help Center's Send an idea as `Ideas/idea-YYYYMMDD-HHMMSS.txt` under the data folder (add, list, delete). Library and recovery writes use a unique part file, fsync and replace; `partsweep.py` removes part files older than an hour and recovery snapshots unanswered for 30 days. Killing the engine mid-write 40 times left no corrupt file.
