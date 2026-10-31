@@ -250,6 +250,34 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
+## Pen tablets
+
+Any drawing tablet whose driver passes pen pressure to apps works in Draw and Paint: pressure, tilt, twist, the eraser end and the barrel buttons. Preferences · Pen and Tablet has a test pad that shows the live pressure, tilt, twist and rate your pen sends, a pressure curve (Soft, Normal, Firm, Linear or drag your own points), minimum and maximum pressure, smoothing, whether tilt shapes the brush, what the eraser end and each barrel button do (eyedropper, right-click menu, undo, pan, cycle tool or nothing), and palm rejection: while the pen is near the screen, fingers only pan and zoom. Save for this pen keeps the settings for that pen. If strokes show no pressure, the page says so: on Windows turn on Windows Ink in your tablet driver's settings, on macOS install your tablet's driver, and on Linux the system view may not pass pressure through.
+
+## Pen Link: a tablet as a drawing tablet
+
+Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for example) into a pressure-sensitive drawing tablet for formmorpheus over your local network. Turn it on, open the address it shows in the tablet's browser, and type the six-digit code (it lasts two minutes and allows five tries). The tablet shows your canvas and draws on it with the pen's pressure and tilt; its toolbar switches brush and eraser, undoes and redoes, and sets size and opacity. One tablet pairs at a time. Pen Link is off until you turn it on, it listens on your network only while it is on, and it serves nothing but its own page: the rest of formmorpheus stays private to your computer. The connection is not encrypted, so use it on a network you trust.
+
+## Brush files
+
+Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
+
+## New in 0.15.0
+
+**Your movies save themselves.** A new movie is in the Theater the moment you make it, and every change is saved as you work. Leaving a movie never asks; its poster is the frame under the Playhead. Ctrl+S saves at once, and Duplicate as... makes a copy.
+
+**Pens and tablets.** Pressure, tilt, eraser end and barrel buttons from drawing tablets, a Pen and Tablet page with a test pad and a pressure curve, palm rejection, and Pen Link to draw from a tablet's browser. See the sections above.
+
+**Brushes.** Oil brushes paint with separate hairs that streak and pick up the paint below; watercolor pools and darkens at its edges, bleeds into a wash that is still wet, and no longer runs dry on a long stroke; pencils darken with pressure and shade wide when tilted. Brush files bring their presets (see Brush files).
+
+**Draw and Paint.** Hold at the end of a stroke to snap it to a line, arc, ellipse, rectangle or polygon (QuickShape), Shift+click for a straight line, hold the pen or mouse still to pick a color, the size bubble previews the stroke, a grouped blend list previews as you go, ColorDrop can keep filling, Select starts on Automatic, and the Flipbook strip is simpler, with the rest under More.
+
+**Timeline.** Track headers with names, hide, lock, mute and solo (View · Track Headers); dragging a block shows where it will land and makes a new track between lanes; the block menu is grouped; the ruler counts seconds when zoomed out; double-click steps the zoom; Z zooms to the selection and Shift+Z to the loop range.
+
+**Keyframes and Perform.** Compose edits the base transform only, scale can flip past zero, the Action card has Move and Filter, the parameter card stays open while you drag, snapping waits for Shift, a readout shows position, scale and angle while dragging, and Perform has Retake (Shift+R), a pre-roll and a punch range, and keys to rotate (R) and scale (S) with a mouse.
+
+**Look.** Popovers and dialogs grow from their button, menus are glass, the Create menu is a card of tiles, the Theater is a poster wall, and Movie settings keeps its tabs at the bottom.
+
 ## New in 0.14.0
 
 **Effects.** The Action menu's Live Filters now include Drop Shadow, Glow, Color Correction (levels, curves, color balance, exposure, temperature and tint, vibrance), Vignette, Pixelate, Directional Blur, Radial Blur (drag its center on the Stage), Motion Blur, Chroma Key (pick the key color on the Stage, view the matte) and Luma Key. Every setting can be keyed. Movie settings · Timeline turns on motion blur for the whole movie.

@@ -112,3 +112,10 @@ Show brush folder needs to open a folder. The shell plugin's default open scope 
 - logged: v0.13.0 · 2026-10-31
 
 Recording a voice-over needs the microphone: macOS asks w/ the `NSMicrophoneUsageDescription` text in `Info.plist`, and the hardened runtime needs `com.apple.security.device.audio-input` in the entitlements. Neither was built or run here (no macOS); the Linux and Windows webviews' microphone prompts are untested.
+
+### Pen tablets · no shell change
+- refers-to: src/main.rs :: build_main
+- kind: explainer
+- logged: v0.15.0 · 2026-10-31
+
+Windows press-and-hold right click and pen flicks: no WebView2 browser argument is known to turn them off, and `WebviewWindowBuilder::additional_browser_args` replaces Tauri's default arguments, which could not be checked on Windows here. Left alone. The interface handles it in the page: `touch-action: none` and no text selection on the paint canvas, the same plus no touch callout on the Pen and Tablet test pad, and `contextmenu` is cancelled on both. If a held pen tap still opens a menu on a real Windows machine, try the browser argument then.
