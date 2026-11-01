@@ -262,6 +262,22 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
 
+## New in 0.17.0
+
+**Groups.** Expand a Group on the Timeline to see its own tracks. Drag blocks into and out of it, and Create adds content inside the open Group.
+
+**Timeline and Stage.** Hold the toolbar between the Stage and the Timeline, or the strip just above the ruler, and drag to resize them. H hides the selected content. Hold a blank part of a lane and drag to move the track. A one-finger drag on an empty lane pans. The track menu has Cut, Copy, Duplicate and Paste tiles. Blocks carry their mask kind as a label, video blocks show film edges, and Text blocks show their text. The Stage timecode reads hours, minutes, seconds and frames, and Enter duration takes hours, minutes and seconds. Changing the frame rate keeps every frame on its frame by default (the movie plays faster or slower); Keep timing moves blocks and keys so each keeps its length in seconds.
+
+**Keyframes.** Ease in now starts slowly and Ease out ends slowly, as their names say (movies made earlier play exactly as before; only the labels moved). Reverse keyframes mirrors around the content or the selection, so lanes stay in step. Edit anchor never moves the picture. Warp meshes gain Add row and Add column. Swipe a red row left in the Action card to clear it.
+
+**Draw and Paint.** Create · Drawing and Create · Flipbook open Draw and Paint (Preferences can keep you on the Timeline). Size and opacity markers start empty, Color history keeps ten colors and shows at the top of Palettes, and the brush panel has a search button. ColorDrop fills under soft stroke edges. Hold a second finger to make a square or circle selection. Crop and Resample show their progress.
+
+**Brushes.** Oil and bristle brushes no longer show blocks or seams at light pressure, knives smear the paint below, glaze builds a film, watercolor bleeds into a wet wash and settles unevenly, inks pool and taper, gouache and acrylic show grain and a dry edge, texture brushes are continuous, spray is a mist, color pencil reaches full color, charcoal and pencil shade wide when tilted, and Charcoal roll, Marker roll and Calligraphy roll turn with the pen. Hold a brush to open its menu.
+
+**Import, fonts and sharing.** Open `.procreate` artwork as a layered Drawing. An import goes onto the highlighted track when it fits. Fonts installed once are in every movie (Fonts library); a movie whose font is missing asks to replace or keep it; `.ttc` collections bring every face. Share in the Theater offers the movie file, a video or frames, and frames can be saved into a folder.
+
+**Help.** Help links to the handbook, community and video tutorials on the web, and recovery points can be shared.
+
 ## New in 0.16.0
 
 **Theater.** Choose Gallery or Library layout in Preferences. Right-click a movie for Info... (size, length, frame rate, tracks, file size, dates) and Tags...; filter the Theater by tag. A cloud folder you keep in sync can receive copies (Copy to Cloud). A movie reopens at the frame where you left it, and its poster is that frame. View can hide the menu bar and the status bar.
