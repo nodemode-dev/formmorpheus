@@ -40,7 +40,9 @@ const SCRIPT = set('Script');
 const CHALK = set('Chalk');
 const INK = set('Ink');
 const PAINT = set('Paint');
-const BRISTLE = set('Bristle');
+const BRISTLE_ROW = set('Bristle');
+// A leaning pen lays a broader swath of hair, as a brush held on its side does.
+const BRISTLE: typeof BRISTLE_ROW = (n, tip, soft, max, min, sp, flow, ps0, pf0, extra, op) => BRISTLE_ROW(n, tip, soft, max, min, sp, flow, ps0, pf0, { tilt: 0.6, ...extra }, op);
 const WASH_ROW = set('Wash');
 // Uniform build-up caps coverage at the strongest dab, so washes need twice the flow to read as paint.
 const WASH: typeof WASH_ROW = (n, tip, soft, max, min, sp, flow, ps0, pf0, extra, op) => WASH_ROW(n, tip, soft, max, min, sp, Math.min(1, flow * 2.2), ps0, pf0, extra, op);
@@ -59,7 +61,7 @@ export const ANIMATION_SETS: string[] = ['Sketch', 'Outline', 'Monoline', 'Wiggl
 
 export const ANIMATION_BRUSHES: Brush[] = [
   // Sketch: rough construction lines
-  SKETCH('Lead stub', 'grain-round', 0.2, 12, 1.5, 0.06, 0.65, 0.55, 0.25, { tilt: 0.8, grain: 0.7, smoothing: 0.1 }, 0.9),
+  SKETCH('Lead stub', 'grain-round', 0.2, 22, 4.5, 0.05, 0.95, 0.7, 0.6, { tilt: 0.8, grain: 0.55, smoothing: 0.1 }, 1),
   SKETCH('Soft lead', 'grain-round', 0.55, 28, 3, 0.05, 0.3, 0.5, 0.15, { tilt: 1, grain: 0.65, smoothing: 0.1 }, 0.85),
   SKETCH('Scribble', 'grain-round', 0.15, 14, 2, 0.08, 0.6, 0.6, 0.3, { scatter: 0.12, grain: 0.6, jitterOpacity: 0.4, smoothing: 0.05 }, 0.9),
   SKETCH('Blue lead', 'grain-round', 0.15, 10, 1.5, 0.06, 0.55, 0.55, 0.25, { grain: 0.55, colorDyn: { strokeBri: 0.12 }, smoothing: 0.1, tilt: 0.6 }, 0.8),
@@ -167,7 +169,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   BRISTLE('Worn comb', 'comb', 0.04, 38, 8, 0.05, 0.85, 0.6, 0.5, { bristle: { count: 0, lenVar: 0.6, tone: 0.3, clump: 0.2 }, followStroke: true, grain: 0.7, burnout: 0.3, jitterOpacity: 0.3 }),
 
   // Wash
-  WASH('Watercolor', 'round', 0.45, 56, 12, 0.05, 0.5, 0.6, 0.3, { render: 'uniform-glaze', wetEdges: 0.8, grain: 0.25, grainScale: 1.4, wet: { dilution: 0.6, charge: 0.45, attack: 0.05, pull: 0.1, grade: 0.5, wetJitter: 0.15 } }, 0.92),
+  WASH('Watercolor', 'round', 0.45, 56, 12, 0.05, 0.5, 0.6, 0.55, { render: 'uniform-glaze', wetEdges: 0.9, grain: 0.25, grainScale: 1.4, wet: { dilution: 0.6, charge: 0.45, attack: 0.05, pull: 0.1, grade: 0.5, wetJitter: 0.15 } }, 0.92),
   WASH('Light wash', 'round', 0.6, 64, 16, 0.05, 0.3, 0.6, 0.2, { render: 'light-glaze', grain: 0.2 }, 0.6),
   WASH('Bleed', 'round', 0.5, 50, 10, 0.05, 0.45, 0.6, 0.3, { render: 'uniform-blending', wetEdges: 0.4, wet: { dilution: 0.4, charge: 0.6, attack: 0.5, pull: 0.8, grade: 0.4 } }, 0.7),
   WASH('Granulate', 'grain-round', 0.4, 52, 12, 0.05, 0.4, 0.6, 0.3, { render: 'uniform-glaze', grain: 1, grainScale: 0.7, grainMode: 'moving', wetEdges: 0.5 }, 0.7),

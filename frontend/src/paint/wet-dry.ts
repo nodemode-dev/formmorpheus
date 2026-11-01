@@ -5,6 +5,7 @@
 
 import type { Brush } from './types';
 import { RENDER_ALGOS } from './render-modes';
+import { paperMap } from './paper';
 
 export interface DryOptions {
   data: Uint8ClampedArray;
@@ -34,6 +35,8 @@ export interface DryOptions {
   ends?: { x: number; y: number; r: number; t: number }[];
   /** How wet each pixel of the rect still was when the stroke began (paint/wetmap.ts), or null. */
   wetw?: Float32Array | null;
+  /** The rows each 64 px column of the stroke reached (top inclusive, bottom exclusive), kept while it was drawn. */
+  cols?: { top: Int32Array; bot: Int32Array };
 }
 
 /** True when the brush's stroke is reworked over its whole rectangle when it ends (the worker must send that rectangle back). */
@@ -43,10 +46,19 @@ export function dries(b: Brush): boolean {
 
 const sstep = (a: number, b: number, x: number): number => { const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a); return t * t * (3 - 2 * t); };
 
-/** Box blur of a rw x rh float map with a radius, zero outside the map (running sums, O(area)). */
-function boxBlur(src: Float32Array, rw: number, rh: number, r: number): Float32Array {
+/** Reused float maps: a long wash is worked a strip at a time, so none of these is allocated per strip. */
+const maps: Float32Array[] = [];
+function takeMap(slot: number, n: number): Float32Array {
+  let m = maps[slot];
+  if (!m || m.length < n) { m = new Float32Array(Math.max(n, m ? m.length * 2 : 0)); maps[slot] = m; }
+  return m;
+}
+let accBuf: Float32Array | null = null;
+
+/** Box blur of a rw x rh float map with a radius, zero outside the map (running sums, O(area)). `out` is a fresh or pooled map. */
+function boxBlur(src: Float32Array, rw: number, rh: number, r: number, out: Float32Array = new Float32Array(rw * rh)): Float32Array {
   if (!scratch || scratch.length < rw * rh) scratch = new Float32Array(rw * rh);
-  const tmp = scratch, out = new Float32Array(rw * rh);
+  const tmp = scratch;
   const inv = 1 / (2 * r + 1);
   for (let y = 0; y < rh; y++) {
     const o = y * rw;
@@ -60,7 +72,8 @@ function boxBlur(src: Float32Array, rw: number, rh: number, r: number): Float32A
     }
   }
   // the column pass walks whole rows with one running sum per column (cache friendly on a wide stroke)
-  const acc = new Float32Array(rw);
+  if (!accBuf || accBuf.length < rw) accBuf = new Float32Array(rw);
+  const acc = accBuf; acc.fill(0, 0, rw);
   for (let y = 0; y <= r && y < rh; y++) { const o = y * rw; for (let x = 0; x < rw; x++) acc[x] += tmp[o + x]; }
   for (let y = 0; y < rh; y++) {
     const o = y * rw;
@@ -77,16 +90,54 @@ let scratch: Float32Array | null = null;
 export function dryWash(o: DryOptions): void {
   const { x0, y0, x1, y1, cov, w, pool, gran, tooth } = o;
   if (x1 <= x0 || y1 <= y0 || (pool <= 0 && (gran <= 0 || !tooth))) return;
-  const B = 192;
-  for (let by = y0; by < y1; by += B) {
-    for (let bx = x0; bx < x1; bx += B) {
-      const ex = Math.min(x1, bx + B), ey = Math.min(y1, by + B);
-      let any = false;
-      for (let y = by; y < ey && !any; y++) { const co = y * w; for (let x = bx; x < ex; x++) if (cov[co + x] > 250) { any = true; break; } }
-      if (any) dryBlock(o, bx, by, ex, ey);
+  // Strips of columns, each worked only over the rows where the stroke is (a band round the stroke, not the whole
+  // rectangle): a long wash costs what its own area costs, whatever way it runs.
+  const B = 160;
+  for (let bx = x0; bx < x1; bx += B) {
+    const ex = Math.min(x1, bx + B);
+    let top = -1, bot = -1;
+    if (o.cols) {
+      // the stroke noted the rows each 64 px column of it reached while it was drawn: no scan
+      let t = 1e9, b = -1;
+      for (let cx = bx >> 6; cx <= (ex - 1) >> 6; cx++) { if (o.cols.top[cx] < t) t = o.cols.top[cx]; if (o.cols.bot[cx] > b) b = o.cols.bot[cx]; }
+      if (b < 0) continue;
+      top = Math.max(y0, t); bot = Math.min(y1, b) - 1;
+      if (bot < top) continue;
+    } else {
+      for (let y = y0; y < y1; y++) {
+        const co = y * w;
+        let hit = false;
+        for (let x = bx; x < ex; x++) if (cov[co + x] > 250) { hit = true; break; }
+        if (hit) { top = y; break; }
+      }
+      if (top < 0) continue;
+      for (let y = y1 - 1; y >= top; y--) {
+        const co = y * w;
+        let hit = false;
+        for (let x = bx; x < ex; x++) if (cov[co + x] > 250) { hit = true; break; }
+        if (hit) { bot = y; break; }
+      }
     }
+    dryBlock(o, bx, top, ex, bot + 1);
   }
   if (o.wetw && !o.lock && pool > 0) bleed(o);
+}
+
+// ratio ^ m by table (ratio 0..1 in 256 steps, m 0.05..4 in 1/32 steps, both interpolated): a wash pixel needs it for each colour channel and the alpha
+const PM = 128, PR = 256;
+let powT: Float32Array | null = null;
+function powTable(): Float32Array {
+  if (powT) return powT;
+  const t = new Float32Array((PM + 2) * (PR + 1));
+  for (let mi = 0; mi < PM + 2; mi++) { const m = 0.05 + mi / 32; for (let ri = 0; ri <= PR; ri++) t[mi * (PR + 1) + ri] = Math.pow(ri / PR, m); }
+  powT = t;
+  return t;
+}
+function fastPow(t: Float32Array, ratio: number, mf: number, mi: number): number {
+  const rf = ratio * PR, ri = rf | 0, rt = rf - ri, r1 = ri < PR ? ri + 1 : PR;
+  const a = mi * (PR + 1), b = a + PR + 1;
+  const v0 = t[a + ri] + (t[a + r1] - t[a + ri]) * rt, v1 = t[b + ri] + (t[b + r1] - t[b + ri]) * rt;
+  return v0 + (v1 - v0) * mf;
 }
 
 /** One block (ax0..ax1, ay0..ay1): its maps are made over the block plus a margin wide enough for the blurs, and only the block is changed. */
@@ -101,28 +152,29 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
   let sharp: Float32Array | null = null;   // how much of its film a pixel keeps once the soft tail is cut
   let body: Float32Array | null = null;    // the crisp mask
   if (pool > 0) {
-    const E = o.edge, f0 = new Float32Array(rw * rh);
+    const n = rw * rh, E = o.edge, f0 = takeMap(0, n);
     for (let y = 0; y < rh; y++) {
       const co = (y0 + y) * w + x0;
       for (let x = 0; x < rw; x++) f0[y * rw + x] = E ? E[co + x] / 255 : sstep(0.02, 0.22, cov[co + x] / 65535);
     }
     const R = Math.max(1, Math.round(o.radius));
-    const B = boxBlur(f0, rw, rh, Math.max(1, Math.round(R * 0.25)));
-    body = new Float32Array(rw * rh);
-    sharp = new Float32Array(rw * rh);
-    for (let i = 0; i < body.length; i++) {
+    const B = boxBlur(f0, rw, rh, Math.max(1, Math.round(R * 0.25)), takeMap(1, n));
+    body = takeMap(2, n);
+    sharp = takeMap(3, n);
+    for (let i = 0; i < n; i++) {
       body[i] = sstep(0.3, 0.55, B[i]);
       // cutting the soft tail of the tip: faint edge pixels fade, mid ones rise to the interior's film
       sharp[i] = Math.min(2.2, sstep(0.2, 0.55, B[i]) / Math.max(0.08, B[i]));
     }
-    const inner = boxBlur(body, rw, rh, R);
-    rim = new Float32Array(rw * rh);
-    for (let i = 0; i < rim.length; i++) {
+    const inner = boxBlur(body, rw, rh, R, takeMap(4, n));
+    rim = takeMap(5, n);
+    for (let i = 0; i < n; i++) {
       const e = Math.min(1, Math.max(0, body[i] * (1 - inner[i]) * 2));
       rim[i] = e * Math.sqrt(Math.sqrt(e));
     }
   }
   const end = o.end, ends = o.ends && o.ends.length ? o.ends : null, wetw = o.wetw;
+  const paper = gran > 0 ? paperMap() : null, pt = powTable();
   for (let py = ay0; py < ay1; py++) {
     const y = py - y0, co = py * w, trow = (py >> 6) * tilesX, yo = (py & 63) << 6;
     for (let px = ax0; px < ax1; px++) {
@@ -132,8 +184,8 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
       let m = 1;
       if (pool > 0) {
         const e = rim![i], bd = body![i];
-        // thickness: the rim holds ~2.2x at full wet edges, the interior ~0.8x; the soft tail of the tip is cut
-        m = (1 + pool * 2.6 * e - pool * 0.25 * (1 - e) * bd) * (1 + (sharp![i] - 1) * 0.6 * pool);
+        // thickness: the rim holds ~4x at full wet edges, the interior ~0.75x; the soft tail of the tip is cut
+        m = (1 + pool * 4.2 * e - pool * 0.2 * (1 - e) * bd) * (1 + (sharp![i] - 1) * 0.6 * pool);
         // over a wet wash the edge is not sharpened and pigment does not pool: it runs
         if (wetw) m = 1 + (m - 1) * (1 - 0.8 * wetw[(py - o.y0) * orw + (px - o.x0)]);
       }
@@ -145,7 +197,14 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
         const dd = Math.hypot(px + 0.5 - q.x, py + 0.5 - q.y) / q.r;
         if (dd < 1) m += q.t * (1 - dd * dd);
       }
-      if (gran > 0 && tooth) m *= 1 + gran * (0.5 - tooth[(((py * 2) & 255) << 8) | ((px * 2 + (py & 1)) & 255)]) * 0.8;
+      if (gran > 0 && paper) {
+        // pigment settles into the paper's valleys: the paper's own height field, with a little of the brush's tooth
+        let tx = px & 511, ty = py & 511;
+        if (tx > 255) tx = 511 - tx;
+        if (ty > 255) ty = 511 - ty;
+        const g = paper[((py & 511) << 9) | (px & 511)] * 0.7 + (tooth ? tooth[(ty << 8) | tx] : 0.5) * 0.3;
+        m *= 1 + gran * (0.5 - g) * 0.9;
+      }
       if (sel) m = 1 + (m - 1) * (sel[py * w + px] / 255);
       m = m < 0.05 ? 0.05 : m > 4 ? 4 : m;
       if (Math.abs(m - 1) < 0.01) continue;
@@ -153,19 +212,25 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
       if (!t) continue;
       const so = (yo | (px & 63)) << 2, di = (py * w + px) << 2;
       const sa = t[so + 3] / 255, da = data[di + 3] / 255;
+      const mq = (m - 0.05) * 32, mi = mq | 0, mf = mq - mi;
       if (sa > 0.02) {
         for (let k = 0; k < 3; k++) {
           const s = t[so + k], d = data[di + k];
           if (s < 6) continue;
           const ratio = d >= s ? 1 : d / s;
-          const target = s * Math.pow(ratio, m);
+          const target = s * fastPow(pt, ratio, mf, mi);
           data[di + k] = d + (target - d) * (sa > 1 ? 1 : sa);
         }
       }
       if (!lock && da > sa + 0.002 && sa < 0.999) {
         const film = (da - sa) / (1 - sa);
-        const f2 = 1 - Math.pow(1 - (film > 1 ? 1 : film), m);
+        const f2 = 1 - fastPow(pt, 1 - (film > 1 ? 1 : film), mf, mi);
         data[di + 3] = (sa + (1 - sa) * f2) * 255 + 0.5;
+        // pooled pigment is denser: on fresh paint the rim runs deeper than the pigment's own colour
+        if (pool > 0 && m > 1 && sa < 0.02) {
+          const dk = 1 - 0.38 * (m > 4 ? 1 : (m - 1) / 3) * pool;
+          data[di] *= dk; data[di + 1] *= dk; data[di + 2] *= dk;
+        }
       }
     }
   }
@@ -173,35 +238,51 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
 
 /** A wash laid over a still-wet one: colour and alpha run together across the wet area (premultiplied blur, by wetness). */
 function bleed(o: DryOptions): void {
-  const { data, w, x0, y0, x1, y1 } = o, wetw = o.wetw!;
+  const { data, w } = o, wetw = o.wetw!, orw = o.x1 - o.x0;
+  const R = Math.max(6, Math.round(o.radius * 7));
+  // only where the earlier wash still is wet (the map is sparse): its box, plus the reach of the blur
+  let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
+  for (let y = 0; y < o.y1 - o.y0; y++) for (let x = 0; x < orw; x++) if (wetw[y * orw + x] > 0.01) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
+  if (bx1 < 0) return;
+  // wet paint next to the stroke counts too: the wetness is spread by Rw, so a band laid against a wet one runs into it
+  const Rw = Math.min(160, Math.max(R, Math.round(o.radius * 9)));
+  const x0 = Math.max(o.x0, o.x0 + bx0 - Rw), y0 = Math.max(o.y0, o.y0 + by0 - Rw), x1 = Math.min(o.x1, o.x0 + bx1 + 1 + Rw), y1 = Math.min(o.y1, o.y0 + by1 + 1 + Rw);
   const rw = x1 - x0, rh = y1 - y0, n = rw * rh;
-  const R = Math.max(3, Math.round(o.radius * 3.2));
   // the bleed reaches only a little past the stroke
   const f0 = new Float32Array(n);
   for (let y = 0; y < rh; y++) { const co = (y0 + y) * w + x0; for (let x = 0; x < rw; x++) f0[y * rw + x] = o.edge ? o.edge[co + x] / 255 : sstep(0.02, 0.22, o.cov[co + x] / 65535); }
-  const near = boxBlur(f0, rw, rh, Math.max(3, Math.round(o.radius) * 5));
+  const near = boxBlur(f0, rw, rh, Math.max(4, Math.round(o.radius) * 8));
   for (let i = 0; i < n; i++) near[i] = Math.min(1, near[i] * 3);
-  const ch = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  // The colours that run are the two washes' own, weighted by where wash is (M): the paper round them is not averaged
+  // in, so a join of two washes of one colour keeps its body and its grain instead of going pale and smooth, while
+  // two different colours still run into each other. The stroke's alpha only ever grows (outward on a clear layer).
+  const M = new Float32Array(n);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) { const i = y * rw + x, wv0 = wetw[(y0 + y - o.y0) * orw + (x0 + x - o.x0)] * 1.5; M[i] = Math.max(f0[i], wv0 > 1 ? 1 : wv0); }
+  const ch = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
   for (let y = 0; y < rh; y++) {
     for (let x = 0; x < rw; x++) {
-      const di = ((y0 + y) * w + x0 + x) << 2, a = data[di + 3] / 255, i = y * rw + x;
-      ch[0][i] = data[di] * a; ch[1][i] = data[di + 1] * a; ch[2][i] = data[di + 2] * a; ch[3][i] = a;
+      const di = ((y0 + y) * w + x0 + x) << 2, a = data[di + 3] / 255, i = y * rw + x, m = M[i];
+      ch[0][i] = data[di] * m; ch[1][i] = data[di + 1] * m; ch[2][i] = data[di + 2] * m; ch[3][i] = m; ch[4][i] = a;
     }
   }
   const bl = ch.map((c) => boxBlur(c, rw, rh, R));
+  const wf = new Float32Array(n);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) wf[y * rw + x] = wetw[(y0 + y - o.y0) * orw + (x0 + x - o.x0)];
+  const wd = boxBlur(wf, rw, rh, Rw);
   for (let y = 0; y < rh; y++) {
     for (let x = 0; x < rw; x++) {
-      const i = y * rw + x, wv = wetw[i] * near[i] * 0.85;
+      const i = y * rw + x, wv = Math.min(1, wd[i] * 2.4) * near[i];
       if (wv <= 0.01) continue;
-      const di = ((y0 + y) * w + x0 + x) << 2, a0 = data[di + 3] / 255;
-      const a = a0 + (bl[3][i] - a0) * wv;
-      if (a < 0.002) continue;
-      // colour from the premultiplied blur, so empty paper does not dilute it
-      const pr0 = data[di] * a0, pg0 = data[di + 1] * a0, pb0 = data[di + 2] * a0;
-      data[di] = (pr0 + (bl[0][i] - pr0) * wv) / a;
-      data[di + 1] = (pg0 + (bl[1][i] - pg0) * wv) / a;
-      data[di + 2] = (pb0 + (bl[2][i] - pb0) * wv) / a;
-      data[di + 3] = a * 255 + 0.5;
+      const bm = bl[3][i];
+      if (bm < 0.01) continue;
+      const di = ((y0 + y) * w + x0 + x) << 2, a0 = data[di + 3] / 255, m = M[i], inv = 1 / bm;
+      // inside a wash the colour moves toward its neighbours' average; just outside it a faint stain runs out
+      const k = m > 0.5 ? wv * sstep(0.4, 0.7, m) : (a0 > 0.98 ? wv * 0.4 * (bm > 1 ? 1 : bm) * (bm > 1 ? 1 : bm) : wv);
+      data[di] += (bl[0][i] * inv - data[di]) * k;
+      data[di + 1] += (bl[1][i] * inv - data[di + 1]) * k;
+      data[di + 2] += (bl[2][i] * inv - data[di + 2]) * k;
+      const ba = bl[4][i];
+      if (a0 < 0.98 && ba > a0) data[di + 3] = (a0 + (ba - a0) * wv) * 255 + 0.5;
     }
   }
 }

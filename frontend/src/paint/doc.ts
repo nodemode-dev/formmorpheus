@@ -10,6 +10,7 @@ import type { LayerSnapshot, PaintEntry, PaintHost, SnapLayer } from './history'
 import { cloneRaster, eachParkedTile, isParked, noteUse, parkRaster, parkedEmpty, rasterBytes, usedAt } from './tiles';
 import { BLEND_OP, SurfacePool, blockEnd, drawTree, isInside } from './layer-tree';
 import type { TreeHooks } from './layer-tree';
+import { LayerCache, type CacheItem } from './layer-cache';
 
 export { PaintHistory } from './history';
 export type { LayerSnapshot, PaintEntry } from './history';
@@ -144,6 +145,7 @@ export class PaintDoc implements PaintHost {
 
   private baseline: PaintEntry | null = null;
   private pool: SurfacePool | null = null;
+  private sides: LayerCache | null = null;
   private reader: { c: OffscreenCanvas; x: OffscreenCanvasRenderingContext2D } | null = null;
   /** The mask of the active layer is the paint target (not the pixels). */
   private maskEdit = false;
@@ -924,10 +926,19 @@ export class PaintDoc implements PaintHost {
   /** Draws the layers, groups and masks. `live` previews a tool over the active layer's pixels. */
   composite(ctx: Ctx, live?: (ctx: Ctx) => void, region?: Rect): void {
     ctx.save();
-    drawTree(ctx, this.layers, this.width, this.height, this.hooks, this.surfaces(), live ? { active: this.active, draw: live } : undefined, region);
+    const tl = live ? { active: this.active, draw: live } : undefined;
+    // the layers below and above the painted one come from two cached sides when the stack is plain (paint/layer-cache.ts)
+    const cached = !this.noSides && (this.sides ??= new LayerCache(this.width, this.height)).draw(ctx, this.layers, this.active, this.hooks as TreeHooks<CacheItem>, this.surfaces(), tl, region);
+    if (!cached) {
+      if (this.sides && !LayerCache.fits(this.layers, this.active)) { this.sides.dispose(); this.sides = null; }
+      drawTree(ctx, this.layers, this.width, this.height, this.hooks, this.surfaces(), tl, region);
+    }
     ctx.restore();
     this.enforce();
   }
+
+  /** Test and measurement switch: composite every layer each frame. */
+  noSides = false;
 
   private renderRaster(): Raster {
     const r = this.readerCtx();
@@ -935,7 +946,8 @@ export class PaintDoc implements PaintHost {
     r.globalAlpha = 1;
     r.globalCompositeOperation = 'source-over';
     r.clearRect(0, 0, this.width, this.height);
-    this.composite(r);
+    drawTree(r, this.layers, this.width, this.height, this.hooks, this.surfaces());
+    this.enforce();
     const img = r.getImageData(0, 0, this.width, this.height);
     return { width: this.width, height: this.height, data: img.data };
   }
@@ -1084,6 +1096,8 @@ export class PaintDoc implements PaintHost {
     this.reader = null;
     this.pool?.dispose();
     this.pool = null;
+    this.sides?.dispose();
+    this.sides = null;
     this.thumbs.clear();
     this.mthumbs.clear();
     this.flat = null;

@@ -10,6 +10,8 @@ export interface MovieFile {
   past: Step[];
   recovery: RecoveryPoint[];
   assets: Map<string, Blob>;
+  /** The Playhead frame when the movie was last written (G17): the poster and the next open use it. */
+  playhead?: number;
 }
 
 interface Manifest {
@@ -18,6 +20,7 @@ interface Manifest {
   version: string;
   saved: number;
   history: boolean;
+  playhead?: number;
 }
 
 interface HistoryRecord {
@@ -31,10 +34,10 @@ export const MIME = 'application/x-formmorpheus';
 /** A saved file keeps the newest steps only: 20,000 steps of a big movie overflow a string (the save failed) and bloat the file. */
 export const MAX_SAVED_STEPS = 2000;
 
-export async function packMovie(movie: Movie, pastAll: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory = true, preview: Blob | null = null): Promise<Blob> {
+export async function packMovie(movie: Movie, pastAll: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory = true, preview: Blob | null = null, playhead?: number): Promise<Blob> {
   let keep = Math.min(pastAll.length, MAX_SAVED_STEPS);
   for (;;) {
-    try { return await packOnce(movie, pastAll.slice(pastAll.length - keep), recovery, assets, poster, withHistory, preview); } catch (e) {
+    try { return await packOnce(movie, pastAll.slice(pastAll.length - keep), recovery, assets, poster, withHistory, preview, playhead); } catch (e) {
       // a history too big for one string: retry with the newest half
       if (!(e instanceof RangeError) || keep === 0) throw e;
       keep = Math.floor(keep / 2);
@@ -42,9 +45,10 @@ export async function packMovie(movie: Movie, pastAll: Step[], recovery: Recover
   }
 }
 
-async function packOnce(movie: Movie, past: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory: boolean, preview: Blob | null): Promise<Blob> {
+async function packOnce(movie: Movie, past: Step[], recovery: RecoveryPoint[], assets: Map<string, Blob>, poster: Blob | null, withHistory: boolean, preview: Blob | null, playhead?: number): Promise<Blob> {
   const files: Zippable = {};
   const manifest: Manifest = { app: 'formmorpheus', format: FORMAT_VERSION, version: VERSION, saved: Date.now(), history: withHistory };
+  if (playhead !== undefined && Number.isFinite(playhead) && playhead > 0) manifest.playhead = Math.floor(playhead);
   files['manifest.json'] = [strToU8(JSON.stringify(manifest)), { level: 6 }];
   files['movie.json'] = [strToU8(JSON.stringify(movie)), { level: 6 }];
   if (withHistory && (past.length || recovery.length)) {
@@ -95,7 +99,8 @@ export async function unpackMovie(data: Blob): Promise<MovieFile> {
       recovery = [];
     }
   }
-  return { movie, past, recovery, assets };
+  const at = manifest.playhead;
+  return { movie, past, recovery, assets, playhead: typeof at === 'number' && Number.isFinite(at) && at > 0 ? Math.min(Math.floor(at), Math.max(0, movie.duration - 1)) : undefined };
 }
 
 function referencedAssets(movie: Movie, others: Movie[]): Set<string> {

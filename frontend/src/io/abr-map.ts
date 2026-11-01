@@ -10,6 +10,9 @@ import { isNode, isEnum, numOf, textOf, dynOf, type DescNode, type DescValue, ty
 import type { AbrSample, AbrLegacy } from './abr';
 import type { AbrPattern } from './abr-patt';
 import { patternToGrain } from './abr-patt';
+import { dualToGrain, DUAL_DAB } from './abr-dual';
+import { t } from '../ui/i18n';
+import { tf } from '../ui/i18n-fill';
 
 export interface MapCtx {
   samples: Map<string, AbrSample>;
@@ -51,7 +54,9 @@ const BLEND: Record<string, BlendMode> = {
 
 /** Control codes of the dynamics groups: 0 off, 1 fade, 2 pen pressure, 3 pen tilt, 4 stylus wheel, 5 rotation, 6 initial direction, 7 direction. */
 const CONTROL_NAME = ['off', 'fade', 'pen pressure', 'pen tilt', 'stylus wheel', 'pen rotation', 'initial direction', 'direction'];
-const ctlName = (c: number): string => CONTROL_NAME[c] ?? `control ${c}`;
+const ctlName = (c: number): string => (CONTROL_NAME[c] ? t(CONTROL_NAME[c]) : tf('control {n}', { n: c }));
+/** A note on one setting: the sentence whole through t(), the control's name as its own value. */
+const ctlNote = (sentence: string, c: number): string => tf(sentence, { control: ctlName(c) });
 
 function baseBrush(id: string, name: string, tipsOnly: boolean): Brush {
   return {
@@ -65,53 +70,53 @@ function baseBrush(id: string, name: string, tipsOnly: boolean): Brush {
 
 function sizesFrom(b: Brush, dia: number, ctx: MapCtx, notes: string[]): void {
   const d = Math.max(1, dia);
-  if (d > 400) notes.push(`Size ${Math.round(d)} px is capped at 400 px.`);
+  if (d > 400) notes.push(tf('Size {n} px is capped at 400 px.', { n: Math.round(d) }));
   b.maxSize = clamp(Math.round(d), 1, 400);
   b.minSize = Math.max(1, Math.round(b.maxSize * 0.06 * 10) / 10);
   if (ctx.absoluteSizes) b.sizeAbs = true;
 }
 
 function mapTip(p: Src, tipNode: DescNode | null, b: Brush, ctx: MapCtx, notes: string[]): void {
-  const t = tipNode ? new Src(tipNode) : p;
-  const sid = t.text('sampledData')?.trim();
-  const dmtr = t.num('Dmtr');
+  const ts = tipNode ? new Src(tipNode) : p;
+  const sid = ts.text('sampledData')?.trim();
+  const dmtr = ts.num('Dmtr');
   const cls = tipNode?.cls ?? '';
   const sample = sid ? ctx.samples.get(sid) : undefined;
   if (cls === 'dBrush') {
     b.tip = 'bristle';
-    notes.push('Bristle tip drawn as this app\'s bristle tip.');
+    notes.push(t('Bristle tip drawn as this app\'s bristle tip.'));
   } else if (cls === 'dTips') {
     b.tip = 'round'; b.softness = 0.5;
-    notes.push('Erodible or airbrush tip drawn as a soft round tip.');
+    notes.push(t('Erodible or airbrush tip drawn as a soft round tip.'));
   } else if (sid) {
     if (sample) {
       b.tip = 'sampled';
       b.tipImage = { w: sample.w, h: sample.h, data: sample.data, key: b.id };
     } else {
       b.tip = 'round'; b.softness = 0.5;
-      notes.push('The tip picture is not in the file; a soft round tip is used.');
+      notes.push(t('The tip picture is not in the file; a soft round tip is used.'));
     }
   } else {
     // computed (round) tip
     b.tip = 'round';
-    const hard = t.num('Hrdn');
+    const hard = ts.num('Hrdn');
     if (hard !== null) b.softness = r2(clamp(1 - hard / 100, 0, 1));
   }
   const natural = sample ? Math.max(sample.srcW, sample.srcH) : 30;
   sizesFrom(b, dmtr ?? natural, ctx, notes);
-  const rn = t.num('Rndn');
+  const rn = ts.num('Rndn');
   if (rn !== null) b.roundness = r2(clamp(rn / 100, 0.05, 1));
-  const ang = t.num('Angl');
+  const ang = ts.num('Angl');
   // the file turns counter-clockwise, the canvas clockwise
   if (ang) b.baseRot = r2((-ang * Math.PI) / 180);
-  const fx = t.bool('flipX') ?? p.bool('flipX'), fy = t.bool('flipY') ?? p.bool('flipY');
+  const fx = ts.bool('flipX') ?? p.bool('flipX'), fy = ts.bool('flipY') ?? p.bool('flipY');
   if (fx) b.flipX = true;
   if (fy) b.flipY = true;
-  const sp = p.num('Spcn') ?? t.num('Spcn');
-  const auto = (p.bool('Intr') ?? t.bool('Intr')) === false;
+  const sp = p.num('Spcn') ?? ts.num('Spcn');
+  const auto = (p.bool('Intr') ?? ts.bool('Intr')) === false;
   b.spacing = r2(clamp((sp ?? 25) / 100, 0.02, 2));
-  if (auto) { b.speedSpacing = 0.3; notes.push('Automatic spacing is approximated: gaps widen with pen speed.'); }
-  for (const k of ['Dmtr', 'Hrdn', 'Rndn', 'Angl', 'flipX', 'flipY', 'Spcn', 'Intr', 'sampledData', 'Nm  ']) t.used.add(k);
+  if (auto) { b.speedSpacing = 0.3; notes.push(t('Automatic spacing is approximated: gaps widen with pen speed.')); }
+  for (const k of ['Dmtr', 'Hrdn', 'Rndn', 'Angl', 'flipX', 'flipY', 'Spcn', 'Intr', 'sampledData', 'Nm  ']) ts.used.add(k);
   p.v('flipX'); p.v('flipY');
 }
 
@@ -130,9 +135,9 @@ function mapShape(p: Src, b: Brush, notes: string[]): void {
     else if (sz.control === 3) b.tiltSize = r2(-drop * Math.max(0.3, tiltScale));
     else if (sz.control === 1) {
       b.fallOff = r2(clamp(drop / 0.85, 0.15, 1));
-      notes.push(`Size fade over ${sz.steps} steps is approximated by a fixed length.`);
-    } else if (sz.control === 5) { b.rollSize = r2(drop); notes.push('Size follows pen rotation, approximated.'); }
-    else if (sz.control === 4) notes.push('Size control by stylus wheel is not carried.');
+      notes.push(tf('Size fade over {n} steps is approximated by a fixed length.', { n: sz.steps }));
+    } else if (sz.control === 5) { b.rollSize = r2(drop); notes.push(t('Size follows pen rotation, approximated.')); }
+    else if (sz.control === 4) notes.push(t('Size control by stylus wheel is not carried.'));
     if (sz.jitter > 0) b.jitterSize = r2(clamp((sz.jitter / 100) * drop / 0.7, 0, 1));
   }
   if (ang) {
@@ -141,18 +146,18 @@ function mapShape(p: Src, b: Brush, notes: string[]): void {
       b.followStroke = true;
       // the file's angle 0 lies along the stroke; this engine's lies across it
       b.baseRot = r2((b.baseRot ?? 0) - Math.PI / 2);
-      if (ang.control === 6) notes.push('Initial direction is approximated as following the stroke.');
-    } else if (ang.control === 3) { b.azimuth = true; notes.push('Angle follows the lean of the pen, approximated.'); }
-    else if (ang.control !== 0) notes.push(`Angle control "${ctlName(ang.control)}" is not carried.`);
+      if (ang.control === 6) notes.push(t('Initial direction is approximated as following the stroke.'));
+    } else if (ang.control === 3) { b.azimuth = true; notes.push(t('Angle follows the lean of the pen, approximated.')); }
+    else if (ang.control !== 0) notes.push(ctlNote('Angle control "{control}" is not carried.', ang.control));
   }
   if (rd) {
     const amt = clamp((1 - minR) / 0.9, 0, 1);
     if (rd.jitter > 0) b.roundJitterH = r2(clamp((rd.jitter / 100) * amt, 0, 1));
     if (rd.control === 2) b.pressureRoundness = r2(amt);
     else if (rd.control === 3) b.tiltRoundness = r2(amt);
-    else if (rd.control !== 0) notes.push(`Roundness control "${ctlName(rd.control)}" is not carried.`);
+    else if (rd.control !== 0) notes.push(ctlNote('Roundness control "{control}" is not carried.', rd.control));
   }
-  if (proj && !b.tiltRoundness) { b.tiltRoundness = 0.5; notes.push('Brush projection is approximated: leaning flattens the tip.'); }
+  if (proj && !b.tiltRoundness) { b.tiltRoundness = 0.5; notes.push(t('Brush projection is approximated: leaning flattens the tip.')); }
 }
 
 // ---- scatter and count --------------------------------------------------------------
@@ -165,16 +170,16 @@ function mapScatter(p: Src, b: Brush, notes: string[]): void {
   if (sc && sc.jitter > 0) {
     if (both) b.scatter = r2(clamp(sc.jitter / 100, 0, 1));
     else b.pathJitter = r2(clamp(sc.jitter / 50, 0, 1));
-    if (sc.jitter > 100) notes.push(`Scatter ${Math.round(sc.jitter)}% is capped at the largest this app draws.`);
-    if (sc.control !== 0) notes.push(`Scatter control "${ctlName(sc.control)}" is not carried; the amount stays constant.`);
+    if (sc.jitter > 100) notes.push(tf('Scatter {n}% is capped at the largest this app draws.', { n: Math.round(sc.jitter) }));
+    if (sc.control !== 0) notes.push(ctlNote('Scatter control "{control}" is not carried; the amount stays constant.', sc.control));
   }
   if (count && count > 1) {
     b.shapeCount = clamp(Math.round(count), 1, 16);
-    notes.push('Count draws smaller tips inside the dab instead of full-size ones.');
+    notes.push(t('Count draws smaller tips inside the dab instead of full-size ones.'));
   }
   if (cd) {
     if (cd.jitter > 0) b.countJitter = r2(clamp(cd.jitter / 100, 0, 1));
-    if (cd.control !== 0) notes.push(`Count control "${ctlName(cd.control)}" is not carried.`);
+    if (cd.control !== 0) notes.push(ctlNote('Count control "{control}" is not carried.', cd.control));
   }
 }
 
@@ -187,28 +192,28 @@ function mapTexture(p: Src, b: Brush, ctx: MapCtx, notes: string[]): void {
   const mode = p.enumId('textureBlendMode'), each = p.bool('TxtC'), inv = p.bool('InvT');
   const bri = p.num('textureBrightness'), con = p.num('textureContrast');
   if (!on) return;
-  if (!tx) { notes.push('Texture is on, but the file names no pattern.'); return; }
+  if (!tx) { notes.push(t('Texture is on, but the file names no pattern.')); return; }
   const tn = new Src(tx);
   const pid = tn.text('Idnt')?.trim(), pname = tn.text('Nm  ')?.trim();
   tn.used.add('Idnt');
   let pat = pid ? ctx.patterns.get(pid) : undefined;
   if (!pat && pname) for (const q of ctx.patterns.values()) if (q.name === pname) { pat = q; break; }
-  if (!pat) { notes.push(`Texture pattern${pname ? ` "${pname}"` : ''} is not in the file, so the texture is left out.`); return; }
+  if (!pat) { notes.push(pname ? tf('Texture pattern "{name}" is not in the file, so the texture is left out.', { name: pname }) : t('Texture pattern is not in the file, so the texture is left out.')); return; }
   const fit = patternToGrain(pat);
   b.grainImage = fit.tile;
   if (fit.seamless) b.grainSeamless = true;
   b.grain = r2(clamp((depth ?? 100) / 100, 0, 1));
   const sc = ((scale ?? 100) / 100) * fit.fit;
   b.grainScale = r2(clamp(sc, 0.25, 4));
-  if (sc < 0.25 || sc > 4) notes.push(`Texture scale ${Math.round(scale ?? 100)}% is held to the range this app draws.`);
+  if (sc < 0.25 || sc > 4) notes.push(tf('Texture scale {n}% is held to the range this app draws.', { n: Math.round(scale ?? 100) }));
   if (inv) b.grainInvert = true;
   if (each) { b.grainMode = 'moving'; b.grainMovement = 1; } else b.grainMode = 'texturized';
   if (mode === 'Sbtr') b.grainBlend = 'subtract';
-  else if (mode && mode !== 'Mltp') notes.push(`Texture mode ${mode} is drawn as Multiply.`);
+  else if (mode && mode !== 'Mltp') notes.push(tf('Texture mode {mode} is drawn as Multiply.', { mode }));
   if (minDepth) b.grainDepthMin = r2(clamp(minDepth / 100, 0, 1));
   if (dd) {
     if (dd.jitter > 0) b.grainJitter = r2(clamp(dd.jitter / 100, 0, 1));
-    if (dd.control !== 0) notes.push(`Texture depth control "${ctlName(dd.control)}" is not carried.`);
+    if (dd.control !== 0) notes.push(ctlNote('Texture depth control "{control}" is not carried.', dd.control));
   }
   if (bri) b.grainBright = r2(clamp(bri / 150, -1, 1));
   if (con) b.grainContrast = r2(clamp(con / 150, -1, 1));
@@ -226,8 +231,8 @@ function mapColour(p: Src, b: Brush, notes: string[]): void {
   else { cd.strokeHue = f(hue); cd.strokeSat = f(sat); cd.strokeBri = f(bri); if (fb && fb.jitter > 0) cd.strokeSecondary = f(fb.jitter); }
   for (const k of Object.keys(cd) as (keyof ColorDyn)[]) if (!cd[k]) delete cd[k];
   if (Object.keys(cd).length) b.colorDyn = cd;
-  if (fb && fb.control !== 0) notes.push(`Foreground and background control "${ctlName(fb.control)}" is not carried.`);
-  if (pur) notes.push('Purity is not carried.');
+  if (fb && fb.control !== 0) notes.push(ctlNote('Foreground and background control "{control}" is not carried.', fb.control));
+  if (pur) notes.push(t('Purity is not carried.'));
 }
 
 // ---- transfer, wet edges, noise ---------------------------------------------------------
@@ -240,44 +245,72 @@ function mapTransfer(p: Src, b: Brush, notes: string[]): void {
     const lo = clamp(op.min / 100, 0, 1);
     if (op.control === 2) b.pressureOpacity = r2(1 - lo);
     else if (op.control === 3) b.tiltOpacity = r2(-(1 - lo));
-    else if (op.control === 1) { b.burnout = r2(clamp(1 - lo, 0.2, 1)); notes.push(`Opacity fade over ${op.steps} steps is approximated by a fixed length.`); }
-    else if (op.control !== 0) notes.push(`Opacity control "${ctlName(op.control)}" is not carried.`);
+    else if (op.control === 1) { b.burnout = r2(clamp(1 - lo, 0.2, 1)); notes.push(tf('Opacity fade over {n} steps is approximated by a fixed length.', { n: op.steps })); }
+    else if (op.control !== 0) notes.push(ctlNote('Opacity control "{control}" is not carried.', op.control));
   }
   if (fl) {
     const lo = clamp(fl.min / 100, 0, 1);
     if (fl.control === 2) b.pressureFlow = [r2(lo), 1];
-    else if (fl.control === 1) { b.burnout = Math.max(b.burnout ?? 0, r2(clamp(1 - lo, 0.2, 1))); notes.push('Flow fade is approximated by a fixed length.'); }
-    else if (fl.control !== 0) notes.push(`Flow control "${ctlName(fl.control)}" is not carried.`);
+    else if (fl.control === 1) { b.burnout = Math.max(b.burnout ?? 0, r2(clamp(1 - lo, 0.2, 1))); notes.push(t('Flow fade is approximated by a fixed length.')); }
+    else if (fl.control !== 0) notes.push(ctlNote('Flow control "{control}" is not carried.', fl.control));
   }
   const j = Math.max(op?.jitter ?? 0, fl?.jitter ?? 0);
-  if (j > 0) { b.jitterOpacity = r2(clamp(j / 100, 0, 1)); if ((op?.jitter ?? 0) > 0 && (fl?.jitter ?? 0) > 0) notes.push('Opacity and flow jitter are merged into one.'); }
+  if (j > 0) { b.jitterOpacity = r2(clamp(j / 100, 0, 1)); if ((op?.jitter ?? 0) > 0 && (fl?.jitter ?? 0) > 0) notes.push(t('Opacity and flow jitter are merged into one.')); }
 }
 
-function mapExtras(p: Src, b: Brush, notes: string[]): void {
+/** The second tip of a dual brush as the grain, when no texture already holds it. */
+function mapDual(dual: DescNode, b: Brush, ctx: MapCtx, notes: string[]): void {
+  const d = new Src(dual);
+  const tipNode = d.node('Brsh');
+  const t2 = tipNode ? new Src(tipNode) : d;
+  const sid = t2.text('sampledData')?.trim();
+  const sample = sid ? ctx.samples.get(sid) : undefined;
+  if (b.grainImage || b.grainId) { notes.push(t('Dual brush is not carried (the texture is kept).')); return; }
+  if (sid && !sample) { notes.push(t('The dual brush tip is not in the file, so the dual brush is left out.')); return; }
+  const dia = Math.max(2, t2.num('Dmtr') ?? (sample ? Math.max(sample.srcW, sample.srcH) : 30));
+  const sp = (d.num('Spcn') ?? t2.num('Spcn') ?? 25) / 100;
+  const scat = d.bool('useScatter') ? (d.dyn('scatterDynamics')?.jitter ?? d.num('Sctr') ?? 0) / 100 : 0;
+  const cnt = d.bool('useScatter') ? d.num('Cnt ') ?? 1 : 1;
+  for (const k of ['Hrdn', 'Rndn', 'Angl', 'Intr', 'flipX', 'flipY', 'Nm  ', 'bothAxes', 'countDynamics', 'useDualBrush']) { t2.used.add(k); d.used.add(k); }
+  b.grainImage = dualToGrain({
+    tip: sample ? { w: sample.w, h: sample.h, data: sample.data } : null, hardness: (t2.num('Hrdn') ?? 100) / 100,
+    spacing: clamp(sp, 0.05, 2), scatter: clamp(scat, 0, 2), count: cnt, flip: !!(d.bool('Flip') ?? t2.bool('flipX')),
+  });
+  b.grainSeamless = true;
+  b.grain = 0.85;
+  b.grainScale = r2(clamp(dia / DUAL_DAB, 0.25, 4));
+  b.grainMode = 'texturized';
+  const bm = d.enumId('BlnM');
+  if (bm === 'Sbtr') b.grainBlend = 'subtract';
+  else if (bm && bm !== 'Mltp') notes.push(tf('Dual brush mode {mode} is drawn as Multiply.', { mode: bm }));
+  notes.push(t('Dual brush is approximated: its second tip is laid out as a grain over the main tip.'));
+}
+
+function mapExtras(p: Src, b: Brush, ctx: MapCtx, notes: string[]): void {
   if (p.bool('Wtdg')) { b.wetEdges = 0.6; }
   if (p.bool('Nose')) {
-    if (!b.grainImage && !b.grainId) { b.grainId = 'noise-fine'; b.grain = Math.max(b.grain, 0.3); notes.push('Noise is approximated by a fine grain.'); }
-    else notes.push('Noise is not carried (the texture is kept).');
+    if (!b.grainImage && !b.grainId) { b.grainId = 'noise-fine'; b.grain = Math.max(b.grain, 0.3); notes.push(t('Noise is approximated by a fine grain.')); }
+    else notes.push(t('Noise is not carried (the texture is kept).'));
   }
-  if (p.bool('Rpt ')) notes.push('Build-up is not carried.');
+  if (p.bool('Rpt ')) notes.push(t('Build-up is not carried.'));
   if (p.has('wtVr') || p.has('mxVr')) { p.v('wtVr'); p.v('mxVr'); }
   const dual = p.node('dualBrush');
-  if (dual && new Src(dual).bool('useDualBrush')) notes.push('Dual brush is not carried.');
-  if (p.bool('useBrushPose')) notes.push('Brush pose is not carried.');
-  if (p.bool('protectTexture')) notes.push('Protect texture is a panel mode, not carried.');
+  if (dual && new Src(dual).bool('useDualBrush')) mapDual(dual, b, ctx, notes);
+  if (p.bool('useBrushPose')) notes.push(t('Brush pose is not carried.'));
+  if (p.bool('protectTexture')) notes.push(t('Protect texture is a panel mode, not carried.'));
   const to = p.node('toolOptions');
   if (!to) return;
-  const t = new Src(to);
-  const flow = t.num('flow'), opct = t.num('Opct'), md = t.enumId('Md  ');
+  const tool = new Src(to);
+  const flow = tool.num('flow'), opct = tool.num('Opct'), md = tool.enumId('Md  ');
   if (flow !== null && flow > 0 && flow < 100) b.flow = r2(clamp(flow / 100, 0.05, 1));
   if (opct !== null && opct > 0 && opct < 100) b.presets = makePresets(r2(clamp(opct / 100, 0.05, 1)));
   if (md && BLEND[md] && BLEND[md] !== 'normal') b.blend = BLEND[md];
-  const smooth = t.num('smoothingValue') ?? t.num('Smoo');
+  const smooth = tool.num('smoothingValue') ?? tool.num('Smoo');
   if (smooth !== null && smooth > 0) { b.smoothing = r2(clamp(smooth / 100, 0, 1)); b.stabilization = Math.round(clamp(smooth, 0, 100) / 2); }
-  if (t.bool('pressureSmoothing')) b.pressureSmooth = 0.5;
-  const prs = t.num('Prs ');
-  if (prs !== null) { b.pickup = r2(clamp(prs / 100, 0, 1)); notes.push('This preset belongs to the smudge tool.'); }
-  if (to.cls === 'MixB') notes.push('Mixer brush settings are not carried.');
+  if (tool.bool('pressureSmoothing')) b.pressureSmooth = 0.5;
+  const prs = tool.num('Prs ');
+  if (prs !== null) { b.pickup = r2(clamp(prs / 100, 0, 1)); notes.push(t('This preset belongs to the smudge tool.')); }
+  if (to.cls === 'MixB') notes.push(t('Mixer brush settings are not carried.'));
 }
 
 // ---- entry points ------------------------------------------------------------------------
@@ -304,7 +337,7 @@ export function mapPreset(node: DescNode, ctx: MapCtx, index: number, base: stri
     mapTexture(p, b, ctx, notes);
     mapColour(p, b, notes);
     mapTransfer(p, b, notes);
-    mapExtras(p, b, notes);
+    mapExtras(p, b, ctx, notes);
   }
   return finish(p, b, notes);
 }

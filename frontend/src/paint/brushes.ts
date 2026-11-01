@@ -5,6 +5,7 @@
 import type { Brush, TipShape } from './types';
 import { ANIMATION_BRUSHES } from './brushes-animation';
 import { withMaterials } from './brush-materials';
+import { migrateBrush } from './brush-migrate';
 
 const BASE: Omit<Brush, 'id' | 'name' | 'set' | 'presets'> = {
   tip: 'round',
@@ -139,8 +140,8 @@ const RAW_BRUSHES: Brush[] = [
     render: 'uniform-blending', wet: { dilution: 0.04, charge: 0.9, attack: 0.2, pull: 0.3, grade: 0.55 },
   }),
   // a bundle of hairs (paint/bristle.ts): per-hair streaks, pickup of the paint under it, canvas grain that travels
-  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.04, 1, 0.45, 0.5, { followStroke: true, roundness: 0.9, grain: 0.55, grainMode: 'moving', grainMovement: 0.95, grainJitter: 0.19, grainContrast: 0.12, smoothing: 0.35, pickup: 0.7, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, render: 'intense-blending', burntEdges: 0.25, wet: { dilution: 0.4, charge: 0.55, attack: 0.1, pull: 1, grade: 0.25 } }),
-  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.5, 0.7, { bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
+  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.04, 1, 0.45, 0.5, { tilt: 0.6, followStroke: true, roundness: 0.9, grain: 0.55, grainMode: 'moving', grainMovement: 0.95, grainJitter: 0.19, grainContrast: 0.12, smoothing: 0.35, pickup: 0.7, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, render: 'intense-blending', burntEdges: 0.25, wet: { dilution: 0.4, charge: 0.55, attack: 0.1, pull: 1, grade: 0.25 } }),
+  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.5, 0.7, { tilt: 0.6, bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
   d('fan-paint', 'Fan brush', 'Painting', 'comb', 0.35, 110, 18, 0.07, 0.8, 0.7, 0.7, { followStroke: true, roundness: 0.3, grain: 0.5, pickup: 0.6, rotationJitter: 0.04 }, 0.9),
   d('palette-knife', 'Palette knife', 'Painting', 'chisel', 0.02, 70, 12, 0.03, 1, 0.8, 1, { followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9 }),
   d('acrylic', 'Acrylic', 'Painting', 'round', 0.1, 80, 6, 0.06, 1, 0.55, 0.9, { grain: 0.15, smoothing: 0.35 }),
@@ -267,7 +268,7 @@ const RAW_BRUSHES: Brush[] = [
   d('enamel', 'Glossy enamel', 'Material', 'round', 0.05, 70, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.5, gloss: 0.9, metal: 0 } }),
   d('chrome', 'Chrome', 'Material', 'round', 0.05, 60, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.7, gloss: 0.8, metal: 1 } }),
   d('gold-leaf', 'Gold leaf', 'Material', 'grunge', 0.05, 70, 10, 0.08, 1, 0.8, 1, { rotationJitter: 1, grain: 0.5, grainScale: 0.9, bump: 0.25, shine: { depth: 0.35, gloss: 0.6, metal: 0.9 } }),
-  d('thick-oil', 'Thick oil', 'Material', 'bristle', 0.02, 100, 14, 0.04, 1, 0.5, 0.7, { bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.6, grain: 0.55, grainScale: 1.5, bump: 0.6, shine: { depth: 1, gloss: 0.5, metal: 0 }, render: 'intense-blending', wet: { dilution: 0.04, charge: 0.8, attack: 0.5, pull: 0.55, grade: 0.3 } }),
+  d('thick-oil', 'Thick oil', 'Material', 'bristle', 0.02, 100, 14, 0.04, 1, 0.5, 0.7, { tilt: 0.6, bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.6, grain: 0.55, grainScale: 1.5, bump: 0.6, shine: { depth: 1, gloss: 0.5, metal: 0 }, render: 'intense-blending', wet: { dilution: 0.04, charge: 0.8, attack: 0.5, pull: 0.55, grade: 0.3 } }),
 
   // Vintage
   d('letterpress', 'Letterpress', 'Vintage', 'grunge', 0, 50, 10, 0.1, 1, 0.9, 1, { grain: 0.5, rotationJitter: 0.5 }),
@@ -312,9 +313,9 @@ const RAW_BRUSHES: Brush[] = [
   // Water
   mk('watercolor-wash', 'Watercolor wash', 'Water', {
     tip: 'blob', softness: 0.7, maxSize: 140, minSize: 10, spacing: 0.06, flow: 0.3,
-    pressureSize: [0.7, 1], pressureFlow: [0.35, 1], rotationJitter: 1, grain: 0.22, smoothing: 0.5, pickup: 0.4,
+    pressureSize: [0.7, 1], pressureFlow: [0.55, 1], rotationJitter: 1, grain: 0.22, smoothing: 0.5, pickup: 0.4,
     // a transparent wash: it never drags what is under it, its rim pools and it bleeds a little into neighbours
-    render: 'light-glaze', wetEdges: 0.6, wet: { dilution: 0.3, charge: 0.85, attack: 0.1, pull: 0.12, grade: 0.7, blur: 0.4 },
+    render: 'light-glaze', wetEdges: 0.9, wet: { dilution: 0.3, charge: 0.85, attack: 0.1, pull: 0.12, grade: 0.7, blur: 0.4 },
   }, 0.9),
   mk('wet-blend', 'Wet blend', 'Water', {
     softness: 0.8, maxSize: 120, minSize: 8, spacing: 0.05, flow: 0.35,
@@ -342,7 +343,7 @@ const RAW_BRUSHES: Brush[] = [
   d('spot-heal', 'Spot dab', 'Touch-ups', 'blob', 0.55, 36, 6, 0.35, 0.8, 0.9, 0.7, { rotationJitter: 1 }, 0.9),
 ];
 
-export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => withMaterials(keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set })));
+export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => migrateBrush(withMaterials(keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set }))));
 
 export const BRUSH_SETS: string[] = ['Sketching', 'Drawing', 'Inking', 'Painting', 'Artistic', 'Calligraphy', 'Airbrushing', 'Textures', 'Abstract', 'Charcoals', 'Elements', 'Spraypaints', 'Materials', 'Vintage', 'Luminance', 'Industrial', 'Organic', 'Water'];
 /** Old Classic set names to current ones, for libraries saved before the rename. */
@@ -353,7 +354,7 @@ export const DEFAULT_SMUDGE = 'wet-blend';
 export const DEFAULT_ERASE = 'round-paint';
 
 /** Every starter brush: the Classic library, then the Animation library. */
-export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES.map((b) => withMaterials(keepCorners(b)))];
+export const ALL_STARTERS: Brush[] = [...BRUSHES, ...ANIMATION_BRUSHES.map((b) => migrateBrush(withMaterials(keepCorners(b))))];
 const starterMap = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
 
 const registry = new Map<string, Brush>(ALL_STARTERS.map((b) => [b.id, b]));
@@ -363,7 +364,7 @@ export function brushById(id: string): Brush | undefined {
 }
 
 /** Puts a brush (a starter one with edits, or one the person made) into the lookup. */
-export function registerBrush(b: Brush): void { registry.set(b.id, b); }
+export function registerBrush(b: Brush): void { registry.set(b.id, migrateBrush(b)); }
 
 export function unregisterBrush(id: string): void { registry.delete(id); }
 

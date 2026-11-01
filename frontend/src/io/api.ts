@@ -11,7 +11,7 @@ export interface Capabilities {
   projectExt: string;
 }
 
-export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number }
+export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number; created?: number }
 export interface LibraryStack { id: string; name: string; items: string[] }
 export interface OutputItem { name: string; path: string; modified: number; size: number; kind: string }
 export interface TrashItem { id: string; name: string; original: string; kind: 'movie' | 'export'; deleted: number; size: number; daysLeft: number }
@@ -71,6 +71,13 @@ const lib = (name: string): string =>`/library/${encodeURIComponent(name)}`;
 export const api = {
   async library(): Promise<LibraryItem[]> {
     return ((await (await request('/library')).json()) as { items: LibraryItem[] }).items;
+  },
+  /** Tags on movies: {movie name: [tag, ...]}, kept by the engine beside the library. */
+  async tags(): Promise<Record<string, string[]>> {
+    try { return ((await (await request('/library/_tags')).json()) as { tags: Record<string, string[]> }).tags; } catch { return {}; }
+  },
+  async setTags(name: string, tags: string[]): Promise<string[]> {
+    return ((await (await request(`/library/_tags/${encodeURIComponent(name)}`, { method: 'POST', body: JSON.stringify({ tags }), headers: { 'Content-Type': 'application/json' } })).json()) as { tags: string[] }).tags;
   },
   async readMovie(name: string): Promise<Blob> {
     return (await request(lib(name))).blob();

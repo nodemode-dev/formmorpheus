@@ -236,6 +236,11 @@ export function blendChannel(mode: string, b: number, s: number): number {
     case 'exclusion': r = bn + sn - 2 * bn * sn; break;
     case 'add': r = Math.min(1, bn + sn); break;
     case 'subtract': r = Math.max(0, bn - sn); break;
+    case 'divide': r = sn <= 0 ? 1 : Math.min(1, bn / sn); break;
+    case 'linear-light': r = Math.min(1, Math.max(0, bn + 2 * sn - 1)); break;
+    case 'vivid-light': r = sn < 0.5 ? (sn <= 0 ? 0 : 1 - Math.min(1, (1 - bn) / (2 * sn))) : (sn >= 1 ? 1 : Math.min(1, bn / (2 * (1 - sn)))); break;
+    case 'pin-light': r = sn < 0.5 ? Math.min(bn, 2 * sn) : Math.max(bn, 2 * (sn - 0.5)); break;
+    case 'hard-mix': r = bn + sn >= 1 ? 1 : 0; break;
     default: r = sn;
   }
   return r * 255;

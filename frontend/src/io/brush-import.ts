@@ -14,11 +14,13 @@
 // What is ASSUMED: every key matched by a loose pattern in mapEngine (speed, colour dynamics, wet mix, rendering mode,
 //   wet edges, burnout, fall off, shape count, bump), the plotJitter meaning (stroke path jitter), the 12 to 200 px
 //   reading of maxSize, and the pressure roundness sign. A brush records the keys it did not read (skippedKeys).
-// Our own files carry fmFormat 2 (plotSpacing squared, plotJitter = path jitter, shapeScatter = rotation jitter);
+// Our own files carry fmFormat 3 (plotSpacing squared, plotJitter = path jitter, shapeScatter = scatter = a turn per stamp,
+// shapeRandomise = Randomized); format 2 kept the old Randomized in shapeScatter and the position scatter in fmScatter;
 // older exports of ours (wetPickup present, no fmFormat) keep the first meaning of those keys.
 
 import { safeUnzipOr } from './safe-unzip';
-import { parseAbrFile } from './abr';
+import { parseAbrFile, parseAbrFileAsync, type AbrFile } from './abr';
+import { tf } from '../ui/i18n-fill';
 import { mapPreset, mapLegacy, mapSample, type MapCtx, type Mapped } from './abr-map';
 import { isNode, textOf } from './abr-desc';
 import { makePresets } from '../paint/brushes';
@@ -42,7 +44,12 @@ export interface ImportResult {
   skippedKeys?: string[];
   /** .abr files: per brush id, the settings that were approximated or not carried (plain English). */
   notes?: Record<string, string[]>;
+  /** .abr files: the same file read again with other options (tips only, pixel sizes); same brushes in the same order. */
+  reparse?: (opts: AbrOpts) => ImportResult;
 }
+
+/** What the .abr import dialog can change after the file is read. */
+export interface AbrOpts { applySettings?: boolean; absoluteSizes?: boolean }
 
 /** A key map that remembers which keys were read, so the rest can be reported as skipped. */
 class TrackMap extends Map<string, unknown> {
@@ -248,8 +255,8 @@ const newId = (): string => `imp-${Date.now().toString(36)}-${(stampCount++).toS
 /** A brush file's presets as brushes (not its tips: a preset is a tip plus its settings). `base` is the file's name without
  *  its extension; it names the library, the set holding presets that sit in no folder, and presets the file leaves unnamed.
  *  `applySettings: false` imports tip, size and spacing only. Per-brush notes list what was approximated or left out. */
-export function brushesFromAbr(buf: ArrayBuffer, base: string, opts: { applySettings?: boolean; absoluteSizes?: boolean } = {}): ImportResult {
-  const f = parseAbrFile(buf, base);
+export function brushesFromAbr(buf: ArrayBuffer, base: string, opts: AbrOpts = {}, parsed?: AbrFile): ImportResult {
+  const f = parsed ?? parseAbrFile(buf, base);
   const ctx: MapCtx = {
     samples: new Map(f.samples.map((s) => [s.id, s])), patterns: new Map(f.patterns.map((p) => [p.id, p])), newId,
     applySettings: opts.applySettings !== false, absoluteSizes: !!opts.absoluteSizes,
@@ -279,9 +286,9 @@ export function brushesFromAbr(buf: ArrayBuffer, base: string, opts: { applySett
     if (list.length) notes[m.brush.id] = list;
     for (const k of m.skipped) keyCount.set(k, (keyCount.get(k) ?? 0) + 1);
   }
-  if (f.warnings.length) for (const b of mapped.slice(0, 1)) notes[b.m.brush.id] = [...(notes[b.m.brush.id] ?? []), ...Array.from(new Set(f.warnings)).slice(0, 5).map((w) => `File: ${w}`)];
+  if (f.warnings.length) for (const b of mapped.slice(0, 1)) notes[b.m.brush.id] = [...(notes[b.m.brush.id] ?? []), ...Array.from(new Set(f.warnings)).slice(0, 5).map((w) => tf('File: {note}', { note: w }))];
   const skippedKeys = Array.from(keyCount).sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k]) => k);
-  return { brushes: mapped.map((x) => x.m.brush), skipped, sets, libName: base, ...(skippedKeys.length ? { skippedKeys } : {}), ...(Object.keys(notes).length ? { notes } : {}) };
+  return { brushes: mapped.map((x) => x.m.brush), skipped, sets, libName: base, ...(skippedKeys.length ? { skippedKeys } : {}), ...(Object.keys(notes).length ? { notes } : {}), reparse: (o) => brushesFromAbr(buf, base, o, f) };
 }
 
 // ---- .brush / .brushset ------------------------------------------------------------
@@ -449,9 +456,17 @@ export function brushFromParamsEx(plist: unknown, name: string, tip: { w: number
   // plotSpacing is stored squared in files from elsewhere (a version key marks the modern layout); our format 1 stored it plain
   const squared = fmt >= 2 || (fmt === 0 && m.has('plotspacingversion'));
   const spacing = rawSpacing === null ? null : squared ? Math.sqrt(Math.max(0, rawSpacing)) : rawSpacing;
-  // plotJitter is the stroke path jitter; our format 1 stored the position scatter there
+  // Scatter is a random turn of every stamp (Brush.scatter, ver 2); the old random offset is Brush.scatterPos. Where each format keeps what:
+  //   files from elsewhere and format 3: shapeScatter (and shapeRandomise) turn the stamp, plotJitter slides it sideways (stroke path),
+  //     fmScatterPos (ours) is the free offset
+  //   format 2: shapeScatter held the old Randomized (a turn), fmScatter the free offset
+  //   format 1: plotJitter held the free offset
   const plotJ = num(m, 'plotJitter'), shapeScatter = num(m, 'shapeScatter');
-  const jitter = fmt === 1 ? (plotJ ?? shapeScatter ?? num(m, 'scatter')) : num(m, 'fmScatter', 'scatter');
+  const randKeys = num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter');
+  let scatterRot: number | null, scatterPos: number | null = null, slide: number | null = plotJ;
+  if (fmt === 1) { slide = null; scatterPos = plotJ ?? shapeScatter ?? num(m, 'scatter'); scatterRot = randKeys; }
+  else if (fmt === 2) { scatterPos = num(m, 'fmScatter', 'scatter'); scatterRot = Math.max(shapeScatter ?? 0, randKeys ?? 0) || null; }
+  else { scatterPos = num(m, 'fmScatterPos'); scatterRot = Math.max(shapeScatter ?? 0, randKeys ?? 0) || null; }
   const taper = Math.max(num(m, 'taperStartLength') ?? 0, num(m, 'taperEndLength') ?? 0, num(m, 'taperSize') ?? 0, num(m, 'taperOpacity') ?? 0);
   const tScale = num(m, 'textureScale', 'grainScale');
   const tDepth = num(m, 'textureDepth', 'grainDepth');
@@ -464,15 +479,13 @@ export function brushFromParamsEx(plist: unknown, name: string, tip: { w: number
   const stab = num(m, 'stabilization', 'streamline', 'plotSmoothing', 'pressureSmoothing');
   const motion = num(m, 'motionFilter', 'motionFiltering');
   const expr = num(m, 'expression', 'motionFilteringExpression');
-  // shapeScatter is a random turn per stamp in files from elsewhere and in format 2; shapeRandomise (a turn at the stroke start) is the closest we have in the others
-  const rand = fmt === 1 ? num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter') : Math.max(shapeScatter ?? 0, num(m, 'shapeRandomise', 'shapeRandomize', 'rotationJitter') ?? 0) || null;
   const orient = m.get('orienttoscreen');
   const hasTip = !!tip;
   const b: Brush = {
     id, name: nm.slice(0, 60), set: 'Imported', tip: hasTip ? 'sampled' : 'round', softness: hasTip ? 0 : 0.2, maxSize: maxPx, minSize: minPx,
     spacing: spacing === null ? 0.1 : clamp(spacing, 0.02, 2), flow: 1,
     pressureSize: [pSize === null ? 0.5 : clamp(1 - pSize, 0.02, 1), 1], pressureFlow: [pOp === null ? 0.7 : clamp(1 - pOp, 0.05, 1), 1],
-    tilt: 0, scatter: jitter === null ? 0 : clamp(jitter, 0, 2), rotationJitter: rand === null ? 0 : clamp(rand, 0, 1),
+    tilt: 0, scatter: scatterRot === null ? 0 : clamp(scatterRot, 0, 1), rotationJitter: 0, ver: 2,
     followStroke: orient === false, roundness: 1, grain: grain ? clamp(tDepth ?? 0.8, 0, 1) : clamp(tDepth ?? 0, 0, 1), smoothing: 0.2, pickup: 0.5,
     presets: makePresets(opac === null ? 1 : clamp(opac, 0.1, 1)), custom: true,
   };
@@ -480,8 +493,9 @@ export function brushFromParamsEx(plist: unknown, name: string, tip: { w: number
   if (tip) { const s = shrink(tip.w, tip.h, tip.data); b.tipImage = { w: s.w, h: s.h, data: s.data, key: id }; }
   if (grain) b.grainImage = grain;
   if (m.get('textureinverted') === true) b.grainInvert = true;
-  // stroke path jitter (files from elsewhere and format 2): a sideways slide per stamp
-  if (fmt !== 1 && plotJ !== null && plotJ > 0) b.pathJitter = clamp(plotJ, 0, 1);
+  // the sideways slide per stamp (stroke path jitter) and the free offset
+  if (slide !== null && slide > 0) b.pathJitter = clamp(slide, 0, 1);
+  if (scatterPos !== null && scatterPos > 0) b.scatterPos = clamp(scatterPos, 0, 3);
   // pressure and tilt roundness: the names are confirmed, the reading is assumed (the share the stamp keeps at the light end)
   const prr = num(m, 'dynamicsPressureShapeRoundness'), prm = num(m, 'dynamicsPressureShapeRoundnessMinimum'), tlr = num(m, 'dynamicsTiltShapeRoundness');
   if (prr !== null && prr > 0) b.pressureRoundness = clamp(prr - (prm ?? 0) * 0.5, 0, 1) || undefined;
@@ -604,7 +618,7 @@ export async function brushesFromLib(buf: ArrayBuffer, base: string): Promise<Im
 export async function importBrushFile(file: File): Promise<ImportResult> {
   const base = file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'Brush';
   const buf = await file.arrayBuffer();
-  if (/\.abr$/i.test(file.name)) return brushesFromAbr(buf, base);
+  if (/\.abr$/i.test(file.name)) return brushesFromAbr(buf, base, {}, await parseAbrFileAsync(buf, base));
   if (/\.brushlib$/i.test(file.name)) return brushesFromLib(buf, base);
   if (/\.(brush|brushset)$/i.test(file.name)) return brushesFromZip(buf, base);
   if (file.type.startsWith('image/')) {

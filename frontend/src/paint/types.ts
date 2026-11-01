@@ -81,9 +81,10 @@ export interface Brush {
   pressureFlow: [number, number];
   /** 0 to 1: how much pen tilt flattens and widens the dab (pencil shading). */
   tilt: number;
-  /** 0 to 1: random dab offset as a fraction of the diameter. */
+  /** 0 to 1: Scatter, a random turn of every stamp whatever way the stroke runs (1 is any angle). Before `ver` 2 this field was the
+   *  random sideways offset of the stamp; `scatterPos` now holds that (paint/brush-migrate.ts converts older brushes). */
   scatter: number;
-  /** 0 to 1: random dab rotation. */
+  /** Legacy alias of `scatter`: the larger of the two turns the stamp. Brushes of `ver` 2 keep it at 0. */
   rotationJitter: number;
   /** Dab angle follows the stroke direction. */
   followStroke: boolean;
@@ -225,6 +226,8 @@ export interface Brush {
   tiltBleed?: number;
   /** -1 to 1: leaning shrinks (negative) or grows the stamp. */
   tiltSize?: number;
+  /** Size compression: a leaning pen's wider mark is laid with the stamp at its own size, side by side, so the tip's texture does not stretch. */
+  tiltCompress?: boolean;
   /** The stamp rotation stays put on screen while the canvas is turned. */
   orientScreen?: boolean;
   /** 0.2 to 1: size of the sample stroke in the brush list, as a share of the row. */
@@ -265,6 +268,28 @@ export interface Brush {
   speedSpacing?: number;
   /** The cursor over the canvas for this brush: its own tip shape, a plain circle, or none. Unset: the global outline style. */
   cursor?: 'tip' | 'circle' | 'none';
+  /** Brush Studio only (the stroke engine ignores these): the library row and the thumbnail show one stamp instead of a stroke. */
+  stampPreview?: boolean;
+  /** Brush Studio only: the start and end taper tips are edited together. */
+  taperLink?: boolean;
+  /** Brush Studio only: the settings (without pictures) saved by "Create reset point"; Reset brush returns to them. */
+  resetPoint?: Record<string, unknown>;
+
+  // ---- engine fields added with the Scatter change (all optional) ----
+  /** 2 once the brush uses Scatter as a turn (see `scatter`); absent or 1 is the old meaning and is converted when the brush is registered. */
+  ver?: number;
+  /** 0 to 3: random offset of each stamp in any direction, as a share of the diameter (what `scatter` used to be). */
+  scatterPos?: number;
+  /** -1 to 1: how far the stamp's turn follows the stroke (1 follows, 0 is fixed, -1 turns against it). Absent: 1 when `followStroke`, else 0. */
+  rotFollow?: number;
+  /** -1 to 1: the same for the moving grain, which turns with the stroke's direction. */
+  grainRotFollow?: number;
+  /** How the edge darkening of Burnt Edges blends; absent is the plain multiply. */
+  burntMode?: BlendMode;
+  /** 0 to 1: a stamp pixel at least this strong becomes fully solid, the rest clear (no soft edge). Absent: off. */
+  alphaThreshold?: number;
+  /** How the stamp picture is sampled: none (crisp), classic (bilinear), improved (bicubic). Absent: classic, or none while `tipSharp`. */
+  tipFilter?: 'none' | 'classic' | 'improved';
 }
 
 /** One pressure curve: flat x,y pairs from (0,y0) to (1,y1) with at most four nodes between; `speed` 0 (slow) to 1 (instant) is the response speed. */
@@ -272,7 +297,8 @@ export interface PenCurve { pts: number[]; speed?: number }
 
 export interface PenCurves { size?: PenCurve; opacity?: PenCurve; flow?: PenCurve; bleed?: PenCurve; roundness?: PenCurve; tilt?: PenCurve }
 
-export type GrainBlend = 'multiply' | 'subtract' | 'screen';
+/** How grain cuts into the stamp: the three first ones as before, any other blend mode acts on the stamp's alpha by the grain. */
+export type GrainBlend = 'multiply' | 'subtract' | 'screen' | BlendMode;
 
 /** Material of a stroke, all 0 to 1; `light` is the angle the light comes from in degrees (0 right, 90 above, 135 upper left). */
 export interface Shine { depth: number; gloss: number; metal: number; light?: number }

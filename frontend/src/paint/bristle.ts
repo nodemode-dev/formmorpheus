@@ -95,6 +95,7 @@ export class Bristle {
   private readonly tmp = [0, 0, 0];
   private readonly wet: WetMix;
   private started = false;
+  private pressNow = 0;
 
   constructor(cfg: BristleCfg, baseDia: number, wet: WetMix, private readonly c: BristleCtx, rng: () => number) {
     this.wet = wet;
@@ -165,7 +166,11 @@ export class Bristle {
     const half = dia * 0.5 * (1 + 0.2 * P);
     const amp = (0.04 + s.wobble) * dia;
     const kk = travel / (2.5 * Math.max(4, dia));
-    const decay = (1 - wet.charge) * ds / (dia * 20);
+    // pressing harder squeezes more paint out of the bundle: it runs low more slowly and lays a fuller load, so a
+    // stroke that leans in grows stronger even as the paint on the hairs thins
+    const press = sstep(0.2, 0.95, P);
+    this.pressNow = press;
+    const decay = (1 - wet.charge) * ds / (dia * 20) * (1 - 0.55 * press);
     const pullT = 1 - Math.exp(-wet.pull * 1.6 * ds / dia);
     const atkT = wet.attack > 0 ? (1 - Math.exp(-wet.attack * 1.2 * ds / dia)) * 1.5 * Math.exp(-travel / (3 * dia)) : 0;
     const refill = (1 - Math.exp(-ds / (dia * 3))) * (1 - 0.7 * wet.pull) * 0.5;
@@ -202,7 +207,7 @@ export class Bristle {
         this.amt[i] = Math.max(0, this.amt[i] - decay);
         this.refreshRgb(i);
       }
-      const a = this.amt[i];
+      const a = this.amt[i] + (1 - this.amt[i]) * 0.7 * press;
       // a loaded brush lays paint close to opaque (flow is the paint on the brush, not a film of it)
       this.cap[i] = contact * ramp * Math.pow(a, 0.6) * Math.min(1, s.flow * dilK * 1.45);
       const r = wi * 0.5 + 2;
@@ -237,8 +242,10 @@ export class Bristle {
       const ax = this.has ? this.px[i] : this.hx[i], ay = this.has ? this.py[i] : this.hy[i], bx = this.hx[i], by = this.hy[i];
       const rad = this.hw[i] * 0.5;
       if (cap < 0.004) continue;
-      const a = this.amt[i];
-      const dry = a < 0.35 ? sstep(0.1, 0.35, a) : 1, dryMix = a < 0.35;
+      const a = this.amt[i] + (1 - this.amt[i]) * 0.7 * this.pressNow;
+      // a hair that runs low breaks up into the tooth; the change eases in between 0.6 and 0.35 of a load (a hard
+      // switch at one load left a faint 1 px step across the stroke wherever a hair crossed it)
+      const dry = a < 0.35 ? sstep(0.1, 0.35, a) : 1, dryMix = a < 0.6, dryW = 1 - sstep(0.35, 0.6, a);
       const vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy, iL2 = L2 > 1e-6 ? 1 / L2 : 0;
       const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - rad - 1)), x1 = Math.min(w, Math.ceil(Math.max(ax, bx) + rad + 1));
       const y0 = Math.max(0, Math.floor(Math.min(ay, by) - rad - 1)), y1 = Math.min(h, Math.ceil(Math.max(ay, by) + rad + 1));
@@ -267,7 +274,7 @@ export class Bristle {
             if (my > 255) my = 511 - my;
             const tv = tooth[(my << 8) | mx];
             d *= 1 - gk * 0.75 + gk * 0.75 * tv;
-            if (dryMix) d *= dry * (0.5 + 0.5 * tv);
+            if (dryMix) d *= 1 + (dry * (0.5 + 0.5 * tv) - 1) * dryW;
           }
           const idx = py * w + px;
           const c0 = cov[idx] / 65535;

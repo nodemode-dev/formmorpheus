@@ -12,7 +12,7 @@
 //     dynamicsJitter*, taper*, dynamicsWetAccumulation, dynamicsMix, dynamicsLoad.
 //   - more key names seen in several write-ups: paintSize, paintOpacity, shapeInverted, textureInverted, grainDepth,
 //     taperStartLength, bundledShapePath, bundledGrainPath, uuid; plotSpacing is stored squared (we write it so);
-//     shapeScatter is a random turn per stamp and plotJitter the stroke path jitter (we write them so, fmFormat 2).
+//     shapeScatter is a random turn per stamp and plotJitter the stroke path jitter (we write them so, fmFormat 3; format 2 wrote the old Randomized in shapeScatter and the position scatter in fmScatter).
 // formmorpheus's own assumption (a file from elsewhere may use other names or scales):
 //   - the settings class name, the value scales (maxSize 0 to 1 over 12 to 200 px, rotation in turns,
 //     pressure as 1 minus the low end), and every key for stabilization, motion filter, expression, texture
@@ -81,11 +81,12 @@ const finite = (v: number | undefined): v is number => typeof v === 'number' && 
 export function brushSettings(b: Brush): Record<string, number | boolean | string> {
   const s: Record<string, number | boolean | string> = {};
   const put = (k: string, v: number | boolean | string | undefined): void => { if (v !== undefined && (typeof v !== 'number' || Number.isFinite(v))) s[k] = v; };
-  put('fmFormat', 2);
+  put('fmFormat', 3);
   put('plotSpacing', b.spacing * b.spacing);   // stored squared, as in files from elsewhere (confirmed by public write-ups)
   put('plotJitter', b.pathJitter ?? 0);        // stroke path jitter
-  if (b.scatter > 0) put('fmScatter', b.scatter);
-  put('shapeScatter', b.rotationJitter);       // a random turn per stamp
+  put('shapeScatter', b.scatter);              // a random turn per stamp, as in files from elsewhere
+  if (b.rotationJitter > 0) put('shapeRandomise', b.rotationJitter);
+  if (finite(b.scatterPos) && b.scatterPos > 0) put('fmScatterPos', b.scatterPos);   // the free offset, ours
   put('orientToScreen', !b.followStroke);
   // maxSize is 0 to 1 over 12 to 200 px on import; the smallest size is its share of the largest
   const maxV = (b.maxSize - 12) / 188;

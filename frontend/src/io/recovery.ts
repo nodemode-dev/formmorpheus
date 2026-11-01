@@ -50,9 +50,9 @@ class RecoverDialog extends Dialog {
 
   ask(items: RecoveryEntry[]): Promise<'recover' | 'discard' | 'later'> {
     const n = items.length;
-    setText(this.question, `${t('formmorpheus quit unexpectedly.')} ${tn(n, 'Recover {n} movie?', 'Recover {n} movies?')}`);
+    setText(this.question, `${t('formmorpheus quit before it finished writing.')} ${tn(n, 'Bring back the last steps of {n} movie?', 'Bring back the last steps of {n} movies?')}`);
     const shown = items.slice(0, 4).map((i) => i.name).join(', ');
-    setText(this.names, `${shown}${n > 4 ? `, ${tn(n - 4, 'and {n} more', 'and {n} more')}` : ''}. ${t('Recovered movies open as unsaved copies.')}`);
+    setText(this.names, `${shown}${n > 4 ? `, ${tn(n - 4, 'and {n} more', 'and {n} more')}` : ''}. ${t('Each one is added to the Theater as a new movie with "(Recovered)" after its name; the original stays as it was.')}`);
     this.open(this.recover);
     return new Promise((r) => { this.resolve = r; });
   }
@@ -84,6 +84,8 @@ export class Recovery {
   private beat = 0;
   private recheck = 0;
   private clean = true;
+  /** A recovered movie is snapshotted even before its first new edit. */
+  private forced = false;
   private soon = 0;
   private lastAt = 0;
   /** What the last written snapshot was made from: an unchanged movie is not written again. */
@@ -94,7 +96,7 @@ export class Recovery {
 
   constructor(private readonly host: RecoveryHost) {
     const check = (): void => {
-      if (!host.engine.movie || !host.engine.modified) this.clean = true;
+      if (!host.engine.movie || !host.engine.modified) { this.clean = true; this.forced = false; }
       if (this.written && (!host.engine.movie || !host.engine.modified)) void this.clear();
     };
     host.engine.on('saved', check);
@@ -168,6 +170,9 @@ export class Recovery {
   async snapshot(): Promise<void> {
     const { engine } = this.host;
     if (this.inFlight || !engine.movie || !engine.modified) return;
+    // no edit yet: the movie is its library file (a just-made movie is marked modified only so that it gets written), so a
+    // snapshot would be an empty movie that a crash then offers back as a new "Untitled Movie"
+    if (!this.forced && engine.history.past.length === 0) return;
     if (engine.movie === this.lastMovie && engine.assets === this.lastAssets) return;
     if (Date.now() - this.lastAt < MIN_GAP_MS) { this.later(0); return; }
     this.inFlight = true;
@@ -207,7 +212,8 @@ export class Recovery {
     // a window whose stream closed a moment ago may only be reconnecting: look again when its grace ends
     const wait = Math.max(0, ...all.filter((i) => i.session !== SESSION && !i.gone).map((i) => i.wait ?? 0));
     if (wait > 0) window.setTimeout(() => { void this.offer(mode); }, wait * 1000 + 400);
-    const items = all.filter((i) => i.session !== SESSION && (i.gone ?? (i.idle ?? Infinity) > DEAD_AFTER_S) && !(mode === 'new' && this.asked.has(i.session)));
+    const dead = all.filter((i) => i.session !== SESSION && (i.gone ?? (i.idle ?? Infinity) > DEAD_AFTER_S) && !(mode === 'new' && this.asked.has(i.session)));
+    const items = dead;
     if (!items.length) {
       if (mode === 'menu') toast(t('No lost movies were found.'), 'info');
       return;
@@ -231,6 +237,8 @@ export class Recovery {
         if (!opened && !this.host.engine.movie) {
           await this.host.openRecovered(blob, name);
           opened = true;
+          this.clean = false;   // the recovered steps are unsaved work: protected at once
+          this.forced = true;
           await this.snapshot();   // protected under this session before the old snapshot goes
         } else await this.host.saveRecovered(blob, await freeName(name));
         await fetch(base(i.session), { method: 'DELETE' });

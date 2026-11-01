@@ -7,7 +7,9 @@
  *  at all. Tips over 512 pixels are reduced, never dropped; 16-bit levels (0 to 32768) are scaled to 8 bits. */
 
 import { readDescriptor, readPhry, isNode, textOf, numOf, type DescNode, type DescValue } from './abr-desc';
-import { readPatterns, type AbrPattern } from './abr-patt';
+import { readPatterns, inflateZipJobs, type AbrPattern, type ZipPass } from './abr-patt';
+import { t } from '../ui/i18n';
+import { tf } from '../ui/i18n-fill';
 
 export interface SampledTip { w: number; h: number; data: Uint8Array }
 /** `spacing` is a fraction of the tip's diameter: 0.25 is the file's 25 percent. */
@@ -77,7 +79,7 @@ function reduce(w: number, h: number, data: Uint8Array): DecodedTip {
 
 /** Pixels of `depth` bits (8 or 16), raw or packed, as an 8-bit tip. 16-bit levels run 0 to 32768 (65535 when any is higher). */
 function pixels(r: Reader, w: number, h: number, depth: number, packed: boolean): DecodedTip | null {
-  if (w <= 0 || h <= 0 || w * h > MAX_PIXELS || (depth !== 8 && depth !== 16)) return null;
+  if (w <= 0 || h <= 0 || w * h > MAX_PIXELS || (depth !== 8 && depth !== 16 && depth !== 32)) return null;
   const bpp = depth / 8;
   let raw: Uint8Array | null;
   if (packed) raw = unpackRows(r, w * bpp, h);
@@ -89,6 +91,14 @@ function pixels(r: Reader, w: number, h: number, depth: number, packed: boolean)
   if (!raw) return null;
   if (depth === 8) return reduce(w, h, packed ? raw : raw.slice());
   const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength), out = new Uint8Array(w * h);
+  if (depth === 32) {
+    // floating point levels, 0 to 1 (a file that stores 0 to 255 or 0 to 65535 in floats is scaled by its largest)
+    let top = 0;
+    for (let i = 0; i < out.length; i++) { const f = dv.getFloat32(i * 4); if (Number.isFinite(f) && f > top) top = f; }
+    const k = top > 1.001 ? 255 / top : 255;
+    for (let i = 0; i < out.length; i++) { const f = dv.getFloat32(i * 4); out[i] = Number.isFinite(f) ? Math.round(Math.min(255, Math.max(0, f * k))) : 0; }
+    return reduce(w, h, out);
+  }
   let mx = 0;
   for (let i = 0; i < out.length; i++) mx = Math.max(mx, dv.getUint16(i * 2));
   const k = mx > 32768 ? 255 / 65535 : 255 / 32768;
@@ -126,13 +136,13 @@ function readOld(r: Reader, version: number, base: string, warnings: string[]): 
         const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
         const tip = pixels(r, right - left, bottom - top, depth, packed);
         if (tip) out.push({ name, tip, spacing: spacing / 100 });
-        else warnings.push(`Tip ${i + 1} could not be read.`);
+        else warnings.push(tf('Tip {n} could not be read.', { n: i + 1 }));
       } else if (type === 1) {
         r.skip(4);
         const spacing = r.u16(), diameter = r.u16(), roundness = r.u16(), angle = r.v.getInt16(r.pos), hardness = r.v.getUint16(r.pos + 2);
         out.push({ name: `${base} ${out.length + 1}`, spacing: spacing / 100, computed: { diameter, hardness, roundness, angle } });
       }
-    } catch { warnings.push(`Brush ${i + 1} could not be read.`); }
+    } catch { warnings.push(tf('Brush {n} could not be read.', { n: i + 1 })); }
     r.pos = next;
   }
   return out;
@@ -194,7 +204,7 @@ function readSamples(v: DataView, start: number, end: number, sub: number, out: 
   r.pos = start;
   while (r.pos + 4 <= end) {
     const size = r.u32(), rec = r.pos, next = rec + size + ((4 - (size % 4)) % 4);
-    if (size < 40 || rec + size > end) { if (size) warnings.push('A tip record was cut short.'); break; }
+    if (size < 40 || rec + size > end) { if (size) warnings.push(t('A tip record was cut short.')); break; }
     try {
       const idLen = r.u8();
       let id = '';
@@ -203,48 +213,61 @@ function readSamples(v: DataView, start: number, end: number, sub: number, out: 
       const top = r.i32(), left = r.i32(), bottom = r.i32(), right = r.i32(), depth = r.u16(), packed = r.u8() === 1;
       const tip = pixels(r, right - left, bottom - top, depth, packed);
       if (tip) out.push({ ...tip, id: id.trim() });
-      else warnings.push('A tip in the file could not be read.');
-    } catch { warnings.push('A tip in the file could not be read.'); }
+      else warnings.push(t('A tip in the file could not be read.'));
+    } catch { warnings.push(t('A tip in the file could not be read.')); }
     r.pos = next;
   }
 }
 
-function readSections(v: DataView, sub: number, f: AbrFile): void {
+function readSections(v: DataView, sub: number, f: AbrFile, zip?: ZipPass): void {
   let p = nextSection(v, 4), phry: string[][] | null = null;
   while (p >= 0 && p + 12 <= v.byteLength) {
     const key = sig4(v, p + 4), len = v.getUint32(p + 8), start = p + 12, end = Math.min(v.byteLength, start + len);
     try {
       if (key === 'samp') readSamples(v, start, end, sub, f.samples, f.warnings);
-      else if (key === 'patt') f.patterns.push(...readPatterns(v, start, end, f.warnings));
+      else if (key === 'patt') f.patterns.push(...readPatterns(v, start, end, f.warnings, zip));
       else if (key === 'desc' && start + 4 <= end) {
         const { root, error } = readDescriptor(v, start + 4, end);
         const list = root.items.get('Brsh');
         if (Array.isArray(list)) collectPresets(list, [], f.presets);
-        if (error) f.warnings.push(`The preset list stops early (${error}); the presets before it were kept.`);
+        if (error) f.warnings.push(tf('The preset list stops early ({error}); the presets before it were kept.', { error }));
       } else if (key === 'phry' && start + 4 <= end) phry = readPhry(v, start + 4, end).paths;
-    } catch (e) { f.warnings.push(`Section ${key} could not be read.`); void e; }
+    } catch (e) { f.warnings.push(tf('Section {key} could not be read.', { key })); void e; }
     // a section ends where its length says, rounded up to four; look a little further when the next one is not there
     const q = nextSection(v, end);
     p = q;
   }
   if (phry && phry.length === f.presets.length) f.presets.forEach((pr, i) => { if (!pr.folder.length) pr.folder = phry![i]; });
-  else if (phry && phry.length && f.presets.length) f.warnings.push('The folder list does not match the presets, so folders were not used.');
+  else if (phry && phry.length && f.presets.length) f.warnings.push(t('The folder list does not match the presets, so folders were not used.'));
 }
 
 /** Reads a whole .abr file; throws on a file that is not one. `base` names brushes the file does not name. */
-export function parseAbrFile(buf: ArrayBuffer, base = 'Brush'): AbrFile {
+export function parseAbrFile(buf: ArrayBuffer, base = 'Brush', zip?: ZipPass): AbrFile {
   const v = new DataView(buf), r = new Reader(v);
-  if (r.left < 4) throw new Error('This file is too short to be a brush file.');
+  if (r.left < 4) throw new Error(t('This file is too short to be a brush file.'));
   const version = r.u16();
   const f: AbrFile = { version, samples: [], patterns: [], presets: [], legacy: [], warnings: [] };
   if (version === 1 || version === 2) { f.legacy = readOld(r, version, base, f.warnings); return f; }
   if (version >= 6 && version <= 10) {
     const sub = r.u16();
-    if (sub !== 1 && sub !== 2) throw new Error(`This brush file has a layout this reader does not know (${version}.${sub}).`);
-    readSections(v, sub, f);
+    if (sub !== 1 && sub !== 2) throw new Error(tf('This brush file has a layout this reader does not know ({version}).', { version: `${version}.${sub}` }));
+    readSections(v, sub, f, zip);
     return f;
   }
-  throw new Error(`This is not an .abr brush file this reader knows (version ${version}).`);
+  throw new Error(tf('This is not an .abr brush file this reader knows (version {version}).', { version }));
+}
+
+/** `parseAbrFile`, with zip-compressed pattern channels inflated first (a second pass reads them from the cache). */
+export async function parseAbrFileAsync(buf: ArrayBuffer, base = 'Brush'): Promise<AbrFile> {
+  const zip: ZipPass = { cache: new Map(), jobs: [] };
+  const first = parseAbrFile(buf, base, zip);
+  if (!zip.jobs.length) return first;
+  await inflateZipJobs(new DataView(buf), zip);
+  const jobs = zip.jobs.length;
+  zip.jobs = [];
+  const second = parseAbrFile(buf, base, zip);
+  if (zip.jobs.length) second.warnings.push(tf('{n} zip-compressed patterns could not be inflated.', { n: Math.min(jobs, zip.jobs.length) }));
+  return second;
 }
 
 /** The tips in an .abr file with their names, spacing and folder, computed brushes drawn as soft tips. Kept for callers that want pictures only. */

@@ -170,7 +170,8 @@ export class PenInput {
           pressure: last.pressure + (end.pressure - last.pressure) * t,
         });
       }
-    } else if (d > 0.01 || !this.lastOut) {
+    } else if (d > 0.01 || !this.lastOut || end.time - this.lastOut.time > 120) {
+      // a pen lifted after a rest still reports the lift: the stroke needs its time to pool the wash where it sat
       out.push(end);
     }
     this.bx = end.x;

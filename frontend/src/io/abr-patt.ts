@@ -1,5 +1,7 @@
 /** Patterns of a brush file (the 'patt' section): decoded to grey, then fitted to the 256 x 256 grain tile the brush model
- *  paints texture with. Raw and PackBits channels are read; zip-compressed ones are dropped with a warning. */
+ *  paints texture with. Raw, PackBits and zip channels are read (zip through the browser's DecompressionStream, see ZipPass). */
+
+import { t } from '../ui/i18n';
 
 export interface AbrPattern { id: string; name: string; w: number; h: number; /** 8-bit luminance, 255 = light (holds paint). */ grey: Uint8Array }
 
@@ -30,8 +32,46 @@ function unpack(v: DataView, p: number, end: number, rowBytes: number, h: number
   return out;
 }
 
+/** Zip-compressed channels cannot be inflated in one synchronous pass: the first pass lists them in `jobs`, they are
+ *  inflated with the browser's DecompressionStream, and the second pass reads them from `cache` (keyed by data offset). */
+export interface ZipPass { cache: Map<number, Uint8Array>; jobs: { key: number; from: number; to: number; rowBytes: number; h: number; depth: number; predict: boolean }[] }
+
+/** Undo the per-row prediction of zip channels: 8-bit and 16-bit rows are running sums; 32-bit rows are four byte planes, summed. */
+function unpredict(raw: Uint8Array, rowBytes: number, h: number, depth: number): void {
+  for (let y = 0; y < h; y++) {
+    const o = y * rowBytes;
+    if (depth === 8) { for (let x = 1; x < rowBytes; x++) raw[o + x] = (raw[o + x] + raw[o + x - 1]) & 255; }
+    else if (depth === 16) {
+      for (let x = 2; x + 1 < rowBytes; x += 2) {
+        const s = ((raw[o + x] << 8) | raw[o + x + 1]) + ((raw[o + x - 2] << 8) | raw[o + x - 1]);
+        raw[o + x] = (s >> 8) & 255; raw[o + x + 1] = s & 255;
+      }
+    } else if (depth === 32) {
+      for (let x = 1; x < rowBytes; x++) raw[o + x] = (raw[o + x] + raw[o + x - 1]) & 255;
+      const n = rowBytes >> 2, tmp = raw.slice(o, o + rowBytes);
+      for (let i = 0; i < n; i++) for (let b = 0; b < 4; b++) raw[o + i * 4 + b] = tmp[b * n + i];
+    }
+  }
+}
+
+/** Inflates every listed channel; a failed one is simply left out of the cache. */
+export async function inflateZipJobs(v: DataView, pass: ZipPass): Promise<void> {
+  if (typeof DecompressionStream === 'undefined') return;
+  for (const j of pass.jobs) {
+    try {
+      const src = new Uint8Array(v.buffer, v.byteOffset + j.from, j.to - j.from).slice();
+      const stream = new Blob([src.buffer as ArrayBuffer]).stream().pipeThrough(new DecompressionStream('deflate'));
+      const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+      if (raw.length < j.rowBytes * j.h) continue;
+      const out = raw.subarray(0, j.rowBytes * j.h);
+      if (j.predict) unpredict(out, j.rowBytes, j.h, j.depth);
+      pass.cache.set(j.key, out);
+    } catch { /* the channel stays unreadable */ }
+  }
+}
+
 /** One channel entry to 8-bit samples, or null. */
-function channel(v: DataView, p: number, end: number, w: number, h: number): Uint8Array | null {
+function channel(v: DataView, p: number, end: number, w: number, h: number, zip?: ZipPass): Uint8Array | null {
   if (p + 23 > end) return null;
   const depth = v.getUint32(p);
   const top = v.getInt32(p + 4), left = v.getInt32(p + 8), bottom = v.getInt32(p + 12), right = v.getInt32(p + 16);
@@ -47,7 +87,10 @@ function channel(v: DataView, p: number, end: number, w: number, h: number): Uin
     if (data + rowBytes * H > end) return null;
     raw = new Uint8Array(v.buffer, v.byteOffset + data, rowBytes * H);
   } else if (comp === 1) raw = unpack(v, data, end, rowBytes, H);
-  else return null;
+  else if ((comp === 2 || comp === 3) && zip) {
+    raw = zip.cache.get(data) ?? null;
+    if (!raw) { zip.jobs.push({ key: data, from: data, to: end, rowBytes, h: H, depth, predict: comp === 3 }); return null; }
+  } else return null;
   if (!raw) return null;
   const out = new Uint8Array(W * H);
   if (depth === 8) out.set(raw.subarray(0, W * H));
@@ -68,7 +111,7 @@ function channel(v: DataView, p: number, end: number, w: number, h: number): Uin
 }
 
 /** Patterns in a 'patt' section [start, end). Never throws: a pattern that cannot be read is left out and named in `warnings`. */
-export function readPatterns(v: DataView, start: number, end: number, warnings: string[]): AbrPattern[] {
+export function readPatterns(v: DataView, start: number, end: number, warnings: string[], zip?: ZipPass): AbrPattern[] {
   const out: AbrPattern[] = [];
   let p = start;
   while (p + 4 <= end) {
@@ -76,17 +119,18 @@ export function readPatterns(v: DataView, start: number, end: number, warnings: 
     const recEnd = Math.min(end, p + 4 + len), next = p + 4 + len + ((4 - (len % 4)) % 4);
     p += 4;
     try {
-      const pat = readOne(v, p, recEnd);
+      const before = zip?.jobs.length ?? 0;
+      const pat = readOne(v, p, recEnd, zip);
       if (pat) out.push(pat);
-      else warnings.push('A pattern in the file could not be read.');
-    } catch { warnings.push('A pattern in the file could not be read.'); }
+      else if (!zip || zip.jobs.length === before) warnings.push(t('A pattern in the file could not be read.'));
+    } catch { warnings.push(t('A pattern in the file could not be read.')); }
     if (len === 0 || next <= p) break;
     p = next;
   }
   return out;
 }
 
-function readOne(v: DataView, p: number, end: number): AbrPattern | null {
+function readOne(v: DataView, p: number, end: number, zip?: ZipPass): AbrPattern | null {
   if (p + 20 > end) return null;
   p += 4; // version
   const mode = v.getUint32(p); p += 4;
@@ -124,7 +168,7 @@ function readOne(v: DataView, p: number, end: number): AbrPattern | null {
     p += 8;
     if (!written || !clen) { chans.push(null); continue; }
     const cend = Math.min(vend, p + clen);
-    chans.push(i < nch ? channel(v, p, cend, w, h) : null);
+    chans.push(i < nch ? channel(v, p, cend, w, h, zip) : null);
     p = cend;
   }
   const c0 = chans[0];

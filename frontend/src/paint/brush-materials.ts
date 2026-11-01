@@ -27,7 +27,6 @@ mechanical=lead-mechanical
 color pencil=lead-coloured
 hatch pencil=lead-flat
 carpenter=lead-flat
-lead stub=lead-hb
 soft lead=lead-2b
 a:scribble=lead-hb
 blue lead=lead-coloured

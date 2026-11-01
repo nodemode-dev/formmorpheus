@@ -9,6 +9,8 @@ import { Stroke } from './stroke';
 import { setPressureCurve } from './dynamics';
 import { hasShine } from './shine';
 import { dries } from './wet-dry';
+import { wetIngest, wetTake } from './wetmap';
+import type { WetRecord } from './wetmap';
 
 export type ToWorker =
   | {
@@ -21,6 +23,8 @@ export type ToWorker =
     selId: number; sel: Mask | null;
     settings: Omit<StrokeSettings, 'selection'>;
     curve: Point[];
+    /** Wet marks the page made since the worker last saw its wet map (paint/wetmap.ts). */
+    wet?: WetRecord[];
   }
   | { t: 'add'; id: number; samples: PenSample[] }
   | { t: 'finish'; id: number }
@@ -28,7 +32,8 @@ export type ToWorker =
 
 export type FromWorker =
   | { t: 'step'; id: number; n: number; rect: Rect | null; bytes: Uint8ClampedArray | null }
-  | { t: 'done'; id: number; n: number; rect: Rect | null; bytes: Uint8ClampedArray | null }
+  /** `wet`: the wet marks this stroke left, for the page's own wet map. */
+  | { t: 'done'; id: number; n: number; rect: Rect | null; bytes: Uint8ClampedArray | null; wet?: WetRecord[] }
   | { t: 'error'; id: number; msg: string }
   /** The selection id is not cached here: the page resends the mask and the stroke falls back to its own thread. */
   | { t: 'miss'; id: number };
@@ -74,6 +79,11 @@ function reply(kind: 'step' | 'done', l: Live, rect: Rect | null): void {
     rect = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
   }
   const bytes = rect && mirror ? grab(mirror.raster, rect) : null;
+  if (kind === 'done') {
+    const wet = wetTake();
+    ctx.postMessage({ t: kind, id: l.id, n: l.n, rect, bytes, wet }, [...(bytes ? [bytes.buffer] : []), ...wet.map((r) => r.bits.buffer)]);
+    return;
+  }
   ctx.postMessage({ t: kind, id: l.id, n: l.n, rect, bytes }, bytes ? [bytes.buffer] : []);
 }
 
@@ -91,6 +101,8 @@ ctx.onmessage = (e: MessageEvent<ToWorker>): void => {
       if (m.selId && selection) { sels.delete(m.selId); sels.set(m.selId, selection); }
       while (sels.size > SEL_CACHE) sels.delete(sels.keys().next().value as number);
       setPressureCurve(m.curve);
+      // what the page painted since: its wash may still be wet, and this stroke must meet it exactly as the page would
+      if (m.wet && m.wet.length) wetIngest(m.wet);
       live = { id: m.id, stroke: new Stroke(mirror.raster, m.layer, { ...m.settings, selection }), n: 0, acc: null, last: 0, timer: 0, shine: m.settings.tool === 'paint' && (hasShine(m.settings.brush.shine) || dries(m.settings.brush)) };
       return;
     }

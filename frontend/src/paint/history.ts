@@ -33,6 +33,13 @@ const TILE = 128;
 /** Patches under this many bytes stay one rectangle: tiling them saves nothing. */
 const TILE_MIN_BYTES = 256 * 1024;
 
+/**
+ * A stroke that already knows which 64 px tiles it changed hands its undo step over as those tiles (row runs of
+ * them) here, keyed by the patch it returns; the patch itself then only carries the bounding rect. The history
+ * takes the tiles as they are: no copy of the bounding box, no scan of it.
+ */
+export const patchTiles = new WeakMap<PixelPatch, PixelPatch[]>();
+
 /** Where the history reports that it dropped its oldest steps (the paint view shows it in its toast). */
 export const historyNotice: { handler: ((text: string) => void) | null } = { handler: null };
 
@@ -140,7 +147,7 @@ export class PaintHistory {
   ) {}
 
   push(input: PaintEntry | { kind: 'pixels'; label: string; patch: PixelPatch }): void {
-    const e: PaintEntry = 'patch' in input ? { kind: 'pixels', label: input.label, patches: tilePatch(input.patch) } : input;
+    const e: PaintEntry = 'patch' in input ? { kind: 'pixels', label: input.label, patches: patchTiles.get(input.patch) ?? tilePatch(input.patch) } : input;
     this.redoStack.length = 0;
     const top = this.undoStack[this.undoStack.length - 1];
     if (e.kind === 'layers' && e.tag && top && top.kind === 'layers' && top.tag === e.tag) {
