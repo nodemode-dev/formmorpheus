@@ -65,7 +65,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   SKETCH('Soft lead', 'grain-round', 0.55, 28, 3, 0.05, 0.3, 0.5, 0.15, { tilt: 1, grain: 0.65, smoothing: 0.1 }, 0.85),
   SKETCH('Scribble', 'grain-round', 0.15, 14, 2, 0.08, 0.6, 0.6, 0.3, { scatter: 0.12, grain: 0.6, jitterOpacity: 0.4, smoothing: 0.05 }, 0.9),
   SKETCH('Blue lead', 'grain-round', 0.15, 10, 1.5, 0.06, 0.55, 0.55, 0.25, { grain: 0.55, colorDyn: { strokeBri: 0.12 }, smoothing: 0.1, tilt: 0.6 }, 0.8),
-  SKETCH('Rough hatch', 'hatch', 0.1, 26, 6, 0.08, 0.95, 0.7, 0.4, { followStroke: true, roundness: 0.55, grain: 0.3, jitterOpacity: 0.1 }),
+  SKETCH('Rough hatch', 'hatch', 0.1, 26, 6, 0.28, 0.95, 0.7, 0.4, { followStroke: false, baseRot: 0.785, roundness: 1, grain: 0.5, jitterOpacity: 0.3, rotationJitter: 0.03, jitterSize: 0.25, spacingJitter: 0.6, pressureSize: [0.7, 1] }),
   SKETCH('Side shade', 'grain-round', 0.4, 30, 8, 0.05, 0.22, 0.5, 0.1, { tilt: 1, roundness: 0.5, grain: 0.85, azimuth: true, smoothing: 0.1 }, 0.8),
   SKETCH('Sepia pencil', 'grain-round', 0.2, 12, 1.5, 0.06, 0.6, 0.6, 0.25, { grain: 0.7, grainScale: 0.8, colorDyn: { strokeSat: 0.08, strokeBri: 0.1 }, tilt: 0.7 }, 0.9),
   SKETCH('Ghost line', 'round', 0.3, 12, 1, 0.05, 0.5, 0.6, 0.3, { burnout: 0.8, fallOff: 0.3, grain: 0.3, smoothing: 0.2 }, 0.8),
@@ -121,8 +121,8 @@ export const ANIMATION_BRUSHES: Brush[] = [
   SCRIPT('Quill', 'chisel', 0.04, 14, 2, 0.04, 1, 0.3, 1, { roundness: 0.3, baseRot: 0.5, smoothing: 0.45, speedSize: -0.3, taper: 0.3 }),
 
   // Chalk
-  CHALK('Stick chalk', 'chalk', 0.05, 38, 8, 0.07, 0.9, 0.75, 0.5, { grain: 0.8, rotationJitter: 1, tilt: 0.7 }),
-  CHALK('Soft pastel', 'chalk', 0.3, 50, 12, 0.06, 0.55, 0.6, 0.3, { grain: 0.75, grainScale: 1.3, tilt: 1, bump: 0.2, rotationJitter: 1 }, 0.9),
+  CHALK('Stick chalk', 'chalk', 0.05, 38, 8, 0.07, 0.9, 0.75, 0.5, { grain: 0.8, rotationJitter: 1, tilt: 0.7, tiltCompress: true }),
+  CHALK('Soft pastel', 'chalk', 0.3, 50, 12, 0.06, 0.55, 0.6, 0.3, { grain: 0.75, grainScale: 1.3, tilt: 1, bump: 0.2, rotationJitter: 1, tiltCompress: true }, 0.9),
   CHALK('Blackboard', 'chalk', 0.08, 30, 6, 0.06, 0.95, 0.8, 0.5, { grain: 0.9, grainScale: 0.9, jitterOpacity: 0.25, rotationJitter: 1 }),
   CHALK('Pavement', 'grunge', 0.1, 54, 12, 0.07, 0.8, 0.8, 0.5, { grain: 1, grainScale: 1.6, rotationJitter: 1, tilt: 0.5 }),
   CHALK('Pastel side', 'chalk', 0.2, 60, 18, 0.06, 0.5, 0.5, 0.2, { roundness: 0.35, grain: 0.9, tilt: 1, azimuth: true }, 0.85),
@@ -139,18 +139,18 @@ export const ANIMATION_BRUSHES: Brush[] = [
   INK('Splatter ink', 'splat', 0.1, 40, 6, 0.4, 1, 0.5, 0.8, { shapeCount: 5, scatter: 0.9, jitterSize: 0.7, rotationJitter: 1 }),
   INK('Pooled ink', 'round', 0.05, 34, 3, 0.04, 0.85, 0.25, 0.8, { taper: 0.3, taperEnd: 0.5, wetEdges: 1, render: 'uniform-glaze', smoothing: 0.5 }, 0.95),
   INK('Brush ink', 'round', 0.06, 30, 3, 0.04, 1, 0.1, 0.9, { taper: 0.6, smoothing: 0.55, grain: 0.15, pressureGamma: 1.3 }),
-  INK('Sumi', 'bristle', 0.08, 64, 4, 0.05, 1, 0.1, 0.92, { grain: 0, taper: 0.35, taperEnd: 0.4, smoothing: 0.55, pressureGamma: 1.2, render: 'uniform-glaze', wetEdges: 0.55 }),
+  INK('Sumi', 'bristle', 0.08, 64, 4, 0.05, 1, 0.1, 0.92, { grain: 0, taper: 0.35, taperEnd: 0.3, taperSize: 0.5, taperTip: 0, smoothing: 0.55, pressureGamma: 1.2, render: 'uniform-glaze', wetEdges: 0.55 }),
   INK('Stipple ink', 'dots', 0.05, 22, 5, 0.25, 1, 0.6, 0.8, { scatter: 0.6, shapeCount: 3, jitterSize: 0.5, rotationJitter: 1 }),
   INK('Rollerball', 'round', 0.05, 7, 1, 0.04, 0.95, 0.9, 0.7, { smoothing: 0.4, wetEdges: 0.2, burnout: 0.2 }),
   INK('Ink wash line', 'round', 0.3, 24, 4, 0.04, 0.55, 0.4, 0.4, { render: 'light-glaze', wetEdges: 0.6, wet: { dilution: 0.5, charge: 0.8, attack: 0.2, pull: 0.3, grade: 0.6 } }, 0.8),
 
   // Paint
   // opaque paints share the Classic recipe (paint/fam-paint-tips.ts): solid body, combed grainy rim, load that thins with light pressure
-  PAINT('Flat paint', 'chisel', 0, 48, 8, 0.05, 0.8, 0.6, 0.3, { roundness: 1, followStroke: true, grain: 0.3, grainScale: 0.45, grainDepthMin: 0.15, burnout: 0.2 }),
-  PAINT('Round paint', 'round', 0, 42, 6, 0.05, 0.85, 0.5, 0.3, { followStroke: true, grain: 0.3, grainScale: 0.45, grainDepthMin: 0.15, scatterPos: 0.02, burnout: 0.15 }),
+  PAINT('Flat paint', 'chisel', 0, 48, 8, 0.05, 0.8, 0.3, 0.2, { roundness: 1, followStroke: true, grain: 0.45, grainScale: 0.45, grainDepthMin: 0.05, scatterPos: 0.04, burnout: 0.3 }),
+  PAINT('Round paint', 'round', 0, 42, 6, 0.05, 0.85, 0.25, 0.2, { followStroke: true, grain: 0.45, grainScale: 0.45, grainDepthMin: 0.05, scatterPos: 0.012, burnout: 0.3, edgeBreak: 1 }),
   PAINT('Impasto', 'bristle', 0.04, 52, 10, 0.05, 1, 0.5, 0.6, { tilt: 0.6, bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, grain: 0.6, bump: 0.7, grainScale: 0.8, render: 'heavy-glaze', followStroke: true, roundness: 0.7, shine: { depth: 0.9, gloss: 0.4, metal: 0 } }),
-  PAINT('Gouache', 'round', 0, 40, 6, 0.05, 1, 0.6, 0.85, { followStroke: true, grain: 0.25, grainScale: 0.4, grainDepthMin: 0.2, scatterPos: 0.02, burnout: 0.1, colorDyn: { strokeBri: 0.06 } }),
-  PAINT('Acrylic', 'round', 0, 38, 5, 0.05, 0.8, 0.5, 0.25, { followStroke: true, grain: 0.35, grainScale: 0.5, grainDepthMin: 0.1, scatterPos: 0.02, burnout: 0.3 }),
+  PAINT('Gouache', 'round', 0, 40, 6, 0.05, 1, 0.28, 0.4, { followStroke: true, grain: 0.4, grainScale: 0.4, grainDepthMin: 0.08, scatterPos: 0.012, burnout: 0.2, edgeBreak: 1.2, colorDyn: { strokeBri: 0.06 } }),
+  PAINT('Acrylic', 'round', 0, 38, 5, 0.05, 0.8, 0.28, 0.2, { followStroke: true, grain: 0.45, grainScale: 0.5, grainDepthMin: 0.05, scatterPos: 0.012, burnout: 0.35 }),
   PAINT('Oil blend', 'bristle', 0.06, 46, 8, 0.05, 1, 0.45, 0.8, { tilt: 0.6, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, grainMode: 'moving', grainMovement: 0.95, grain: 0.5, render: 'intense-blending', roundness: 0.8, followStroke: true, wet: { dilution: 0.1, charge: 0.85, attack: 0.25, pull: 0.4, grade: 0.45 } }),
   PAINT('Knife', 'bristle', 0.03, 48, 12, 0.05, 1, 0.8, 1, { tilt: 0.7, followStroke: true, roundness: 0.3, render: 'uniform-blending', bump: 0.3, grain: 0.25, bristle: { count: 56, lenVar: 0.05, tone: 0.1, clump: 0.9, body: 0.95 }, wet: { dilution: 0, charge: 0.97, attack: 0.15, pull: 0.5, grade: 0.3 }, shine: { depth: 0.6, gloss: 0.55, metal: 0.15 } }),
   PAINT('Dab', 'blob', 0.1, 40, 8, 0.7, 1, 0.8, 0.9, { rotationJitter: 1, scatter: 0.1, jitterSize: 0.3, colorDyn: { stampBri: 0.15, stampHue: 0.04 } }),

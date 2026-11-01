@@ -257,7 +257,8 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
 /** A wash laid over a still-wet one: colour and alpha run together across the wet area (premultiplied blur, by wetness). */
 function bleed(o: DryOptions): void {
   const { data, w } = o, wetw = o.wetw!, orw = o.x1 - o.x0;
-  const R = Math.max(6, Math.round(o.radius * 7));
+  // the colours run a fraction of the brush's width (a few px to about 0.3 of it), not across the whole stroke
+  const R = Math.max(5, Math.round(o.radius * 1.6));
   // only where the earlier wash still is wet (the map is sparse): its box, plus the reach of the blur
   let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
   for (let y = 0; y < o.y1 - o.y0; y++) for (let x = 0; x < orw; x++) if (wetw[y * orw + x] > 0.01) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
@@ -295,7 +296,7 @@ function bleed(o: DryOptions): void {
       if (bm < 0.01) continue;
       const di = ((y0 + y) * w + x0 + x) << 2, a0 = data[di + 3] / 255, m = M[i], inv = 1 / bm;
       // inside a wash the colour moves toward its neighbours' average; just outside it a faint stain runs out
-      let k = m > 0.5 ? wv * sstep(0.4, 0.7, m) : (a0 > 0.98 ? wv * 0.4 * (bm > 1 ? 1 : bm) * (bm > 1 ? 1 : bm) : wv);
+      let k = m > 0.5 ? 0.8 * wv * sstep(0.4, 0.7, m) : (a0 > 0.98 ? wv * 0.4 * (bm > 1 ? 1 : bm) * (bm > 1 ? 1 : bm) : wv);
       // a clear pixel has no colour of its own (its bytes are black): it takes the running colour whole, else the faint stain it gains reads as a grey haze
       if (a0 < 0.05) k = 1 - (1 - k) * (a0 * 20);
       data[di] += (bl[0][i] * inv - data[di]) * k;
@@ -303,7 +304,12 @@ function bleed(o: DryOptions): void {
       data[di + 2] += (bl[2][i] * inv - data[di + 2]) * k;
       const ba = bl[4][i];
       // on bare paper beside a wash the stain is only a trace: it must not read as a band between strokes
-      if (a0 < 0.98 && ba > a0) data[di + 3] = (a0 + (ba - a0) * wv * (m > 0.5 ? 1 : 0.25 * (1 - bm > 0 ? bm : 1))) * 255 + 0.5;
+      if (a0 < 0.98 && ba > a0) {
+        // bare paper takes a stain only deep in a wet neighbour's reach (a faint one would only print as a pale disc)
+        let g = wv * (m > 0.5 ? 1 : (a0 < 0.02 ? 0.5 : 0.25) * (bm > 1 ? 1 : bm));
+        if (m <= 0.5 && g < 0.12) g = 0;
+        if (g > 0) data[di + 3] = (a0 + (ba - a0) * g) * 255 + 0.5;
+      }
     }
   }
 }

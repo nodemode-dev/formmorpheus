@@ -51,6 +51,8 @@ export interface BristleStep {
   wobble: number;
   /** How far the pen leans, 0 upright to 1 flat (a bundle laid on its side). */
   lean?: number;
+  /** 0 while painting, 0..1 along the run-out when the bundle is lifted off. */
+  lift?: number;
 }
 
 /** A light 3 x 3 smoothing of the stroke's coverage over a rectangle, so the lit relief shows ridges, not one-pixel cliffs at every hair. */
@@ -185,7 +187,7 @@ export class Bristle {
     const refill = (1 - Math.exp(-ds / (dia * 1.5))) * (1 - 0.5 * wet.pull) * 0.8;
     const dilK = 1 - wet.dilution * 0.5;
     const sk = s.speed * 0.3;
-    const kc = this.kc, ks = this.ks, lean = s.lean ?? 0;
+    const kc = this.kc, ks = this.ks, lean = s.lean ?? 0, lift = s.lift ?? 0;
     let bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
     for (let i = 0; i < n; i++) {
       const lat = this.u[i] * half + amp * (Math.sin(kk + this.phase[i]) * 0.6 + Math.sin(kk * 2.3 + this.phase[i] * 1.7) * 0.4);
@@ -199,6 +201,13 @@ export class Bristle {
       if (this.body > 0) contactRaw = Math.max(contactRaw, this.body * sstep(0, 0.06, P));
       const contact = this.has ? easeContact(this.cs[i], contactRaw, ds, dia, 0.35) : contactRaw;
       this.cs[i] = contact;
+      // lifting off: every hair leaves at its own place (outer hairs first; a blade lifts from its corners in), so the end frays or rounds off
+      let liftK = 1;
+      if (lift > 0) {
+        const rnd = this.phase[i] - Math.floor(this.phase[i]), ua = Math.abs(this.u[i]);
+        const thr = this.body > 0 ? 0.55 * (1 - ua * ua) : Math.max(0, 0.08 + 0.62 * rnd - 0.3 * out - 0.12 * ua * ua);
+        liftK = 1 - sstep(thr, thr + 0.3, lift);
+      }
       const st0 = this.start[i] * (1 + 1.5 * out) * dia;
       const ramp = sstep(st0, st0 + 0.5 * dia, travel);
       // the paint on this hair: pick up the canvas under it, refill from the brush, run low with distance
@@ -224,7 +233,7 @@ export class Bristle {
       }
       const a = this.amt[i] + (1 - this.amt[i]) * 0.7 * press;
       // a loaded brush lays paint close to opaque (flow is the paint on the brush, not a film of it)
-      this.cap[i] = contact * ramp * Math.pow(a, 0.6) * Math.min(1, s.flow * dilK * 1.45) * (1 - 0.45 * out);
+      this.cap[i] = contact * liftK * ramp * Math.pow(a, 0.6) * Math.min(1, s.flow * dilK * 1.45) * (1 - 0.45 * out);
       const r = wi * 0.5 + 2;
       const ax = this.has ? this.px[i] : hx, ay = this.has ? this.py[i] : hy;
       if (hx - r < bx0) bx0 = hx - r; if (ax - r < bx0) bx0 = ax - r;

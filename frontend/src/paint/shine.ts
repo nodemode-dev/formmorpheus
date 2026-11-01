@@ -121,7 +121,10 @@ export function bakeShine(data: Uint8ClampedArray, w: number, h: number, cov: Ui
       const di = idx * 4;
       const r = data[di], g = data[di + 1], b = data[di + 2];
       // the shaded side darkens the paint, it never goes black (a steep metal slope drove k below zero: a black offset line)
-      const k = Math.max(0.55, 1 + (dif + sheen) * wgt);
+      // a polished metal tube: the shaded side only softens (no dark offset line), the lit side gets the bright band
+      let sh = dif + sheen;
+      if (sh < 0) sh *= 1 - 0.75 * metal;
+      const k = Math.max(0.55 + 0.3 * metal, 1 + sh * wgt);
       // specular colour: white for a plastic gloss, the paint's own colour (lifted) for a metal
       const sr = sp * specK * wgt, spc = 1 - metal;
       data[di] = r * k + sr * (spc + metal * (r / 255 * 0.6 + 0.4));

@@ -159,7 +159,7 @@ export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape
   // (a bristle bundle is paint, not a dry stick: oil and impasto keep their own lean, so this dry-media rule skips them)
   const paintLike = !!brush.bristle || !!brush.wet || !!brush.render || ['bristle', 'comb', 'speckle', 'dots', 'sponge', 'splat'].includes(brush.tip);
   // a scattered brush (toothbrush, spatter) keeps its size on a lean: growing it only throws the scatter wider
-  const scattered = (brush.shapeCount ?? 1) > 1 || brush.scatter > 0.3 || (brush.scatterPos ?? 0) > 0.3;
+  const scattered = (brush.shapeCount ?? 1) > 1 || (brush.scatterPos ?? 0) > 0.3;
   const sideOn = brush.tilt >= 0.6 && !paintLike && !scattered;
   const k = (sideOn ? Math.min(1, lean * 1.7) * Math.min(1, brush.tilt * 1.15) : Math.min(1, lean * 1.25) * brush.tilt);
   const flat = k >= 0.02;
@@ -171,7 +171,7 @@ export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape
   const side = sideOn;
   const grow = flat && !scattered;
   // paint on a bundle (hair, oil, knife) leans into a modest, round-ended oval: a wide stretched one reads as a box
-  const longK = grow ? 1 + (side ? (brush.maxSize < 30 ? 7.4 : 5.2) : paintLike ? 1.6 : 3) * k : 1, shortK = grow ? 1 + (side ? 1.9 : paintLike ? 0.6 : 1) * k : 1;
+  const longK = grow ? 1 + (side ? (brush.maxSize < 30 ? 7.4 : 5.2) : paintLike ? 1.6 : 3) * k : 1, shortK = grow ? 1 + (side ? 0.68 * (brush.maxSize < 30 ? 7.4 : 5.2) : paintLike ? 0.6 : 1) * k : 1;
   return {
     roundnessMul: flat ? shortK / longK : 1,
     sizeMul: longK * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),

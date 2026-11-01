@@ -167,6 +167,8 @@ export interface Brush {
   grainMovement?: number;
   /** 0 to 1: the floor the grain never cuts below (less contrast). */
   grainDepthMin?: number;
+  /** 0 to 1.5: the outer rim of each dab is cut by the paper tooth and noise (a dry-brush edge), more at light pressure. Absent is off. */
+  edgeBreak?: number;
   /** Raised and pitted parts of the grain swap places. */
   grainInvert?: boolean;
   /** Tiles the grain this many times across its square (1 to 8); every repeat is seamless. */

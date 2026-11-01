@@ -10,6 +10,7 @@ import { baseAngle, baseDiameter, blendChannel, hsvToRgb, mulberry32, needsColou
 import { getTip, grainTable } from './tips';
 import { brushGrain } from './grains-lib';
 import { grainFit } from './fam-grain-fit';
+import { edgeBreak } from './fam-edge';
 import { libTipImage } from './tips-lib';
 import type { RenderMode, WetMix } from './types';
 import { PenResponse, rollAmount, shapeLean } from './curves';
@@ -222,6 +223,8 @@ export class Stroke implements StrokeLike {
   private t0 = -1;
   /** Where the pen rested mid-stroke, and how long (a bead of pigment forms there). */
   private readonly pools: { x: number; y: number; t: number }[] = [];
+  /** Where and since when the pen has sat still with events still arriving (a held pen), and whether that rest already left its bead. */
+  private restX = 0; private restY = 0; private restT = -1; private restDone = false;
   /** Rows each 64 px column of the stroke reached, for brushes whose wash is reworked when the pen lifts. */
   private cols: { top: Int32Array; bot: Int32Array } | null = null;
   private readonly wigA: number;
@@ -382,17 +385,20 @@ export class Stroke implements StrokeLike {
     const bs = this.bstep;
     if (!this.bristle || (this.endLen > 0 && !this.mouseKind) || this.travel < 6 || this.s.tool !== 'paint') return;
     const dia = bs.dia, ds = Math.max(1.2, dia * 0.04);
-    const L = Math.min(dia * (1.5 + 1.6 * this.speed), this.travel * 0.8);
-    const n = Math.min(140, Math.ceil(L / ds));
+    // each hair lifts at its own place along this run (bristle.ts, lift), so the end frays; a leaning bundle trails longer
+    const L = Math.min(dia * (2 + 1.6 * this.speed) * (1 + 0.8 * (bs.lean ?? 0)), this.travel * 0.8);
+    const n = Math.min(180, Math.ceil(L / ds));
     if (n < 2) return;
     const p0 = liftPressure(bs.pressure), dx = this.bdx, dy = this.bdy;
     for (let k = 1; k <= n; k++) {
       const u = k / n;
       bs.cx += dx * ds; bs.cy += dy * ds;
-      bs.pressure = p0 * Math.pow(1 - u, 0.9);
+      bs.pressure = p0 * (1 - 0.6 * u);
+      bs.lift = u;
       bs.travel += ds; bs.ds = ds;
       this.bristle.step(bs);
     }
+    bs.lift = 0;
   }
 
   // ---- StrokeLike ----------------------------------------------------------
@@ -408,13 +414,20 @@ export class Stroke implements StrokeLike {
     }
     if (this.t0 < 0) this.t0 = sample.time;
     // a pen that rests lets the wash pool there: the longer it rests, the thicker the bead
-    if (this.lastT >= 0 && this.count > 0 && sample.time - this.lastT > 320 && Math.hypot(sample.x - this.lastX, sample.y - this.lastY) < Math.max(3, (sample.time - this.lastT) * 0.03) && this.pools.length < 64) {
+    if (this.lastT >= 0 && this.count > 0 && sample.time - this.lastT > 320 && Math.hypot(sample.x - this.lastX, sample.y - this.lastY) < 4 &&this.pools.length < 64) {
       this.pools.push({ x: sample.x, y: sample.y, t: Math.min(1.8, 1.3 * Math.sqrt((sample.time - this.lastT) / 1000)) });
+      this.restT = -1;
       // the resting wash also spreads: a puddle that grows with the rest (three stamps, each wider), then the rim and the bead settle it
       if ((this.s.brush.wetEdges ?? 0) > 0 && this.s.tool === 'paint') {
         const grow = 0.5 * Math.min(1.4, Math.sqrt((sample.time - this.lastT) / 1000)), fl = Math.min(1, this.s.brush.flow);
         for (let k = 1; k <= 3; k++) this.stamp(sample.x, sample.y, this.baseDia * (1 + grow * k / 3), fl, null, null, 1, sample.tiltX, sample.tiltY, 0);
       }
+    }
+    // a pen held still but still reporting: after 320 ms in a 1.5 px spot the wash pools once, the longer the thicker
+    if (this.restT < 0 || Math.hypot(sample.x - this.restX, sample.y - this.restY) > 1.5) { this.restX = sample.x; this.restY = sample.y; this.restT = sample.time; this.restDone = false; }
+    else if (!this.restDone && this.count > 1 && sample.time - this.restT > 320 && this.pools.length < 64) {
+      this.restDone = true;
+      this.pools.push({ x: this.restX, y: this.restY, t: Math.min(1.8, 1.3 * Math.sqrt((sample.time - this.restT) / 1000)) });
     }
     this.lastT = sample.time; this.lastX = sample.x; this.lastY = sample.y;
     if (this.count === 0 && sample.kind === 'pen') { this.penKind = true; this.setTaper(true); }
@@ -499,7 +512,7 @@ export class Stroke implements StrokeLike {
             cols: this.cols ?? undefined,
             end: pool > 0 && last && this.count > 1 ? { x: last.x, y: last.y, r: this.baseDia * 0.6, t: 0.12 * pool * this.wp.loadNow } : undefined,
           });
-          if (pool > 0 && this.edge && this.lastT >= 0) wetMark(this.layerId, this.w, this.dx0, this.dy0, this.dx1, this.dy1, this.edge, 90, this.lastT, 4 + 8 * (br.wet?.dilution ?? 0.3), this.cols ?? undefined);
+          if (pool > 0 && this.edge && this.lastT >= 0) wetMark(this.layerId, this.w, this.dx0, this.dy0, this.dx1, this.dy1, this.edge, 90, this.lastT, 10 + 14 * (br.wet?.dilution ?? 0.3), this.cols ?? undefined);
         }
       }
       if (this.s.tool === 'paint' && this.cov && hasShine(sh)) {
@@ -927,6 +940,7 @@ export class Stroke implements StrokeLike {
         ab[rowO + px - x0] = v;
       }
     }
+    if (brush.edgeBreak) edgeBreak(ab, bw, bh, x0, y0, cx, cy, a, flow, brush.edgeBreak, tooth);
     if (px1 || brush.alphaThreshold !== undefined) {
       // hard edge: a pixel is all in or all out (past the brush's Alpha Threshold; half for pixel art)
       const hard = flow, n = bw * bh, thr = hard * (px1 ? 0.5 : Math.max(0.01, Math.min(1, brush.alphaThreshold!)));

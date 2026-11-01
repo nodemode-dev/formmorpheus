@@ -16,6 +16,7 @@ export function paintWant(b: Brush, want: number): number {
   if (CLOTH.test(n)) return Math.max(want, room(0.8, 48));
   if (n === 'halftone') return Math.max(want, room(0.6, 56));
   if (n === 'rough hatch') return Math.max(want, room(0.9, 40));
+  if (n === 'chrome') return Math.max(want, room(0.5, 30));
   if (n === 'fade spray') return room(0.35, 56);
   if (SPRAYS.test(n)) return room(0.35, 44);
   return want;
