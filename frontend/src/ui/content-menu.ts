@@ -378,7 +378,9 @@ export class ContentMenu {
     setClass(this.shapeRow.el, 'is-gone', !(sel.length === 1 && (first.kind === 'shape' || first.kind === 'solid' || first.kind === 'adjust')));
     this.shapeRow.setLabel(sel.length === 1 && first.kind === 'adjust' ? 'Adjustment options...' : 'Shape options...');
     setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
-    const isGroup = sel.length === 1 && first.kind === 'group';
+    // the reference keeps Ungroup off while Multi-select is on
+    const multiOn = document.querySelector('[data-act="multi"]')?.getAttribute('aria-pressed') === 'true';
+    const isGroup = sel.length === 1 && first.kind === 'group' && !multiOn;
     setClass(this.group.el, 'is-gone', sel.length < 2);
     setClass(this.flipOrder.el, 'is-gone', sel.length < 2);
     this.parents.patch(this.ids);

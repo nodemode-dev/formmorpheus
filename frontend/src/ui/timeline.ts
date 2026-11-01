@@ -1948,7 +1948,16 @@ export class TimelineView {
       const total = this.ed.snapTrim(m, d.id, d.edge, d.tag, d.applied, Math.round(((e.clientX - d.x0) / this.ppf) * speed), e);
       const step = total - d.applied;
       if (!step) return;
-      if (this.tryRun(d.ripple ? 'Free Trim' : 'Trim', (mv) => ops.trimContent(mv, d.id, d.edge, step, d.ripple), d.tag)) d.applied = total;
+      // with several blocks chosen the same edge of each moves by the same step; one that is locked or has no room stays put
+      const mates = this.engine.selection.content.includes(d.id) ? this.engine.selection.content.filter((id) => id !== d.id) : [];
+      const apply = (mv: Movie): Movie => {
+        let out = ops.trimContent(mv, d.id, d.edge, step, d.ripple);
+        for (const id of mates) {
+          try { out = ops.trimContent(out, id, d.edge, step, d.ripple); } catch (err) { if (!(err instanceof ops.OpError)) throw err; }
+        }
+        return out;
+      };
+      if (this.tryRun(d.ripple ? 'Free Trim' : 'Trim', apply, d.tag)) d.applied = total;
     } else if (d.kind === 'box') {
       const r = this.tracksCanvas.getBoundingClientRect();
       d.x1 = e.clientX - r.left;

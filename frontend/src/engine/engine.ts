@@ -1,4 +1,4 @@
-import { strayPixels } from './asset-gc';
+import { strayPixels, usedAssetIds } from './asset-gc';
 import { Emitter } from './events';
 import { History, type RecoveryPoint } from './history';
 import { content as makeContent, contentEnd, end, flipTrack, kindName, locate, newMovie, type NewMovieOptions } from './model';
@@ -9,7 +9,7 @@ import { groupCtx } from './group-ctx';
 import type { Asset, Content, ContentKind, Mode, Movie, Selection } from './types';
 import { HIGHLIGHTS } from './types';
 
-export interface Notice { text: string; kind: 'info' | 'error' }
+export interface Notice { text: string; kind: 'info' | 'error'; /** Values for the {name} placeholders in `text`, filled in by the UI after it translates the whole sentence. */ vars?: Record<string, string | number> }
 export interface EngineJob { id: number; name: string; done: number; total: number; cancelled?: boolean }
 
 export interface EngineEvents {
@@ -54,6 +54,7 @@ export class Engine extends Emitter<EngineEvents> {
   revision = 0;
   jobs: EngineJob[] = [];
   private clipboard: Content[] = Engine.loadClip();
+  private readonly clipAssets = new Map<string, { asset: Asset; blob: Blob }>();
   private static readonly CLIP_KEY = 'fm.clipboard.v1';
 
   /** The copied blocks of the last session, so a reload keeps the clipboard (blocks only: pictures and sounds come back by their ids when the same movie opens). */
@@ -142,8 +143,8 @@ export class Engine extends Emitter<EngineEvents> {
     this.emit('projects', undefined);
   }
 
-  notice(text: string, kind: Notice['kind'] = 'info'): void {
-    this.emit('notice', { text, kind });
+  notice(text: string, kind: Notice['kind'] = 'info', vars?: Notice['vars']): void {
+    this.emit('notice', vars ? { text, kind, vars } : { text, kind });
   }
 
   run(label: string, fn: (m: Movie) => OpResult, merge: string | null = null): boolean {
@@ -430,18 +431,33 @@ export class Engine extends Emitter<EngineEvents> {
     const items = this.selected;
     if (!items.length) return;
     this.clipboard = JSON.parse(JSON.stringify(items)) as Content[];
+    // the blocks' pictures and sounds ride along in memory, so a paste into another movie of this session brings them over
+    this.clipAssets.clear();
+    const m = this.movie;
+    if (m) for (const id of usedAssetIds([], this.clipboard)) {
+      const a = m.assets[id];
+      const blob = this.assets.get(id);
+      if (a && blob) this.clipAssets.set(id, { asset: a, blob });
+    }
     this.saveClip();
     if (cut) this.run('Cut', (m) => ops.deleteContent(m, items.map((c) => c.id)));
   }
 
   paste(): void {
     if (!this.clipboard.length) return;
-    // a clipboard kept from another movie (or another session) must not paste blocks whose picture or sound this movie lacks
+    // blocks from another movie bring their pictures and sounds from the in-memory clipboard; after a reload those are gone, so such blocks are left out and the count is said
     const have = this.movie?.assets ?? {};
-    const items = this.clipboard.filter((c) => !c.asset || have[c.asset]);
+    const items = this.clipboard.filter((c) => [...usedAssetIds([], [c])].every((id) => have[id] || this.clipAssets.has(id)));
+    const left = this.clipboard.length - items.length;
+    if (left > 0) this.notice(left === 1 ? 'One block was left out: its picture or sound is not in this movie.' : '{count} blocks were left out: their pictures or sounds are not in this movie.', 'error', { count: left });
     if (!items.length) return;
+    const need = [...usedAssetIds([], items)].filter((id) => !have[id]);
+    for (const id of need) { const e = this.clipAssets.get(id); if (e) this.assets.set(id, e.blob); }
     this.run('Paste', (m) => {
-      const r = ops.pasteContent(m, items, this.frame, this.selection.track);
+      const add: Record<string, Asset> = {};
+      for (const id of need) { const e = this.clipAssets.get(id); if (e) add[id] = e.asset; }
+      const base = need.length ? { ...m, assets: { ...m.assets, ...add } } : m;
+      const r = ops.pasteContent(base, items, this.frame, this.selection.track);
       return { movie: r.movie, select: r.ids };
     });
   }

@@ -4,6 +4,7 @@ import type { Content, Movie } from '../engine/types';
 import { el, pendingClass, q, setClass, setStyleVar, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { onLanguage, t, tn } from './i18n';
+import { tf } from './i18n-fill';
 import { contentName } from './canvas-words';
 import { historyLabel } from './history-label';
 import { JobsList } from './jobs-list';
@@ -47,7 +48,7 @@ export class StatusBar {
     onLanguage(() => this.syncDims());
     engine.on('mode', () => this.syncHint());
     engine.on('progress', () => this.syncProgress());
-    engine.on('notice', (n) => { if (n.kind === 'error') this.flashError(n.text); });
+    engine.on('notice', (n) => { if (n.kind === 'error') this.flashError(n.vars ? tf(n.text, n.vars) : n.text); });
     this.syncDims();
     this.syncHistory();
     this.syncHint();

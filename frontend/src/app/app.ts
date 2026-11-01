@@ -40,6 +40,7 @@ import { setupHelpCenter } from '../ui/help-setup';
 import { previewFor } from '../ui/preview-strip';
 import { HomeScreen } from '../ui/home';
 import { t } from '../ui/i18n';
+import { tf } from '../ui/i18n-fill';
 import { historyLabel } from '../ui/history-label';
 import { icon } from '../ui/icons';
 import '../ui/icons-morph';
@@ -231,7 +232,7 @@ export function startApp(): void {
   engine.on('mode', (m) => { if (engine.movie && (m === 'perform' || m === 'keyframe')) tips.enter(m); });
   newMovie.onFlipbook = (id) => { void paint.open(id); };
   const status = new StatusBar(q(root, '.cv-status'), engine);
-  engine.on('notice', (n) => { if (n.kind === 'error') toast(n.text, 'error'); });
+  engine.on('notice', (n) => { if (n.kind === 'error') toast(n.vars ? tf(n.text, n.vars) : n.text, 'error'); });
 
   const remember = (name: string): void => {
     const recent = [name, ...prefs.recent.filter((r) => r !== name)].slice(0, 20);
@@ -617,7 +618,7 @@ export function startApp(): void {
     { id: 'fill-duration', label: 'Fill Duration', keys: ['Alt+Mod+F'], enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Fill Duration', (m) => ops.fillDuration(m, id)); } },
     { id: 'delete', label: 'Delete Content', keys: ['Delete', 'Backspace'], enabled: sel, run: () => { if (deleteChosenKeys(engine)) return; void (async () => { if (prefs.confirmDelete && !(await confirmAction('Delete content', 'Delete the selected content?', 'Delete', true))) return; const ids = engine.selection.content.slice(); engine.run('Delete Content', (m) => ops.deleteContent(m, ids)); })(); } },
     { id: 'group', label: 'Group', keys: ['Mod+G'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Group', (m) => { const r = ops.groupContent(m, ids); return { movie: r.movie, select: [r.group] }; }); } },
-    { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.some((c) => c.kind === 'group'), run: () => { const g = engine.selected.find((c) => c.kind === 'group'); if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
+    { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.length === 1 && engine.selected[0].kind === 'group' && document.querySelector('[data-act="multi"]')?.getAttribute('aria-pressed') !== 'true', run: () => { const g = engine.selected.length === 1 ? engine.selected.find((c) => c.kind === 'group') : undefined; if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
     { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
     { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => afterCreate(engine.insert('drawing')) },
