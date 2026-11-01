@@ -7,6 +7,18 @@ Last updated: 2026-10-30 · brush libraries as files, recovery presence over a W
 
 ---
 
+## v0.17.0 · Fonts and export folders
+
+### v0.17.0 · review
+- routers/save_to.py: Windows device names (CON, NUL, COM1, LPT1 ...) and names ending in a dot or space are refused for files, frames folders and each frame in a zip; a `//` or `\\` folder (network share, device path) is refused; a zip may unpack to 16 GB at most, by header and by bytes actually written (a header can lie); a failed frames save removes what it made. Checked by request: `..`, `/`, `\`, `:`, absolute and relative folders, `/etc`, entries named `../../x` or with a backslash all stay inside the chosen folder or get 400.
+- routers/fonts.py: a font upload must start with a font signature (sfnt, OTTO, true, ttcf, wOFF, wOF2), not only carry the extension; control characters are refused in the family name.
+
+- routers/fonts.py (new, `/api/fonts`): the app-wide Fonts library, `<data>/Fonts/<file>` plus `.fonts.json` (file to family). GET list, GET/PUT/DELETE one file (`?family=` on PUT; the same file name with another family gets "name 2"). Only .ttf .otf .woff .woff2, 64 MB each.
+- routers/save_to.py (new, `/api/save-to/file`, `/api/save-to/frames`): writes an export into a folder the desktop dialog chose, using `_safe_folder` (no system folders, the folder must exist). Never replaces: a taken name or folder becomes "name 2". Frames: the zip is cut into `<dir>/<folder>/`, taking each entry's last path segment only (an entry like `a/../../x` stays inside). Checked with curl: two runs gave `Mov` and `Mov 2`, `evil.png` stayed inside, `/etc` refused.
+- routers/jobs.py: `targets.hevc.alpha` and `alpha_reason` in capabilities; a HEVC job with alpha runs only `hevc_videotoolbox` (`format=bgra`, `-alpha_quality 0.75`) and is accepted only where that encoder exists.
+
+---
+
 ## v0.16.0 · Media, sound and delivery
 
 - routers/proxy.py (new, `POST /api/proxy/make?height=360|540|720`): uploads a video, returns a small H.264 copy (short side scaled to `height`, crf 27, keyframe each second, no sound, faststart) made by the person's ffmpeg; the temp folder goes with the response. Checked: 1920x1080 3 s (1,830,739 B) gave 960x540 h264 24 fps 3.000 s (133,621 B); 1080x1920 gave 540x960. The window plays proxies while editing; exports read the original blobs.

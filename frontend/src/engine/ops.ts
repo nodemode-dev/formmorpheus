@@ -327,7 +327,11 @@ export interface MoviePatch {
   author?: string;
   width?: number;
   height?: number;
+  /** A data URL, or an empty string to remove the picture. */
+  authorPicture?: string;
   fps?: number;
+  /** With `fps`: keep every frame position (speed changes) instead of retiming to keep lengths in seconds. */
+  keepFrames?: boolean;
   duration?: number;
   background?: string;
   transparent?: boolean;
@@ -345,11 +349,13 @@ export function patchMovie(movie: Movie, patch: MoviePatch): Movie {
   const next: Movie = { ...movie };
   if (patch.name !== undefined) next.name = patch.name.trim().slice(0, 120) || movie.name;
   if (patch.author !== undefined) { const a = patch.author.trim().slice(0, 120); if (a) next.author = a; else delete next.author; }
+  if (patch.authorPicture !== undefined) { if (patch.authorPicture && patch.authorPicture.length < 400000) next.authorPicture = patch.authorPicture; else delete next.authorPicture; }
   if (patch.width !== undefined) next.width = clampSide(patch.width);
   if (patch.height !== undefined) next.height = clampSide(patch.height);
   if (patch.fps !== undefined) {
     const fps = clampFps(patch.fps);
-    const ratio = fps / movie.fps;
+    // keepFrames: frames stay put and the movie plays faster or slower (the reference's behaviour)
+    const ratio = patch.keepFrames ? 1 : fps / movie.fps;
     next.fps = fps;
     if (ratio !== 1) {
       const scale = (c: Content): Content => scaleKeyTimes({

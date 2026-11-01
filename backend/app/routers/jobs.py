@@ -231,6 +231,9 @@ def capabilities() -> dict:
             "hevc": {
                 "available": bool(hevc), "encoder": hevc[0] if hevc else "", "encoders": hevc,
                 "reason": "" if hevc else "This ffmpeg has no HEVC encoder (needs a hardware encoder or libx265).",
+                # transparency in HEVC needs the platform encoder that writes an alpha layer (macOS VideoToolbox)
+                "alpha": "hevc_videotoolbox" in hevc,
+                "alpha_reason": "" if "hevc_videotoolbox" in hevc else "HEVC with transparency needs the macOS hardware encoder, which this ffmpeg does not have. Use ProRes 4444 or VP9 for transparent video.",
             },
         },
     }
@@ -275,7 +278,7 @@ def create_job(body: NewJob) -> dict:
     (folder / "frames").mkdir(parents=True, exist_ok=True)
     job = Job(
         id=job_id, target=body.target, fps=float(body.fps), width=body.width, height=body.height, frames=body.frames,
-        has_audio=body.has_audio, alpha=body.alpha and (body.target == "prores4444" or (body.target == "prores" and body.profile in ("4444", "4444xq"))),
+        has_audio=body.has_audio, alpha=body.alpha and (body.target == "prores4444" or (body.target == "prores" and body.profile in ("4444", "4444xq")) or (body.target == "hevc" and "hevc_videotoolbox" in info.hevc_candidates())),
         quality=body.quality, container="mov" if body.target in ("prores", "prores4444") else body.container, name=base, folder=folder,
         audio_codec=body.audio_codec, profile=body.profile,
         video_kbps=max(0, min(body.video_kbps, 2_000_000)), target_bytes=max(0, min(body.target_bytes, 1 << 40)),
@@ -464,7 +467,11 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path, pass_no: in
             cmd += ["-vf", matrix, "-c:v", "libx265", *rate, "-preset", "medium", "-x265-params", params, "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_videotoolbox":
             rate = ["-b:v", k] if bps else ["-q:v", str(VT_Q[job.quality])]
-            cmd += ["-vf", matrix, "-c:v", encoder, *rate, "-pix_fmt", "yuv420p", *bt709]
+            if job.alpha:
+                # the colour scale filter would drop the alpha plane: the encoder takes BGRA and writes the alpha layer
+                cmd += ["-vf", "format=bgra", "-c:v", encoder, *rate, "-alpha_quality", "0.75", *bt709]
+            else:
+                cmd += ["-vf", matrix, "-c:v", encoder, *rate, "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_nvenc":
             rate = ["-b:v", k, "-maxrate", f"{max(1, bps * 3 // 2000)}k"] if bps else ["-cq", str(crf), "-b:v", "0"]
             cmd += ["-vf", matrix, "-c:v", encoder, "-rc", "vbr", *rate, "-pix_fmt", "yuv420p", *bt709]
@@ -537,6 +544,8 @@ async def _encode(job: Job, info: ff.FfmpegInfo) -> None:
     ext = "mov" if job.container == "mov" else "mp4"
     out = job.folder / f"out.{ext}"
     encoders = {"hevc": info.hevc_candidates(), "h264": ["libx264"]}.get(job.target, ["prores_ks"])
+    if job.target == "hevc" and job.alpha:
+        encoders = [e for e in encoders if e == "hevc_videotoolbox"]   # only this one writes an alpha layer
     last_error = ""
     try:
         for enc in encoders:

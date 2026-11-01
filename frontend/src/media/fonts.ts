@@ -1,6 +1,7 @@
 // Fonts that travel with the movie: every font asset is loaded into document.fonts so Text can use its family.
 import type { Movie } from '../engine/types';
 import { bumpFontEpoch } from '../engine/text-layout';
+import { libraryFamilies } from '../io/fonts-library';
 import { BUNDLED_EXTRA, extraFaces, isExtraFamily, loadExtraFace, scriptFamilies } from './font-bundle';
 
 const loaded = new Map<string, FontFace>();
@@ -17,10 +18,20 @@ export async function registerFont(key: string, family: string, blob: Blob): Pro
   loaded.set(key, face);
 }
 
+/** Takes one registered face out of the page (a font removed from the Fonts library). */
+export function unregisterFont(key: string): void {
+  const face = loaded.get(key);
+  if (!face) return;
+  try { document.fonts.delete(face); } catch { /* already gone */ }
+  loaded.delete(key);
+  bumpFontEpoch();
+}
+
 /** Drops the faces of fonts that no open movie owns (keys are asset ids), so closed movies do not pile up in document.fonts. */
 export function evictFonts(keep: ReadonlySet<string>): void {
   for (const [key, face] of loaded) {
-    if (keep.has(key)) continue;
+    // the Fonts library belongs to the app, not to a movie
+    if (keep.has(key) || key.startsWith('lib:')) continue;
     try { document.fonts.delete(face); } catch { /* already gone */ }
     loaded.delete(key);
   }
@@ -61,6 +72,7 @@ export async function registerFonts(movie: Movie, blobOf: (assetId: string) => B
 /** Families offered for Text: the built-in two, then the movie's own. */
 export function FONT_FAMILIES(movie: Movie): string[] {
   const out = [...BUNDLED_FONTS];
+  for (const f of libraryFamilies()) if (!out.includes(f)) out.push(f);
   for (const a of Object.values(movie.assets)) {
     if (a.kind === 'font' && a.family && !out.includes(a.family)) out.push(a.family);
   }
@@ -73,7 +85,7 @@ const BUNDLED_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
 const SYSTEM_CANDIDATES = ['Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Trebuchet MS', 'Impact', 'Palatino', 'Garamond', 'Comic Sans MS', 'Noto Sans', 'Noto Serif', 'Noto Sans JP', 'Noto Sans Arabic', 'Noto Sans Thai', 'Noto Sans Devanagari', 'DejaVu Sans', 'DejaVu Serif', 'Liberation Sans', 'Liberation Serif', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Segoe UI', 'SF Pro Text', 'Menlo', 'Consolas'];
 export const GENERIC_FONTS = ['sans-serif', 'serif', 'monospace', 'cursive'];
 
-export interface FontGroups { bundled: string[]; movie: string[]; system: string[] }
+export interface FontGroups { bundled: string[]; library: string[]; movie: string[]; system: string[] }
 
 let systemFonts: string[] | null = null;
 /** Installed system families from a short list, found by measuring against two fallbacks. */
@@ -114,8 +126,9 @@ try {
 
 /** The font browser's families: bundled, the movie's own, then the system's. */
 export function fontCatalog(movie: Movie | null): FontGroups {
-  const own = movie ? FONT_FAMILIES(movie).filter((f) => !BUNDLED_FONTS.includes(f)) : [];
-  return { bundled: BUNDLED_FONTS.slice(), movie: own, system: [...installedSystemFonts(), ...GENERIC_FONTS] };
+  const lib = libraryFamilies().filter((f) => !BUNDLED_FONTS.includes(f));
+  const own = movie ? FONT_FAMILIES(movie).filter((f) => !BUNDLED_FONTS.includes(f) && !lib.includes(f)) : [];
+  return { bundled: BUNDLED_FONTS.slice(), library: lib, movie: own, system: [...installedSystemFonts(), ...GENERIC_FONTS] };
 }
 
 /** Weights a family offers, and whether it has an italic; imported families report what their files declare. */

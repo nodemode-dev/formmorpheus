@@ -3,6 +3,9 @@ import { Emitter } from './events';
 import { History, type RecoveryPoint } from './history';
 import { content as makeContent, contentEnd, end, flipTrack, kindName, locate, newMovie, type NewMovieOptions } from './model';
 import * as ops from './ops';
+import * as groupInner from './group-inner-ops';
+import { findGroup } from './group-inner-ops';
+import { groupCtx } from './group-ctx';
 import type { Asset, Content, ContentKind, Mode, Movie, Selection } from './types';
 import { HIGHLIGHTS } from './types';
 
@@ -50,7 +53,24 @@ export class Engine extends Emitter<EngineEvents> {
   modified = false;
   revision = 0;
   jobs: EngineJob[] = [];
-  private clipboard: Content[] = [];
+  private clipboard: Content[] = Engine.loadClip();
+  private static readonly CLIP_KEY = 'fm.clipboard.v1';
+
+  /** The copied blocks of the last session, so a reload keeps the clipboard (blocks only: pictures and sounds come back by their ids when the same movie opens). */
+  private static loadClip(): Content[] {
+    try {
+      const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(Engine.CLIP_KEY);
+      const v = raw ? (JSON.parse(raw) as unknown) : null;
+      return Array.isArray(v) ? (v as Content[]) : [];
+    } catch { return []; }
+  }
+
+  private saveClip(): void {
+    try {
+      const raw = JSON.stringify(this.clipboard);
+      if (raw.length < 2_000_000) localStorage.setItem(Engine.CLIP_KEY, raw); else localStorage.removeItem(Engine.CLIP_KEY);
+    } catch { /* storage blocked or full: the clipboard still works this session */ }
+  }
   private ticker: Ticker = defaultTicker;
   private tick = 0;
   private playFrom = 0;
@@ -388,6 +408,16 @@ export class Engine extends Emitter<EngineEvents> {
     const palette = HIGHLIGHTS.filter((h) => h !== 'none');
     const tint = kind === 'flipbook' ? { highlight: palette[m.tracks.reduce((n, t) => n + t.content.filter((c) => c.kind === 'flipbook').length, 0) % palette.length] } : {};
     const item = makeContent(kind, start, extra.duration ?? length, { name: extra.name ?? kindName(kind), ...(flip ? { flip } : {}), ...tint, ...extra });
+    // an open group being worked in takes the new block on its own tracks, in the group's frames
+    const gid = groupCtx.target();
+    const grp = gid ? findGroup(m.tracks, gid) : null;
+    if (grp) {
+      const local = Math.max(grp.offset, Math.min(grp.offset + grp.duration - 1, at - grp.start + grp.offset));
+      const inGroup: Content = { ...item, start: local, duration: Math.max(1, Math.min(item.duration, grp.offset + grp.duration - local)) };
+      const ok2 = this.run(`Add ${item.name}`, (mv) => ({ movie: groupInner.placeInGroup(mv, grp.id, inGroup, 0), select: [grp.id] }));
+      if (ok2) groupCtx.picked = inGroup.id;
+      return ok2 ? inGroup.id : null;
+    }
     const trackIndex = this.selection.track ? Math.max(0, m.tracks.findIndex((t) => t.id === this.selection.track)) : 0;
     const ok = this.run(`Add ${item.name}`, (mv) => {
       const placed = ops.placeContent(mv, null, item, trackIndex);
@@ -400,12 +430,16 @@ export class Engine extends Emitter<EngineEvents> {
     const items = this.selected;
     if (!items.length) return;
     this.clipboard = JSON.parse(JSON.stringify(items)) as Content[];
+    this.saveClip();
     if (cut) this.run('Cut', (m) => ops.deleteContent(m, items.map((c) => c.id)));
   }
 
   paste(): void {
     if (!this.clipboard.length) return;
-    const items = this.clipboard;
+    // a clipboard kept from another movie (or another session) must not paste blocks whose picture or sound this movie lacks
+    const have = this.movie?.assets ?? {};
+    const items = this.clipboard.filter((c) => !c.asset || have[c.asset]);
+    if (!items.length) return;
     this.run('Paste', (m) => {
       const r = ops.pasteContent(m, items, this.frame, this.selection.track);
       return { movie: r.movie, select: r.ids };

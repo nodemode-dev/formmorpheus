@@ -134,8 +134,10 @@ export type EaseHandle = [number, number];
 
 export const EASES: { id: Ease; label: string }[] = [
   { id: 'linear', label: 'Linear' },
-  { id: 'in', label: 'Ease in' },
-  { id: 'out', label: 'Ease out' },
+  // The stored ids keep their playback ('out' leaves slowly and speeds up, 'in' arrives slowly), so old files play unchanged;
+  // the labels follow what the curve does: Ease in starts slowly and accelerates, Ease out starts fast and slows into the next key.
+  { id: 'out', label: 'Ease in' },
+  { id: 'in', label: 'Ease out' },
   { id: 'inout', label: 'Ease in & out' },
   { id: 'hold', label: 'Hold' },
   { id: 'bounce', label: 'Bounce' },
@@ -397,6 +399,8 @@ export interface Movie {
   timecode?: boolean;
   /** Who made the movie (Movie settings, About this artwork). Absent: not set. */
   author?: string;
+  /** The artist's own picture for the movie (a small square data URL, Movie settings > Project). Absent: the Stage frame is shown. */
+  authorPicture?: string;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
   camera?: { keys: KeyLane[]; unknownLanes?: KeyLane[]; shake?: CameraShake; follow?: CameraFollow };
   /** Named cue points on the ruler. Absent: none. */

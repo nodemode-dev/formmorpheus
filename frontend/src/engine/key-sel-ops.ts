@@ -1,6 +1,6 @@
 // Operations on a chosen set of keyframes of one content (the Timeline's key selection): copy by type, paste,
 // delete and reverse. A key is named by its lane kind and content-local frame; all its channels go with it.
-import { deleteKey, pasteKeys, reverseKeys, type KeyClip } from './key-ops';
+import { deleteKey, pasteKeys, reverseLane, type KeyClip } from './key-ops';
 import { laneOf } from './keys';
 import type { Content, Key, KeyKind, KeyLane } from './types';
 
@@ -43,15 +43,18 @@ export function deleteRefs(c: Content, refs: readonly KeyRef[]): Content {
 /** Mirrors the chosen keys of each lane inside their own span; the keys not chosen stay where they are. */
 export function reverseRefs(c: Content, refs: readonly KeyRef[]): Content {
   let out = c;
+  // one axis for every lane: the centre of the whole selection, so the lanes stay in step
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const r of refs) { if (r.frame < lo) lo = r.frame; if (r.frame > hi) hi = r.frame; }
+  const axis = { first: lo, last: hi };
   for (const kind of new Set(refs.map((r) => r.kind))) {
     const lane = laneOf(out, kind);
     if (!lane) continue;
     const frames = new Set(refs.filter((r) => r.kind === kind).map((r) => r.frame));
     const picked: Record<string, Key[]> = {};
     for (const id in lane.channels) picked[id] = lane.channels[id].filter((k) => frames.has(k.frame));
-    const probe: Content = { ...out, keys: [{ ...lane, channels: picked }] };
-    const flipped = reverseKeys(probe, kind).keys[0];
-    if (!flipped) continue;
+    const flipped = reverseLane({ ...lane, channels: picked }, axis);
     const channels: Record<string, Key[]> = {};
     for (const id in lane.channels) {
       const mirrored = flipped.channels[id] ?? [];

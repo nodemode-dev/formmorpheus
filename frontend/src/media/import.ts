@@ -4,6 +4,11 @@ import type { Asset, Content, FlipTrack, FlipbookFrame, Movie } from '../engine/
 import { content, drawingLayer, identity, uid } from '../engine/model';
 import { formvfxToTracks, formvisToDrawing, sniffRoundTrip } from '../io/round-trip';
 import { registerFont } from './fonts';
+import { isCollection, splitCollection } from './fonts-ttc';
+import { addToLibrary } from '../io/fonts-library';
+
+/** An imported font is also installed in the app-wide Fonts library (the engine keeps it in the data folder). */
+const keepInLibrary = (blob: Blob, fileName: string, family: string): Promise<boolean> => addToLibrary(blob, fileName, family, registerFont);
 import { importScale } from './import-size';
 import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
@@ -14,6 +19,7 @@ import { layeredToDrawing } from '../io/layered-import';
 import { isKra, readKra } from '../io/kra-import';
 import { isOra, readOra } from '../io/ora-import';
 import { isPdn, readPdn } from '../io/pdn-import';
+import { isProcreate, readProcreate } from '../io/procreate-import';
 import { isPsd, readPsd } from '../io/psd-import';
 
 export interface ImportResult {
@@ -25,7 +31,7 @@ export interface ImportResult {
   replaces?: string;
 }
 
-type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'font' | 'media' | 'unknown';
+type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'procreate' | 'font' | 'media' | 'unknown';
 
 const EXT: Record<string, Sniff> = {
   png: 'png', apng: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', avif: 'avif', bmp: 'bmp', tif: 'tiff', tiff: 'tiff',
@@ -61,6 +67,7 @@ function sniff(file: File, b: Uint8Array, tail?: Uint8Array): Sniff {
   if (isOra(file.name, b)) return 'ora';
   if (isKra(file.name, b)) return 'kra';
   if (isPdn(file.name, b)) return 'pdn';
+  if (isProcreate(file.name, b)) return 'procreate';
   if (ascii(b, 0, 'OTTO') || ascii(b, 0, 'true') || ascii(b, 0, 'wOFF') || ascii(b, 0, 'wOF2') || ascii(b, 0, 'ttcf') || (b[0] === 0 && b[1] === 1 && b[2] === 0 && b[3] === 0)) return 'font';
   if (ascii(b, 4, 'ftyp') || (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) || ascii(b, 0, 'OggS') || ascii(b, 0, 'fLaC') || ascii(b, 0, 'ID3')) return 'media';
   if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return 'media';
@@ -414,6 +421,24 @@ function sfntFamily(b: Uint8Array): string | null {
 
 async function importFont(file: File): Promise<ImportResult> {
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // a collection (.ttc): every face becomes a font of its own, so all of them appear in Text
+  if (isCollection(bytes)) {
+    const faces = splitCollection(bytes);
+    if (!faces.length) throw new Error(`${file.name} is not a font this browser can load.`);
+    const made: ImportResult['assets'] = [];
+    const names: string[] = [];
+    for (let i = 0; i < faces.length; i++) {
+      const blob = new Blob([faces[i].buffer as ArrayBuffer], { type: 'font/ttf' });
+      const fam = (sfntFamily(faces[i]) ?? `${baseName(file.name)} ${i + 1}`).replace(/["\\]/g, '');
+      const asset: Asset = { id: uid('a'), kind: 'font', name: `${baseName(file.name)} ${i + 1}`, mime: 'font/ttf', width: 0, height: 0, frames: 0, size: blob.size, family: fam };
+      try { await registerFont(asset.id, fam, blob); } catch { continue; }
+      made.push({ asset, blob });
+      if (!names.includes(fam)) names.push(fam);
+      void keepInLibrary(blob, `${asset.name}.ttf`, fam);
+    }
+    if (!made.length) throw new Error(`${file.name} is not a font this browser can load.`);
+    return { assets: made, contents: [], ownTrack: [], notice: `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} ready for Text.` };
+  }
   const family = (sfntFamily(bytes) ?? baseName(file.name).replace(/[-_](Regular|Bold|Italic|Light|Medium)$/i, '')).replace(/["\\]/g, '');
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'ttf';
   const mime = file.type || (ext === 'otf' ? 'font/otf' : ext === 'woff' ? 'font/woff' : ext === 'woff2' ? 'font/woff2' : 'font/ttf');
@@ -424,6 +449,7 @@ async function importFont(file: File): Promise<ImportResult> {
   } catch {
     throw new Error(`${file.name} is not a font this browser can load.`);
   }
+  void keepInLibrary(file, `${baseName(file.name)}.${ext}`, family);
   return { assets: [{ asset, blob: file }], contents: [], ownTrack: [], notice: `${family} is ready for Text.` };
 }
 
@@ -433,8 +459,8 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
   const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 26)).arrayBuffer());
   const kind0 = sniff(file, head, tail);
   // layered artwork: each reader gives a neutral document that becomes a Drawing with its layers
-  if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn') {
-    const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : readPdn(file));
+  if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn' || kind0 === 'procreate') {
+    const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : kind0 === 'procreate' ? readProcreate(file) : readPdn(file));
     return layeredToDrawing(doc, file.name, movie, at);
   }
   const trip = await sniffRoundTrip(file, head);
@@ -449,6 +475,7 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
       return anim ?? importPicture(file, movie, at, kind);
     }
     default:
+      if (/\.drm$/i.test(file.name)) throw new Error(`${file.name} is a project file whose format is not publicly documented, so it cannot be opened here. Export it as video, frames or layered artwork and import that.`);
       throw new Error(`${file.name} is not a picture, video, sound or font formmorpheus can place.`);
   }
 }

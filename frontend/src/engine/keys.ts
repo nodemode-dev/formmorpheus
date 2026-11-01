@@ -17,6 +17,8 @@ export interface ChannelSpec {
   unit: '%' | 'px' | 'deg' | 'x' | '';
   /** Multiply the stored value by this for display (100 for percent). */
   display: number;
+  /** Added after the display multiply: HSB shows 0 to 100 with 50 neutral while the stored value stays -1..1 (and -180..180). */
+  shift?: number;
   def: number;
   /** Registry effects: the section heading the row sits under, Advanced placement, and the colour a swatch edits. */
   group?: string;
@@ -80,6 +82,10 @@ const ch = (
   display: number,
   def: number,
 ): ChannelSpec => ({ id, label, short, min, max, step, unit, display, def });
+
+/** The number a channel shows for a stored value (`base` divides scale channels), and the stored value for a typed number. */
+export function shownOf(ch: ChannelSpec, v: number, base = 1): number { return v * ch.display / base + (ch.shift ?? 0); }
+export function storedOf(ch: ChannelSpec, n: number, base = 1): number { return (n - (ch.shift ?? 0)) / ch.display * base; }
 
 const warpChannels = (): ChannelSpec[] => {
   const out: ChannelSpec[] = [];
@@ -200,9 +206,9 @@ export const KEY_KINDS: KindSpec[] = [
     group: 'filter',
     icon: ICONS.hsb,
     channels: [
-      ch('hue', 'Hue', 'Hue', -180, 180, 1, 'deg', 1, 0),
-      ch('saturation', 'Saturation', 'Saturation', -1, 1, 0.01, '%', 100, 0),
-      ch('brightness', 'Brightness', 'Brightness', -1, 1, 0.01, '%', 100, 0),
+      { ...ch('hue', 'Hue', 'Hue', -180, 180, 1, '', 100 / 360, 0), shift: 50 },
+      { ...ch('saturation', 'Saturation', 'Saturation', -1, 1, 0.01, '%', 50, 0), shift: 50 },
+      { ...ch('brightness', 'Brightness', 'Brightness', -1, 1, 0.01, '%', 50, 0), shift: 50 },
     ],
   },
   {
@@ -339,7 +345,7 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
     return out;
   }
   const spec = kindSpec(kind);
-  const ids = kind === 'warp' ? new Set(warpChannelIds(warpSize(laneOf(c, 'warp')))) : null;
+  const ids = kind === 'warp' ? new Set(warpChannelIds(warpSize(laneOf(c, 'warp')), warpRows(laneOf(c, 'warp')))) : null;
   for (const ch of spec.channels) if ((!ids || ids.has(ch.id)) && !ch.demand) out[ch.id] = ch.def;
   return out;
 }
@@ -350,9 +356,15 @@ export function warpSize(lane: KeyLane | null): number {
   return Number.isFinite(n) ? Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(n))) : WARP_DEFAULT;
 }
 
-export function warpChannelIds(n: number): string[] {
+/** Node rows of a Warp lane: the size by default, or `options.rows` once a row was added on its own. */
+export function warpRows(lane: KeyLane | null): number {
+  const n = lane ? Number(lane.options.rows) : NaN;
+  return Number.isFinite(n) ? Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(n))) : warpSize(lane);
+}
+
+export function warpChannelIds(n: number, rows = n): string[] {
   const out: string[] = [];
-  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) out.push(warpId(r, c, 'x'), warpId(r, c, 'y'));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < n; c++) out.push(warpId(r, c, 'x'), warpId(r, c, 'y'));
   return out;
 }
 
@@ -362,7 +374,7 @@ export function laneChannels(lane: KeyLane): ChannelSpec[] {
   const spec = kindSpec(lane.kind).channels;
   if (lane.kind === 'shape') return spec.filter((s) => lane.channels[s.id]?.length);
   if (lane.kind !== 'warp') return spec.some((s) => s.demand) ? spec.filter((s) => !s.demand || lane.channels[s.id]?.length) : spec;
-  const ids = new Set(warpChannelIds(warpSize(lane)));
+  const ids = new Set(warpChannelIds(warpSize(lane), warpRows(lane)));
   return spec.filter((s) => ids.has(s.id));
 }
 
@@ -550,7 +562,8 @@ export interface Animated {
   /** Sound stereo position -1..1 (0: centre). */
   pan: number;
   /** Warp mesh offsets (n x n nodes, row by row, content-space px) or null. */
-  warp: { n: number; dx: number[]; dy: number[] } | null;
+  /** n nodes across (columns); rows is set only when the mesh is taller or shorter than it is wide. */
+  warp: { n: number; rows?: number; dx: number[]; dy: number[] } | null;
   /** Distort corner offsets tl, tr, br, bl as x, y pairs (content-space px) or null. */
   distort: number[] | null;
   /** Warp / Distort lane option: straight (bilinear) interpolation between the nodes or corners instead of the smooth surface / perspective. */
@@ -639,17 +652,17 @@ function animateRaw(c: Content, local: number): Animated {
         a.rotation = chv(lane, 'rotation', local, t.rotation);
         break;
       case 'warp': {
-        const n = warpSize(lane);
-        const dx: number[] = new Array(n * n), dy: number[] = new Array(n * n);
+        const n = warpSize(lane), rows = warpRows(lane);
+        const dx: number[] = new Array(n * rows), dy: number[] = new Array(n * rows);
         let moved = false;
-        for (let r = 0; r < n; r++) {
+        for (let r = 0; r < rows; r++) {
           for (let k = 0; k < n; k++) {
             dx[r * n + k] = chv(lane, warpId(r, k, 'x'), local, 0);
             dy[r * n + k] = chv(lane, warpId(r, k, 'y'), local, 0);
             if (dx[r * n + k] || dy[r * n + k]) moved = true;
           }
         }
-        if (moved) { a.warp = { n, dx, dy }; if (lane.options.bilinear === true) a.bilinear = true; const rs = lane.options.resample; if (rs === 'nearest' || rs === 'high') a.resample = rs; }
+        if (moved) { a.warp = rows === n ? { n, dx, dy } : { n, rows, dx, dy }; if (lane.options.bilinear === true) a.bilinear = true; const rs = lane.options.resample; if (rs === 'nearest' || rs === 'high') a.resample = rs; }
         break;
       }
       case 'distort': {

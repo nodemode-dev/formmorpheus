@@ -1,6 +1,6 @@
 // Pure keyframe edits: every function returns a new Content (structural sharing) and never mutates.
 import type { Content, Ease, Key, KeyKind, KeyLane } from './types';
-import { baseValues, boneSpec, easeAt, evalLane, laneRank, kindSpec, laneFrames, laneOf, warpSize } from './keys';
+import { baseValues, boneSpec, easeAt, evalLane, laneRank, kindSpec, laneFrames, laneOf, warpRows, warpSize } from './keys';
 import { WARP_MAX, WARP_MIN, meshOffset, warpId } from './warp-draw';
 import { mirrorSpan, withEase } from './graph-ops';
 import { srcFrame } from './retime';
@@ -167,7 +167,8 @@ export function setAllEases(c: Content, kind: KeyKind, ease: Ease): Content {
   return withLane(c, kind, { ...lane, channels });
 }
 
-function reverseLane(lane: KeyLane): KeyLane {
+/** Mirrors a lane around the middle of [axis.first, axis.last]; without an axis, around the middle of its own first and last key. */
+export function reverseLane(lane: KeyLane, axis?: { first: number; last: number }): KeyLane {
   let first = Infinity;
   let last = -Infinity;
   for (const id in lane.channels) {
@@ -176,7 +177,8 @@ function reverseLane(lane: KeyLane): KeyLane {
       if (k.frame > last) last = k.frame;
     }
   }
-  if (first >= last) return lane;
+  if (first > last) return lane;
+  if (axis) { first = axis.first; last = axis.last; } else if (first >= last) return lane;
   const channels: Record<string, Key[]> = {};
   for (const id in lane.channels) {
     const list = lane.channels[id];
@@ -195,12 +197,19 @@ function reverseLane(lane: KeyLane): KeyLane {
   return { ...lane, channels };
 }
 
-export function reverseKeys(c: Content, kind?: KeyKind): Content {
+/** `whole`: mirror every lane around the content's centre (first to last frame), so the lanes stay in step; otherwise each lane inside its own span. */
+export function reverseKeys(c: Content, kind?: KeyKind, whole = false): Content {
   if (!c.keys.length) return c;
   let changed = false;
+  let axis: { first: number; last: number } | undefined;
+  if (whole) {
+    let hi = Math.max(0, Math.round(c.duration) - 1);
+    for (const l of c.keys) for (const id in l.channels) for (const k of l.channels[id]) if (k.frame > hi) hi = k.frame;
+    axis = { first: 0, last: hi };
+  }
   const keys = c.keys.map((l) => {
     if (kind && l.kind !== kind) return l;
-    const r = reverseLane(l);
+    const r = reverseLane(l, axis);
     if (r !== l) changed = true;
     return r;
   });
@@ -229,20 +238,26 @@ export function clearLaneOption(c: Content, kind: KeyKind, id: string): Content 
 
 /** Change a Warp lane's mesh to n x n nodes; every key frame is resampled from the old mesh so the pose at each key stays. */
 export function setWarpSize(c: Content, n: number): Content {
+  return setWarpGrid(c, n, n);
+}
+
+/** Warp mesh of `cols` nodes across and `rows` down (Add column, Add row); the picture's current bend is resampled onto it. */
+export function setWarpGrid(c: Content, cols: number, rowsIn: number): Content {
   const lane = laneOf(c, 'warp');
-  const size = Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(n)));
-  if (!lane || warpSize(lane) === size) return c;
-  const old = warpSize(lane);
+  const size = Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(cols)));
+  const rows = Math.min(WARP_MAX, Math.max(WARP_MIN, Math.round(rowsIn)));
+  if (!lane || (warpSize(lane) === size && warpRows(lane) === rows)) return c;
+  const old = warpSize(lane), oldRows = warpRows(lane);
   const channels: Record<string, Key[]> = {};
   const out = [0, 0];
   for (const frame of laneFrames(lane)) {
     const vals = evalLane(c, lane, frame);
     const dx: number[] = [], dy: number[] = [];
-    for (let r = 0; r < old; r++) for (let k = 0; k < old; k++) { dx.push(vals[warpId(r, k, 'x')] ?? 0); dy.push(vals[warpId(r, k, 'y')] ?? 0); }
+    for (let r = 0; r < oldRows; r++) for (let k = 0; k < old; k++) { dx.push(vals[warpId(r, k, 'x')] ?? 0); dy.push(vals[warpId(r, k, 'y')] ?? 0); }
     const ease = easeAt(lane, frame) ?? 'linear';
-    for (let r = 0; r < size; r++) {
+    for (let r = 0; r < rows; r++) {
       for (let k = 0; k < size; k++) {
-        meshOffset(old, dx, dy, k / (size - 1), r / (size - 1), out);
+        meshOffset(old, dx, dy, k / (size - 1), r / (rows - 1), out, false, oldRows);
         for (const [axis, v] of [['x', out[0]], ['y', out[1]]] as const) {
           const id = warpId(r, k, axis);
           (channels[id] ??= []).push({ frame, value: Math.round(v * 100) / 100, ease });
@@ -250,7 +265,10 @@ export function setWarpSize(c: Content, n: number): Content {
       }
     }
   }
-  return withLane(c, 'warp', { ...lane, channels, options: { ...lane.options, size } });
+  const options: Record<string, string | number | boolean> = { ...lane.options, size };
+  if (rows === size) delete options.rows;
+  else options.rows = rows;
+  return withLane(c, 'warp', { ...lane, channels, options });
 }
 
 export interface KeyClip {

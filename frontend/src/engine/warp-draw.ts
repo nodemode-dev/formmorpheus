@@ -34,10 +34,10 @@ function cr(t: number, w: number[]): void {
 const WU = [0, 0, 0, 0];
 const WV = [0, 0, 0, 0];
 
-/** Offset of the Warp mesh at (u, v) in 0..1 across the content. */
-export function meshOffset(n: number, dx: number[], dy: number[], u: number, v: number, out: number[], linear = false): void {
-  const gu = Math.min(Math.max(u, 0), 1) * (n - 1), gv = Math.min(Math.max(v, 0), 1) * (n - 1);
-  const i = Math.min(Math.floor(gu), n - 2), j = Math.min(Math.floor(gv), n - 2);
+/** Offset of the Warp mesh at (u, v) in 0..1 across the content; n nodes across, `rows` down (default n). */
+export function meshOffset(n: number, dx: number[], dy: number[], u: number, v: number, out: number[], linear = false, rows = n): void {
+  const gu = Math.min(Math.max(u, 0), 1) * (n - 1), gv = Math.min(Math.max(v, 0), 1) * (rows - 1);
+  const i = Math.min(Math.floor(gu), n - 2), j = Math.min(Math.floor(gv), rows - 2);
   if (linear) {
     const fu = gu - i, fv = gv - j, k = j * n + i;
     const w00 = (1 - fu) * (1 - fv), w10 = fu * (1 - fv), w01 = (1 - fu) * fv, w11 = fu * fv;
@@ -49,7 +49,7 @@ export function meshOffset(n: number, dx: number[], dy: number[], u: number, v: 
   cr(gv - j, WV);
   let ox = 0, oy = 0;
   for (let b = 0; b < 4; b++) {
-    const r = Math.min(n - 1, Math.max(0, j - 1 + b));
+    const r = Math.min(rows - 1, Math.max(0, j - 1 + b));
     for (let a = 0; a < 4; a++) {
       const col = Math.min(n - 1, Math.max(0, i - 1 + a));
       const k = r * n + col, wt = WU[a] * WV[b];
@@ -96,7 +96,7 @@ export function warpPoint(a: Animated, r: Rect, u: number, v: number, out: numbe
     return;
   }
   if (a.warp) {
-    meshOffset(a.warp.n, a.warp.dx, a.warp.dy, u, v, out, a.bilinear === true);
+    meshOffset(a.warp.n, a.warp.dx, a.warp.dy, u, v, out, a.bilinear === true, a.warp.rows ?? a.warp.n);
     out[0] += r.x + u * r.w;
     out[1] += r.y + v * r.h;
     return;
@@ -169,7 +169,7 @@ export function grab(slot: string, n: number): Float32Array {
 /** Grid steps per side for the triangle list: enough to look smooth, few enough to draw every frame. */
 function steps(a: Animated): number {
   if (a.distort) return 12;
-  const cells = (a.warp?.n ?? 2) - 1;
+  const cells = Math.max(a.warp?.n ?? 2, a.warp?.rows ?? 2) - 1;
   return cells * Math.max(2, Math.round(16 / cells));
 }
 

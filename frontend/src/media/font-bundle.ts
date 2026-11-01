@@ -23,6 +23,10 @@ export const BUNDLED_EXTRA: Family[] = [
   fam('Permanent Marker', 'Marker', { '400': () => import('@fontsource/permanent-marker/400.css') }),
   fam('Press Start 2P', 'Pixel', { '400': () => import('@fontsource/press-start-2p/400.css') }),
   fam('VT323', 'Pixel mono', { '400': () => import('@fontsource/vt323/400.css') }),
+  fam('Anton', 'Condensed display', { '400': () => import('@fontsource/anton/400.css') }),
+  fam('Sora', 'Geometric sans', { '400': () => import('@fontsource/sora/400.css'), '600': () => import('@fontsource/sora/600.css'), '700': () => import('@fontsource/sora/700.css') }),
+  fam('Space Grotesk', 'Grotesque sans', { '400': () => import('@fontsource/space-grotesk/400.css'), '500': () => import('@fontsource/space-grotesk/500.css'), '700': () => import('@fontsource/space-grotesk/700.css') }),
+  fam('Poppins', 'Geometric sans', { '400': () => import('@fontsource/poppins/400.css'), '600': () => import('@fontsource/poppins/600.css'), '700': () => import('@fontsource/poppins/700.css'), '400-italic': () => import('@fontsource/poppins/400-italic.css'), '700-italic': () => import('@fontsource/poppins/700-italic.css') }),
   fam('Noto Sans', 'Greek, Cyrillic', {
     '400': async () => { await Promise.all([import('@fontsource/noto-sans/greek-400.css'), import('@fontsource/noto-sans/greek-ext-400.css'), import('@fontsource/noto-sans/cyrillic-400.css'), import('@fontsource/noto-sans/cyrillic-ext-400.css'), import('@fontsource/noto-sans/latin-400.css'), import('@fontsource/noto-sans/latin-ext-400.css')]); },
     '700': async () => { await Promise.all([import('@fontsource/noto-sans/greek-700.css'), import('@fontsource/noto-sans/greek-ext-700.css'), import('@fontsource/noto-sans/cyrillic-700.css'), import('@fontsource/noto-sans/cyrillic-ext-700.css'), import('@fontsource/noto-sans/latin-700.css'), import('@fontsource/noto-sans/latin-ext-700.css')]); },

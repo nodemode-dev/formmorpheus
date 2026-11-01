@@ -56,7 +56,7 @@ const DECODE_LANES = 3;
 const CANVAS_FILTER = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'filter' in OffscreenCanvasRenderingContext2D.prototype;
 
 /** Backstage visibility when a movie does not set its own. */
-export const BACKSTAGE_DEFAULT = 0.3;
+export const BACKSTAGE_DEFAULT = 0.2;
 
 export interface View {
   scale: number;
