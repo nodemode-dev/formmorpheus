@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.17.1', name: 'Brushes and editing, finished off',
+    additions: [
+      { title: 'Brushes', text: 'Chrome reads as metal, Rough hatch hatches, chalks and charcoals shade wide when tilted, and bristle strokes fray at the end.', command: 'new-flipbook' },
+      { title: 'Copy between movies', text: 'Copy blocks in one movie and paste them into another with their pictures and sounds.', command: 'home' },
+      { title: 'Help by version', text: 'The manual shows what each version added, and its search steps through every match.', command: 'help' },
+    ],
+  },
+  {
     version: '0.17.0', name: 'Open groups, truer brushes and artwork import',
     additions: [
       { title: 'Groups you can open', text: 'Open a Group to see its own tracks, drag blocks in and out, and add content inside it.', command: 'home' },
