@@ -9,6 +9,7 @@ import type { PenSample, PixelPatch, Raster, Rect, StrokeLike, StrokeSettings } 
 import { baseAngle, baseDiameter, blendChannel, hsvToRgb, mulberry32, needsColourPath, pressureDiameter, pressureFlow, rgbToHsv, tiltInfo, tiltShape } from './dynamics';
 import { getTip, grainTable } from './tips';
 import { brushGrain } from './grains-lib';
+import { grainFit } from './fam-grain-fit';
 import { libTipImage } from './tips-lib';
 import type { RenderMode, WetMix } from './types';
 import { PenResponse, rollAmount, shapeLean } from './curves';
@@ -20,6 +21,8 @@ import { dries, dryWash } from './wet-dry';
 import { paperMap } from './paper';
 import { migrateBrush } from './brush-migrate';
 import { Bristle, smoothCov } from './bristle';
+import { liftPressure, leanDia } from './fam-oil';
+import { swathCorner, swathGrid } from './fam-dry';
 import { wetMark, wetSample } from './wetmap';
 import type { BristleStep } from './bristle';
 
@@ -304,7 +307,9 @@ export class Stroke implements StrokeLike {
     if (s.brush.grain > 0 || (s.brush.tiltGradation ?? 0) > 0 || (s.brush.bump ?? 0) > 0) {
       let g: ArrayLike<number> = brushGrain(s.brush) ?? grainTable(s.seed);
       const dmin = s.brush.grainDepthMin ?? 0;
-      const gs = (s.brush.grainScale ?? 1) * (s.brush.grainZoom ? Math.pow(Math.max(0.1, this.baseDia / 40), s.brush.grainZoom) : 1);
+      let gs = (s.brush.grainScale ?? 1) * (s.brush.grainZoom ? Math.pow(Math.max(0.1, this.baseDia / 40), s.brush.grainZoom) : 1);
+      // a feature wider than the dab reads as pale cells along a hairline: shrink coarse grain to the dab
+      if (s.brush.grain > 0 && !s.brush.grainZoom) gs *= grainFit(g, this.baseDia, gs);
       if (Math.abs(gs - 1) > 0.001) g = scaleGrain(g, Math.min(8, Math.max(0.1, gs)));
       if (s.brush.grainRot) g = rotateGrain(g, s.brush.grainRot);
       const gb = s.brush.grainBright ?? 0, gc = s.brush.grainContrast ?? 0;
@@ -380,7 +385,7 @@ export class Stroke implements StrokeLike {
     const L = Math.min(dia * (1.5 + 1.6 * this.speed), this.travel * 0.8);
     const n = Math.min(140, Math.ceil(L / ds));
     if (n < 2) return;
-    const p0 = Math.max(bs.pressure, 0.35), dx = this.bdx, dy = this.bdy;
+    const p0 = liftPressure(bs.pressure), dx = this.bdx, dy = this.bdy;
     for (let k = 1; k <= n; k++) {
       const u = k / n;
       bs.cx += dx * ds; bs.cy += dy * ds;
@@ -403,11 +408,11 @@ export class Stroke implements StrokeLike {
     }
     if (this.t0 < 0) this.t0 = sample.time;
     // a pen that rests lets the wash pool there: the longer it rests, the thicker the bead
-    if (this.lastT >= 0 && this.count > 0 && sample.time - this.lastT > 120 && Math.hypot(sample.x - this.lastX, sample.y - this.lastY) < Math.max(3, (sample.time - this.lastT) * 0.03) && this.pools.length < 64) {
-      this.pools.push({ x: sample.x, y: sample.y, t: Math.min(3.5, 2.2 * Math.sqrt((sample.time - this.lastT) / 1000)) });
+    if (this.lastT >= 0 && this.count > 0 && sample.time - this.lastT > 320 && Math.hypot(sample.x - this.lastX, sample.y - this.lastY) < Math.max(3, (sample.time - this.lastT) * 0.03) && this.pools.length < 64) {
+      this.pools.push({ x: sample.x, y: sample.y, t: Math.min(1.8, 1.3 * Math.sqrt((sample.time - this.lastT) / 1000)) });
       // the resting wash also spreads: a puddle that grows with the rest (three stamps, each wider), then the rim and the bead settle it
       if ((this.s.brush.wetEdges ?? 0) > 0 && this.s.tool === 'paint') {
-        const grow = 0.9 * Math.min(1.6, Math.sqrt((sample.time - this.lastT) / 1000)), fl = Math.min(1, this.s.brush.flow);
+        const grow = 0.5 * Math.min(1.4, Math.sqrt((sample.time - this.lastT) / 1000)), fl = Math.min(1, this.s.brush.flow);
         for (let k = 1; k <= 3; k++) this.stamp(sample.x, sample.y, this.baseDia * (1 + grow * k / 3), fl, null, null, 1, sample.tiltX, sample.tiltY, 0);
       }
     }
@@ -488,11 +493,11 @@ export class Stroke implements StrokeLike {
           }
           dryWash({
             wetw,
-            ends: pool > 0 ? this.pools.map((q) => ({ x: q.x, y: q.y, r: this.baseDia * (0.5 + 0.2 * q.t), t: q.t * pool })) : undefined,
+            ends: pool > 0 ? this.pools.map((q) => ({ x: q.x, y: q.y, r: this.baseDia * (0.4 + 0.12 * q.t), t: q.t * pool })) : undefined,
             data: this.data, w: this.w, x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1, cov: this.cov, snap: this.snap, tilesX: this.tilesX,
             pool, gran, radius: Math.min(30, Math.max(2.5, this.baseDia * 0.2)), tooth: this.tooth, lock: this.s.alphaLock, sel: this.sel, edge: this.edge,
             cols: this.cols ?? undefined,
-            end: pool > 0 && last && this.count > 1 ? { x: last.x, y: last.y, r: this.baseDia * 0.55, t: 0.6 * pool * this.wp.loadNow } : undefined,
+            end: pool > 0 && last && this.count > 1 ? { x: last.x, y: last.y, r: this.baseDia * 0.6, t: 0.12 * pool * this.wp.loadNow } : undefined,
           });
           if (pool > 0 && this.edge && this.lastT >= 0) wetMark(this.layerId, this.w, this.dx0, this.dy0, this.dx1, this.dy1, this.edge, 90, this.lastT, 4 + 8 * (br.wet?.dilution ?? 0.3), this.cols ?? undefined);
         }
@@ -616,7 +621,8 @@ export class Stroke implements StrokeLike {
       x += -Math.sin(dir) * off; y += Math.cos(dir) * off;
     }
     if (brush.wiggle && dir !== null) {
-      const amp = brush.wiggle * Math.max(3, dia * 0.7), tr = this.travel;
+      // a thin boil line still has to read as wobbling: the amplitude has a floor of 4.5 px, then follows the width
+      const amp = brush.wiggle * Math.max(4.5, dia * 0.8), tr = this.travel;
       const off = (Math.sin(tr * 0.045 + this.wigA) * 0.6 + Math.sin(tr * 0.113 + this.wigB) * 0.4) * amp;
       x += -Math.sin(dir) * off; y += Math.cos(dir) * off;
     }
@@ -650,7 +656,8 @@ export class Stroke implements StrokeLike {
         this.bdx += (Math.cos(dir) - this.bdx) * 0.35; this.bdy += (Math.sin(dir) - this.bdy) * 0.35;
         const l = Math.hypot(this.bdx, this.bdy) || 1; this.bdx /= l; this.bdy /= l;
       }
-      bs.cx = x; bs.cy = y; bs.dia = dia; bs.dx = this.bdx; bs.dy = this.bdy;
+      bs.lean = tilt.lean;
+      bs.cx = x; bs.cy = y; bs.dia = leanDia(dia, tilt.sizeMul, tilt.lean, brush.bristle?.body ?? 0); bs.dx = this.bdx; bs.dy = this.bdy;
       bs.pressure = pn ? pn.size : pressure; bs.speed = this.speed;
       bs.flow = flow; bs.opacity = brush.pressureOpacity || brush.curves?.opacity ? this.opBase * this.opRamp : this.opBase;
       bs.travel = this.travel; bs.ds = Math.max(0, this.travel - this.bTravel); this.bTravel = this.travel;
@@ -664,14 +671,16 @@ export class Stroke implements StrokeLike {
       // size compression: the wide oval is made of stamps at the tip's own size, laid side by side along and across
       // the lean, so the texture inside each stamp keeps its scale (the stamp is not blown up)
       const longK = tilt.sizeMul, shortK = Math.max(1, tilt.sizeMul * tilt.roundnessMul), d0 = Math.max(0.6, dia / longK);
-      const nA = Math.min(9, Math.max(2, Math.ceil(longK))), nB = Math.min(5, Math.max(1, Math.ceil(shortK - 0.02)));
       const rmFlat = rm / Math.max(0.05, tilt.roundnessMul), ca = Math.cos(tilt.angle), sa = Math.sin(tilt.angle);
       const spanA = (longK - 1) * d0, spanB = (shortK - 1) * d0;
+      const grid = swathGrid(spanA, spanB, d0 * Math.max(0.15, Math.min(1, brush.roundness * rmFlat))), nA = grid.nA, nB = grid.nB;
+      flow *= grid.flowK;
       let k = 0;
       for (let i = 0; i < nA; i++) {
         const u = nA > 1 ? (i / (nA - 1) - 0.5) * spanA : 0;
         for (let j = 0; j < nB; j++) {
           const v = nB > 1 ? (j / (nB - 1) - 0.5) * spanB : 0;
+          if (nB > 1 && swathCorner(u, v, spanA, spanB)) continue;
           this.stamp(x + ca * u - sa * v, y + sa * u + ca * v, d0, flow, dir, null, rmFlat, tiltX, tiltY, k++);
         }
       }

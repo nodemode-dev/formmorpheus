@@ -44,12 +44,19 @@ wax stick=chalk-stick
 dry ink=flat-dry
 rough ink=nib-bleed
 ink splatter=spatter-splash
-flat paint=flat-medium
+flat paint=paint-flat
 oil bristle=filbert-medium
 impasto=flat-coarse
 fan brush=flat-splay
-acrylic=round-medium
-filbert=filbert-fine
+a:bark=paint-plain
+a:rust=paint-plain
+a:weathered=paint-plain
+a:plaster=paint-plain
+a:stone=paint-plain
+acrylic=paint-round
+round paint=paint-round
+gouache=paint-gouache
+filbert=paint-filbert
 dry brush=flat-dry
 rake=stamp-rake
 dabber=sponge-natural
@@ -87,20 +94,18 @@ embers=spatter-coarse
 smoke=stamp-cloud
 clouds=stamp-cloud
 fur=stamp-wire
-spray can=air-spray
-fat cap=air-spray
-thin cap=air-spray
+spray can=spray-mist
+fat cap=spray-mist
+thin cap=spray-mist
 drip splat=spatter-splash
 stencil mist=air-gauss
 grit spray=spatter-mist
-fade spray=air-spray
+fade spray=spray-mist
 leather=stamp-cells
 wood grain=stamp-wire
 sandpaper=spatter-mist
 brushed metal=stamp-wire
-concrete=sponge-sea
 letterpress=nib-bleed
-woodcut=stamp-rake
 halftone=stamp-halftone
 mimeograph=sponge-stipple
 soft glow=air-gauss
@@ -111,7 +116,6 @@ grid dots=stamp-dotgrid
 gritty marker=marker-chisel
 moss=sponge-sea
 bark=stamp-wire
-vein=stamp-fern
 fern=stamp-fern
 coral=sponge-natural
 wet blend=air-smooth
@@ -185,6 +189,13 @@ haze=air-gauss
 
 /** Grain by name pattern, first match wins. Applied only to brushes that have grain depth. */
 const GRAINS: [RegExp, string][] = [
+  // texture brushes: a strong, even surface (paint/fam-paint-grains.ts), so the band reads as one material
+  [/^canvas weave$|^canvas$|^fabric weave$/, 'tex-weave'],
+  [/^burlap$/, 'tex-burlap'],
+  [/^concrete$/, 'tex-concrete'],
+  [/^linen$/, 'tex-linen'],
+  [/^gritty marker$|^faded print$|^grain smudge$/, 'tex-tooth'],
+  [/^paper tooth$/, 'tex-tooth'],
   [/charcoal|willow|stump|compressed|powder/, 'charcoal-grit'],
   [/pastel|conte/, 'pastel-grit'],
   [/pavement|sidewalk|concrete|stone/, 'concrete'],

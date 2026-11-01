@@ -5,6 +5,7 @@
 
 import type { TipImage } from './types';
 import { fbm, pvn, sstep, worley, WR } from './grains-lib';
+import { paintTips } from './fam-paint-tips';
 
 export const TIP_SIDE = 256;
 const S = TIP_SIDE;
@@ -312,6 +313,8 @@ def('stamp-snow', 'Snowflake', 'Stamp', (b) => {
     for (const m of [0.35, 0.6]) for (const d of [-0.5, 0.5]) stroke(b, px(c * m), px(s * m), px(c * m + Math.cos(a + d) * 0.2), px(s * m + Math.sin(a + d) * 0.2), 1.6, 1, 0.9);
   }
 });
+
+for (const t of paintTips({ per, sstep, pvn, fbm })) def(t.id, t.name, t.group, t.fill);
 
 export interface TipInfo { id: string; name: string; group: string }
 export const TIP_LIST: TipInfo[] = DEFS.map((d) => ({ id: d.id, name: d.name, group: d.group }));

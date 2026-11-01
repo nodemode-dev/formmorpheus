@@ -120,7 +120,8 @@ export function bakeShine(data: Uint8ClampedArray, w: number, h: number, cov: Ui
       if (o.lock && data[idx * 4 + 3] === 0) continue;
       const di = idx * 4;
       const r = data[di], g = data[di + 1], b = data[di + 2];
-      const k = 1 + (dif + sheen) * wgt;
+      // the shaded side darkens the paint, it never goes black (a steep metal slope drove k below zero: a black offset line)
+      const k = Math.max(0.55, 1 + (dif + sheen) * wgt);
       // specular colour: white for a plastic gloss, the paint's own colour (lifted) for a metal
       const sr = sp * specK * wgt, spc = 1 - metal;
       data[di] = r * k + sr * (spc + metal * (r / 255 * 0.6 + 0.4));

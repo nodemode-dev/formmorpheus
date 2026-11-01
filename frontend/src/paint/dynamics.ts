@@ -155,21 +155,31 @@ export function tiltShape(brush: Brush, tiltX: number, tiltY: number): TiltShape
   const info = tiltInfo(tiltX, tiltY);
   const th = Math.min(0.95, Math.max(0, (brush.tiltAngle ?? 0) / 90));
   const lean = shapeLean(brush, Math.min(1, Math.max(0, (info.lean - th) / (1 - th))));
-  const k = Math.min(1, lean * 1.25) * brush.tilt;
+  // a side-shading medium reaches its full swath sooner: a pen leaning 35 degrees already lays a clearly broader mark
+  // (a bristle bundle is paint, not a dry stick: oil and impasto keep their own lean, so this dry-media rule skips them)
+  const paintLike = !!brush.bristle || !!brush.wet || !!brush.render || ['bristle', 'comb', 'speckle', 'dots', 'sponge', 'splat'].includes(brush.tip);
+  // a scattered brush (toothbrush, spatter) keeps its size on a lean: growing it only throws the scatter wider
+  const scattered = (brush.shapeCount ?? 1) > 1 || brush.scatter > 0.3 || (brush.scatterPos ?? 0) > 0.3;
+  const sideOn = brush.tilt >= 0.6 && !paintLike && !scattered;
+  const k = (sideOn ? Math.min(1, lean * 1.7) * Math.min(1, brush.tilt * 1.15) : Math.min(1, lean * 1.25) * brush.tilt);
   const flat = k >= 0.02;
   // Shading with the side of the lead: the mark grows wide (also along the lean), softens, lightens and shows more
   // of the paper's tooth, unless the brush sets its own tilt opacity, gradation or bleed.
   // The oval's long axis (along the lean) grows to 4x; its short axis keeps growing too (to 2x), so a pen leaning
   // along the stroke still lays a wider line, and one leaning across it lays a broad shading band.
-  const longK = flat ? 1 + 3 * k : 1, shortK = flat ? 1 + k : 1;
+  // a pencil, charcoal or pastel (tilt 0.6 and up) shades with its whole side: a broad, soft swath that lies across the lean
+  const side = sideOn;
+  const grow = flat && !scattered;
+  // paint on a bundle (hair, oil, knife) leans into a modest, round-ended oval: a wide stretched one reads as a box
+  const longK = grow ? 1 + (side ? (brush.maxSize < 30 ? 7.4 : 5.2) : paintLike ? 1.6 : 3) * k : 1, shortK = grow ? 1 + (side ? 1.9 : paintLike ? 0.6 : 1) * k : 1;
   return {
     roundnessMul: flat ? shortK / longK : 1,
     sizeMul: longK * (brush.tiltSize ? Math.max(0.2, 1 + brush.tiltSize * lean * 1.2) : 1),
     angle: flat ? info.azimuth : null,
     lean,
-    opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1 - 0.3 * k,
+    opacityMul: brush.tiltOpacity ? Math.max(0.05, 1 + brush.tiltOpacity * lean) : 1 - (side ? 0.42 : 0.3) * k,
     gradation: (brush.tiltGradation ?? 0.45 * brush.tilt) * lean,
-    bleed: (brush.tiltBleed ?? 0.3 * brush.tilt) * lean,
+    bleed: (brush.tiltBleed ?? (side ? 0.5 : 0.3) * brush.tilt) * lean,
   };
 }
 

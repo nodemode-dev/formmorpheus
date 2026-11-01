@@ -6,6 +6,7 @@
 
 import { ksToRgb, rgbToKs, steer } from './wet';
 import type { WetMix } from './types';
+import { easeContact, outerness } from './fam-oil';
 
 const NB = 6;
 const DEC = new Float32Array(256);
@@ -15,7 +16,8 @@ for (let i = 0; i <= 4096; i++) { const l = i / 4096; ENCB[i] = Math.round(255 *
 
 const sstep = (a: number, b: number, x: number): number => { const t = x <= a ? 0 : x >= b ? 1 : (x - a) / (b - a); return t * t * (3 - 2 * t); };
 
-export interface BristleCfg { count: number; lenVar: number; tone: number; clump: number }
+/** body: a flat blade rather than loose hairs: every hair keeps this share of contact once the pen touches (0 = none). */
+export interface BristleCfg { count: number; lenVar: number; tone: number; clump: number; body?: number }
 
 /** The layer and stroke buffers a bundle paints into. */
 export interface BristleCtx {
@@ -47,6 +49,8 @@ export interface BristleStep {
   grain: number; moving: boolean; movement: number;
   /** Extra wobble amplitude, in diameters. */
   wobble: number;
+  /** How far the pen leans, 0 upright to 1 flat (a bundle laid on its side). */
+  lean?: number;
 }
 
 /** A light 3 x 3 smoothing of the stroke's coverage over a rectangle, so the lit relief shows ridges, not one-pixel cliffs at every hair. */
@@ -96,18 +100,21 @@ export class Bristle {
   private readonly wet: WetMix;
   private started = false;
   private pressNow = 0;
+  private readonly cs: Float32Array;
+  private readonly body: number;
 
   constructor(cfg: BristleCfg, baseDia: number, wet: WetMix, private readonly c: BristleCtx, rng: () => number) {
     this.wet = wet;
     const auto = Math.max(10, Math.min(72, Math.round(baseDia / 2.4)));
     const n = cfg.count > 0 ? Math.max(4, Math.min(96, Math.round(cfg.count))) : auto;
     this.n = n;
-    this.u = new Float32Array(n); this.wf = new Float32Array(n); this.len = new Float32Array(n);
+    this.body = cfg.body ?? 0;
+    this.u =new Float32Array(n); this.wf = new Float32Array(n); this.len = new Float32Array(n);
     this.tone = new Float32Array(n); this.phase = new Float32Array(n); this.start = new Float32Array(n);
     this.amt = new Float32Array(n).fill(1);
     this.ks = new Float32Array(n * NB); this.kbT = new Float32Array(n * NB); this.rgb = new Float32Array(n * 3);
     this.px = new Float32Array(n); this.py = new Float32Array(n); this.hx = new Float32Array(n); this.hy = new Float32Array(n);
-    this.hw = new Float32Array(n); this.cap = new Float32Array(n);
+    this.hw = new Float32Array(n); this.cap = new Float32Array(n); this.cs = new Float32Array(n);
     // clumps of 3 to 5 hairs share a tone, so the stroke shows chunky streaks rather than fine noise
     let clumpLeft = 0, clumpTone = 0;
     for (let i = 0; i < n; i++) {
@@ -118,7 +125,7 @@ export class Bristle {
       clumpLeft--;
       this.tone[i] = (rng() - 0.5) * cfg.tone * (1 - cfg.clump) + clumpTone * cfg.clump;
       this.phase[i] = rng() * 100;
-      this.start[i] = rng() * 0.8;
+      this.start[i] = rng() * 0.8 * (1 - 0.9 * this.body);
     }
   }
 
@@ -164,28 +171,36 @@ export class Bristle {
     const { cx, cy, dia, dx, dy, pressure: P, travel, ds } = s;
     const nx = -dy, ny = dx;
     const half = dia * 0.5 * (1 + 0.2 * P);
-    const amp = (0.04 + s.wobble) * dia;
+    // a blade does not splay: its hairs keep their places, so no gaps open between them
+    const amp = (0.04 + s.wobble) * dia * (1 - 0.92 * this.body);
     const kk = travel / (2.5 * Math.max(4, dia));
     // pressing harder squeezes more paint out of the bundle: it runs low more slowly and lays a fuller load, so a
     // stroke that leans in grows stronger even as the paint on the hairs thins
     const press = sstep(0.2, 0.95, P);
     this.pressNow = press;
     const decay = (1 - wet.charge) * ds / (dia * 20) * (1 - 0.55 * press);
-    const pullT = 1 - Math.exp(-wet.pull * 1.6 * ds / dia);
+    const pullT = 1 - Math.exp(-wet.pull * 0.8 * ds / dia);
     const atkT = wet.attack > 0 ? (1 - Math.exp(-wet.attack * 1.2 * ds / dia)) * 1.5 * Math.exp(-travel / (3 * dia)) : 0;
-    const refill = (1 - Math.exp(-ds / (dia * 3))) * (1 - 0.7 * wet.pull) * 0.5;
+    // paint keeps coming from the brush: a hair that crossed other paint is mostly its own color again within a couple of widths
+    const refill = (1 - Math.exp(-ds / (dia * 1.5))) * (1 - 0.5 * wet.pull) * 0.8;
     const dilK = 1 - wet.dilution * 0.5;
     const sk = s.speed * 0.3;
-    const kc = this.kc, ks = this.ks;
+    const kc = this.kc, ks = this.ks, lean = s.lean ?? 0;
     let bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
     for (let i = 0; i < n; i++) {
       const lat = this.u[i] * half + amp * (Math.sin(kk + this.phase[i]) * 0.6 + Math.sin(kk * 2.3 + this.phase[i] * 1.7) * 0.4);
-      const hx = cx + nx * lat, hy = cy + ny * lat, wi = Math.max(1.3, (dia / n) * this.wf[i]);
+      // a brush laid on its side: the hairs at the outer edge touch later, lift sooner, lie thinner and lighter, so the swath fans out and ends round, not square
+      const out = this.body > 0 ? 0 : outerness(this.u[i], lean);
+      const hx = cx + nx * lat, hy = cy + ny * lat, wi = Math.max(1.3, (dia / n) * this.wf[i] * (1 - 0.4 * out));
       this.hx[i] = hx; this.hy[i] = hy; this.hw[i] = wi;
       // contact: stiff (short) hairs touch only at a harder press; a fast stroke lifts more of them
-      const L = this.len[i];
-      const contact = sstep(0, 0.3, P * (0.5 + 0.5 * L) - (1 - L) * 0.35 - sk);
-      const ramp = sstep(this.start[i] * dia, this.start[i] * dia + 0.5 * dia, travel);
+      const L = this.len[i] * (1 - 0.5 * out);
+      let contactRaw = sstep(0, 0.3, P * (0.5 + 0.5 * L) - (1 - L) * 0.35 - sk + 0.05 * sstep(0, 0.08, P));
+      if (this.body > 0) contactRaw = Math.max(contactRaw, this.body * sstep(0, 0.06, P));
+      const contact = this.has ? easeContact(this.cs[i], contactRaw, ds, dia, 0.35) : contactRaw;
+      this.cs[i] = contact;
+      const st0 = this.start[i] * (1 + 1.5 * out) * dia;
+      const ramp = sstep(st0, st0 + 0.5 * dia, travel);
       // the paint on this hair: pick up the canvas under it, refill from the brush, run low with distance
       if (this.has && ds > 0) {
         if ((pullT > 0.001 || atkT > 0.001)) {
@@ -209,7 +224,7 @@ export class Bristle {
       }
       const a = this.amt[i] + (1 - this.amt[i]) * 0.7 * press;
       // a loaded brush lays paint close to opaque (flow is the paint on the brush, not a film of it)
-      this.cap[i] = contact * ramp * Math.pow(a, 0.6) * Math.min(1, s.flow * dilK * 1.45);
+      this.cap[i] = contact * ramp * Math.pow(a, 0.6) * Math.min(1, s.flow * dilK * 1.45) * (1 - 0.45 * out);
       const r = wi * 0.5 + 2;
       const ax = this.has ? this.px[i] : hx, ay = this.has ? this.py[i] : hy;
       if (hx - r < bx0) bx0 = hx - r; if (ax - r < bx0) bx0 = ax - r;

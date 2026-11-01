@@ -148,7 +148,7 @@ export interface Brush {
   /** 0 to 1: the line wanders sideways as it is drawn (boiling line). */
   wiggle?: number;
   /** Bristle bundle (paint/bristle.ts): hairs that each lay a streak and carry paint. count 0 = by size; lenVar, tone, clump 0 to 1. */
-  bristle?: { count: number; lenVar: number; tone: number; clump: number };
+  bristle?: { count: number; lenVar: number; tone: number; clump: number; body?: number };
   /** Grain sticks to the stamp (moving) or to the canvas (texturized, the default). */
   grainMode?: 'moving' | 'texturized';
   /** 0 to 1: random grain depth per stamp. */

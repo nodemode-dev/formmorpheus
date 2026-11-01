@@ -83,7 +83,7 @@ const RAW_BRUSHES: Brush[] = [
   d('graphite-2b', 'Graphite 2B', 'Sketch', 'grain-round', 0.3, 22, 2, 0.06, 0.55, 0.55, 0.2, { tilt: 0.9, grain: 0.85, smoothing: 0.12 }, 0.9),
   d('hard-4h', 'Hard 4H', 'Sketch', 'grain-round', 0.05, 8, 1, 0.06, 0.5, 0.8, 0.4, { grain: 0.5, smoothing: 0.15, tilt: 0.4 }, 0.8),
   d('mech-pencil', 'Mechanical', 'Sketch', 'round', 0, 5, 0.8, 0.05, 0.85, 0.9, 0.6, { grain: 0.25, smoothing: 0.25 }),
-  d('colored-pencil', 'Color pencil', 'Sketch', 'grain-round', 0.2, 16, 2, 0.05, 0.4, 0.7, 0.2, { tilt: 0.7, grain: 1, grainScale: 0.7, roundness: 0.9 }, 0.9),
+  d('colored-pencil', 'Color pencil', 'Sketch', 'grain-round', 0.2, 22, 2, 0.05, 0.9, 0.6, 0.2, { tilt: 0.7, grain: 1, grainScale: 0.7, roundness: 0.9 }, 0.9),
   d('hatch-pencil', 'Hatch pencil', 'Sketch', 'hatch', 0.1, 26, 6, 0.12, 0.7, 0.7, 0.4, { followStroke: true, roundness: 0.6, grain: 0.5 }),
   d('carpenter', 'Carpenter', 'Sketch', 'chisel', 0.1, 24, 3, 0.05, 0.6, 0.7, 0.3, { roundness: 0.3, grain: 0.7, tilt: 0.6 }, 0.9),
 
@@ -92,7 +92,8 @@ const RAW_BRUSHES: Brush[] = [
   d('felt-tip', 'Felt tip', 'Drawing', 'round', 0.08, 18, 3, 0.04, 0.85, 0.85, 0.7, { smoothing: 0.35, grain: 0.1 }, 0.9),
   d('marker', 'Marker', 'Drawing', 'round', 0.05, 34, 6, 0.05, 0.9, 0.9, 0.8, { smoothing: 0.3 }, 0.8),
   d('chisel-marker', 'Chisel marker', 'Drawing', 'chisel', 0.04, 44, 8, 0.05, 0.9, 0.9, 0.8, { roundness: 0.28, smoothing: 0.3, rotationJitter: 0 }, 0.8),
-  d('highlighter', 'Highlighter', 'Drawing', 'chisel', 0.02, 56, 14, 0.05, 1, 1, 1, { roundness: 0.4, smoothing: 0.35 }, 0.45),
+  d('marker-roll', 'Marker roll', 'Drawing', 'chisel', 0.04, 48, 8, 0.05, 0.9, 0.9, 0.8, { roundness: 0.26, smoothing: 0.3 }, 0.8),
+  d('highlighter', 'Highlighter', 'Drawing', 'chisel', 0.02, 56, 14, 0.05, 1, 1, 1, { roundness: 0.4, smoothing: 0.35, blend: 'multiply' }, 0.45),
   d('ballpoint', 'Ballpoint', 'Drawing', 'round', 0.1, 6, 1, 0.05, 0.75, 0.9, 0.35, { grain: 0.2, smoothing: 0.3 }),
   d('gel-pen', 'Gel pen', 'Drawing', 'round', 0.18, 9, 1.5, 0.04, 1, 0.85, 0.9, { smoothing: 0.4 }),
   d('crayon', 'Crayon', 'Drawing', 'grunge', 0.1, 38, 8, 0.07, 0.8, 0.7, 0.4, { grain: 0.95, grainScale: 1.4, rotationJitter: 1, tilt: 0.6 }, 0.95),
@@ -102,10 +103,12 @@ const RAW_BRUSHES: Brush[] = [
   mk('studio-ink', 'Studio ink', 'Inking', {
     softness: 0.02, maxSize: 26, minSize: 1, spacing: 0.04, flow: 1,
     pressureSize: [0.12, 1], smoothing: 0.55, pickup: 0.2, stabilization: 40,
+    taper: 0.3, taperEnd: 0.55, taperSize: 0.12,
   }),
   mk('brush-pen', 'Brush pen', 'Inking', {
     softness: 0.08, maxSize: 52, minSize: 2, spacing: 0.035, flow: 1,
     pressureSize: [0.04, 1], pressureFlow: [0.85, 1], smoothing: 0.65, pickup: 0.3, stabilization: 50,
+    taper: 0.4, taperEnd: 0.7, taperSize: 0.08, taperTip: 0.4,
   }),
   mk('fine-liner', 'Fine liner', 'Inking', {
     softness: 0, maxSize: 8, minSize: 0.8, spacing: 0.05, flow: 1,
@@ -124,28 +127,30 @@ const RAW_BRUSHES: Brush[] = [
   d('ink-splatter', 'Ink splatter', 'Inking', 'splat', 0, 80, 14, 0.7, 1, 0.7, 1, { rotationJitter: 1, scatter: 0.3, smoothing: 0.1 }),
 
   // Painting
+  // opaque paint: a solid body with a combed, grainy rim (paint/fam-paint-tips.ts); light pressure thins the load and the paper shows
   mk('round-paint', 'Round paint', 'Painting', {
-    softness: 0.25, maxSize: 96, minSize: 4, spacing: 0.07, flow: 0.9,
-    pressureSize: [0.4, 1], pressureFlow: [0.5, 1], smoothing: 0.3, pickup: 0.55,
+    softness: 0, maxSize: 96, minSize: 4, spacing: 0.05, flow: 0.85, followStroke: true,
+    pressureSize: [0.45, 1], pressureFlow: [0.3, 1], grain: 0.3, grainScale: 0.45, grainDepthMin: 0.15, scatterPos: 0.02, burnout: 0.15, smoothing: 0.3, pickup: 0.55,
   }),
   mk('flat-paint', 'Flat paint', 'Painting', {
-    tip: 'square', softness: 0.08, maxSize: 84, minSize: 6, spacing: 0.06, flow: 0.95,
-    pressureSize: [0.55, 1], pressureFlow: [0.6, 1], followStroke: true, roundness: 0.3, grain: 0.2,
-    smoothing: 0.35, pickup: 0.5,
+    tip: 'square', softness: 0, maxSize: 84, minSize: 6, spacing: 0.05, flow: 0.8,
+    pressureSize: [0.55, 1], pressureFlow: [0.3, 1], followStroke: true, roundness: 1, grain: 0.3, grainScale: 0.45, grainDepthMin: 0.15,
+    burnout: 0.2, smoothing: 0.35, pickup: 0.5,
   }),
+  // matte and opaque: a nearly solid stroke with a fine tooth, a softer ragged rim and a little loss of load along a long pull
   mk('gouache', 'Gouache', 'Painting', {
-    tip: 'blob', softness: 0.12, maxSize: 76, minSize: 5, spacing: 0.1, flow: 1,
-    pressureSize: [0.7, 1], rotationJitter: 1, grain: 0.25, smoothing: 0.35, pickup: 0.45,
-    // opaque but still wet at the edges: a stroke over fresh paint takes a little of it along
-    render: 'uniform-blending', wet: { dilution: 0.04, charge: 0.9, attack: 0.2, pull: 0.3, grade: 0.55 },
+    softness: 0, maxSize: 76, minSize: 5, spacing: 0.05, flow: 1, followStroke: true,
+    pressureSize: [0.6, 1], pressureFlow: [0.85, 1], grain: 0.25, grainScale: 0.4, grainDepthMin: 0.2, scatterPos: 0.02, burnout: 0.1,
+    smoothing: 0.35, pickup: 0.45,
   }),
   // a bundle of hairs (paint/bristle.ts): per-hair streaks, pickup of the paint under it, canvas grain that travels
-  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.04, 1, 0.45, 0.5, { tilt: 0.6, followStroke: true, roundness: 0.9, grain: 0.55, grainMode: 'moving', grainMovement: 0.95, grainJitter: 0.19, grainContrast: 0.12, smoothing: 0.35, pickup: 0.7, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, render: 'intense-blending', burntEdges: 0.25, wet: { dilution: 0.4, charge: 0.55, attack: 0.1, pull: 1, grade: 0.25 } }),
-  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.5, 0.7, { tilt: 0.6, bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.8, attack: 0.5, pull: 0.7, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
+  d('oil-bristle', 'Oil bristle', 'Painting', 'bristle', 0.05, 90, 10, 0.04, 1, 0.45, 0.8, { tilt: 0.6, followStroke: true, roundness: 0.9, grain: 0.55, grainMode: 'moving', grainMovement: 0.95, grainJitter: 0.19, grainContrast: 0.12, smoothing: 0.35, pickup: 0.7, bristle: { count: 0, lenVar: 0.45, tone: 0.3, clump: 0.5 }, render: 'intense-blending', burntEdges: 0.25, wet: { dilution: 0.15, charge: 0.8, attack: 0.15, pull: 0.45, grade: 0.25 } }),
+  d('impasto', 'Impasto', 'Painting', 'bristle', 0.02, 110, 16, 0.04, 1, 0.5, 0.7, { tilt: 0.6, bristle: { count: 0, lenVar: 0.35, tone: 0.25, clump: 0.7 }, followStroke: true, roundness: 0.55, grain: 0.5, grainScale: 1.6, smoothing: 0.4, pickup: 0.85, render: 'heavy-blending', wet: { dilution: 0.05, charge: 0.85, attack: 0.3, pull: 0.45, grade: 0.3 }, bump: 0.7, shine: { depth: 0.8, gloss: 0.45, metal: 0 } }),
   d('fan-paint', 'Fan brush', 'Painting', 'comb', 0.35, 110, 18, 0.07, 0.8, 0.7, 0.7, { followStroke: true, roundness: 0.3, grain: 0.5, pickup: 0.6, rotationJitter: 0.04 }, 0.9),
-  d('palette-knife', 'Palette knife', 'Painting', 'chisel', 0.02, 70, 12, 0.03, 1, 0.8, 1, { followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9 }),
-  d('acrylic', 'Acrylic', 'Painting', 'round', 0.1, 80, 6, 0.06, 1, 0.55, 0.9, { grain: 0.15, smoothing: 0.35 }),
-  d('filbert', 'Filbert', 'Painting', 'blob', 0.1, 88, 8, 0.05, 0.95, 0.6, 0.7, { followStroke: true, roundness: 0.55, grain: 0.3, smoothing: 0.4, pickup: 0.6 }),
+  // a flat blade (paint/bristle.ts, body): one solid band that scrapes the paint under it along and leaves it dragged
+  d('palette-knife', 'Palette knife', 'Painting', 'bristle', 0.02, 70, 12, 0.03, 1, 0.8, 1, { tilt: 0.7, followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9, grain: 0.18, bump: 0.35, bristle: { count: 64, lenVar: 0.05, tone: 0.1, clump: 0.9, body: 0.95 }, render: 'uniform-blending', wet: { dilution: 0, charge: 0.97, attack: 0.15, pull: 0.5, grade: 0.3 }, shine: { depth: 0.5, gloss: 0.5, metal: 0.15 } }),
+  d('acrylic', 'Acrylic', 'Painting', 'round', 0, 80, 6, 0.05, 0.8, 0.5, 0.25, { followStroke: true, grain: 0.35, grainScale: 0.5, grainDepthMin: 0.1, burnout: 0.3, scatterPos: 0.02, smoothing: 0.35 }),
+  d('filbert', 'Filbert', 'Painting', 'blob', 0, 88, 8, 0.05, 0.8, 0.55, 0.3, { followStroke: true, roundness: 1, grain: 0.3, grainScale: 0.45, grainDepthMin: 0.15, burnout: 0.2, smoothing: 0.4, pickup: 0.6 }),
   d('dry-brush', 'Dry brush', 'Painting', 'fibre', 0.1, 96, 14, 0.05, 0.85, 0.6, 0.4, { followStroke: true, roundness: 0.9, grain: 0.6, grainScale: 1.3, smoothing: 0.35, pickup: 0.5 }),
 
   // Artistic
@@ -167,6 +172,7 @@ const RAW_BRUSHES: Brush[] = [
   d('brush-script', 'Brush script', 'Calligraphy', 'blob', 0.1, 64, 2, 0.04, 1, 0.05, 0.9, { smoothing: 0.65, grain: 0.15, stabilization: 50 }),
   d('reed-pen', 'Reed pen', 'Calligraphy', 'square', 0.02, 36, 6, 0.04, 1, 0.9, 1, { roundness: 0.25, grain: 0.2, smoothing: 0.4 }),
   d('quill', 'Quill', 'Calligraphy', 'leaf', 0, 26, 3, 0.04, 1, 0.25, 1, { followStroke: true, roundness: 0.35, smoothing: 0.55 }),
+  d('nib-roll', 'Calligraphy roll', 'Calligraphy', 'chisel', 0.02, 30, 4, 0.03, 1, 0.9, 1, { roundness: 0.2, smoothing: 0.45 }),
   d('uncial', 'Uncial', 'Calligraphy', 'chisel', 0.05, 50, 10, 0.03, 0.95, 0.95, 1, { roundness: 0.3, grain: 0.15, smoothing: 0.45 }),
 
   // Airbrush
@@ -200,7 +206,7 @@ const RAW_BRUSHES: Brush[] = [
   d('dust', 'Dust', 'Texture', 'speckle', 0.2, 140, 20, 0.35, 0.7, 0.8, 0.5, { scatter: 0.6, rotationJitter: 1 }, 0.8),
   d('pixel-noise', 'Pixel noise', 'Texture', 'pixel', 0, 70, 10, 0.4, 1, 0.8, 1, { scatter: 0.3 }),
   d('stone', 'Stone', 'Texture', 'grunge', 0.05, 90, 14, 0.15, 0.9, 0.8, 0.7, { rotationJitter: 1, grain: 0.5, grainScale: 1.5 }),
-  d('paper-tooth', 'Paper tooth', 'Texture', 'grain-round', 0.9, 170, 20, 0.08, 0.35, 0.8, 0.4, { grain: 1, grainScale: 2, rotationJitter: 1 }, 0.8),
+  d('paper-tooth', 'Paper tooth', 'Texture', 'round', 0.3, 120, 20, 0.05, 0.7, 0.6, 0.4, { grain: 0.85, grainScale: 1.8, grainDepthMin: 0.1, smoothing: 0.3 }, 0.85),
   d('foam', 'Foam', 'Texture', 'sponge', 0.2, 100, 18, 0.2, 0.8, 0.7, 0.6, { rotationJitter: 1, scatter: 0.1 }),
 
   // Abstract
@@ -228,6 +234,8 @@ const RAW_BRUSHES: Brush[] = [
   d('charcoal-powder', 'Powder', 'Charcoal', 'grain-round', 0.9, 190, 30, 0.1, 0.3, 0.8, 0.2, { grain: 1, grainScale: 1.6, rotationJitter: 1 }, 0.8),
   d('willow', 'Willow', 'Charcoal', 'fibre', 0.1, 44, 6, 0.06, 0.7, 0.6, 0.3, { followStroke: true, roundness: 0.9, grain: 0.8, tilt: 0.8 }, 0.9),
   d('conte', 'Conte', 'Charcoal', 'chisel', 0.1, 42, 6, 0.05, 0.9, 0.7, 0.4, { roundness: 0.4, grain: 0.8, grainScale: 0.8, tilt: 0.7 }),
+  // roll brushes: a flat stick that turns with the pen's barrel roll (names with "roll" opt in), thicker when it lies across the stroke
+  d('charcoal-roll', 'Charcoal roll', 'Charcoal', 'chalk', 0.1, 72, 12, 0.06, 0.8, 0.6, 0.25, { roundness: 0.32, grain: 0.9, grainScale: 1.2, rollSize: 0.35, tilt: 0.5 }, 0.9),
   d('chalk-block', 'Chalk block', 'Charcoal', 'square', 0.1, 90, 18, 0.06, 0.8, 0.8, 0.5, { roundness: 0.5, grain: 0.85, rotationJitter: 0.1 }, 0.9),
   mk('stump', 'Stump', 'Charcoal', {
     softness: 0.9, maxSize: 70, minSize: 8, spacing: 0.06, flow: 0.5, pressureSize: [0.8, 1], pressureFlow: [0.5, 1],
@@ -247,23 +255,25 @@ const RAW_BRUSHES: Brush[] = [
   d('sparks', 'Sparks', 'Elements', 'leaf', 0.3, 20, 4, 1, 1, 0.9, 1, { scatter: 2.4, rotationJitter: 1, roundness: 0.2 }),
 
   // Spray
-  d('spray-can', 'Spray can', 'Spray', 'speckle', 0.3, 140, 20, 0.25, 0.8, 0.8, 0.5, { scatter: 0.55, rotationJitter: 1, smoothing: 0.25 }, 0.9),
-  d('fat-cap', 'Fat cap', 'Spray', 'speckle', 0.6, 220, 40, 0.2, 0.7, 0.8, 0.5, { scatter: 0.4, rotationJitter: 1, grain: 0.3 }, 0.9),
-  d('thin-cap', 'Thin cap', 'Spray', 'speckle', 0.15, 50, 8, 0.25, 0.9, 0.8, 0.5, { scatter: 0.35, rotationJitter: 1 }),
+  // paint/spray: many light stamps of a fine particle cloud (spacing near 1 percent of the cloud), so the mist is continuous and the speckle stays fine
+  d('spray-can', 'Spray can', 'Spray', 'speckle', 0.3, 100, 16, 0.04, 0.35, 0.6, 0.4, { scatter: 0.55, rotationJitter: 1, smoothing: 0.25 }, 0.9),
+  d('fat-cap', 'Fat cap', 'Spray', 'speckle', 0.6, 150, 30, 0.03, 0.25, 0.6, 0.4, { scatter: 0.4, rotationJitter: 1, grain: 0.3 }, 0.9),
+  d('thin-cap', 'Thin cap', 'Spray', 'speckle', 0.15, 40, 6, 0.04, 0.4, 0.6, 0.4, { scatter: 0.35, rotationJitter: 1 }),
   d('drip-splat', 'Drip splat', 'Spray', 'splat', 0.05, 100, 20, 0.8, 1, 0.8, 1, { scatter: 0.3, rotationJitter: 1 }),
   d('stencil-mist', 'Stencil mist', 'Spray', 'round', 0.6, 140, 20, 0.06, 0.25, 0.9, 0.5, { grain: 0.6, grainScale: 0.5 }, 0.9),
-  d('grit-spray', 'Grit spray', 'Spray', 'pixel', 0, 120, 20, 0.5, 0.8, 0.8, 0.5, { scatter: 0.6, rotationJitter: 1 }),
-  d('fade-spray', 'Fade spray', 'Spray', 'speckle', 0.9, 260, 40, 0.15, 0.4, 0.8, 0.3, { scatter: 0.8, rotationJitter: 1 }, 0.7),
+  d('grit-spray', 'Grit spray', 'Spray', 'pixel', 0, 90, 16, 0.02, 0.16, 0.6, 0.4, { scatter: 0.6, rotationJitter: 1 }),
+  d('fade-spray', 'Fade spray', 'Spray', 'speckle', 0.6, 120, 20, 0.03, 0.35, 0.6, 0.3, { scatter: 0.25, rotationJitter: 1 }, 0.7),
 
   // Material
-  d('canvas-weave', 'Canvas weave', 'Material', 'cross', 0, 30, 8, 0.7, 0.9, 0.9, 1, { scatter: 0.3, rotationJitter: 0.04 }, 0.7),
-  d('linen', 'Linen', 'Material', 'hatch', 0, 60, 12, 0.5, 0.7, 0.9, 1, { roundness: 0.8, grain: 0.4 }, 0.7),
+  // a continuous band of woven cloth (the grain is the weave), not a row of stamps; light pressure keeps the threads, only fainter
+  d('canvas-weave', 'Canvas weave', 'Material', 'round', 0.12, 40, 10, 0.05, 0.9, 0.6, 0.5, { grain: 1, grainDepthMin: 0.3, smoothing: 0.3 }, 0.9),
+  d('linen', 'Linen', 'Material', 'round', 0.1, 60, 12, 0.05, 0.85, 0.6, 0.5, { grain: 1, grainDepthMin: 0.25, smoothing: 0.3 }, 0.9),
   d('leather', 'Leather', 'Material', 'grunge', 0.1, 70, 14, 0.2, 0.9, 0.9, 1, { rotationJitter: 1, grain: 0.6, grainScale: 0.8 }),
   d('wood-grain', 'Wood grain', 'Material', 'fibre', 0, 90, 20, 0.08, 0.6, 0.9, 1, { followStroke: true, roundness: 0.6, grain: 0.4 }, 0.85),
   d('sandpaper', 'Sandpaper', 'Material', 'speckle', 0, 80, 14, 0.2, 1, 0.9, 1, { scatter: 0.5, grain: 0.7, grainScale: 0.4 }),
   d('brushed-metal', 'Brushed metal', 'Material', 'fibre', 0, 100, 20, 0.05, 0.5, 0.9, 1, { followStroke: true, roundness: 0.3, grain: 0.2 }, 0.8),
-  d('concrete', 'Concrete', 'Material', 'sponge', 0.1, 120, 30, 0.25, 0.8, 0.9, 1, { rotationJitter: 1, grain: 0.7, grainScale: 2 }),
-  d('fabric', 'Fabric weave', 'Material', 'cross', 0, 20, 6, 0.55, 1, 1, 1, { scatter: 0.1 }, 0.8),
+  d('concrete', 'Concrete', 'Material', 'round', 0.2, 90, 20, 0.05, 0.9, 0.6, 0.5, { grain: 0.75, grainScale: 1.3, grainDepthMin: 0.3, smoothing: 0.3 }),
+  d('fabric', 'Fabric weave', 'Material', 'round', 0.1, 26, 6, 0.05, 0.9, 0.7, 0.5, { grain: 1, grainDepthMin: 0.3, smoothing: 0.3 }, 0.9),
   // lit materials: the stroke is read as a raised ridge and lit (paint/shine.ts)
   d('enamel', 'Glossy enamel', 'Material', 'round', 0.05, 70, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.5, gloss: 0.9, metal: 0 } }),
   d('chrome', 'Chrome', 'Material', 'round', 0.05, 60, 8, 0.05, 1, 0.8, 1, { smoothing: 0.3, shine: { depth: 0.7, gloss: 0.8, metal: 1 } }),
@@ -272,18 +282,19 @@ const RAW_BRUSHES: Brush[] = [
 
   // Vintage
   d('letterpress', 'Letterpress', 'Vintage', 'grunge', 0, 50, 10, 0.1, 1, 0.9, 1, { grain: 0.5, rotationJitter: 0.5 }),
-  d('woodcut', 'Woodcut', 'Vintage', 'hatch', 0, 38, 8, 0.1, 1, 0.8, 1, { followStroke: true, roundness: 0.35, grain: 0.3 }),
+  d('woodcut', 'Woodcut', 'Vintage', 'chisel', 0.02, 38, 8, 0.04, 1, 0.8, 1, { followStroke: true, roundness: 0.5, grain: 0.5, grainDepthMin: 0.3 }),
   d('halftone', 'Halftone', 'Vintage', 'dots', 0, 90, 20, 0.3, 0.9, 0.9, 1, { grain: 0.1 }, 0.9),
   d('mimeograph', 'Mimeograph', 'Vintage', 'sponge', 0.1, 70, 12, 0.18, 0.8, 0.9, 0.8, { grain: 0.55, rotationJitter: 1 }, 0.85),
   d('typewriter', 'Typewriter', 'Vintage', 'pixel', 0, 26, 6, 0.9, 0.9, 1, 1, { scatter: 0.1 }, 0.9),
   d('ink-stamp', 'Ink stamp', 'Vintage', 'ring', 0.05, 60, 14, 0.4, 0.9, 1, 1, { grain: 0.6, rotationJitter: 1 }, 0.9),
   d('etching', 'Etching', 'Vintage', 'hatch', 0, 24, 5, 0.08, 1, 0.5, 0.9, { followStroke: true, roundness: 0.8, smoothing: 0.5 }, 0.9),
-  d('faded-print', 'Faded print', 'Vintage', 'grain-round', 0.5, 110, 16, 0.1, 0.5, 0.8, 0.5, { grain: 1, grainScale: 2.5 }, 0.7),
+  d('faded-print', 'Faded print', 'Vintage', 'grain-round', 0.5, 110, 16, 0.1, 0.5, 0.8, 0.5, { grain: 1, grainScale: 1.5, grainDepthMin: 0.15 }, 0.7),
 
   // Glow
   d('soft-glow', 'Soft glow', 'Glow', 'round', 1, 200, 20, 0.04, 0.12, 0.8, 0.5, { smoothing: 0.3 }, 0.8),
   d('neon-tube', 'Neon tube', 'Glow', 'round', 0.55, 30, 6, 0.03, 0.5, 0.9, 0.9, { smoothing: 0.5 }, 0.9),
-  d('light-streak', 'Light streak', 'Glow', 'leaf', 0.5, 140, 30, 0.1, 0.4, 0.8, 0.5, { roundness: 0.1, followStroke: true }, 0.8),
+  // a streak of light runs along the stroke: the long axis of the stamp lies on the path
+  d('light-streak', 'Light streak', 'Glow', 'round', 0.7, 140, 30, 0.04, 0.3, 0.8, 0.5, { roundness: 0.18, followStroke: true, baseRot: -Math.PI / 2 }, 0.8),
   d('bokeh', 'Bokeh', 'Glow', 'ring', 0.55, 70, 14, 0.9, 0.5, 0.9, 0.6, { scatter: 0.9 }, 0.7),
   d('lens-dots', 'Lens dots', 'Glow', 'round', 0.8, 36, 6, 1, 0.5, 0.9, 0.8, { scatter: 1.2 }, 0.7),
   d('sparkle', 'Sparkle', 'Glow', 'star', 0.5, 40, 8, 1.2, 0.9, 0.9, 1, { scatter: 0.9, rotationJitter: 0.2 }, 0.9),
@@ -303,7 +314,7 @@ const RAW_BRUSHES: Brush[] = [
   // Organic
   d('moss', 'Moss', 'Organic', 'sponge', 0.2, 80, 14, 0.15, 0.9, 0.8, 0.8, { rotationJitter: 1, scatter: 0.3 }),
   d('bark', 'Bark', 'Organic', 'grunge', 0, 90, 20, 0.1, 0.9, 0.8, 0.8, { followStroke: true, roundness: 0.5, grain: 0.5, grainScale: 1.4 }),
-  d('vein', 'Vein', 'Organic', 'leaf', 0, 50, 6, 0.05, 1, 0.1, 1, { followStroke: true, roundness: 0.18, smoothing: 0.6, taper: 0.7 }),
+  d('vein', 'Vein', 'Organic', 'round', 0.05, 50, 6, 0.04, 1, 0.1, 1, { followStroke: true, roundness: 0.3, baseRot: -Math.PI / 2, smoothing: 0.6, taper: 0.7 }),
   d('pebbles', 'Pebbles', 'Organic', 'blob', 0.1, 34, 8, 1.1, 1, 0.8, 1, { scatter: 0.7, rotationJitter: 1, roundness: 0.8 }),
   d('scales', 'Scales', 'Organic', 'ring', 0, 40, 10, 0.55, 1, 0.9, 1, { followStroke: true, roundness: 0.8 }),
   d('coral', 'Coral', 'Organic', 'splat', 0.05, 60, 12, 0.5, 1, 0.8, 1, { rotationJitter: 1, scatter: 0.15 }),
@@ -313,22 +324,22 @@ const RAW_BRUSHES: Brush[] = [
   // Water
   mk('watercolor-wash', 'Watercolor wash', 'Water', {
     tip: 'blob', softness: 0.7, maxSize: 140, minSize: 10, spacing: 0.06, flow: 0.3,
-    pressureSize: [0.7, 1], pressureFlow: [0.55, 1], rotationJitter: 1, grain: 0.22, smoothing: 0.5, pickup: 0.4,
+    pressureSize: [0.4, 1], pressureFlow: [0.3, 1], rotationJitter: 1, grain: 0.22, smoothing: 0.5, pickup: 0.4,
     // a transparent wash: it never drags what is under it, its rim pools and it bleeds a little into neighbours
     render: 'light-glaze', wetEdges: 0.9, wet: { dilution: 0.3, charge: 0.85, attack: 0.1, pull: 0.12, grade: 0.7, blur: 0.4 },
   }, 0.9),
   mk('wet-blend', 'Wet blend', 'Water', {
     softness: 0.8, maxSize: 120, minSize: 8, spacing: 0.05, flow: 0.35,
-    pressureSize: [0.7, 1], pressureFlow: [0.4, 1], grain: 0.1, smoothing: 0.4, pickup: 0.8,
+    pressureSize: [0.45, 1], pressureFlow: [0.4, 1], grain: 0.3, smoothing: 0.4, pickup: 0.8, wetEdges: 0.3,
     // used as paint it is a blender: it carries what is under it a long way
     render: 'intense-blending', wet: { dilution: 0.2, charge: 0.4, attack: 0.3, pull: 1, grade: 0.7, blur: 0.5 },
   }, 0.9),
   d('soft-wash', 'Soft wash', 'Water', 'blob', 0.9, 200, 30, 0.07, 0.1, 0.8, 0.4, { rotationJitter: 1, grain: 0.2, smoothing: 0.55 }, 0.7),
-  d('wet-edge', 'Wet edge', 'Water', 'ring', 0.55, 80, 14, 0.06, 0.18, 0.7, 0.4, { smoothing: 0.5, grain: 0.2 }, 0.8),
+  d('wet-edge', 'Wet edge', 'Water', 'round', 0.45, 90, 26, 0.06, 0.5, 0.45, 0.4, { smoothing: 0.5, grain: 0.2, render: 'light-glaze', wetEdges: 1 }, 0.85),
   d('bleed', 'Bleed', 'Water', 'grunge', 0.9, 120, 20, 0.08, 0.15, 0.8, 0.4, { rotationJitter: 1, grain: 0.4, smoothing: 0.5 }, 0.75),
   d('droplets', 'Droplets', 'Water', 'splat', 0.2, 50, 10, 1, 0.6, 0.8, 0.5, { scatter: 0.8, rotationJitter: 1 }, 0.8),
   d('salt', 'Salt', 'Water', 'speckle', 0, 60, 8, 0.5, 1, 0.9, 1, { scatter: 0.8, rotationJitter: 1 }),
-  d('ink-wash', 'Ink wash', 'Water', 'round', 0.7, 110, 12, 0.05, 0.15, 0.6, 0.3, { grain: 0.3, smoothing: 0.5, pickup: 0.5 }, 0.8),
+  d('ink-wash', 'Ink wash', 'Water', 'round', 0.6, 110, 22, 0.05, 0.5, 0.45, 0.3, { grain: 0.3, smoothing: 0.5, pickup: 0.5, render: 'light-glaze', wetEdges: 0.6 }, 0.85),
   d('puddle', 'Puddle', 'Water', 'blob', 0.35, 180, 40, 0.1, 0.3, 0.8, 0.6, { rotationJitter: 1, smoothing: 0.6, grain: 0.15 }, 0.7),
 
   // Touch-ups

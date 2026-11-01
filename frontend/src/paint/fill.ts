@@ -167,24 +167,36 @@ export function floodFill(
   if (!res) return null;
   const sel = selection && selection.width === w && selection.height === h ? selection.data : null;
   const { cov, bounds } = res;
-  const rect = clampRect({ x: bounds.x - 1, y: bounds.y - 1, w: bounds.w + 2, h: bounds.h + 2 }, w, h);
+  // The fill reaches up to RING px under a soft or antialiased edge so no lighter fringe is left (v0.17.0).
+  const RING = 10;
+  const rect = clampRect({ x: bounds.x - RING, y: bounds.y - RING, w: bounds.w + 2 * RING, h: bounds.h + 2 * RING }, w, h);
   const before = copyRect(target.data, w, rect);
   const td = target.data;
   const x1 = rect.x + rect.w, y1 = rect.y + rect.h;
+  // 1 = member or already ringed
+  const done = new Uint8Array(w * h);
 
   for (let yy = rect.y; yy < y1; yy++) {
     const row = yy * w;
     for (let xx = rect.x; xx < x1; xx++) {
       const i = row + xx;
-      const m = sel ? sel[i] / 255 : 1;
-      if (m === 0) continue;
       const c = cov[i];
-      if (c) {
-        put(td, i << 2, color, (c / 255) * m, false);
-        continue;
-      }
+      if (!c) continue;
+      if (c > 127) done[i] = 1;
+      const m = sel ? sel[i] / 255 : 1;
+      if (m !== 0) put(td, i << 2, color, (c / 255) * m, false);
+    }
+  }
+  // Pass 1 grows into any non-opaque neighbour (closes the gap to a line); later passes only into
+  // partly covered pixels, so an opaque line core still stops the fill.
+  let front: number[] = [];
+  for (let yy = rect.y; yy < y1; yy++) {
+    const row = yy * w;
+    for (let xx = rect.x; xx < x1; xx++) {
+      const i = row + xx;
+      if (done[i] || cov[i]) continue;
       if (td[(i << 2) + 3] === 255) continue;
-      // Ring: any member neighbour in the 8-neighbourhood.
+      if (sel && sel[i] === 0) continue;
       let near = false;
       for (let dy = -1; dy <= 1 && !near; dy++) {
         const ny = yy + dy;
@@ -192,11 +204,36 @@ export function floodFill(
         for (let dx = -1; dx <= 1; dx++) {
           const nx = xx + dx;
           if (nx < 0 || nx >= w || (dx === 0 && dy === 0)) continue;
-          if (cov[ny * w + nx] > 127) { near = true; break; }
+          if (done[ny * w + nx]) { near = true; break; }
         }
       }
-      if (near) put(td, i << 2, color, m, true);
+      if (near) front.push(i);
     }
+  }
+  for (const i of front) { done[i] = 1; put(td, i << 2, color, sel ? sel[i] / 255 : 1, true); }
+  // the rest walks outwards from the pixels just filled, only through partly covered ones (the body of a soft stroke)
+  for (let pass = 1; pass < RING && front.length; pass++) {
+    const next: number[] = [];
+    for (const i of front) {
+      const xx = i % w, yy = (i - xx) / w;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = yy + dy;
+        if (ny < rect.y || ny >= y1) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = xx + dx;
+          if (nx < rect.x || nx >= x1 || (dx === 0 && dy === 0)) continue;
+          const j = ny * w + nx;
+          if (done[j] || cov[j]) continue;
+          const a = td[(j << 2) + 3];
+          if (a === 0 || a === 255) continue;
+          if (sel && sel[j] === 0) continue;
+          done[j] = 1;
+          next.push(j);
+          put(td, j << 2, color, sel ? sel[j] / 255 : 1, true);
+        }
+      }
+    }
+    front = next;
   }
   return { layer: layerId, rect, before, after: copyRect(td, w, rect) };
 }

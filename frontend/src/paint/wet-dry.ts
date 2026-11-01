@@ -6,6 +6,7 @@
 import type { Brush } from './types';
 import { RENDER_ALGOS } from './render-modes';
 import { paperMap } from './paper';
+import { washVariation } from './fam-wet';
 
 export interface DryOptions {
   data: Uint8ClampedArray;
@@ -86,6 +87,15 @@ function boxBlur(src: Float32Array, rw: number, rh: number, r: number, out: Floa
 }
 let scratch: Float32Array | null = null;
 
+/** Three narrower box passes: close to a Gaussian, so the reach of a wet mark is a soft round cloud, not a square (a single box left a faint rectangle). Reaches about as far as one box of radius r. */
+function roundBlur(src: Float32Array, rw: number, rh: number, r: number): Float32Array {
+  const k = Math.max(1, Math.round(r * 0.58));
+  const a = boxBlur(src, rw, rh, k);
+  boxBlur(a, rw, rh, k, a);
+  boxBlur(a, rw, rh, k, a);
+  return a;
+}
+
 /** The stroke's rectangle is worked in blocks, and only the blocks the stroke touches: a long diagonal stroke's box is mostly empty. */
 export function dryWash(o: DryOptions): void {
   const { x0, y0, x1, y1, cov, w, pool, gran, tooth } = o;
@@ -120,7 +130,8 @@ export function dryWash(o: DryOptions): void {
     }
     dryBlock(o, bx, top, ex, bot + 1);
   }
-  if (o.wetw && !o.lock && pool > 0) bleed(o);
+  // two passes: the first runs the colours together, the second carries them on (a wet join feathers, it does not stop at a line)
+  if (o.wetw && !o.lock && pool > 0) { bleed(o); bleed(o); }
 }
 
 // ratio ^ m by table (ratio 0..1 in 256 steps, m 0.05..4 in 1/32 steps, both interpolated): a wash pixel needs it for each colour channel and the alpha
@@ -188,14 +199,18 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
         m = (1 + pool * 4.2 * e - pool * 0.2 * (1 - e) * bd) * (1 + (sharp![i] - 1) * 0.6 * pool);
         // over a wet wash the edge is not sharpened and pigment does not pool: it runs
         if (wetw) m = 1 + (m - 1) * (1 - 0.8 * wetw[(py - o.y0) * orw + (px - o.x0)]);
+        // settled pigment: the inside of a wash is blotchy, never an even tint (paint/fam-wet.ts)
+        // (dark pigment hardly shows it, and a power of a near-black ratio would turn the blotches into pale patches)
+        const gl = data[((py * w + px) << 2) + 1] / 255;
+        m *= 1 + (washVariation(px, py, R0 * 5, pool, (1 - e) * bd) - 1) * (gl < 0.5 ? gl * 2 : 1);
       }
       if (end) {
         const dd = Math.hypot(px + 0.5 - end.x, py + 0.5 - end.y) / end.r;
-        if (dd < 1) m += end.t * (1 - dd * dd);
+        if (dd < 1) m += end.t * (1 - dd * dd) * (1 - dd * dd);
       }
       if (ends) for (const q of ends) {
         const dd = Math.hypot(px + 0.5 - q.x, py + 0.5 - q.y) / q.r;
-        if (dd < 1) m += q.t * (1 - dd * dd);
+        if (dd < 1) m += q.t * (1 - dd * dd) * (1 - dd * dd);
       }
       if (gran > 0 && paper) {
         // pigment settles into the paper's valleys: the paper's own height field, with a little of the brush's tooth
@@ -203,8 +218,11 @@ function dryBlock(o: DryOptions, ax0: number, ay0: number, ax1: number, ay1: num
         if (tx > 255) tx = 511 - tx;
         if (ty > 255) ty = 511 - ty;
         const g = paper[((py & 511) << 9) | (px & 511)] * 0.7 + (tooth ? tooth[(ty << 8) | tx] : 0.5) * 0.3;
-        m *= 1 + gran * (0.5 - g) * 0.9;
+        const gd = data[((py * w + px) << 2) + 1] / 255;
+        m *= 1 + gran * (0.5 - g) * 0.9 * (gd < 0.5 ? gd * 2 : 1);
       }
+      // a near-black film has no room to thin: the rim cut of a hairline stroke would turn it into pale dashes
+      if (m < 1) { const gq = data[((py * w + px) << 2) + 1] / 255; if (gq < 0.5) m = 1 + (m - 1) * gq * 2; }
       if (sel) m = 1 + (m - 1) * (sel[py * w + px] / 255);
       m = m < 0.05 ? 0.05 : m > 4 ? 4 : m;
       if (Math.abs(m - 1) < 0.01) continue;
@@ -251,8 +269,8 @@ function bleed(o: DryOptions): void {
   // the bleed reaches only a little past the stroke
   const f0 = new Float32Array(n);
   for (let y = 0; y < rh; y++) { const co = (y0 + y) * w + x0; for (let x = 0; x < rw; x++) f0[y * rw + x] = o.edge ? o.edge[co + x] / 255 : sstep(0.02, 0.22, o.cov[co + x] / 65535); }
-  const near = boxBlur(f0, rw, rh, Math.max(4, Math.round(o.radius) * 8));
-  for (let i = 0; i < n; i++) near[i] = Math.min(1, near[i] * 3);
+  const near = roundBlur(f0, rw, rh, Math.max(4, Math.round(o.radius) * 8));
+  for (let i = 0; i < n; i++) near[i] = Math.min(1, near[i] * 5);
   // The colours that run are the two washes' own, weighted by where wash is (M): the paper round them is not averaged
   // in, so a join of two washes of one colour keeps its body and its grain instead of going pale and smooth, while
   // two different colours still run into each other. The stroke's alpha only ever grows (outward on a clear layer).
@@ -268,7 +286,7 @@ function bleed(o: DryOptions): void {
   const bl = ch.map((c) => boxBlur(c, rw, rh, R));
   const wf = new Float32Array(n);
   for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) wf[y * rw + x] = wetw[(y0 + y - o.y0) * orw + (x0 + x - o.x0)];
-  const wd = boxBlur(wf, rw, rh, Rw);
+  const wd = roundBlur(wf, rw, rh, Rw);
   for (let y = 0; y < rh; y++) {
     for (let x = 0; x < rw; x++) {
       const i = y * rw + x, wv = Math.min(1, wd[i] * 2.4) * near[i];
@@ -277,12 +295,15 @@ function bleed(o: DryOptions): void {
       if (bm < 0.01) continue;
       const di = ((y0 + y) * w + x0 + x) << 2, a0 = data[di + 3] / 255, m = M[i], inv = 1 / bm;
       // inside a wash the colour moves toward its neighbours' average; just outside it a faint stain runs out
-      const k = m > 0.5 ? wv * sstep(0.4, 0.7, m) : (a0 > 0.98 ? wv * 0.4 * (bm > 1 ? 1 : bm) * (bm > 1 ? 1 : bm) : wv);
+      let k = m > 0.5 ? wv * sstep(0.4, 0.7, m) : (a0 > 0.98 ? wv * 0.4 * (bm > 1 ? 1 : bm) * (bm > 1 ? 1 : bm) : wv);
+      // a clear pixel has no colour of its own (its bytes are black): it takes the running colour whole, else the faint stain it gains reads as a grey haze
+      if (a0 < 0.05) k = 1 - (1 - k) * (a0 * 20);
       data[di] += (bl[0][i] * inv - data[di]) * k;
       data[di + 1] += (bl[1][i] * inv - data[di + 1]) * k;
       data[di + 2] += (bl[2][i] * inv - data[di + 2]) * k;
       const ba = bl[4][i];
-      if (a0 < 0.98 && ba > a0) data[di + 3] = (a0 + (ba - a0) * wv) * 255 + 0.5;
+      // on bare paper beside a wash the stain is only a trace: it must not read as a band between strokes
+      if (a0 < 0.98 && ba > a0) data[di + 3] = (a0 + (ba - a0) * wv * (m > 0.5 ? 1 : 0.25 * (1 - bm > 0 ? bm : 1))) * 255 + 0.5;
     }
   }
 }

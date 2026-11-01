@@ -5,6 +5,7 @@
 // Pure maths: no DOM. A value near 1 is raised tooth that holds pigment, near 0 is a pit.
 
 import type { Brush } from './types';
+import { textureGrains } from './fam-paint-grains';
 
 export const GRAIN_SIDE = 512;
 const N = GRAIN_SIDE;
@@ -286,6 +287,8 @@ def('smoke', 'Smoke', 'Noise', per((u, v) => fbm(u + 0.25 * fbm(u, v, 3, 3, 3, 1
 def('film-grain', 'Film grain', 'Noise', per((u, v) => 0.6 * pvn(u, v, 256, 256, 124) + 0.4 * pvn(u, v, 340, 340, 125)), 0.14);
 const BAYER = [0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21];
 def('ordered-dither', 'Ordered dither', 'Noise', per((u, v) => BAYER[(Math.floor(v * N / 4) & 7) * 8 + (Math.floor(u * N / 4) & 7)] / 63), 0.29);
+
+for (const g of textureGrains({ per, fbm, pvn, sstep })) def(g.id, g.name, g.group, g.fill, g.std);
 
 export interface GrainInfo { id: string; name: string; group: string }
 export const GRAIN_LIST: GrainInfo[] = DEFS.map((d) => ({ id: d.id, name: d.name, group: d.group }));
