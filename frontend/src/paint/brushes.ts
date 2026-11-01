@@ -70,7 +70,7 @@ const RAW_BRUSHES: Brush[] = [
   // Sketch
   mk('pencil-hb', 'Pencil HB', 'Sketch', {
     tip: 'grain-round', softness: 0.15, maxSize: 14, minSize: 1.2, spacing: 0.07, flow: 0.7,
-    pressureSize: [0.6, 1], pressureFlow: [0.3, 1], tilt: 0.8, grain: 0.7, smoothing: 0.1, pickup: 0.25,
+    pressureSize: [0.35, 1.1], pressureFlow: [0.1, 1], pressureOpacity: 0.6, tilt: 0.8, grain: 0.7, smoothing: 0.1, pickup: 0.25,
   }, 0.9),
   mk('soft-pencil', 'Soft pencil', 'Sketch', {
     softness: 0.55, maxSize: 30, minSize: 2, spacing: 0.05, flow: 0.28,
@@ -130,17 +130,17 @@ const RAW_BRUSHES: Brush[] = [
   // opaque paint: a solid body with a combed, grainy rim (paint/fam-paint-tips.ts); light pressure thins the load and the paper shows
   mk('round-paint', 'Round paint', 'Painting', {
     softness: 0, maxSize: 96, minSize: 4, spacing: 0.05, flow: 0.85, followStroke: true,
-    pressureSize: [0.25, 1], pressureFlow: [0.2, 1], grain: 0.45, grainScale: 0.45, grainDepthMin: 0.05, scatterPos: 0.012, burnout: 0.3, edgeBreak: 1, smoothing: 0.3, pickup: 0.55,
+    pressureSize: [0.25, 1], pressureFlow: [0.3, 1], pressureOpacity: 0.5, grain: 0.22, grainScale: 0.6, grainAlign: true, grainDepthMin: 0.1, scatterPos: 0.006, burnout: 0.3, edgeBreak: 0.6, smoothing: 0.3, pickup: 0.55,
   }),
   mk('flat-paint', 'Flat paint', 'Painting', {
     tip: 'square', softness: 0, maxSize: 84, minSize: 6, spacing: 0.05, flow: 0.8,
-    pressureSize: [0.3, 1], pressureFlow: [0.2, 1], followStroke: true, roundness: 1, grain: 0.45, grainScale: 0.45, grainDepthMin: 0.05, scatterPos: 0.04,
-    burnout: 0.3, smoothing: 0.35, pickup: 0.5,
+    pressureSize: [0.3, 1], pressureFlow: [0.25, 1], pressureOpacity: 0.55, followStroke: true, roundness: 1, grain: 0.5, grainScale: 0.5, grainAlign: true, grainDepthMin: 0.08, scatterPos: 0.006,
+    burnout: 0.35, edgeBreak: 0.6, smoothing: 0.35, pickup: 0.5,
   }),
   // matte and opaque: a nearly solid stroke with a fine tooth, a softer ragged rim and a little loss of load along a long pull
   mk('gouache', 'Gouache', 'Painting', {
     softness: 0, maxSize: 76, minSize: 5, spacing: 0.05, flow: 1, followStroke: true,
-    pressureSize: [0.28, 1], pressureFlow: [0.4, 1], grain: 0.4, grainScale: 0.4, grainDepthMin: 0.08, scatterPos: 0.012, burnout: 0.2, edgeBreak: 1.2,
+    pressureSize: [0.28, 1], pressureFlow: [0.45, 1], pressureOpacity: 0.22, grain: 0.25, grainScale: 0.6, grainAlign: true, grainDepthMin: 0.12, scatterPos: 0.01, burnout: 0.2, edgeBreak: 1,
     smoothing: 0.35, pickup: 0.45,
   }),
   // a bundle of hairs (paint/bristle.ts): per-hair streaks, pickup of the paint under it, canvas grain that travels
@@ -150,7 +150,7 @@ const RAW_BRUSHES: Brush[] = [
   // a flat blade (paint/bristle.ts, body): one solid band that scrapes the paint under it along and leaves it dragged
   d('palette-knife', 'Palette knife', 'Painting', 'bristle', 0.02, 70, 12, 0.03, 1, 0.8, 1, { tilt: 0.7, followStroke: true, roundness: 0.18, smoothing: 0.5, pickup: 0.9, grain: 0.18, bump: 0.35, bristle: { count: 64, lenVar: 0.05, tone: 0.1, clump: 0.9, body: 0.95 }, render: 'uniform-blending', wet: { dilution: 0, charge: 0.97, attack: 0.15, pull: 0.5, grade: 0.3 }, shine: { depth: 0.5, gloss: 0.5, metal: 0.15 } }),
   d('acrylic', 'Acrylic', 'Painting', 'round', 0, 80, 6, 0.05, 0.8, 0.28, 0.2, { followStroke: true, grain: 0.45, grainScale: 0.5, grainDepthMin: 0.05, burnout: 0.35, scatterPos: 0.012, smoothing: 0.35 }),
-  d('filbert', 'Filbert', 'Painting', 'blob', 0, 88, 8, 0.05, 0.8, 0.3, 0.2, { followStroke: true, roundness: 1, grain: 0.45, grainScale: 0.45, grainDepthMin: 0.05, burnout: 0.3, scatterPos: 0.04, smoothing: 0.4, pickup: 0.6 }),
+  d('filbert', 'Filbert', 'Painting', 'blob', 0, 88, 8, 0.05, 0.8, 0.3, 0.2, { followStroke: true, roundness: 1, grain: 0.5, grainScale: 0.5, grainAlign: true, grainDepthMin: 0.08, burnout: 0.35, scatterPos: 0.006, pressureOpacity: 0.5, edgeBreak: 0.5, smoothing: 0.4, pickup: 0.6 }),
   d('dry-brush', 'Dry brush', 'Painting', 'fibre', 0.1, 96, 14, 0.05, 0.85, 0.6, 0.4, { followStroke: true, roundness: 0.9, grain: 0.6, grainScale: 1.3, smoothing: 0.35, pickup: 0.5 }),
 
   // Artistic

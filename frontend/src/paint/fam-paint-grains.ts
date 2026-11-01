@@ -10,9 +10,44 @@ export interface GrainHelpers {
 }
 export interface GrainDef { id: string; name: string; group: string; std: number; fill: (b: Float32Array) => void }
 
+function lane(i: number, seed: number): number {
+  let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(seed | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Hair marks for a loaded brush (v0.17.2): the tile runs along the stroke (u) and its lanes across it (v), so a stroke
+ *  laid in stroke space (`grainAlign`) shows a streak per hair. Each lane has its own load, and its load wanders along
+ *  the stroke in runs, so a hair goes dry for a stretch and picks up again. `lanes` is the count across the tile,
+ *  `dry` how deep a dry lane is, `run` how many dry-and-loaded changes a lane makes along the tile. */
+function hairLanes(h: GrainHelpers, lanes: number, dry: number, run: number, seed: number, fine: number): (b: Float32Array) => void {
+  const { per, pvn, sstep } = h;
+  return per((u, v) => {
+    const y = v * lanes, i = Math.floor(y), f = y - i;
+    // a lane keeps a soft edge so two hairs blend a little (a bristle is not a pixel column)
+    const j = f < 0.5 ? i - 1 : i + 1, e = f < 0.5 ? f : 1 - f;
+    const mix = 0.5 * (1 - sstep(0, 0.28, e));
+    const li = (i + lanes) % lanes, lj = (j + lanes) % lanes;
+    const lv = (k: number): number => {
+      const base = lane(k, seed);
+      // most hairs are loaded, a few carry little
+      const load = 1 - dry * Math.pow(1 - base, 2.4);
+      const along = pvn(u, (k + 0.5) / lanes, run, lanes, seed + 7);
+      return load * (0.55 + 0.45 * sstep(0.2, 0.75, along));
+    };
+    const a = lv(li), b = lv(lj);
+    return a + (b - a) * mix + fine * (pvn(u, v, 220, 220, seed + 19) - 0.5);
+  });
+}
+
 export function textureGrains(h: GrainHelpers): GrainDef[] {
   const { per, fbm, pvn, sstep } = h;
   return [
+    { id: 'paint-hair', name: 'Paint hairs', group: 'Paint', std: 0.21, fill: hairLanes(h, 96, 0.95, 3, 401, 0.16) },
+    { id: 'paint-hair-soft', name: 'Soft paint hairs', group: 'Paint', std: 0.15, fill: hairLanes(h, 128, 0.7, 2, 411, 0.14) },
+    { id: 'paint-matte', name: 'Matte paint', group: 'Paint', std: 0.12, fill: hairLanes(h, 160, 0.5, 2, 421, 0.3) },
     {
       id: 'tex-weave', name: 'Woven cloth', group: 'Fabric', std: 0.2,
       fill: per((u, v) => {

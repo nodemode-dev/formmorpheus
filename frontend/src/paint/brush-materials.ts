@@ -219,6 +219,10 @@ const GRAINS: [RegExp, string][] = [
   // paper tooth, not the bloom blobs: those read as round white holes in a wash (granulation needs fine tooth)
   [/watercolor|wash|stain|bleed|dilute|tide|sky|puddle|wet/, 'paper-cold-press'],
   [/dry brush|dry-edge|dry script|dry ink/, 'dry-brush'],
+  // opaque paints (v0.17.2): hair lanes read in stroke space (grainAlign is set on the brush), so each hair streaks along the stroke
+  [/^gouache$/, 'paint-matte'],
+  [/^round paint$/, 'paint-hair-soft'],
+  [/^flat paint$|^filbert$/, 'paint-hair'],
   [/gouache|acrylic|blender/, 'paper-fine'],
   [/impasto|hog|oil|stiff|splay|streaky|worn comb|mixed|flat|fan|filbert|bristle|knife|sumi|fibre|fur|rough pad/, 'bristle-drag'],
   [/sponge|natural|sea |foam|lichen|porous|coral|mop|dabber|moss/, 'sponge'],
@@ -270,6 +274,7 @@ export function withMaterials(b0: Brush): Brush {
   const g = grainFor(b);
   if (g) {
     out.grainId = g;
+    if (g === 'bristle-drag') out.grainAlign = true;
     const k = COARSER[g];
     if (k) out.grainScale = (b.grainScale ?? 1) * k;
   }

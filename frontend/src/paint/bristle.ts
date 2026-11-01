@@ -30,6 +30,8 @@ export interface BristleCtx {
   lock: boolean;
   tooth: Float32Array | null;
   bump: number;
+  /** One byte per canvas pixel: the grain value the relief read there (stroke-space lookup), for the lit relief to take its slope from. */
+  gmap?: Uint16Array | null;
   burnt: number;
   /** Tells the stroke which rectangle is about to change (undo tiles, dirty box). */
   touch: (x0: number, y0: number, x1: number, y1: number) => void;
@@ -53,6 +55,10 @@ export interface BristleStep {
   lean?: number;
   /** 0 while painting, 0..1 along the run-out when the bundle is lifted off. */
   lift?: number;
+  /** Fixed-point (x1024) cosine and sine of the stroke's grain turn, when the canvas-anchored grain is read along the stroke. */
+  gc?: number; gs?: number;
+  /** Fixed-point (x1024) stroke-space offsets of this step: along and across, see Stroke.easeGrainDir. */
+  ga?: number; gb?: number;
 }
 
 /** A light 3 x 3 smoothing of the stroke's coverage over a rectangle, so the lit relief shows ridges, not one-pixel cliffs at every hair. */
@@ -252,9 +258,9 @@ export class Bristle {
 
   /** Lay every hair's capsule from its previous centre to its new one. */
   private lay(s: BristleStep): void {
-    const c = this.c, n = this.n, { w, h, data, cov, sel, lock, tooth } = c;
+    const c = this.c, n = this.n, { w, h, data, cov, sel, lock, tooth } = c, gmap = c.gmap;
     const kc = this.kc, km = this.km, tmp = this.tmp;
-    const gk = s.grain, moving = s.moving, mv = s.movement, dx = s.dx, dy = s.dy;
+    const gk = s.grain, moving = s.moving, mv = s.movement, dx = s.dx, dy = s.dy, gcI = s.gc, gsI = s.gs, gaB = s.ga ?? 0, gbB = s.gb ?? 0;
     // grain coordinate: world anchored at movement 1; at lower values it slides with the brush and stretches along the path
     const ox = moving ? (1 - mv) * s.cx : 0, oy = moving ? (1 - mv) * s.cy : 0;
     const stretch = moving ? 1 + 2 * (1 - mv) : 1, inv = 1 / stretch;
@@ -288,7 +294,8 @@ export class Bristle {
           let d = cap * cvg;
           if (tooth && (gk > 0 || dryMix)) {
             let tx = px, ty = py;
-            if (moving && mv < 0.9) {
+            if (gcI !== undefined && gsI !== undefined && !(moving && mv < 0.9)) { tx = (px * gcI + py * gsI + gaB) >> 10; ty = (py * gcI - px * gsI + gbB) >> 10; }
+            else if (moving && mv < 0.9) {
               const rx = px - ox, ry = py - oy;
               tx = ((rx * dx + ry * dy) * inv) | 0; ty = (-rx * dy + ry * dx) | 0;
             }
@@ -333,7 +340,10 @@ export class Bristle {
             const share = wgt * ca, lift = 1 + 1.4 * share * (1 - share) * (cPig * 3 > 1 ? 1 : cPig * 3) * (dd / sm);
             if (lift > 1.001) { const L = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb; pr = L + (pr - L) * lift; pg = L + (pg - L) * lift; pb = L + (pb - L) * lift; }
           }
-          if (bump) { const dd2 = (tooth![((py & 255) << 8) | (px & 255)] - 0.5) * bump * wgt; pr += dd2; pg += dd2; pb += dd2; }
+          if (bump) {
+            const tvb = tooth![gcI !== undefined && gsI !== undefined ? ((((py * gcI - px * gsI + gbB) >> 10) & 255) << 8) | (((px * gcI + py * gsI + gaB) >> 10) & 255) : ((py & 255) << 8) | (px & 255)];
+            if (gmap) gmap[py * w + px] = 1 + ((tvb * 65534) | 0);
+            const dd2 = (tvb - 0.5) * bump * wgt; pr += dd2; pg += dd2; pb += dd2; }
           if (burnt > 0) { const kb = 1 - (burnt * 0.85 * Math.pow(1 - cvg, 0.6)) * wgt; pr *= kb; pg *= kb; pb *= kb; }
           data[di] = pr; data[di + 1] = pg; data[di + 2] = pb;
           if (!lock) data[di + 3] = (ca + (1 - ca) * wgt) * 255 + 0.5;

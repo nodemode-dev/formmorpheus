@@ -52,7 +52,9 @@ const CARRY_MAX = 160;
 /** The 256 x 256 grain tile stretched by `k` (above 1 is coarser); mirrored at the edges so it stays seamless. */
 function scaleGrain(g: ArrayLike<number>, k: number): Float32Array {
   const out = new Float32Array(65536);
-  const wrap = (p: number): number => { const m = ((p % 512) + 512) % 512; return m >= 256 ? 511 - m : m; };
+  // shrinking (k below 1) walks the tile more than once: it repeats (the library tiles are seamless); a mirror there drew
+  // a kaleidoscope cell every 256 * k px. Stretching keeps the mirror at the edge.
+  const wrap = k < 1 ? (p: number): number => ((p % 256) + 256) % 256 : (p: number): number => { const m = ((p % 512) + 512) % 512; return m >= 256 ? 511 - m : m; };
   for (let y = 0; y < 256; y++) {
     const fy = y / k, y0 = Math.floor(fy), ty = fy - y0;
     const ya = wrap(y0) << 8, yb = wrap(y0 + 1) << 8;
@@ -150,6 +152,17 @@ export class Stroke implements StrokeLike {
   private readonly colorG: number;
   private readonly colorB: number;
   private readonly tooth: Float32Array | null;
+  /** The grain as built, kept when it turns with the stroke (`grainAlign`); `tooth` is rewritten in place from it. */
+  private alignOn = false;
+  private gAng = NaN;
+  private gcI = 1024;
+  private gsI = 0;
+  /** Per-dab offsets (x1024) that put the lookup in stroke space: along = travel + (p - dab) . dir, across = (p - dab) . perp. */
+  private gaB = 0;
+  private gbB = 0;
+  private gmap: Uint16Array | null = null;
+  private gOffA = 0;
+  private gOffB = 0;
   private taperLen: number;
   private travel = 0;
   private endLen: number;
@@ -325,13 +338,18 @@ export class Stroke implements StrokeLike {
         t[i] = dmin + (1 - dmin) * (x * x * (3 - 2 * x));
       }
       this.tooth = t;
+      this.alignOn = !!br.grainAlign && br.grain > 0;
+      // the lit relief takes its slope from what the hair bundle read in stroke space (16 bits a pixel, 0 = not read, only for a shiny, relief bundle)
+      if (this.alignOn && br.bristle && br.shine && (br.bump ?? 0) > 0) this.gmap = new Uint16Array(this.w * this.h);
+      // a fixed offset per stroke (from its seed) so strokes do not all begin on the same texel
+      this.gOffA = ((Math.imul(s.seed | 0, 0x9e3779b1) >>> 24) & 255); this.gOffB = ((Math.imul(s.seed | 0, 0x85ebca6b) >>> 24) & 255);
       if (br.grain > 0.2 && this.gblend === 0 && br.grainMode !== 'moving' && !br.grainOffsetJitter && !br.wet && !br.render && (br.grainMovement ?? 1) >= 1) this.capK = Math.min(0.85, br.grain * 0.85);
     } else this.tooth = null;
     if (br.bristle && this.cov && s.tool === 'paint') {
       const wm = br.wet ?? (br.render ? RENDER_ALGOS[br.render].wet : null) ?? { dilution: 0, charge: 1, attack: 0.2, pull: 0.5, grade: 0.5 };
       this.bristle = new Bristle(br.bristle, this.baseDia, wm, {
         w: this.w, h: this.h, data: this.data, cov: this.cov, snap: this.snap, tilesX: this.tilesX, sel: this.sel, lock: s.alphaLock,
-        tooth: this.tooth, bump: br.bump ?? 0, burnt: br.burntEdges ?? 0, touch: (a, b, c, d) => this.touch(a, b, c, d),
+        tooth: this.tooth, bump: br.bump ?? 0, gmap: this.gmap, burnt: br.burntEdges ?? 0, touch: (a, b, c, d) => this.touch(a, b, c, d),
       }, this.rng);
     }
     this.taperLen = 0;
@@ -386,7 +404,8 @@ export class Stroke implements StrokeLike {
     if (!this.bristle || (this.endLen > 0 && !this.mouseKind) || this.travel < 6 || this.s.tool !== 'paint') return;
     const dia = bs.dia, ds = Math.max(1.2, dia * 0.04);
     // each hair lifts at its own place along this run (bristle.ts, lift), so the end frays; a leaning bundle trails longer
-    const L = Math.min(dia * (2 + 1.6 * this.speed) * (1 + 0.8 * (bs.lean ?? 0)), this.travel * 0.8);
+    // the fray thins within a few pixels and never runs on past where the pen came up
+    const L = Math.min(dia * 0.1 * (1 + 0.8 * (bs.lean ?? 0)), 6, this.travel * 0.8);
     const n = Math.min(180, Math.ceil(L / ds));
     if (n < 2) return;
     const p0 = liftPressure(bs.pressure), dx = this.bdx, dy = this.bdy;
@@ -518,7 +537,7 @@ export class Stroke implements StrokeLike {
       if (this.s.tool === 'paint' && this.cov && hasShine(sh)) {
         if (this.bristle) for (let k = 0; k < 4; k++) smoothCov(this.cov, this.w, this.dx0, this.dy0, this.dx1, this.dy1);
         bakeShine(this.data, this.w, this.h, this.cov, { x0: this.dx0, y0: this.dy0, x1: this.dx1, y1: this.dy1 }, sh, {
-          baseDia: this.baseDia, tooth: this.tooth, bump: this.s.brush.bump ?? 0, sel: this.sel, lock: this.s.alphaLock,
+          baseDia: this.baseDia, tooth: this.tooth, bump: this.s.brush.bump ?? 0, gc: this.alignOn ? this.gcI : undefined, gs: this.alignOn ? this.gsI : undefined, gmap: this.gmap, sel: this.sel, lock: this.s.alphaLock,
         });
       }
       const after = this.copyRect(rect, false);
@@ -589,7 +608,29 @@ export class Stroke implements StrokeLike {
 
   // ---- dab -----------------------------------------------------------------
 
+  /** The streaked grain is read in stroke space, so its streaks bend with a curve like a ribbon: for each dab the lookup is
+   *  along = travel + (p - dab) . dir (the tile's x) and across = (p - dab) . perp + a per-stroke offset (the tile's y), on the
+   *  original seamless tile, wrapped. The direction is the stroke's own (a full turn, lightly eased); cosine, sine and the two
+   *  dab offsets are fixed point (x1024) so a pixel costs two multiplies and adds. Overlapping dabs agree to within the dab
+   *  spacing. `ti` is the index for every reader of the grain that runs inside the dab. */
+  private easeGrainDir(x: number, y: number, dir: number): void {
+    const T = Math.PI * 2;
+    const wrap = (a: number): number => { a = ((a + Math.PI) % T + T) % T; return a - Math.PI; };
+    if (this.gAng !== this.gAng) this.gAng = dir; else this.gAng = wrap(this.gAng + wrap(dir - this.gAng) * 0.25);
+    const c = Math.cos(this.gAng), s = Math.sin(this.gAng);
+    this.gcI = Math.round(c * 1024); this.gsI = Math.round(s * 1024);
+    this.gaB = Math.round((this.travel + this.gOffA - (x * c + y * s)) * 1024);
+    this.gbB = Math.round((this.gOffB + (x * s - y * c)) * 1024);
+  }
+
+  private ti(px: number, py: number): number {
+    return this.alignOn
+      ? ((((py * this.gcI - px * this.gsI + this.gbB) >> 10) & 255) << 8) | (((px * this.gcI + py * this.gsI + this.gaB) >> 10) & 255)
+      : ((py & 255) << 8) | (px & 255);
+  }
+
   private dab(x: number, y: number, pressure: number, tiltX: number, tiltY: number, dir: number | null): void {
+    if (this.alignOn && dir !== null) this.easeGrainDir(x, y, dir);
     const { brush, tool, opacity } = this.s;
     const tilt = tiltShape(brush, tiltX, tiltY);
     const pn = this.pen;
@@ -675,6 +716,7 @@ export class Stroke implements StrokeLike {
       bs.flow = flow; bs.opacity = brush.pressureOpacity || brush.curves?.opacity ? this.opBase * this.opRamp : this.opBase;
       bs.travel = this.travel; bs.ds = Math.max(0, this.travel - this.bTravel); this.bTravel = this.travel;
       bs.grain = brush.grain; bs.moving = brush.grainMode === 'moving'; bs.movement = brush.grainMovement ?? 1;
+      bs.gc = this.alignOn ? this.gcI : undefined; bs.gs = this.alignOn ? this.gsI : undefined; bs.ga = this.gaB; bs.gb = this.gbB;
       bs.wobble = (brush.pathJitter ?? 0) * 0.5;
       this.bristle.step(bs);
       this.dabCount++;
@@ -733,6 +775,7 @@ export class Stroke implements StrokeLike {
     st.x0 = x0; st.y0 = y0; st.x1 = x1; st.y1 = y1; st.ab = ab; st.bw = bw;
     st.cov = this.cov!; st.w = this.w; st.sel = this.sel; st.lock = this.s.alphaLock; st.opacity = opacity;
     st.cx = this.dabX; st.cy = this.dabY;
+    st.gc = this.alignOn ? this.gcI : undefined; st.gs = this.alignOn ? this.gsI : undefined; st.ga = this.gaB; st.gb = this.gbB;
     st.tooth = this.tooth; st.bump = br.bump ?? 0; st.burnt = br.burntEdges ?? 0; st.peak = this.dabPeak;
     st.snap = this.snap; st.tilesX = this.tilesX; st.edge = this.edge;
     st.blend = br.blend && br.blend !== 'normal' ? br.blend : null; st.lum = br.lumBlend ?? 0;
@@ -866,6 +909,8 @@ export class Stroke implements StrokeLike {
     const N = tip.size, td = tip.data;
     const off = N / 2 - 0.5;
     const tooth = this.tooth;
+    // streaked grain read along the stroke (fixed point, see easeGrainDir); a grain that moves per stamp keeps its own turn
+    const al = this.alignOn && brush.grainMode !== 'moving', gcI = this.gcI, gsI = this.gsI, gaB = this.gaB, gbB = this.gbB;
     let gk = brush.grain;
     if (brush.grainJitter) gk = Math.max(0, gk * (1 - brush.grainJitter * this.rng()));
     if (this.leanGrain > 0) gk = Math.min(1, gk + this.leanGrain * (1 - gk));
@@ -903,7 +948,7 @@ export class Stroke implements StrokeLike {
           const bot = td[r1 + i0] + (td[r1 + i0 + 1] - td[r1 + i0]) * wx;
           let v = (top + (bot - top) * wy) * f255;
           if (v > 0 && tooth) {
-            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : tooth[gRow | ((px + gx) & 255)];
+            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : al ? tooth[((((py * gcI - px * gsI + gbB) >> 10) & 255) << 8) | (((px * gcI + py * gsI + gaB) >> 10) & 255)] : tooth[gRow | ((px + gx) & 255)];
             v = gb === 0 ? v * (1 - gk + gk * tv) : gb === 1 ? v * Math.max(0, 1 - 2 * gk * (1 - tv)) : gb === 2 ? v + (flow - v) * gk * tv : this.grainOther(v, tv, gk, flow);
           }
           ab[rowO + px - x0] = v;
@@ -921,7 +966,7 @@ export class Stroke implements StrokeLike {
           v = cubicTap(td, N, fx, fy) * f255;
           if (v < 0) v = 0; else if (v > flow) v = flow;
           if (v > 0 && tooth) {
-            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : tooth[gRow | ((px + gx) & 255)];
+            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : al ? tooth[((((py * gcI - px * gsI + gbB) >> 10) & 255) << 8) | (((px * gcI + py * gsI + gaB) >> 10) & 255)] : tooth[gRow | ((px + gx) & 255)];
             v = gb === 0 ? v * (1 - gk + gk * tv) : gb === 1 ? v * Math.max(0, 1 - 2 * gk * (1 - tv)) : gb === 2 ? v + (flow - v) * gk * tv : this.grainOther(v, tv, gk, flow);
           }
         } else if (i0 >= -1 && i0 < N && j0 >= -1 && j0 < N) {
@@ -933,14 +978,14 @@ export class Stroke implements StrokeLike {
           const top = v00 + (v10 - v00) * wx, bot = v01 + (v11 - v01) * wx;
           v = (top + (bot - top) * wy) * f255;
           if (v > 0 && tooth) {
-            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : tooth[gRow | ((px + gx) & 255)];
+            const tv = rotG ? tooth[((((sgr * (px + 0.5 - cx) + cgr * (py + 0.5 - cy) + gcy) | 0) & 255) << 8) | (((cgr * (px + 0.5 - cx) - sgr * (py + 0.5 - cy) + gcx) | 0) & 255)] : al ? tooth[((((py * gcI - px * gsI + gbB) >> 10) & 255) << 8) | (((px * gcI + py * gsI + gaB) >> 10) & 255)] : tooth[gRow | ((px + gx) & 255)];
             v = gb === 0 ? v * (1 - gk + gk * tv) : gb === 1 ? v * Math.max(0, 1 - 2 * gk * (1 - tv)) : gb === 2 ? v + (flow - v) * gk * tv : this.grainOther(v, tv, gk, flow);
           }
         }
         ab[rowO + px - x0] = v;
       }
     }
-    if (brush.edgeBreak) edgeBreak(ab, bw, bh, x0, y0, cx, cy, a, flow, brush.edgeBreak, tooth);
+    if (brush.edgeBreak) edgeBreak(ab, bw, bh, x0, y0, cx, cy, a, flow, brush.edgeBreak, tooth, dir);
     if (px1 || brush.alphaThreshold !== undefined) {
       // hard edge: a pixel is all in or all out (past the brush's Alpha Threshold; half for pixel art)
       const hard = flow, n = bw * bh, thr = hard * (px1 ? 0.5 : Math.max(0.01, Math.min(1, brush.alphaThreshold!)));
@@ -980,7 +1025,7 @@ export class Stroke implements StrokeLike {
           if (cq >= 65500) continue; // saturated: pixel already holds its final value
           const c0 = cq / 65535;
           let c = c0 + (1 - c0) * a;
-          if (capNow > 0) { const cap = 1 - capNow * (1 - tooth![((py & 255) << 8) | (px & 255)]); if (c > cap) c = cap > c0 ? cap : c0; }
+          if (capNow > 0) { const cap = 1 - capNow * (1 - tooth![this.ti(px, py)]); if (c > cap) c = cap > c0 ? cap : c0; }
           cv[idx] = (c * 65535 + 0.5) | 0;
           let f = c * opacity;
           if (sel) f *= sel[idx] / 255;
@@ -994,7 +1039,7 @@ export class Stroke implements StrokeLike {
             let pre = (capE - lumT) * capD;
             pre = ao * (pre < 0 ? 0 : pre > 1 ? 1 : pre);
             if (pre > 0.02) {
-              const ceil = 1 - capNow * 0.9 * (1 - tooth![((py & 255) << 8) | (px & 255)]);
+              const ceil = 1 - capNow * 0.9 * (1 - tooth![this.ti(px, py)]);
               const tot = pre + (1 - pre) * f;
               if (tot > ceil) { const fl = pre >= 1 ? 0 : (ceil - pre) / (1 - pre); f = fl > 0 ? Math.max(f * 0.2, Math.min(f, fl)) : f * 0.2; }
             }
@@ -1044,7 +1089,7 @@ export class Stroke implements StrokeLike {
         let c: number;
         if (mode.uniform) c = a > c0 ? (a > 1 ? 1 : a) : c0;
         else { const aa = a * mode.k; c = c0 + (1 - c0) * (aa > 1 ? 1 : aa); }
-        if (this.capNow > 0 && this.tooth) { const cap = 1 - this.capNow * (1 - this.tooth[((py & 255) << 8) | (px & 255)]); if (c > cap) c = cap > c0 ? cap : c0; }
+        if (this.capNow > 0 && this.tooth) { const cap = 1 - this.capNow * (1 - this.tooth[this.ti(px, py)]); if (c > cap) c = cap > c0 ? cap : c0; }
         cv[idx] = (c * 65535 + 0.5) | 0;
         const ci = idx * 3;
         // the stroke colour buffer is 8.8 fixed point (16 bit): a faint glaze step smaller than one level
@@ -1067,7 +1112,7 @@ export class Stroke implements StrokeLike {
         if (sel) f *= sel[idx] / 255;
         let pr = col[ci] / 256, pg = col[ci + 1] / 256, pb = col[ci + 2] / 256;
         if (tooth) {
-          const d = (tooth[((py & 255) << 8) | (px & 255)] - 0.5) * bump;
+          const d = (tooth[this.ti(px, py)] - 0.5) * bump;
           pr += d; pg += d; pb += d;
         }
         const t = snap[trow + (px >> 6)]!;

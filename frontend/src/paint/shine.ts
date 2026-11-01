@@ -21,6 +21,10 @@ export interface ShineOptions {
   tooth: Float32Array | null;
   /** The brush's relief strength (0 to 1): how much of the grain reads as height. */
   bump: number;
+  /** Fixed-point (x1024) cosine and sine of the stroke's grain turn, when the grain is read along the stroke. */
+  gc?: number; gs?: number;
+  /** One byte per canvas pixel of the grain the stroke read (stroke space); when set the relief slope comes from it. */
+  gmap?: Uint16Array | null;
   sel: Uint8Array | null;
   lock: boolean;
 }
@@ -99,7 +103,21 @@ export function bakeShine(data: Uint8ClampedArray, w: number, h: number, cov: Ui
       if (c === 0) continue;
       const i = y * rw + x;
       let gx = (H[i + 1] - H[i - 1]) * 0.5 * hk, gy = (H[i + rw] - H[i - rw]) * 0.5 * hk;
-      if (tooth) {
+      if (tooth && o.gmap) {
+        // the slope of the grain the hairs actually read (stroke space), already in screen axes
+        const gm = o.gmap, g0 = gm[idx];
+        if (g0) {
+          // a neighbour the hairs never read stands in with the centre, so a hair's edge makes no false slope
+          const gl = gm[idx - 1] || g0, gr = gm[idx + 1] || g0, gu = gm[idx - w] || g0, gd = gm[idx + w] || g0;
+          gx += (gr - gl) * 0.5 / 65534 * tk; gy += (gd - gu) * 0.5 / 65534 * tk;
+        }
+      } else if (tooth && o.gc !== undefined && o.gs !== undefined) {
+        // grain read along the stroke: the tile's slope in its own axes turned back to the screen's
+        const gcI = o.gc, gsI = o.gs, u = (px * gcI + py * gsI) >> 10, v = (py * gcI - px * gsI) >> 10;
+        const du = (tooth[((v & 255) << 8) | ((u + 1) & 255)] - tooth[((v & 255) << 8) | ((u - 1) & 255)]) * 0.5 * tk;
+        const dv = (tooth[(((v + 1) & 255) << 8) | (u & 255)] - tooth[(((v - 1) & 255) << 8) | (u & 255)]) * 0.5 * tk;
+        gx += (du * gcI - dv * gsI) / 1024; gy += (du * gsI + dv * gcI) / 1024;
+      } else if (tooth) {
         const tx = (px & 255), ty = (py & 255);
         gx += (tooth[(ty << 8) | ((tx + 1) & 255)] - tooth[(ty << 8) | ((tx - 1) & 255)]) * 0.5 * tk;
         gy += (tooth[(((ty + 1) & 255) << 8) | tx] - tooth[(((ty - 1) & 255) << 8) | tx]) * 0.5 * tk;

@@ -41,12 +41,16 @@ const sstep = (a: number, b: number, x: number): number => {
  * Cut the rim of a dab. `ab` is the dab's coverage (bw x bh, origin x0,y0), `cx`,`cy` its centre, `rad` its radius,
  * `flow` its flow in 0..1, `amt` the brush's edgeBreak (about 1), `tooth` the stroke's 256 x 256 grain or null.
  */
-export function edgeBreak(ab: Float32Array, bw: number, bh: number, x0: number, y0: number, cx: number, cy: number, rad: number, flow: number, amt: number, tooth: Float32Array | null): void {
+export function edgeBreak(ab: Float32Array, bw: number, bh: number, x0: number, y0: number, cx: number, cy: number, rad: number, flow: number, amt: number, tooth: Float32Array | null, dir: number | null = null): void {
   if (rad < 2) return;
+  // with a stroke direction the flakes are drawn out along it (under 2 px wide across, about four times as long), so the rim breaks
+  // into streaks like bristle marks; the lookup depends on the pixel and the direction only, so every dab still agrees
+  const sd = dir === null ? 0 : Math.sin(dir), cd = dir === null ? 1 : Math.cos(dir);
   // dense stamping piles each rim pixel up to a solid one, so the cut has to reach well into the body edge (about a third of the radius)
-  const band = Math.min(0.5, 0.2 + 0.15 * amt), inner = 1 - band;
   const lowp = 1 - Math.min(1, flow);
-  const dry = Math.min(1, 0.6 + 1.2 * lowp) * Math.min(1.4, amt);
+  // a light touch also eats deeper into the body, so the thin low-force line is the driest, not the cleanest
+  const band = Math.min(0.6, 0.26 + 0.2 * amt + 0.15 * lowp), inner = 1 - band;
+  const dry = Math.min(1.1, 0.6 + 1.2 * lowp) * Math.min(1.4, amt);
   const ir = 1 / rad, in2 = inner * inner, span = 1 - in2, tab = clumps();
   for (let y = 0; y < bh; y++) {
     const py = y0 + y, dy = (py + 0.5 - cy) * ir, row = y * bw, ty = (py % T) * T, gy = (py & 255) << 8;
@@ -57,13 +61,21 @@ export function edgeBreak(ab: Float32Array, bw: number, bh: number, x0: number, 
       if (r2 < in2) continue;
       // e from the squared radius: no square root per pixel
       const u = (r2 - in2) / span, e = u >= 1 ? 1 : u * u * (3 - 2 * u);
-      const hn = tab[ty + (px % T)];
+      let hn: number;
+      if (dir === null) hn = tab[ty + (px % T)];
+      else {
+        const along = (px * cd + py * sd) / 2.5, across = (-px * sd + py * cd) * 1.8;
+        hn = tab[(((along | 0) % T + T) % T) * T + ((across | 0) % T + T) % T];
+      }
       // summed noise is narrow around one half: stretch it, or the cut lands on one radius and the edge is crisp, not broken
       const raw = tooth ? 0.4 * tooth[gy | (px & 255)] + 0.6 * hn : hn;
       const n = 0.5 + (raw - 0.5) * 2.6;
-      const thr = Math.sqrt(e) * dry * 1.3;
+      // the 0.15 start puts the ragged zone (thr near the noise's middle) inside the band, where the cut below is already whole
+      const thr = (0.15 + Math.sqrt(e)) * dry * 0.9;
       if (n >= thr + 0.08) continue;
-      ab[row + x] = n <= thr - 0.08 ? v * (1 - e) : v * (1 - e * (1 - sstep(thr - 0.08, thr + 0.08, n)));
+      // a cut pixel must go almost whole: 20 or so overlapping dabs pile any leftover share up to solid again
+      const w = sstep(0.02, 0.25, e);
+      ab[row + x] = n <= thr - 0.08 ? v * (1 - w) : v * (1 - w * (1 - sstep(thr - 0.08, thr + 0.08, n)));
     }
   }
 }

@@ -286,6 +286,8 @@ export interface Brush {
   rotFollow?: number;
   /** -1 to 1: the same for the moving grain, which turns with the stroke's direction. */
   grainRotFollow?: number;
+  /** The canvas-anchored grain (a streaked drag tile) turns with the stroke's direction, so its streaks run along the stroke at any angle. */
+  grainAlign?: boolean;
   /** How the edge darkening of Burnt Edges blends; absent is the plain multiply. */
   burntMode?: BlendMode;
   /** 0 to 1: a stamp pixel at least this strong becomes fully solid, the rest clear (no soft edge). Absent: off. */

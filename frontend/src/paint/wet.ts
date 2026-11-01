@@ -95,6 +95,8 @@ export interface WetStamp {
   cx: number; cy: number;
   /** Relief tooth tile (256 x 256) and its strength in bytes, or null. */
   tooth: Float32Array | null; bump: number;
+  /** Fixed-point (x1024) cosine and sine of the stroke's grain turn, when the grain is read along the stroke. */
+  gc?: number; gs?: number; ga?: number; gb?: number;
   burnt: number;
   /** The stamp's full alpha, for the burnt-edge falloff. */
   peak: number;
@@ -449,7 +451,9 @@ export class WetPaint {
           }
         }
         if (tooth) {
-          const d = (tooth[((py & 255) << 8) | (px & 255)] - 0.5) * bump * 70;
+          const gcI = s.gc, gsI = s.gs;
+          const ti = gcI !== undefined && gsI !== undefined ? ((((py * gcI - px * gsI + (s.gb ?? 0)) >> 10) & 255) << 8) | (((px * gcI + py * gsI + (s.ga ?? 0)) >> 10) & 255) : ((py & 255) << 8) | (px & 255);
+          const d = (tooth[ti] - 0.5) * bump * 70;
           pr += d; pg += d; pb += d;
         }
         if (s.burnt > 0) {
