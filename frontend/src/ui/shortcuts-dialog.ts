@@ -5,6 +5,7 @@ import { Dialog, confirmAction } from './dialogs';
 import { el, patchList, q, setClass, setHidden, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { t } from './i18n';
+import { KEY_LAYOUTS, capsOf, detectKeyLayout, getKeyLayout, setKeyLayout, type KeyLayout } from './key-layout';
 import '../styles/shortcuts.css';
 
 interface Row { id: string; label: string; group: string; keys: string[]; changed: boolean }
@@ -19,8 +20,15 @@ export class ShortcutsDialog extends Dialog {
 
   /** `groupOf` names the menu a command sits in; `changed` is called after every edit so the app can keep the bindings. */
   constructor(private readonly commands: Commands, private readonly groupOf: (id: string) => string, private readonly changed: () => void) {
-    super('Keyboard Shortcuts', 720);
-    this.body.append(this.search, el('<div class="fm-sc-head"><span>Command</span><span>Menu</span><span>Keys</span><span></span></div>'), this.list, this.empty, this.status);
+    super('Keyboard Shortcuts', 640);
+    // the layout card (FV-241): keycaps are drawn for this layout; the commands stay on the same physical keys
+    const card = el('<div class="fm-sc-layout"><label class="fm-sc-layout-row"><span>Keyboard layout</span><select class="cv-input" aria-label="Keyboard layout"></select></label><p class="fm-sc-layout-note">Keycaps show the letters of this layout. A shortcut belongs to a physical key, so it does not move when the layout changes.</p></div>');
+    const pickLayout = q<HTMLSelectElement>(card, 'select');
+    for (const [id, label] of KEY_LAYOUTS) { const o = el<HTMLOptionElement>('<option></option>'); o.value = id; o.textContent = t(label); pickLayout.appendChild(o); }
+    pickLayout.value = getKeyLayout();
+    pickLayout.addEventListener('change', () => setKeyLayout(pickLayout.value as KeyLayout));
+    document.addEventListener('fm:key-layout', () => { pickLayout.value = getKeyLayout(); if (this.isOpen) this.render(); });
+    this.body.append(card, this.search, el('<div class="fm-sc-head"><span>Command</span><span>Keys</span><span></span></div>'), this.list, this.empty, this.status);
     this.search.addEventListener('input', () => this.render());
     this.list.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
@@ -38,6 +46,7 @@ export class ShortcutsDialog extends Dialog {
   }
 
   show(): void {
+    detectKeyLayout();
     this.search.value = '';
     setText(this.status, '');
     this.render();
@@ -105,7 +114,7 @@ export class ShortcutsDialog extends Dialog {
       setText(q(n, '.fm-sc-group'), r.group);
       patchList(q(n, '.fm-sc-keys'), r.keys, {
         key: (k) => k,
-        create: (k) => { const c = el(`<span class="fm-sc-chip"><span></span><button type="button" title="Remove this key" aria-label="Remove this key">${icon('close', 10)}</button></span>`); fillChip(c, k); return c; },
+        create: (k) => { const c = el(`<span class="fm-sc-chip"><span class="fm-sc-caps"></span><button type="button" title="Remove this key" aria-label="Remove this key">${icon('close', 10)}</button></span>`); fillChip(c, k); return c; },
         update: fillChip,
       });
       setClass(n, 'is-changed', r.changed);
@@ -114,10 +123,19 @@ export class ShortcutsDialog extends Dialog {
       setTitle(reset, r.changed ? t('Back to the default keys') : t('Already the default'));
       if (reset.disabled !== !r.changed) reset.disabled = !r.changed;
     };
-    const fillChip = (c: HTMLElement, k: string): void => { setText(c.firstElementChild, formatKeys(k)); (c.lastElementChild as HTMLElement).dataset.rm = k; };
+    // one keycap per key; the caps are patched in place when the layout changes
+    const fillChip = (c: HTMLElement, k: string): void => {
+      patchList(q(c, '.fm-sc-caps'), capsOf(k).map((text, at) => ({ text, at })), {
+        key: (x) => String(x.at),
+        create: (x) => { const kb = el<HTMLElement>('<kbd class="fm-sc-cap"></kbd>'); kb.textContent = x.text; return kb; },
+        update: (n, x) => { if (n.textContent !== x.text) n.textContent = x.text; },
+      });
+      c.title = formatKeys(k);
+      (c.lastElementChild as HTMLElement).dataset.rm = k;
+    };
     patchList(this.list, this.rows, {
       key: (r) => r.id,
-      create: (r) => { const n = el(`<div class="fm-sc-row" role="listitem"><span class="fm-sc-label"></span><span class="fm-sc-group"></span><span class="fm-sc-keys"></span><span class="fm-sc-acts"><button class="cv-icon-btn" type="button" data-rec title="Add a key: press the keys">${icon('plus', 13)}</button><button class="cv-icon-btn" type="button" data-reset title="Back to the default keys">${icon('undo', 13)}</button></span></div>`); fillRow(n, r); return n; },
+      create: (r) => { const n = el(`<div class="fm-sc-row" role="listitem"><span class="fm-sc-name"><span class="fm-sc-label"></span><span class="fm-sc-group"></span></span><span class="fm-sc-keys"></span><span class="fm-sc-acts"><button class="cv-icon-btn" type="button" data-rec title="Add a key: press the keys">${icon('plus', 13)}</button><button class="cv-icon-btn" type="button" data-reset title="Back to the default keys">${icon('undo', 13)}</button></span></div>`); fillRow(n, r); return n; },
       update: fillRow,
     });
     setHidden(this.empty, this.rows.length > 0);

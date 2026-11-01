@@ -43,7 +43,11 @@ export class TheaterPreview {
       this.loading.delete(ck);
       let strip: Strip | null = null;
       if (blob) {
-        try { const bitmap = await createImageBitmap(blob); strip = { bitmap, cw: Math.round(bitmap.width / PREVIEW_CELLS), ch: bitmap.height }; } catch { strip = null; }
+        try {
+          const bitmap = await createImageBitmap(blob);
+          // a strip saved before the first content existed is one white picture: the poster stays instead
+          strip = isBlank(bitmap) ? (bitmap.close(), null) : { bitmap, cw: Math.round(bitmap.width / PREVIEW_CELLS), ch: bitmap.height };
+        } catch { strip = null; }
       }
       this.store(name, ck, strip);
       if (strip && this.row === row) this.play(row, strip);
@@ -99,4 +103,15 @@ export class TheaterPreview {
   }
 }
 
-const rowOf = (t: EventTarget | null): HTMLElement | null => (t as HTMLElement | null)?.closest?.<HTMLElement>('.cv-hf-item') ?? null;
+/** True when a sample of the strip is pure white everywhere (or fully clear). */
+function isBlank(bm: ImageBitmap): boolean {
+  if (typeof OffscreenCanvas === 'undefined') return false;
+  const c = new OffscreenCanvas(32, 4), g = c.getContext('2d', { willReadFrequently: true });
+  if (!g) return false;
+  g.drawImage(bm, 0, 0, 32, 4);
+  const d = g.getImageData(0, 0, 32, 4).data;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 8 && (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250)) return false;
+  return true;
+}
+
+const rowOf =(t: EventTarget | null): HTMLElement | null => (t as HTMLElement | null)?.closest?.<HTMLElement>('.cv-hf-item') ?? null;

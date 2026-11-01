@@ -11,10 +11,6 @@ const TW = 56, TH = 38, TS = 2, MW = 56;
 const ROW_H = 50, ROW_GAP = 2, INDENT = 16;
 const ICON_CHEV = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5.5 6.5 2.5 3 2.5-3"/></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>';
-const ICON_GROUP_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/></svg>';
-
-const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5"/></svg>';
-const ICON_GROUP_SEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="11" height="11" rx="2"/><rect x="9" y="9" width="11" height="11" rx="2"/></svg>';
 const ICON_PLUS ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
 const ICON_HOOK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7a2 2 0 0 0 2 2h7M9.5 8.5 12 11l-2.5 2.5"/></svg>';
@@ -81,7 +77,7 @@ export class LayersPanel {
   constructor(private readonly opts: { doc: () => PaintDoc | null; onClose?: () => void }) {
     this.root = el<HTMLElement>(`<div class="fm-lp" hidden>
       <div class="fm-lp-card fm-pp-glass">
-        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-add fm-lp-multi fm-lp-delsel" aria-label="Delete selected layers" title="Delete selected layers" hidden>${ICON_TRASH}</button><button type="button" class="fm-lp-add fm-lp-multi fm-lp-groupsel" aria-label="Group selected layers" title="Group selected layers" hidden>${ICON_GROUP_SEL}</button><button type="button" class="fm-lp-add fm-lp-addgroup" aria-label="New Group" title="New Group">${ICON_GROUP_PLUS}</button><button type="button" class="fm-lp-add fm-lp-addlayer" aria-label="Add layer" title="Add layer">${ICON_PLUS}</button></div></div>
+        <div class="fm-lp-head"><div class="fm-lp-title">Drawing Layers</div><div class="fm-lp-head-btns"><button type="button" class="fm-lp-txt fm-lp-multi fm-lp-delsel is-danger" aria-label="Delete selected layers" title="Delete selected layers" hidden>Delete</button><button type="button" class="fm-lp-txt fm-lp-multi fm-lp-groupsel" aria-label="Group selected layers" title="Group selected layers" hidden>Group</button><button type="button" class="fm-lp-add fm-lp-single fm-lp-addlayer" aria-label="Add layer" title="Add layer (Alt: add a group)">${ICON_PLUS}</button></div></div>
         <div class="fm-lp-listwrap"><div class="fm-lp-list"></div><div class="fm-lp-drop" hidden></div></div>
       </div>
       <div class="fm-lp-side fm-lp-menu fm-pp-glass" hidden>
@@ -93,6 +89,7 @@ export class LayersPanel {
         <button type="button" class="fm-pop-row" data-act="clear" data-for="layer"><span class="fm-pop-label">Clear</span></button>
         <div class="fm-pop-sep"></div>
         <button type="button" class="fm-pop-row" data-act="group"><span class="fm-pop-label">Group</span></button>
+        <button type="button" class="fm-pop-row" data-act="newgroup"><span class="fm-pop-label">New Group</span></button>
         <button type="button" class="fm-pop-row" data-act="ungroup" data-for="group"><span class="fm-pop-label">Ungroup</span></button>
         <button type="button" class="fm-pop-row" data-act="flatten" data-for="group"><span class="fm-pop-label">Flatten</span></button>
         <button type="button" class="fm-pop-row" data-act="dup"><span class="fm-pop-label">Duplicate</span></button>
@@ -122,13 +119,10 @@ export class LayersPanel {
     this.pct = q(this.root, '.fm-lp-pct');
     this.blendList = q(this.root, '.fm-lp-blends');
 
-    q(this.root, '.fm-lp-addlayer').addEventListener('click', () => {
+    q(this.root, '.fm-lp-addlayer').addEventListener('click', (e) => {
       const d = this.doc(); if (!d) return;
-      d.addLayer(); this.refresh();
-    });
-    q(this.root, '.fm-lp-addgroup').addEventListener('click', () => {
-      const d = this.doc(); if (!d) return;
-      d.addGroup(); this.refresh();
+      if (e.altKey) d.addGroup(); else d.addLayer();
+      this.refresh();
     });
     q(this.root, '.fm-lp-delsel').addEventListener('click', () => {
       const d = this.doc(); if (!d || this.sel.size < 2) return;
@@ -252,6 +246,8 @@ export class LayersPanel {
     if (this.sel.size === 1) this.sel.clear();
     const multi = this.sel.size > 1;
     for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-lp-multi'))) setHidden(b, !multi);
+    // picking several layers swaps the plus for Delete and Group
+    for (const b of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-lp-single'))) setHidden(b, multi);
     patchList(this.list, layers, {
       key: (l) => l.id,
       create: (l) => {
@@ -547,6 +543,14 @@ export class LayersPanel {
     if (keep && pick && pick !== p.blend) { d.setProps(p.id, { blend: pick }); this.refresh(); }
   }
 
+  /** Escape: close only the side card (a blend preview is put back); false when none was open. */
+  closeInner(): boolean {
+    if (!this.opened || !this.side) return false;
+    this.closeSide(false);
+    this.refresh();
+    return true;
+  }
+
   private closeSide(keep = true): void {
     if (!this.side) return;
     this.endPreview(keep);
@@ -625,6 +629,7 @@ export class LayersPanel {
       case 'delete': d.deleteLayer(id); this.closeSide(); break;
       case 'addmask': d.addMask(id); this.closeSide(); break;
       case 'group': d.addGroup(id); this.closeSide(); break;
+      case 'newgroup': d.addGroup(); this.closeSide(); break;
       case 'ungroup': d.ungroup(id); this.closeSide(); break;
       case 'flatten': d.flattenGroup(id); this.closeSide(); break;
     }

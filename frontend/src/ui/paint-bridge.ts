@@ -11,7 +11,11 @@
 import type { Mask, PenSample, PixelPatch, Point, Raster, Rect, StrokeSettings } from '../paint/types';
 import { getPressureCurve } from '../paint/dynamics';
 import { isParked, parkedEmpty } from '../paint/tiles';
+import { wetIngest, wetTake } from '../paint/wetmap';
 import type { FromWorker, ToWorker } from '../paint/paint-worker';
+import { patchTiles } from '../paint/history';
+
+const NO_BYTES = new Uint8ClampedArray(0);
 
 const TILE = 64;
 /** Selection masks the worker keeps by id (equal to SEL_CACHE in paint/paint-worker.ts). */
@@ -94,7 +98,9 @@ export class PaintBridge {
     this.current = s;
     const { selection: _drop, ...rest } = settings;
     void _drop;
-    const msg: ToWorker = { t: 'begin', id, layer: target.id, w: r.width, h: r.height, full, blank, selId, sel: selMask, settings: rest, curve: getPressureCurve() };
+    // wet marks made on this thread since the worker last heard (a stroke the page had to paint itself)
+    const wet = wetTake();
+    const msg: ToWorker = { t: 'begin', id, layer: target.id, w: r.width, h: r.height, full, blank, selId, sel: selMask, settings: rest, curve: getPressureCurve(), wet };
     w.postMessage(msg, full ? [full.buffer] : []);
     return s;
   }
@@ -218,13 +224,17 @@ export class RemoteStroke {
     }
     if (m.rect && m.bytes) this.apply(m.rect, m.bytes);
     if (m.t === 'step') { this.hooks.landed(m.rect); this.lastVersion = this.target.version(); return; }
+    // the wet marks the worker's stroke left join this thread's wet map, so a next stroke painted here sees the same wet paper
+    if (m.wet && m.wet.length) wetIngest(m.wet);
     // done: a layer version that moved since the last landed rectangle means something else wrote the layer (the mirror is stale)
     const foreign = this.lastVersion !== -2 && this.target.version() !== this.lastVersion;
     this.ended = true;
     let patch: PixelPatch | null = null;
     if (this.dirty) {
       const rect: Rect = { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 };
-      patch = { layer: this.target.id, rect, before: this.copyRect(rect, true), after: this.copyRect(rect, false) };
+      // only the tiles the stroke touched are copied: a long stroke's bounding box can be the whole layer
+      patch = { layer: this.target.id, rect, before: NO_BYTES, after: NO_BYTES };
+      patchTiles.set(patch, this.tilePatches());
     }
     this.hooks.landed(m.rect);
     this.snap.fill(undefined);
@@ -283,23 +293,29 @@ export class RemoteStroke {
     return { x: this.dx0, y: this.dy0, w: this.dx1 - this.dx0, h: this.dy1 - this.dy0 };
   }
 
-  /** Bytes of `rect`, current (before = false) or as they were before the stroke (before = true). */
-  private copyRect(rect: Rect, before: boolean): Uint8ClampedArray {
-    const { w } = this;
+  /** The undo step as runs of touched tiles along each tile row: before from the snapshots, after from the layer now. */
+  private tilePatches(): PixelPatch[] {
+    const { w, h } = this;
     const data = this.raster.data;
-    const out = new Uint8ClampedArray(rect.w * rect.h * 4);
-    for (let row = 0; row < rect.h; row++) {
-      const y = rect.y + row;
-      const src = (y * w + rect.x) * 4;
-      out.set(data.subarray(src, src + rect.w * 4), row * rect.w * 4);
-      if (!before) continue;
-      const trow = (y >> 6) * this.tilesX;
-      for (let tx = rect.x >> 6; tx <= (rect.x + rect.w - 1) >> 6; tx++) {
-        const t = this.snap[trow + tx];
-        if (!t) continue;
-        const xa = Math.max(rect.x, tx * TILE), xb = Math.min(rect.x + rect.w, tx * TILE + TILE);
-        const so = ((y & 63) * TILE + (xa - tx * TILE)) * 4;
-        out.set(t.subarray(so, so + (xb - xa) * 4), (row * rect.w + (xa - rect.x)) * 4);
+    const rows = Math.ceil(h / TILE);
+    const out: PixelPatch[] = [];
+    for (let ty = 0; ty < rows; ty++) {
+      const y0 = ty * TILE, rh = Math.min(TILE, h - y0);
+      let tx = 0;
+      while (tx < this.tilesX) {
+        if (!this.snap[ty * this.tilesX + tx]) { tx++; continue; }
+        let end = tx;
+        while (end + 1 < this.tilesX && this.snap[ty * this.tilesX + end + 1]) end++;
+        const x0 = tx * TILE, x1 = Math.min(w, (end + 1) * TILE), rw = x1 - x0;
+        const before = new Uint8ClampedArray(rw * rh * 4), after = new Uint8ClampedArray(rw * rh * 4);
+        for (let row = 0; row < rh; row++) after.set(data.subarray(((y0 + row) * w + x0) * 4, ((y0 + row) * w + x1) * 4), row * rw * 4);
+        for (let k = tx; k <= end; k++) {
+          const t = this.snap[ty * this.tilesX + k] as Uint8ClampedArray;
+          const kx = k * TILE, kw = Math.min(TILE, w - kx);
+          for (let row = 0; row < rh; row++) before.set(t.subarray(row * TILE * 4, (row * TILE + kw) * 4), (row * rw + (kx - x0)) * 4);
+        }
+        out.push({ layer: this.target.id, rect: { x: x0, y: y0, w: rw, h: rh }, before, after });
+        tx = end + 1;
       }
     }
     return out;

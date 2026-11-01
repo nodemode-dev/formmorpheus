@@ -19,7 +19,16 @@
 .fm-pfeel-reset:hover { color: var(--text-primary); }
 
 /* the Prefs tab got longer: scroll instead of growing past the window */
-.fm-ps-pane[data-pane="prefs"] { max-height: min(62vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.fm-ps-pane[data-pane="prefs"] { max-height: min(62vh, 460px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; padding-bottom: 24px; scrollbar-width: none; }
+.fm-ps-pane[data-pane="prefs"]::-webkit-scrollbar { display: none; }
+/* scroll cue, no scrollbar: a 24 px fade at the bottom that goes away once the end is reached */
+@property --fm-fade { syntax: '<length>'; inherits: false; initial-value: 24px; }
+@keyframes fm-fade-out { 0%, 92% { --fm-fade: 24px; } 100% { --fm-fade: 0px; } }
+.fm-ps-pane[data-pane="prefs"]:not([hidden]) {
+  -webkit-mask-image: linear-gradient(#000 calc(100% - var(--fm-fade)), transparent);
+  mask-image: linear-gradient(#000 calc(100% - var(--fm-fade)), transparent);
+  animation: fm-fade-out linear both; animation-timeline: scroll(self);
+}
 
 /* top bar: eyedropper and fill buttons */
 .fm-paint-tool.is-filling { color: var(--accent-color); position: relative; }

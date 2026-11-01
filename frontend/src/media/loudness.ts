@@ -115,11 +115,34 @@ export class LiveLoudness {
   private recent: number[] = [];
   private all: number[] = [];
 
-  reset(): void { this.cur = 0; this.curN = 0; this.curT = 0; this.recent = []; this.all = []; }
+  private tp = 0;
+
+  reset(): void { this.cur = 0; this.curN = 0; this.curT = 0; this.recent = []; this.all = []; this.tp = 0; }
+
+  /** Highest true peak since reset, in dBTP: the window's samples are interpolated four times (Catmull-Rom) to find peaks between samples. */
+  truePeak(): number { return this.tp > 0 ? 20 * Math.log10(this.tp) : -Infinity; }
+
+  private scanPeak(chs: Float32Array[]): void {
+    for (const c of chs) {
+      for (let i = 1; i + 2 < c.length; i++) {
+        const p0 = c[i - 1], p1 = c[i], p2 = c[i + 1], p3 = c[i + 2];
+        const a = Math.abs(p1);
+        if (a > this.tp) this.tp = a;
+        // only samples near a crest can hide a higher between-sample peak
+        if (a < this.tp * 0.5 && Math.abs(p2) < this.tp * 0.5) continue;
+        for (let k = 1; k < 4; k++) {
+          const t = k / 4, t2 = t * t, t3 = t2 * t;
+          const v = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+          if (Math.abs(v) > this.tp) this.tp = Math.abs(v);
+        }
+      }
+    }
+  }
 
   /** `chs` is the latest window of each channel, `now` is seconds on any steady clock. */
   push(chs: Float32Array[], fs: number, now: number): void {
     let e = 0;
+    this.scanPeak(chs);
     for (const c of chs) {
       const w = kWeigh(c, fs);
       let s = 0;

@@ -10,9 +10,29 @@ import * as inner from '../engine/group-inner-ops';
 import { defaultTransition, TRANSITION_KINDS } from '../engine/transitions';
 import * as rt from '../engine/retime-ops';
 import { setImportSize, importSize } from '../media/import-size';
+import { detectOnsets } from '../media/beats';
 import type { Command } from '../ui/commands';
 import { timelineSnap } from '../ui/timeline-ed';
 import { toast } from '../ui/toast';
+import { tf } from '../ui/i18n-fill';
+
+/** Detects the beats of the selected sound and puts a marker on each (one undo step; existing markers stay). */
+async function beatMarkers(engine: Engine): Promise<void> {
+  const c = engine.selected[0], m = engine.movie;
+  const blob = c?.asset ? engine.assets.get(c.asset) : undefined;
+  if (!c || !m || !blob) return;
+  toast('Listening for beats...', 'info', { ms: 1500 });
+  let buf: AudioBuffer;
+  try { buf = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(await blob.arrayBuffer()); } catch { toast('This sound could not be decoded to look for beats.', 'error'); return; }
+  const speed = c.speed && c.speed > 0 ? c.speed : 1;
+  const from = c.offset / m.fps, to = (c.offset + c.duration * speed) / m.fps;
+  const times = detectOnsets(Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i)), buf.sampleRate, from, to);
+  const frames = [...new Set(times.map((s) => c.start + Math.round(((s - from) * m.fps) / speed)))].filter((f) => f >= c.start && f < c.start + c.duration);
+  const fresh = frames.filter((f) => !markerAtFrame(m, f));
+  if (!fresh.length) { toast('No beats were found in this sound.', 'info'); return; }
+  engine.run('Add Markers on Beats', (mv) => fresh.reduce((acc, f) => (markerAtFrame(acc, f) ? acc : addMarker(acc, f, 'Beat').movie), mv));
+  toast(tf('Added {n} markers on beats.', { n: fresh.length }), 'info');
+}
 
 export function edCommands(engine: Engine): Command[] {
   const has = (): boolean => !!engine.movie;
@@ -44,6 +64,11 @@ export function edCommands(engine: Engine): Command[] {
     },
     { id: 'marker-next', label: 'Next Marker', keys: ['Alt+.'], enabled: has, run: () => jump(1) },
     { id: 'marker-prev', label: 'Previous Marker', keys: ['Alt+,'], enabled: has, run: () => jump(-1) },
+    {
+      id: 'beat-markers', label: 'Add Markers on Beats',
+      enabled: () => engine.selected.length === 1 && (engine.selected[0].kind === 'audio' || engine.selected[0].kind === 'video') && !!engine.selected[0].asset,
+      run: () => { void beatMarkers(engine); },
+    },
     {
       id: 'marker-clear', label: 'Delete Markers', enabled: () => !!engine.movie?.markers?.length,
       run: () => engine.run('Delete Markers', (m) => { const n = { ...m }; delete n.markers; return n; }),

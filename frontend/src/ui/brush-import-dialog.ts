@@ -13,6 +13,7 @@ import { brushStore } from './brush-store';
 import { Dialog } from './dialogs';
 import { el, escapeHtml, q, setClass, setDisabled, setHidden, setText, setTitle } from './dom';
 import { t, tn } from './i18n';
+import { tf } from './i18n-fill';
 
 const TW = 160, TH = 44;
 const INK = { r: 20, g: 20, b: 24 };
@@ -64,6 +65,9 @@ class BrushImportDialog {
   private readonly newName = el<HTMLElement>('<span class="fm-bi-libn"></span>');
   private readonly tips = el<HTMLInputElement>('<input type="checkbox">');
   private readonly tipsRow: HTMLElement;
+  private readonly px = el<HTMLInputElement>('<input type="checkbox">');
+  private readonly pxRow: HTMLElement;
+  private res: ImportResult | null = null;
   private readonly go: HTMLButtonElement;
   private groups: Grp[] = [];
   private cur: Nav | null = null;
@@ -85,7 +89,8 @@ class BrushImportDialog {
       return l;
     };
     this.tipsRow = mk(this.tips, 'Tips only (ignore preset settings)', el('<span></span>'));
-    opts.append(mk(this.optNew, 'Add as a new library', this.newName), mk(this.optCur, 'Add to the current library', this.curName), this.tipsRow);
+    this.pxRow = mk(this.px, 'Use the file\'s pixel sizes', el('<span></span>'));
+    opts.append(mk(this.optNew, 'Add as a new library', this.newName), mk(this.optCur, 'Add to the current library', this.curName), this.tipsRow, this.pxRow);
     this.dlg.body.append(this.head, this.bar, this.list, opts);
     this.dlg.body.classList.add('fm-bi-body');
     this.dlg.button('Cancel', 'ghost', () => this.dlg.close());
@@ -93,7 +98,8 @@ class BrushImportDialog {
     this.dlg.onClose = () => { this.teardown(); const r = this.resolve; this.resolve = null; r?.(null); };
     q(this.bar, '[data-all]').addEventListener('click', () => this.setAll(true));
     q(this.bar, '[data-none]').addEventListener('click', () => this.setAll(false));
-    this.tips.addEventListener('change', () => this.restale());
+    this.tips.addEventListener('change', () => this.reread());
+    this.px.addEventListener('change', () => this.reread());
     this.list.addEventListener('change', (e) => this.onChange(e));
     this.list.addEventListener('click', (e) => this.onClick(e));
     this.dlg.scrim.addEventListener('keydown', (e) => this.onKey(e));
@@ -106,20 +112,17 @@ class BrushImportDialog {
     const src = r.sets && r.sets.length ? r.sets : [{ name: (r.setName ?? this.fileBase), brushes: r.brushes }];
     const notes = notesOf(r);
     this.fill(src, notes);
-    const total = this.groups.reduce((n, g) => n + g.items.length, 0);
+    this.res = r;
     setText(this.fileEl, fileName);
-    const approx = this.groups.reduce((n, g) => n + g.items.filter((i) => notes?.[i.b.id]?.length).length, 0);
-    const bits = [tn(total, '{n} brush', '{n} brushes'), tn(this.groups.length, '{n} set', '{n} sets')];
-    if (approx) bits.push(tn(approx, '{n} approximated', '{n} approximated'));
-    if (r.skipped) bits.push(tn(r.skipped, '{n} skipped', '{n} skipped'));
-    setText(this.subEl, bits.join(' · '));
-    setTitle(this.subEl, r.skipped && r.skippedKeys?.length ? `${t('Not read')}: ${r.skippedKeys.slice(0, 20).join(', ')}` : '');
+    this.subline(r, notes);
     setText(this.newName, `"${this.fileBase}"`);
     setText(this.curName, `"${brushStore.lib(brushStore.activeLib())?.name ?? ''}"`);
     const pickNew = isAbr || !!r.sets;
     this.optNew.checked = pickNew; this.optCur.checked = !pickNew;
     this.tips.checked = false;
+    this.px.checked = false;
     setHidden(this.tipsRow, !isAbr);
+    setHidden(this.pxRow, !isAbr || !r.reparse);
     this.updateCounts();
     this.setCur(this.nav()[0] ?? null);
     this.io = new IntersectionObserver((es) => this.seen(es), { root: this.list, rootMargin: '160px 0px' });
@@ -129,6 +132,40 @@ class BrushImportDialog {
       this.dlg.open(this.list);
       this.updateCounts();   // open() re-reads the footer labels, so the count is written after it
     });
+  }
+
+  /** The line under the file name: counts, approximated settings, skipped brushes. */
+  private subline(r: ImportResult, notes: Record<string, string[]> | undefined): void {
+    const total = this.groups.reduce((n, g) => n + g.items.length, 0);
+    const approx = this.groups.reduce((n, g) => n + g.items.filter((i) => notes?.[i.b.id]?.length).length, 0);
+    const bits = [tn(total, '{n} brush', '{n} brushes'), tn(this.groups.length, '{n} set', '{n} sets')];
+    if (approx) bits.push(tn(approx, '{n} approximated', '{n} approximated'));
+    if (r.skipped) bits.push(tn(r.skipped, '{n} skipped', '{n} skipped'));
+    setText(this.subEl, bits.join(' · '));
+    setTitle(this.subEl, r.skipped && r.skippedKeys?.length ? `${t('Not read')}: ${r.skippedKeys.slice(0, 20).join(', ')}` : '');
+  }
+
+  /** Tips only and pixel sizes: the file is read again with those options and every row is patched in place (same order,
+   *  same checks); a file with no re-read keeps the old tip-only reduction. */
+  private reread(): void {
+    const r = this.res;
+    if (!r?.reparse) { this.restale(); return; }
+    let nr: ImportResult;
+    try { nr = r.reparse({ applySettings: !this.tips.checked, absoluteSizes: this.px.checked }); } catch { this.restale(); return; }
+    const flat = (nr.sets && nr.sets.length ? nr.sets : [{ name: '', brushes: nr.brushes }]).flatMap((s) => s.brushes);
+    const notes = notesOf(nr);
+    let i = 0;
+    for (const g of this.groups) for (const it of g.items) {
+      const nb = flat[i++];
+      if (!nb) continue;
+      it.b = nb; it.tipB = null;
+      const bd = q(it.row, '.fm-bi-badge'), nt = notes?.[nb.id];
+      if (nt && nt.length) { setText(bd, tn(nt.length, '{n} setting approximated', '{n} settings approximated')); bd.title = nt.join('\n'); setHidden(bd, false); }
+      else { bd.title = ''; setHidden(bd, true); }
+    }
+    this.res = { ...r, ...nr, reparse: r.reparse };
+    this.subline(nr, notes);
+    this.restale();
   }
 
   // ---- tree -------------------------------------------------------------------
@@ -202,7 +239,7 @@ class BrushImportDialog {
       if (g.cb.indeterminate !== part) g.cb.indeterminate = part;
       setText(g.count, `${n}/${g.items.length}`);
     }
-    setText(this.selEl, tn(on, '{n} selected', '{n} selected') + ` · ${all}`);
+    setText(this.selEl, tf('{n} of {all} selected', { n: on, all }));
     setDisabled(this.go, on === 0);
     const label = on === 1 ? t('Import 1 brush') : t('Import {n} brushes').replace('{n}', String(on));
     setText(this.go, label);
@@ -338,7 +375,7 @@ class BrushImportDialog {
   private draw(it: Item): void {
     it.drawn = true; it.stale = false;
     let b = it.b;
-    if (this.tips.checked) b = it.tipB ?? (it.tipB = tipOnly(it.b));
+    if (this.tips.checked && !this.res?.reparse) b = it.tipB ?? (it.tipB = tipOnly(it.b));
     try {
       const r = renderBrushPreview(b, TW, TH, INK);
       const tmp = this.tmp ?? (this.tmp = document.createElement('canvas'));
@@ -362,7 +399,7 @@ class BrushImportDialog {
 
   private commit(): void {
     if (!this.resolve || this.go.disabled) return;
-    const tipsOnly = this.tips.checked && !this.tipsRow.hidden;
+    const tipsOnly = this.tips.checked && !this.tipsRow.hidden && !this.res?.reparse;
     const sets = this.groups
       .map((g) => ({ name: g.name, brushes: g.items.filter((i) => i.on).map((i) => (tipsOnly ? tipOnly(i.b) : i.b)) }))
       .filter((s) => s.brushes.length);

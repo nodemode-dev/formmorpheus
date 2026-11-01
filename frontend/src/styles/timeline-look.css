@@ -1,0 +1,31 @@
+/* Timeline and Stage readouts: the look pass (v0.16.0). */
+
+/* FV-220: the timecode reads light and large, tabular so it never jitters; undo and redo are bare glyphs. */
+.fm-timecode, .fm-tc-bar .fm-timecode { font: 300 20px/1.1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--text-primary) 70%, transparent); min-width: 148px; }
+.fm-stage-ubtn { width: 32px; height: 32px; border: 0; background: transparent; color: var(--text-primary); }
+.fm-stage-ubtn svg { width: 22px; height: 22px; }
+.fm-stage-ubtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); border-color: transparent; }
+.fm-stage-ubtn:disabled { opacity: 0.32; }
+
+/* FV-225: in Perform the pill keeps the accent and only the record dot is red. */
+.fm-key-pill.is-rec { background: var(--accent-color); }
+.fm-key-pill.is-rec:hover { background: var(--accent-color-hover, var(--accent-color)); }
+.fm-timeline.is-perform .fm-key-pill .fm-rec-core { fill: var(--fm-hl-red, #e5484d); }
+
+/* FV-235: the pause bars are accent while it plays. */
+.fm-play-btn .fm-play-off { color: var(--accent-color); display: inline-grid; }
+.fm-play-btn .fm-play-off[hidden] { display: none; }
+
+/* FV-242: the empty hint is quiet and centred. */
+.fm-tl-empty p { max-width: 36ch; margin: 0; text-align: center; font-size: 13px; line-height: 1.45; color: color-mix(in srgb, var(--text-primary) 60%, transparent); }
+
+/* Hovering a lane row tints it so a right-click on it (the track menu) is findable. */
+.fm-tl-tracks { cursor: default; }
+
+/* Mute and solo leave a mark on the track header as well as on the blocks. */
+.fm-th-row.is-muted .fm-th-name, .fm-th-row.is-quiet .fm-th-name { opacity: 0.5; }
+.fm-th-row.is-muted::after { content: ""; position: absolute; left: 16px; right: 4px; top: 50%; height: 1px; background: color-mix(in srgb, var(--text-primary) 45%, transparent); pointer-events: none; }
+.fm-th-row.is-solo .fm-th-name { color: var(--accent-color); }
+
+/* Space held over the Timeline: the drag pans. */
+.fm-timeline.is-space .fm-tl-tracks, .fm-timeline.is-space .fm-tl-ruler { cursor: grab !important; }

@@ -188,7 +188,9 @@ let pxFontFactor = 1;
 
 export function applyUiFontSize(p: Prefs): void {
   const k = UI_FONT_SCALE[p.uiFontSize], s = document.documentElement.style;
-  for (const n of [9, 10, 11, 12, 13, 14, 16, 18]) { if (k === 1) s.removeProperty(`--fs-${n}`); else s.setProperty(`--fs-${n}`, `${Math.round(n * k * 10) / 10}px`); }
+  // the base of each step is the token's own value (tokens.css, FV-230), so a larger size scales from the same scale
+  const base: Record<number, number> = { 9: 10, 10: 11, 11: 12, 12: 13, 13: 14, 14: 15, 16: 17, 18: 19 };
+  for (const n of [9, 10, 11, 12, 13, 14, 16, 18]) { if (k === 1) s.removeProperty(`--fs-${n}`); else s.setProperty(`--fs-${n}`, `${Math.round(base[n] * k * 10) / 10}px`); }
   scalePxFonts(k);
   if (k !== sizedK) { const first = sizedK === 0; sizedK = k; if (!first) document.dispatchEvent(new CustomEvent('nm:ui-settings-changed', { detail: { key: 'fontSize' } })); }
 }

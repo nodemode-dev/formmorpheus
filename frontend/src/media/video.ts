@@ -266,6 +266,28 @@ export class VideoPool implements VideoSource {
     return null;
   }
 
+  // ---- proxies: smaller copies played while editing; an export reads the original blobs, never these
+  private readonly proxies = new Map<string, Blob>();
+  private useProxies = false;
+  get proxyIds(): string[] { return [...this.proxies.keys()]; }
+  get proxiesOn(): boolean { return this.useProxies; }
+  setProxy(assetId: string, blob: Blob | null): void {
+    if (blob) this.proxies.set(assetId, blob); else this.proxies.delete(assetId);
+    if (this.useProxies) this.forget(assetId);
+  }
+  private originals = 0;
+  holdOriginals(on: boolean): void {
+    const was = this.originals > 0;
+    this.originals = Math.max(0, this.originals + (on ? 1 : -1));
+    if (was !== this.originals > 0 && this.useProxies) for (const id of this.proxies.keys()) this.forget(id);
+  }
+  setUseProxies(on: boolean): void {
+    if (on === this.useProxies) return;
+    this.useProxies = on;
+    for (const id of this.proxies.keys()) this.forget(id);
+    this.onReady();
+  }
+
   forget(assetId?: string): void {
     const ids = assetId === undefined ? [...this.bases.keys()] : [assetId];
     for (const id of ids) {
@@ -291,7 +313,7 @@ export class VideoPool implements VideoSource {
   private base(id: string): Base | null {
     const have = this.bases.get(id);
     if (have) return have;
-    const blob = this.staged?.get(id) ?? this.blobOf(id);
+    const blob = (this.useProxies && this.originals === 0 ? this.proxies.get(id) : undefined) ?? this.staged?.get(id) ?? this.blobOf(id);
     if (!blob) return null;
     const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
     const b: Base = {

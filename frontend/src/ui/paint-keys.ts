@@ -43,6 +43,8 @@ const DEFS: Def[] = [
   { id: 'paint-merge-down', label: 'Paint: Merge Layer Down', keys: [], local: ['Mod+E'] },
 ];
 
+/** Keys that other modes also use (P pen tool, E easing): they only count inside Draw & Paint. */
+const SCOPED = new Set<PaintCmdId>(['paint-play', 'paint-tool-erase']);
 const LOCAL = new Map<string, Def>();
 for (const d of DEFS) for (const k of d.local ?? []) LOCAL.set(k, d);
 
@@ -58,6 +60,7 @@ export function paintCommandDefs(host: PaintKeyHost): Command[] {
     label: d.label,
     keys: [...d.keys],
     group: 'Draw & Paint',
+    scope: SCOPED.has(d.id) ? 'paint' : undefined,
     enabled: () => host.isOpen(),
     run: () => host.run(d.id),
   }));
@@ -66,6 +69,8 @@ export function paintCommandDefs(host: PaintKeyHost): Command[] {
 /** Which Draw & Paint command a key event stands for, honouring the person's own bindings. */
 export function paintCommandFor(e: KeyboardEvent, commands: Commands | null): { id: PaintCmdId; repeat: boolean } | null {
   const combo = comboOf(e);
+  const scoped = commands?.forScoped('paint', combo);
+  if (scoped) return { id: scoped.id as PaintCmdId, repeat: DEFS.find((d) => d.id === scoped.id)?.repeat ?? false };
   const hit = commands?.forCombo(combo);
   if (hit && hit.id.startsWith('paint-')) return { id: hit.id as PaintCmdId, repeat: DEFS.find((d) => d.id === hit.id)?.repeat ?? false };
   const local = LOCAL.get(combo);

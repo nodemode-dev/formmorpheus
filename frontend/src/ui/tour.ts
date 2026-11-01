@@ -1,6 +1,7 @@
 import '../styles/onboarding.css';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { t } from './i18n';
+import { updatePrefs } from './prefs';
 
 /** The first-run tour: a few coach marks over the working screen, each pointing at one part (a ring around it and a
  *  card beside it). Skippable at any step (the button or Esc), and shown again from Help. Built once; moving between
@@ -33,6 +34,7 @@ export class Tour {
       <div class="fm-tour-title"></div>
       <p class="fm-tour-text"></p>
       <div class="fm-tour-dots"></div>
+      <label class="fm-tour-opt"><input type="checkbox" data-t="notips"><span>Don't show tips</span></label>
       <div class="fm-tour-actions">
         <button class="cv-btn cv-btn-ghost" type="button" data-t="skip">Skip tour</button>
         <span class="fm-tour-gap"></span>
@@ -78,6 +80,7 @@ export class Tour {
 
   start(): void {
     this.active = true;
+    q<HTMLInputElement>(this.root, '[data-t="notips"]').checked = false;
     setHidden(this.root, false);
     this.go(0);
   }
@@ -86,6 +89,8 @@ export class Tour {
     if (!this.active) return;
     this.active = false;
     markSeen();
+    // "Don't show tips" ticked on the card turns the tip cards off for good (Preferences > Timeline > Show tips turns them on)
+    if (q<HTMLInputElement>(this.root, '[data-t="notips"]').checked) updatePrefs({ showTips: false });
     setHidden(this.root, true);
   }
 
@@ -115,12 +120,18 @@ export class Tour {
     setStyleVar(ring, '--w', `${w}px`);
     setStyleVar(ring, '--h', `${h}px`);
     const cw = Math.min(340, vw - 32), ch = this.card.offsetHeight || 190;
-    let cy = y + h + 12;
-    if (cy + ch > vh - 12) cy = y - ch - 12;
-    if (cy < 12) cy = Math.min(vh - ch - 12, y + 16);   // no room around a big target: sit inside its top
-    const cx = Math.min(vw - cw - 16, Math.max(16, r.left + r.width / 2 - cw / 2));
-    setStyleVar(this.card, '--x', `${cx}px`);
-    setStyleVar(this.card, '--y', `${Math.max(12, cy)}px`);
+    // beside the target, never over it (G12): below, above, right, left, the first that fits and clears the ring; when
+    // none does, the one that covers the least of it
+    const clampX = (v: number): number => Math.min(vw - cw - 16, Math.max(16, v)), clampY = (v: number): number => Math.min(vh - ch - 12, Math.max(12, v));
+    const spots: Array<[number, number]> = [
+      [clampX(r.left + r.width / 2 - cw / 2), y + h + 12], [clampX(r.left + r.width / 2 - cw / 2), y - ch - 12],
+      [x + w + 12, clampY(r.top + r.height / 2 - ch / 2)], [x - cw - 12, clampY(r.top + r.height / 2 - ch / 2)],
+    ];
+    const cover = ([sx, sy]: [number, number]): number => Math.max(0, Math.min(sx + cw, x + w) - Math.max(sx, x)) * Math.max(0, Math.min(sy + ch, y + h) - Math.max(sy, y));
+    const fits = ([sx, sy]: [number, number]): boolean => sx >= 12 && sy >= 12 && sx + cw <= vw - 12 && sy + ch <= vh - 12;
+    const best = spots.find((s) => fits(s) && cover(s) === 0) ?? spots.slice().sort((a, b) => cover(a) - cover(b) + (fits(a) ? 0 : 1e9) - (fits(b) ? 0 : 1e9))[0];
+    setStyleVar(this.card, '--x', `${clampX(best[0])}px`);
+    setStyleVar(this.card, '--y', `${clampY(best[1])}px`);
     setStyleVar(this.card, '--w', `${cw}px`);
   }
 }

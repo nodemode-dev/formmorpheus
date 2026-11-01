@@ -9,7 +9,7 @@ import { isMaskRow } from '../engine/flip-draw';
 import { flipDuration } from '../engine/flip-ops';
 import { reducedMotion } from './a11y';
 import { FlipPreview } from './flip-preview';
-import { FlipSelect, Lasso } from './flip-select';
+import { FlipSelect, Lasso, loopContains, pathTouches } from './flip-select';
 import { FlipTools, type NumberMode } from './flip-tools';
 import { FlipXSheet } from './flip-xsheet';
 import { shootOn } from '../engine/flip-time';
@@ -76,7 +76,8 @@ const ICO = {
 };
 const NUM_KEY = 'formmorpheus.flip.numbers';
 function loadNumbers(): NumberMode {
-  try { const v = localStorage.getItem(NUM_KEY); return v === 'frame' || v === 'off' ? v : 'drawing'; } catch { return 'drawing'; }
+  // the reference puts frame numbers in the ruler and leaves the cells to the pictures; the Timing menu can put them back
+  try { const v = localStorage.getItem(NUM_KEY); return v === 'frame' || v === 'drawing' ? v : 'off'; } catch { return 'off'; }
 }
 const glyph = (s: string, size = 16): string => `<span class="icon" style="width:${size}px;height:${size}px" aria-hidden="true">${s}</span>`;
 
@@ -137,6 +138,8 @@ export class FlipStrip {
   private withinKey = '';
   /** Called when the Mini Flipbook toggle is pressed. */
   onMini: (() => void) | null = null;
+  /** Called when the handle is dragged out of the docked strip: the Mini Flipbook takes the drag over from there. */
+  onTear: ((e: PointerEvent, from: HTMLElement) => void) | null = null;
   /** Called after every paint; `true` when the thumbnails were thrown away (the Mini Flipbook redraws its own). */
   onPaint: ((invalid: boolean) => void) | null = null;
   private miniBtn: HTMLElement | null = null;
@@ -151,13 +154,15 @@ export class FlipStrip {
   constructor(private readonly host: StripHost) {
     this.root = el<HTMLElement>(
       `<div class="fm-fs" tabindex="0" role="group" aria-label="Flipbook frames">` +
+        `<div class="fm-fs-handle" title="Drag it out to make the Mini Flipbook. Double-click to switch between the two."><span class="fm-fs-handle-bar"></span></div>` +
         `<div class="fm-fs-head"><button class="fm-fs-play" type="button"><span class="fm-fs-play-ico"></span><span class="fm-fs-play-lab">Play</span></button>` +
         `<button class="fm-fs-ib fm-fs-step" data-act="prev" type="button" title="Previous drawing (hold for the first)" aria-label="Previous drawing">${glyph(ICO.prev, 16)}</button>` +
         `<button class="fm-fs-ib fm-fs-step" data-act="next" type="button" title="Next drawing (hold for the last)" aria-label="Next drawing">${glyph(ICO.next, 16)}</button>` +
         `<span class="fm-fs-grip" aria-hidden="true"></span><span class="fm-fs-wheelslot"></span>` +
-        `<button class="fm-fs-ib has-lab" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 18)}<span class="fm-fs-iblab">Select</span></button>` +
-        `<button class="fm-fs-ib has-lab" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 18)}<span class="fm-fs-iblab">Track</span></button>` +
-        `<button class="fm-fs-ib has-lab" data-act="frame" type="button" title="Add frame (press and hold, or Alt: add after the hold)" aria-label="Add frame">${icon('plus', 18)}<span class="fm-fs-iblab">Frame</span></button>` +
+        // the reference's three icons: Multi-select, Add track, Add frame (the words are in their tooltips)
+        `<button class="fm-fs-ib" data-act="multi" type="button" title="Multi-select (hold to reload the last selection)" aria-label="Multi-select">${glyph(ICO.multi, 20)}</button>` +
+        `<button class="fm-fs-ib" data-act="track" type="button" title="Add track" aria-label="Add track">${glyph(ICO.tracks, 20)}</button>` +
+        `<button class="fm-fs-ib" data-act="frame" type="button" title="Add frame (press and hold, or Alt: add after the hold)" aria-label="Add frame">${icon('plus', 20)}</button>` +
         `<button class="fm-fs-ib" data-act="more" type="button" title="More: exposure sheet, timing, underlay, mini flipbook, preview" aria-label="More" aria-haspopup="menu">${icon('dots', 16)}</button>` +
         // the extras sit behind More; the buttons are the same ones the strip always had, so their wiring is unchanged
         `<div class="fm-fs-more" role="menu" hidden>` +
@@ -281,6 +286,7 @@ export class FlipStrip {
     }
     this.clampScroll();
     setStyleVar(this.root, '--sx', `${-this.sx}px`);
+    setStyleVar(this.root, '--fm-cols', String(this.cols));
 
     // ruler: one tiny node per column, keyed by column number
     const nums: number[] = [];
@@ -342,6 +348,9 @@ export class FlipStrip {
       setStyleVar(cell, 'width', `${hold * COL - 2}px`);
       setClass(cell, 'is-cur', c.r === ar && c.i === ai);
       setClass(cell, 'is-held', hold > 1);
+      // tiers: a frame with a drawing is white paper, a frame with nothing yet is flat grey, cells past the end stay dark
+      const blank = c.f.layers.every((l) => l.pixels === null) && !(this.host.liveKey?.(c.r, c.i) ?? '');
+      setClass(cell, 'is-empty', blank);
       setClass(cell, 'is-sel', this.sel.has(t.id, c.f.id));
       if ((cell.dataset.name ?? '') !== (c.f.name ?? '')) { if (c.f.name) { cell.dataset.name = c.f.name; cell.title = c.f.name; } else { delete cell.dataset.name; cell.removeAttribute('title'); } }
       setText(q(cell, '.fm-fs-hold'), hold > 1 ? `×${hold}` : '');
@@ -1004,7 +1013,9 @@ export class FlipStrip {
   /** Lasso: a box dragged over the lanes selects the cells it touches; Shift or Ctrl adds. */
   private startLasso(e: PointerEvent, additive: boolean): void {
     const onCell = !!this.cellAt(e.target as HTMLElement);
-    const base = additive ? this.sel.refs() : [];
+    // the selection before the loop: drawing around cells that are all picked already lets them go
+    const pre = this.sel.refs();
+    const base = additive ? pre : [];
     const x0 = e.clientX, y0 = e.clientY;
     let moved = false;
     this.track((m) => {
@@ -1014,19 +1025,28 @@ export class FlipStrip {
         this.suppressClick = true;
         this.lasso.begin(x0, y0);
       }
-      const box = this.lasso.move(m.clientX, m.clientY);
+      // a freehand loop: a cell is taken when the loop encloses its middle or the line crosses it
+      const loop = this.lasso.move(m.clientX, m.clientY);
       const refs = new Map<string, Set<string>>(base.map((b) => [b.track, new Set(b.frames)]));
+      const hit: { tid: string; id: string }[] = [];
       for (const row of this.rowEls()) {
         const lane = q<HTMLElement>(row, '.fm-fs-lane').getBoundingClientRect();
         for (const c of Array.from(row.querySelectorAll<HTMLElement>('.fm-fs-cell'))) {
           const cb = c.getBoundingClientRect();
-          const hitX = cb.right > box.left && cb.left < box.right && cb.right > lane.left && cb.left < lane.right;
-          if (hitX && cb.bottom > box.top && cb.top < box.bottom) {
-            const tid = row.dataset.key ?? '';
-            let s = refs.get(tid);
-            if (!s) refs.set(tid, (s = new Set()));
-            s.add(c.dataset.key ?? '');
-          }
+          if (cb.right <= lane.left || cb.left >= lane.right) continue;
+          if (loopContains(loop, (cb.left + cb.right) / 2, (cb.top + cb.bottom) / 2) || pathTouches(loop, cb)) hit.push({ tid: row.dataset.key ?? '', id: c.dataset.key ?? '' });
+        }
+      }
+      const preHas = (h: { tid: string; id: string }): boolean => pre.some((p) => p.track === h.tid && p.frames.includes(h.id));
+      if (!additive && hit.length && hit.every(preHas)) {
+        // around picked frames only: take them out of the selection
+        for (const p of pre) refs.set(p.track, new Set(p.frames));
+        for (const h of hit) refs.get(h.tid)?.delete(h.id);
+      } else {
+        for (const h of hit) {
+          let s = refs.get(h.tid);
+          if (!s) refs.set(h.tid, (s = new Set()));
+          s.add(h.id);
         }
       }
       this.sel.set(Array.from(refs, ([track, s]) => ({ track, frames: Array.from(s) })));
@@ -1329,6 +1349,30 @@ export class FlipStrip {
       else if (this.handleKey(e)) { e.preventDefault(); e.stopPropagation(); }
     });
     this.head.addEventListener('dblclick', (e) => { if (!(e.target as HTMLElement).closest('button')) this.onMini?.(); });
+    // the handle: pull it away from the strip to undock the Mini Flipbook under the pointer, double-click to switch
+    const grip = q(this.root, '.fm-fs-handle');
+    grip.addEventListener('dblclick', () => this.onMini?.());
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const x0 = e.clientX, y0 = e.clientY, id = e.pointerId;
+      grip.setPointerCapture(id);
+      const move = (m: PointerEvent): void => {
+        if (m.pointerId !== id || Math.hypot(m.clientX - x0, m.clientY - y0) < 8) return;
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', end);
+        grip.removeEventListener('pointercancel', end);
+        this.onTear?.(m, grip);
+      };
+      const end = (m: PointerEvent): void => {
+        if (m.pointerId !== id) return;
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', end);
+        grip.removeEventListener('pointercancel', end);
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+    });
     this.rows.addEventListener('dblclick', (e) => {
       const t = e.target as HTMLElement;
       if (!t.classList.contains('fm-fs-vis')) return;

@@ -33,13 +33,19 @@ import { stageBox } from '../engine/shape-ops';
 import type { TextStyle } from '../engine/types';
 import { GestureCache } from './stage-gesture-cache';
 import { Fringe } from './stage-fringe';
+import { FrameRing } from './stage-frame-ring';
 import { StageGuides } from './stage-guides';
 import { guideLines } from '../engine/guides';
 import { DragCache, pictureSig, sameSig } from './stage-drag-cache';
 import { fromCentre, toCentre } from './stage-compose';
 import { StageHud } from './stage-hud';
+import { fitBase } from '../engine/fit-base';
 import { toast } from './toast';
 import '../styles/stage-box.css';
+import '../styles/stage-box2.css';
+import { MultiBox } from './stage-multi';
+import { CameraPanel } from './camera-panel';
+import { Surround } from './stage-surround';
 
 /** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
 function textCentre(s: TextStyle, m: Movie): { x: number; y: number } {
@@ -94,7 +100,7 @@ export class StageView {
   readonly root = el(`<div class="fm-stage" aria-label="Stage">
     <div class="fm-stage-space">
     <canvas class="fm-stage-canvas"></canvas>
-    <svg class="fm-stage-box" hidden><polygon class="fm-box-line"/><line class="fm-box-stem"/><circle class="fm-box-rot" r="6"/><circle class="fm-box-ring" r="17"/><circle class="fm-box-h" data-h="0" r="5"/><circle class="fm-box-h" data-h="1" r="5"/><circle class="fm-box-h" data-h="2" r="5"/><circle class="fm-box-h" data-h="3" r="5"/><rect class="fm-box-s" data-s="0" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="1" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="2" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="3" x="-4" y="-4" width="8" height="8" rx="2"/><g class="fm-box-more"><title>Transform options</title><circle r="11"/><circle class="d" cx="-5" r="1.4"/><circle class="d" r="1.4"/><circle class="d" cx="5" r="1.4"/></g><line class="fm-snap-v"/><line class="fm-snap-h"/></svg>
+    <svg class="fm-stage-box" hidden><polygon class="fm-box-line"/><line class="fm-box-stem"/><circle class="fm-box-rot" r="6"/><circle class="fm-box-ring" r="17"/><circle class="fm-box-h" data-h="0" r="6"/><circle class="fm-box-h" data-h="1" r="6"/><circle class="fm-box-h" data-h="2" r="6"/><circle class="fm-box-h" data-h="3" r="6"/><rect class="fm-box-s" data-s="0" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="1" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="2" x="-4" y="-4" width="8" height="8" rx="2"/><rect class="fm-box-s" data-s="3" x="-4" y="-4" width="8" height="8" rx="2"/><g class="fm-box-more"><title>Transform options</title><circle r="11"/><circle class="d" cx="-5" r="1.4"/><circle class="d" r="1.4"/><circle class="d" cx="5" r="1.4"/></g><line class="fm-snap-v"/><line class="fm-snap-h"/></svg>
     </div>
     <div class="fm-tc-bar"><div class="fm-timecode"></div><div class="fm-stage-undo"><button class="fm-stage-ubtn" type="button" data-cmd="undo" title="Undo" aria-label="Undo">${icon('undo', 14)}</button><button class="fm-stage-ubtn" type="button" data-cmd="redo" title="Redo" aria-label="Redo">${icon('redo', 14)}</button></div></div>
     <div class="fm-stage-empty" hidden></div>
@@ -114,15 +120,28 @@ export class StageView {
   private readonly warp: WarpOverlay;
   private readonly bones: BonesOverlay;
   private readonly paths: PathView;
+  /** Grid and glow around the frame. */
+  private readonly surround: Surround;
+  /** The union box of a multi-selection (Compose). */
+  private readonly multi: MultiBox;
   private readonly camera: CameraOverlay;
   /** Grid, thirds, safe areas, guide lines and rulers (ui/stage-guides.ts). */
   private readonly guides: StageGuides;
   private readonly fxTools: FxStageTools;
   private view: View | null = null;
+  /** The movie frame as it sits in the window (client pixels), or null before the first picture: notices keep clear of it. */
+  frameClientRect(): DOMRect | null {
+    const v = this.view, m = this.engine.movie;
+    if (!v || !m) return null;
+    const c = this.canvas.getBoundingClientRect();
+    return new DOMRect(c.left + v.ox, c.top + v.oy, m.width * v.scale, m.height * v.scale);
+  }
   /** The last picture can stand in during a view gesture; any other change marks it stale. */
   private readonly gesture: GestureCache;
   /** Low-resolution picture around the Stage that covers the edge a pan uncovers. */
   private readonly fringe: Fringe;
+  /** The rounded outline over the movie frame (G16). */
+  private readonly ring: FrameRing;
   private stale = true;
   /** Set by anything but a movie edit: the picture is drawn again even when the movie's visible content is unchanged. */
   private hard = true;
@@ -160,6 +179,8 @@ export class StageView {
     host.appendChild(this.root);
     this.nav = new StageNav(this.root, engine);
     this.fringe = new Fringe(this.space, this.canvas);
+    this.ring = new FrameRing(this.space);
+    this.surround = new Surround(this.space, this.box);
     this.gesture = new GestureCache(this.canvas, () => this.schedule(), (v) => this.fringe.follow(v, this.width, this.height));
     this.drag = new DragCache(renderer);
     this.nav.onChange = () => this.scheduleView();
@@ -180,6 +201,7 @@ export class StageView {
     window.addEventListener('blur', () => { this.modsHeld.r = false; this.modsHeld.s = false; });
     this.warp = new WarpOverlay(this.space, engine);
     this.paths = new PathView(this.space, engine);
+    this.multi = new MultiBox(this.space, engine, { corners: (c) => this.corners(this.engine.movie as Movie, c), local: (e) => this.nav.local(e) });
     this.paths.sectors = (c) => {
       const m = this.engine.movie;
       if (!m) return null;
@@ -191,6 +213,7 @@ export class StageView {
     };
     anchorMode.onChange(() => this.schedule());
     this.camera = new CameraOverlay(this.space, engine);
+    new CameraPanel(this.root, engine);
     this.guides = new StageGuides(this.space, this.root, engine, { local: (e) => this.nav.local(e), turned: () => this.nav.spaceBox().deg !== 0 });
     this.fxTools = new FxStageTools(this.root, this.space, engine, renderer, this.nav);
     cameraMode.onChange(() => this.schedule());
@@ -312,6 +335,7 @@ export class StageView {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       hideSvg(this.box, true);
+      this.ring.sync(null, 0, 0);
       setText(this.tc, '');
       return;
     }
@@ -332,6 +356,7 @@ export class StageView {
       this.fringe.queue((fc, cw, ch, k) => this.drawFringe(fc, m, this.engine.frame, view, preview, cw, ch, k));
     }
     this.view = { scale: view.scale / this.dpr, ox: view.ox / this.dpr, oy: view.oy / this.dpr, width: this.width, height: this.height };
+    this.ring.sync(preview ? null : this.view, m.width, m.height);
     if (reuse) {
       this.camera.sync(preview ? null : this.view);
       this.guides.sync(this.view, preview);
@@ -499,6 +524,7 @@ export class StageView {
   private drawBox(m: Movie): void {
     // a sound has no picture: no transform box
     const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
+    this.surround.sync(this.view, m.width, m.height, !this.nav.preview);
     this.textStage.sync();
     this.shapeStage.sync();
     const warpShown = this.warp.sync(this.view, sel), bonesShown = this.bones.sync(this.view, sel);
@@ -507,6 +533,7 @@ export class StageView {
     this.fxTools.sync(handles ? null : this.view, sel);
     const show = sel.length === 1 && !!this.view && !handles;
     hideSvg(this.box, !show);
+    this.multi.sync(this.view, sel, !this.keyed() && !handles, [this.width, this.height]);
     setClass(this.box as unknown as HTMLElement, 'is-keyed', this.keyed());
     if (!show) return;
     const pts = this.corners(m, sel[0]);
@@ -524,7 +551,7 @@ export class StageView {
     const top = [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2];
     const cx = (pts[0][0] + pts[2][0]) / 2, cy = (pts[0][1] + pts[2][1]) / 2;
     const len = Math.hypot(top[0] - cx, top[1] - cy) || 1;
-    const rx = top[0] + ((top[0] - cx) / len) * 26, ry = top[1] + ((top[1] - cy) / len) * 26;
+    const rx = top[0] + ((top[0] - cx) / len) * 28, ry = top[1] + ((top[1] - cy) / len) * 28;
     const stem = q(this.box as unknown as HTMLElement, '.fm-box-stem');
     stem.setAttribute('x1', top[0].toFixed(1)); stem.setAttribute('y1', top[1].toFixed(1));
     stem.setAttribute('x2', rx.toFixed(1)); stem.setAttribute('y2', ry.toFixed(1));
@@ -548,7 +575,8 @@ export class StageView {
     if (!m || !v || e.button !== 0 || this.grab || this.nav.preview) return;
     const [x, y] = this.local(e);
     const target = e.target as Element;
-    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
+    // content on a locked track is not grabbed, moved or keyed from the Stage in any mode
+    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c) && !locate(m, c.id)?.track.locked);
     const tag = `stage-${Date.now()}`;
     this.root.focus({ preventScroll: true });
     if (sel.length === 1 && target.closest('.fm-box-more')) {
@@ -649,6 +677,7 @@ export class StageView {
     });
     // pre-roll: the movie rolls in from a few frames earlier, recording starts at the frame the pen came down on
     if (perform.preroll > 0) this.engine.seek(Math.max(0, armedAt - perform.preroll));
+    perform.setCountIn(armedAt - this.engine.frame);
     this.engine.play();
   }
 
@@ -740,6 +769,7 @@ export class StageView {
   /** A held pen still records: every Playhead step repeats the last position. */
   private sampleHold(): void {
     const g = this.grab;
+    if (g?.rec) perform.setCountIn(this.engine.frame >= g.rec.armedAt - perform.preroll ? Math.max(0, g.rec.armedAt - this.engine.frame) : 0);
     if (g?.rec?.last && this.engine.playing) this.sampleRec(g, g.rec);
   }
 
@@ -785,6 +815,8 @@ export class StageView {
       this.slop = null;
     }
     this.lastClient = [e.clientX, e.clientY];
+    const hudId = g.kind === 'move' ? g.ids[0] : g.id, hudAt = hudId ? locate(m, hudId) : null;
+    this.hud.base = hudAt ? fitBase(m, hudAt.content) : 1;
     let [x, y] = this.local(e);
     // scale and rotate read the pointer in the content's parent space, so they hold under a moving parent
     if (g.kind !== 'move') [x, y] = this.parentPt(m, g.id, x, y);

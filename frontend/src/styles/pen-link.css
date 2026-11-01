@@ -6,6 +6,8 @@
 .fm-pl-code.fm-pl-dim { color: var(--text-muted); }
 .fm-pl-note { color: var(--text-muted); font-size: var(--fs-12); }
 .fm-pl-url { white-space: pre-wrap; user-select: text; text-align: center; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-13, 13px); color: var(--accent-color); word-break: break-all; }
+.fm-pl-qr { width: 168px; height: 168px; image-rendering: pixelated; border-radius: var(--radius-md, 8px); background: #fff; }
+.fm-pl-qr.fm-pl-qr-off { visibility: hidden; }
 .fm-pl-status { color: var(--text-muted); font-size: var(--fs-12); }
 .fm-pl-status.fm-pl-live { color: var(--text-primary); }
 .fm-pl-status.fm-pl-live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-color); margin-right: 6px; }

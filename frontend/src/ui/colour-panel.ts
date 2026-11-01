@@ -4,6 +4,7 @@
 
 import type { RGB } from '../paint/types';
 import '../styles/rw-extras.css';
+import '../styles/w16-panels.css';
 import { el, q, patchList, setClass, setHidden, setStyleVar, setText, setValue } from './dom';
 import { toast } from './toast';
 import { downloadBlob } from '../io/api';
@@ -14,8 +15,10 @@ type Harmony = 'complementary' | 'split' | 'analogous' | 'triadic' | 'tetradic';
 interface Palette { id: string; name: string; colors: (RGB | null)[] }
 
 const KEY = 'formmorpheus.colour';
-const SLOTS = 30;
-const HIST_MAX = 10;
+/** Slots in a palette: nine to a row; the panel's footer shows the first three rows (a 3 by 9 grid). */
+const SLOTS = 36;
+const FOOT_SLOTS = 27;
+const HIST_MAX = 8;
 const DISC = 224, RING = 22, ROUT = DISC / 2, DISC_IN = ROUT - RING - 6;
 const HW = 188, HWR = HW / 2;
 const MODES: Mode[] = ['disc', 'classic', 'harmony', 'value', 'palettes'];
@@ -563,15 +566,19 @@ export class ColourPanel {
       }
     });
     // double tap inside the disc: snap to white, black, mid gray, half or full saturation (whichever is nearest)
+    let dcStep = -1, dcAt = 0, dcV = 1;
+    disc.addEventListener('pointerdown', () => { if (performance.now() - dcAt > 700) dcV = this.v; });
     disc.addEventListener('dblclick', (e) => {
       const rc = disc.getBoundingClientRect(), kk = DISC / rc.width;
       const dx = (e.clientX - rc.left) * kk - DISC / 2, dy = (e.clientY - rc.top) * kk - DISC / 2;
       if (Math.hypot(dx, dy) >= DISC_IN + 3) return;
-      const [a, b] = discToSquare(dx / DISC_IN, -dy / DISC_IN), s = clamp((a + 1) / 2, 0, 1), v = clamp((b + 1) / 2, 0, 1);
-      const cand: [number, number][] = [[0, 1], [s, 0], [0, 0.5], [0.5, v], [1, v]];
-      let best = cand[0], bd = Infinity;
-      for (const c of cand) { const dd = Math.hypot(c[0] - s, c[1] - v); if (dd < bd) { bd = dd; best = c; } }
-      this.pick(this.h, best[0], best[1], true);
+      const now = performance.now();
+      if (now - dcAt > 2500) dcStep = -1;
+      dcAt = now;
+      dcStep = (dcStep + 1) % 5;
+      const bright = Math.max(dcV, 0.7);
+      const cyc: [number, number][] = [[0, 1], [0, 0], [0, 0.5], [0.5, bright], [1, bright]];
+      this.pick(this.h, cyc[dcStep][0], cyc[dcStep][1], true);
     });
     // Ctrl+scroll (a trackpad pinch arrives the same way) magnifies the inner disc for fine control
     disc.addEventListener('wheel', (e) => {
@@ -641,7 +648,7 @@ export class ColourPanel {
 
     // history and default palette: fixed slot counts, so built once
     for (let i = 0; i < HIST_MAX; i++) { const b = el(`<button type="button" class="fm-col-sw" data-h="${i}" aria-label="History ${i + 1}"></button>`); n.hstrip.append(b); n.hsw.push(b); }
-    for (let i = 0; i < SLOTS; i++) { const b = el(`<button type="button" class="fm-col-sw" data-i="${i}"></button>`); n.grid.append(b); n.gsw.push(b); }
+    for (let i = 0; i < FOOT_SLOTS; i++) { const b = el(`<button type="button" class="fm-col-sw" data-i="${i}"></button>`); n.grid.append(b); n.gsw.push(b); }
     q(r, '.fm-col-clear').addEventListener('click', () => { this.hist = []; this.renderHistory(); this.save(); });
     n.palname.addEventListener('click', () => { this.active = (this.active + 1) % this.pals.length; this.renderPalettes(); this.save(); });
 
@@ -886,13 +893,19 @@ export class ColourPanel {
       if (card.dataset.renaming !== '1') setText(q(card, '.fm-col-cname'), p.name);
       setClass(card, 'is-default', this.pals.indexOf(p) === this.active);
       setHidden(q(card, '.fm-col-del'), !p.id.startsWith('u'));
+      setHidden(q(card, '.fm-col-def'), this.pals.indexOf(p) === this.active);
       card.querySelectorAll<HTMLElement>('.fm-col-sw').forEach((node, i) => this.paint(node, p.colors[i] ?? null));
     };
     patchList(n.pl, this.pals, {
       key: (p) => p.id,
       create: (p) => {
-        const card = el(`<div class="fm-col-card"><div class="fm-col-chead"><span class="fm-col-drag" title="Drag to reorder" aria-label="Reorder palette"><svg viewBox="0 0 10 14" width="8" height="12" fill="currentColor"><circle cx="2.5" cy="3" r="1.2"/><circle cx="7.5" cy="3" r="1.2"/><circle cx="2.5" cy="7" r="1.2"/><circle cx="7.5" cy="7" r="1.2"/><circle cx="2.5" cy="11" r="1.2"/><circle cx="7.5" cy="11" r="1.2"/></svg></span><span class="fm-col-cname" title="Click to rename"></span><input class="fm-col-crename" type="text" maxlength="32" spellcheck="false" aria-label="Palette name" hidden><button type="button" class="fm-col-dup" title="Duplicate palette" aria-label="Duplicate palette"><svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4.5" y="4.5" width="7.5" height="7.5" rx="1.5"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5"/></svg></button><button type="button" class="fm-col-def">Default</button><button type="button" class="fm-col-del" title="Delete palette" aria-label="Delete palette">×</button></div><div class="fm-col-cgrid"></div></div>`);
+        const card = el(`<div class="fm-col-card"><div class="fm-col-chead"><span class="fm-col-drag" title="Drag to reorder" aria-label="Reorder palette"><svg viewBox="0 0 10 14" width="8" height="12" fill="currentColor"><circle cx="2.5" cy="3" r="1.2"/><circle cx="7.5" cy="3" r="1.2"/><circle cx="2.5" cy="7" r="1.2"/><circle cx="7.5" cy="7" r="1.2"/><circle cx="2.5" cy="11" r="1.2"/><circle cx="7.5" cy="11" r="1.2"/></svg></span><span class="fm-col-cname" title="Click to rename"></span><input class="fm-col-crename" type="text" maxlength="32" spellcheck="false" aria-label="Palette name" hidden><span class="fm-col-tick" title="The active palette" aria-hidden="true"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.4 2.4 4.6-5.3"/></svg></span><button type="button" class="fm-col-more" title="Palette menu" aria-label="Palette menu" aria-haspopup="menu"><svg viewBox="0 0 14 14" width="14" height="14" fill="currentColor"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg></button><div class="fm-col-pm" role="menu" hidden><button type="button" class="fm-col-def" role="menuitem">Set as active</button><button type="button" class="fm-col-dup" role="menuitem">Duplicate</button><button type="button" class="fm-col-del is-danger" role="menuitem">Delete</button></div></div><div class="fm-col-cgrid"></div></div>`);
         this.wireCard(card, p.id);
+        // the ellipsis opens Set as active, Duplicate and Delete; a pick or a press elsewhere closes it
+        const pm = q(card, '.fm-col-pm');
+        q(card, '.fm-col-more').addEventListener('click', (ev) => { ev.stopPropagation(); setHidden(pm, !pm.hidden); });
+        pm.addEventListener('click', () => setHidden(pm, true));
+        card.addEventListener('pointerleave', () => setHidden(pm, true));
         const g = q(card, '.fm-col-cgrid');
         for (let i = 0; i < SLOTS; i++) g.append(el(`<button type="button" class="fm-col-sw" data-pal="${p.id}" data-i="${i}"></button>`));
         q(card, '.fm-col-def').addEventListener('click', () => { const ix = this.pals.findIndex((x) => x.id === p.id); if (ix >= 0) { this.active = ix; this.renderPalettes(); this.save(); } });
@@ -1017,12 +1030,29 @@ export class ColourPanel {
       const kids = Array.from(this.n.pl.children) as HTMLElement[];
       kids.forEach((k, i) => { setClass(k, 'is-drop-before', i === to); setClass(k, 'is-drop-after', to === kids.length && i === kids.length - 1); });
     };
+    const lift = (pid: number): void => {
+      st = { pid, to: -1 };
+      grip.setPointerCapture(pid);
+      setClass(card, 'is-lifted', true);
+    };
     grip.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      st = { pid: e.pointerId, to: -1 };
-      grip.setPointerCapture(e.pointerId);
-      setClass(card, 'is-lifted', true);
+      lift(e.pointerId);
       e.preventDefault();
+    });
+    // tap and hold anywhere on the palette's title row picks the card up too; a short tap still renames or presses a button
+    const head = q(card, '.fm-col-chead');
+    let hold = 0;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest('button, input, .fm-col-drag, .fm-col-pm')) return;
+      const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+      window.clearTimeout(hold);
+      const cancel = (m: PointerEvent): void => { if (m.pointerId === pid && Math.hypot(m.clientX - x0, m.clientY - y0) > 6) stopHold(); };
+      const stopHold = (): void => { window.clearTimeout(hold); head.removeEventListener('pointermove', cancel); head.removeEventListener('pointerup', stopHold); head.removeEventListener('pointercancel', stopHold); };
+      head.addEventListener('pointermove', cancel);
+      head.addEventListener('pointerup', stopHold);
+      head.addEventListener('pointercancel', stopHold);
+      hold = window.setTimeout(() => { head.removeEventListener('pointermove', cancel); lift(pid); this.lp.fired = true; }, 450);
     });
     grip.addEventListener('pointermove', (e) => {
       if (!st || st.pid !== e.pointerId) return;

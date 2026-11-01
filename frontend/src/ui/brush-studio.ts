@@ -15,6 +15,7 @@ import {
 import { renderStampPreview } from '../paint/stamp-preview';
 import { buildPickRow, type PickRow } from './brush-pick';
 import { buildCurvePanel, type CurvePanel } from './brush-studio-curves';
+import { ICON_ADV, SettingPop } from './brush-studio-pop';
 import {
   ABOUT_LABELS, SECTIONS, allParams, brushDiff, cloneBrush,
   type BoolParam, type NumParam, type Param, type SelectParam,
@@ -39,6 +40,10 @@ const ICON_CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_CLEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 12.5h8L17 7"/></svg>';
 const ICON_WAVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c3-9 6-9 8-3s5 5 10-6"/></svg>';
 
+const ICON_PAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5H6.5A2.5 2.5 0 0 0 4 7.5v10A2.5 2.5 0 0 0 6.5 20h10a2.5 2.5 0 0 0 2.5-2.5V12"/><path d="m17.5 4.5 2 2L12 14l-3 1 1-3z"/></svg>';
+/** The eight colors the pad offers for testing a brush. */
+const PAD_COLORS = ['#101014', '#f5f5f7', '#e5484d', '#f76707', '#f5c518', '#30a46c', '#3b5bdb', '#8e4ec6'];
+
 let current: BrushStudio | null = null;
 
 /** Opens the studio; resolves with the saved brush's id, or null when cancelled. */
@@ -61,8 +66,10 @@ interface Row {
   info?: HTMLElement;
   remove?: HTMLButtonElement;
   pick?: PickRow;
+  adv?: HTMLButtonElement;
 }
 
+type Rec = Record<string, unknown>;
 const hexOf = (c: RGB): string => `#${[c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
 const rgbOf = (hex: string): RGB => ({ r: parseInt(hex.slice(1, 3), 16) || 0, g: parseInt(hex.slice(3, 5), 16) || 0, b: parseInt(hex.slice(5, 7), 16) || 0 });
 const fmtNum = (v: number): string => String(Math.round(v * 100) / 100);
@@ -84,6 +91,11 @@ class BrushStudio {
   private raster: Raster = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
   private paint: PadPaint = { color: { r: 59, g: 91, b: 219 }, color2: { r: 247, g: 103, b: 7 }, size: 0.5, opacity: 1 };
   private simulate = true;
+  /** Pad testing settings: a floor and a gain on pressure, a fixed tilt direction (-1 follows the stroke), wet mix on or off. */
+  private pmin = 0;
+  private pscale = 1;
+  private taz = -1;
+  private wetOn = true;
   private tool: 'paint' | 'smudge' = 'paint';
   private raf = 0;
   private ro: ResizeObserver | null = null;
@@ -93,10 +105,12 @@ class BrushStudio {
   private readonly dateEl: HTMLElement;
   private readonly sigEl: HTMLCanvasElement;
   private readonly curves: CurvePanel;
+  private readonly pop: SettingPop;
   private sigDown = false;
   private readonly discardBar: HTMLElement;
   private readonly undoBtn: HTMLButtonElement;
   private readonly resetBtn: HTMLButtonElement;
+  private rpEl: HTMLElement | null = null;
   private stampEl: HTMLCanvasElement | null = null;
   private stampKey = '';
   private readonly titleEl: HTMLElement;
@@ -142,8 +156,16 @@ class BrushStudio {
             <label class="fm-bs-pf is-check"><input type="checkbox" data-p="sim"><span>Simulate pen pressure</span></label>
             <canvas class="fm-bs-stamp" width="72" height="72" style="width:36px;height:36px;border-radius:4px" title="Stamp preview" aria-label="Stamp preview"></canvas>
             <span class="fm-bs-grow"></span>
+            <button type="button" class="fm-bs-btn" data-a="padset" aria-expanded="false" title="${t('Pad settings')}">${ICON_PAD}<span>${t('Pad settings')}</span></button>
             <button type="button" class="fm-bs-btn" data-a="sample" title="Add the sample strokes">${ICON_WAVE}<span>Sample strokes</span></button>
             <button type="button" class="fm-bs-btn" data-a="clear" title="Clear pad">${ICON_CLEAR}<span>Clear pad</span></button>
+          </div>
+          <div class="fm-bs-padmore" hidden>
+            <label class="fm-bs-pf"><span>${t('Pressure minimum')}</span><input type="range" min="0" max="0.9" step="0.01" data-p="pmin"><output data-o="pmin"></output></label>
+            <label class="fm-bs-pf"><span>${t('Pressure scale')}</span><input type="range" min="0.25" max="2" step="0.05" data-p="pscale"><output data-o="pscale"></output></label>
+            <label class="fm-bs-pf"><span>${t('Tilt direction')}</span><input type="range" min="-1" max="359" step="1" data-p="taz"><output data-o="taz"></output></label>
+            <label class="fm-bs-pf is-check"><input type="checkbox" data-p="wet"><span>${t('Wet mix')}</span></label>
+            <span class="fm-bs-pf"><span>${t('Preview colors')}</span><span class="fm-bs-swatches" role="group" aria-label="${t('Preview colors')}">${PAD_COLORS.map((c) => `<button type="button" class="fm-bs-sw" data-sw="${c}" style="background:${c}" title="${c}" aria-label="${c}"></button>`).join('')}</span></span>
           </div>
         </section>
         <aside class="fm-bs-side" aria-label="Brush settings"></aside>
@@ -172,6 +194,7 @@ class BrushStudio {
       <label class="fm-bs-field"><span>${ABOUT_LABELS[0]}</span><input type="text" data-f="name" maxlength="60" spellcheck="false" autocomplete="off"></label>
       <label class="fm-bs-field"><span>${ABOUT_LABELS[1]}</span><input type="text" data-f="author" maxlength="80" spellcheck="false" autocomplete="off"></label>
       <div class="fm-bs-field"><span>${ABOUT_LABELS[2]}</span><span class="fm-bs-date"></span></div>
+      <div class="fm-bs-field is-rp"><span>${t('Reset point')}</span><button type="button" class="fm-bs-btn is-small" data-a="resetpoint">${t('Create reset point')}</button><span class="fm-bs-rp-state"></span></div>
       <div class="fm-bs-field is-sig"><span>${ABOUT_LABELS[3]}</span><canvas class="fm-bs-sig" width="360" height="110" aria-label="Signature. Sign here."></canvas><button type="button" class="fm-bs-btn is-small" data-a="sigclear">Clear signature</button></div>
     </div>`);
     this.nameEl = q(about, '[data-f="name"]');
@@ -180,6 +203,7 @@ class BrushStudio {
     this.sigEl = q(about, '.fm-bs-sig');
     this.buildShell(side, 'about', 'About this brush', about);
 
+    this.pop = new SettingPop(this.root, (id, fn) => this.edit(id, fn));
     this.wire();
     document.body.appendChild(this.root);
     window.addEventListener('keydown', this.keyHandler, true);
@@ -213,12 +237,16 @@ class BrushStudio {
         if (typeof v.opacity === 'number') this.paint.opacity = Math.min(1, Math.max(0.05, v.opacity));
         if (typeof v.sim === 'boolean') this.simulate = v.sim;
         if (v.paper === 'dark') this.wrapPaper = 'dark';
+        if (typeof v.pmin === 'number') this.pmin = Math.min(0.9, Math.max(0, v.pmin));
+        if (typeof v.pscale === 'number') this.pscale = Math.min(2, Math.max(0.25, v.pscale));
+        if (typeof v.taz === 'number') this.taz = Math.min(359, Math.max(-1, Math.round(v.taz)));
+        if (typeof v.wet === 'boolean') this.wetOn = v.wet;
       }
     } catch { /* storage may be blocked */ }
   }
   private wrapPaper: 'paper' | 'dark' = 'paper';
   private savePrefs(): void {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ c1: hexOf(this.paint.color), c2: hexOf(this.paint.color2), size: this.paint.size, opacity: this.paint.opacity, sim: this.simulate, paper: this.wrapPaper })); } catch { /* storage may be blocked */ }
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ c1: hexOf(this.paint.color), c2: hexOf(this.paint.color2), size: this.paint.size, opacity: this.paint.opacity, sim: this.simulate, paper: this.wrapPaper, pmin: this.pmin, pscale: this.pscale, taz: this.taz, wet: this.wetOn })); } catch { /* storage may be blocked */ }
   }
 
   private buildShell(side: HTMLElement, id: string, label: string, content: HTMLElement): void {
@@ -255,17 +283,18 @@ class BrushStudio {
   private buildRow(p: Param): Row {
     if (p.kind === 'group') return { param: p, root: el(`<div class="fm-bs-group">${p.label}</div>`) };
     if (p.kind === 'num') {
-      const root = el<HTMLElement>(`<div class="fm-bs-row" data-id="${p.id}"><span class="fm-bs-lab" title="Double-click to reset">${p.label}</span>
+      const tip = p.help ? `${t(p.help)} ${t('Double-click to reset')}` : t('Double-click to reset');
+      const root = el<HTMLElement>(`<div class="fm-bs-row${p.adv ? ' has-adv' : ''}" data-id="${p.id}"><span class="fm-bs-lab" title="${tip}">${p.label}</span>
         <input type="range" class="fm-bs-range" min="${p.min}" max="${p.max}" step="${p.step}" aria-label="${p.label}">
-        <input type="number" class="fm-bs-num" min="${fmtNum(p.min * p.mul)}" max="${fmtNum(p.max * p.mul)}" step="${fmtNum(p.step * p.mul)}" aria-label="${p.label} value"><span class="fm-bs-unit">${p.unit}</span></div>`);
-      return { param: p, root, range: q(root, '.fm-bs-range'), num: q(root, '.fm-bs-num') };
+        <input type="number" class="fm-bs-num" min="${fmtNum(p.min * p.mul)}" max="${fmtNum(p.max * p.mul)}" step="${fmtNum(p.step * p.mul)}" aria-label="${p.label} value"><span class="fm-bs-unit">${p.unit}</span>${p.adv ? `<button type="button" class="fm-bs-adv" data-adv="${p.id}" title="${t('Pen settings')}" aria-label="${p.label}: ${t('Pen settings')}">${ICON_ADV}</button>` : ''}</div>`);
+      return { param: p, root, range: q(root, '.fm-bs-range'), num: q(root, '.fm-bs-num'), adv: p.adv ? q<HTMLButtonElement>(root, '.fm-bs-adv') : undefined };
     }
     if (p.kind === 'bool') {
-      const root = el<HTMLElement>(`<label class="fm-bs-row is-check" data-id="${p.id}"><span class="fm-bs-lab">${p.label}</span><input type="checkbox" class="fm-bs-chk"></label>`);
+      const root = el<HTMLElement>(`<label class="fm-bs-row is-check" data-id="${p.id}"${p.help ? ` title="${t(p.help)}"` : ''}><span class="fm-bs-lab">${p.label}</span><input type="checkbox" class="fm-bs-chk"></label>`);
       return { param: p, root, check: q(root, '.fm-bs-chk') };
     }
     if (p.kind === 'select') {
-      const root = el<HTMLElement>(`<label class="fm-bs-row is-select" data-id="${p.id}"><span class="fm-bs-lab">${p.label}</span><select class="fm-bs-sel">${p.options.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}</select></label>`);
+      const root = el<HTMLElement>(`<label class="fm-bs-row is-select" data-id="${p.id}"${p.help ? ` title="${t(p.help)}"` : ''}><span class="fm-bs-lab">${p.label}</span><select class="fm-bs-sel">${p.options.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}</select></label>`);
       return { param: p, root, select: q(root, '.fm-bs-sel') };
     }
     if (p.kind === 'pick') {
@@ -281,6 +310,12 @@ class BrushStudio {
 
   private wire(): void {
     this.root.addEventListener('click', (e) => {
+      const adv = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-adv]');
+      if (adv) {
+        const p = this.rows.get(adv.dataset.adv ?? '')?.param;
+        if (p?.kind === 'num') { if (this.pop.isOpen()) this.pop.close(); else this.pop.open(adv, p, this.draft); }
+        return;
+      }
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-a]');
       if (!b) return;
       const a = b.dataset.a;
@@ -290,6 +325,8 @@ class BrushStudio {
       else if (a === 'reset') this.reset();
       else if (a === 'keep') setHidden(this.discardBar, true);
       else if (a === 'discard') this.close(null);
+      else if (a === 'padset') { const more = q(this.root, '.fm-bs-padmore'); setHidden(more, !more.hidden); b.setAttribute('aria-expanded', String(!more.hidden)); }
+      else if (a === 'resetpoint') this.makeResetPoint();
       else if (a === 'clear') { this.strokes = []; this.scheduleDraw(); }
       else if (a === 'sample') { this.strokes = demoStrokes(); this.scheduleDraw(); }
       else if (a === 'sigclear') { this.clearSignature(); }
@@ -328,6 +365,16 @@ class BrushStudio {
     inp('c1').addEventListener('input', () => { this.paint.color = rgbOf(inp('c1').value); this.padChanged(); });
     inp('c2').addEventListener('input', () => { this.paint.color2 = rgbOf(inp('c2').value); this.padChanged(); });
     inp('sim').addEventListener('change', () => { this.simulate = inp('sim').checked; this.savePrefs(); });
+    const more = q(this.root, '.fm-bs-padmore');
+    const mi = (k: string): HTMLInputElement => q(more, `[data-p="${k}"]`);
+    mi('pmin').addEventListener('input', () => { this.pmin = mi('pmin').valueAsNumber; this.padChanged(); });
+    mi('pscale').addEventListener('input', () => { this.pscale = mi('pscale').valueAsNumber; this.padChanged(); });
+    mi('taz').addEventListener('input', () => { this.taz = mi('taz').valueAsNumber; this.padChanged(); });
+    mi('wet').addEventListener('change', () => { this.wetOn = mi('wet').checked; this.padChanged(); });
+    more.addEventListener('click', (e) => {
+      const sw = (e.target as HTMLElement).closest<HTMLElement>('[data-sw]');
+      if (sw?.dataset.sw) { this.paint.color = rgbOf(sw.dataset.sw); this.padChanged(); }
+    });
     q<HTMLSelectElement>(bar, '[data-p="tool"]').addEventListener('change', (e) => { this.tool = (e.target as HTMLSelectElement).value === 'smudge' ? 'smudge' : 'paint'; });
     q<HTMLSelectElement>(bar, '[data-p="paper"]').addEventListener('change', (e) => {
       this.wrapPaper = (e.target as HTMLSelectElement).value === 'dark' ? 'dark' : 'paper';
@@ -422,10 +469,22 @@ class BrushStudio {
 
   private reset(): void {
     this.pushHist('reset', true);
-    this.draft = cloneBrush(this.orig);
+    this.draft = this.resetTarget();
     this.syncAll();
     this.loadSignature();
     this.scheduleDraw();
+  }
+
+  /** What Reset brush returns to: the reset point when the person made one, else the brush as it was opened. */
+  private resetTarget(): Brush {
+    const rp = this.draft.resetPoint;
+    if (!rp) return cloneBrush(this.orig);
+    // identity, pictures and the About text stay; every setting returns to the saved value (or to its absence)
+    const keep = new Set(['id', 'set', 'name', 'custom', 'lib', 'created', 'author', 'signature', 'tipImage', 'grainImage', 'resetPoint']);
+    const out = cloneBrush(this.draft) as unknown as Rec;
+    for (const k of Object.keys(out)) if (!keep.has(k)) delete out[k];
+    for (const k of Object.keys(rp)) if (!keep.has(k)) out[k] = JSON.parse(JSON.stringify(rp[k])) as unknown;
+    return out as unknown as Brush;
   }
 
   private dirty(): boolean {
@@ -437,6 +496,7 @@ class BrushStudio {
     const flags = new Map<string, boolean>();
     for (const row of this.rows.values()) this.syncRow(row, b, flags);
     this.curves.sync(b);
+    this.pop.sync(b);
     if (b.curves) flags.set('curves', true);
     for (const [id, s] of this.secEls) setHidden(s.dot, !flags.get(id));
     if (document.activeElement !== this.nameEl && this.nameEl.value !== b.name) this.nameEl.value = b.name;
@@ -448,7 +508,10 @@ class BrushStudio {
     const b = this.draft;
     setText(this.dateEl, b.created ? dateText(b.created) : t('Not saved yet'));
     this.undoBtn.disabled = this.hist.length === 0;
-    this.resetBtn.disabled = !this.dirty();
+    this.resetBtn.disabled = b.resetPoint ? Object.keys(brushDiff(this.resetTarget(), b)).length === 0 : !this.dirty();
+    this.resetBtn.title = b.resetPoint ? t('Reset to the reset point') : t('Reset brush');
+    const rpb = this.rpEl ?? (this.rpEl = q(this.root, '.fm-bs-rp-state'));
+    setText(rpb, b.resetPoint ? t('A reset point is saved. Reset brush returns to it.') : t('No reset point yet. Reset brush returns to the brush as it was opened.'));
     this.refreshTitle();
     this.drawStamp();
   }
@@ -487,6 +550,7 @@ class BrushStudio {
       const set = Math.abs(v - p.def) > 1e-9;
       setClass(row.root, 'is-set', set);
       if (set && flags) flags.set(this.sectionOf(p.id), true);
+      if (row.adv && p.adv) setClass(row.adv, 'is-on', p.adv.mode === 'tilt' ? !!(b.curves?.tilt || b.tiltAngle) : !!(p.adv.ch && b.curves?.[p.adv.ch]));
     } else if (p.kind === 'bool' && row.check) {
       const v = p.get(b);
       if (row.check.checked !== v) row.check.checked = v;
@@ -570,6 +634,42 @@ class BrushStudio {
     q<HTMLInputElement>(bar, '[data-p="sim"]').checked = this.simulate;
     setText(q(bar, '[data-o="size"]'), `${Math.round(this.paint.size * 100)}%`);
     setText(q(bar, '[data-o="opacity"]'), `${Math.round(this.paint.opacity * 100)}%`);
+    const more = q(this.root, '.fm-bs-padmore');
+    const mset = (k: string, v: string): void => { const n = q<HTMLInputElement>(more, `[data-p="${k}"]`); if (n.value !== v) n.value = v; };
+    mset('pmin', String(this.pmin)); mset('pscale', String(this.pscale)); mset('taz', String(this.taz));
+    q<HTMLInputElement>(more, '[data-p="wet"]').checked = this.wetOn;
+    setText(q(more, '[data-o="pmin"]'), `${Math.round(this.pmin * 100)}%`);
+    setText(q(more, '[data-o="pscale"]'), `${Math.round(this.pscale * 100)}%`);
+    setText(q(more, '[data-o="taz"]'), this.taz < 0 ? t('Stroke') : `${this.taz}°`);
+    for (const sw of Array.from(more.querySelectorAll<HTMLElement>('[data-sw]'))) setClass(sw, 'is-on', sw.dataset.sw === hexOf(this.paint.color));
+  }
+
+  /** The brush the pad paints with: the draft, without its wet mix while the pad's Wet mix is off. */
+  private padBrush(): Brush {
+    return this.wetOn || !this.draft.wet ? this.draft : { ...this.draft, wet: undefined };
+  }
+
+  /** Pad pressure and tilt settings applied to one recorded point (the record keeps the raw values so a setting can change later). */
+  private feel(e: PadEvent): PadEvent {
+    if (this.pmin === 0 && this.pscale === 1 && this.taz < 0) return e;
+    const p = Math.min(1, this.pmin + (1 - this.pmin) * Math.min(1, Math.max(0, e.p * this.pscale)));
+    let { tx, ty } = e;
+    const mag = Math.hypot(tx, ty);
+    if (this.taz >= 0 && mag > 0) { const a = (this.taz * Math.PI) / 180; tx = Math.round(mag * Math.cos(a)); ty = Math.round(mag * Math.sin(a)); }
+    return { ...e, p, tx, ty };
+  }
+
+  private feelStrokes(): PadStroke[] {
+    if (this.pmin === 0 && this.pscale === 1 && this.taz < 0) return this.strokes;
+    return this.strokes.map((s) => ({ ...s, ev: s.ev.map((e) => this.feel(e)) }));
+  }
+
+  /** Saves the draft's settings as the brush's reset point; Reset brush returns here. */
+  private makeResetPoint(): void {
+    this.pushHist('resetpoint', true);
+    const snap = JSON.parse(JSON.stringify(this.draft, (k, v) => (k === 'tipImage' || k === 'grainImage' || k === 'signature' || k === 'resetPoint' ? undefined : v))) as Record<string, unknown>;
+    this.draft.resetPoint = snap;
+    this.syncAll();
   }
 
   private padChanged(): void {
@@ -594,7 +694,7 @@ class BrushStudio {
   private draw(): void {
     if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
     const w = this.canvas.width, h = this.canvas.height;
-    this.raster = renderPad(this.draft, this.strokes, w, h, this.paint);
+    this.raster = renderPad(this.padBrush(), this.feelStrokes(), w, h, this.paint);
     this.ctx.putImageData(new ImageData(this.raster.data as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
   }
 
@@ -624,12 +724,12 @@ class BrushStudio {
     this.canvas.setPointerCapture(e.pointerId);
     const seed = (Math.random() * 0x7fffffff) | 0;
     const r = this.canvas.getBoundingClientRect();
-    const run = new PadRunner(this.raster, this.draft, this.paint, seed, this.tool);
+    const run = new PadRunner(this.raster, this.padBrush(), this.paint, seed, this.tool);
     const st = { run, tool: this.tool, ev: [] as PadEvent[], t0: e.timeStamp, seed, id: e.pointerId, travel: 0, lx: e.clientX - r.left, ly: e.clientY - r.top, lt: 0, dir: 0 };
     this.live = st;
     const pe = this.toPadEvent(e, st);
     st.ev.push(pe);
-    this.blit(run.down(pe));
+    this.blit(run.down(this.feel(pe)));
   }
 
   private padMove(e: PointerEvent): void {
@@ -639,7 +739,7 @@ class BrushStudio {
     for (const ev of list.length ? list : [e]) {
       const pe = this.toPadEvent(ev, st);
       st.ev.push(pe);
-      this.blit(st.run.move(pe));
+      this.blit(st.run.move(this.feel(pe)));
     }
   }
 
@@ -649,7 +749,7 @@ class BrushStudio {
     this.live = null;
     const pe = this.toPadEvent(e, st);
     st.ev.push(pe);
-    this.blit(st.run.up(pe));
+    this.blit(st.run.up(this.feel(pe)));
     this.strokes.push(st.tool === 'smudge' ? { seed: st.seed, ev: st.ev, tool: 'smudge' } : { seed: st.seed, ev: st.ev });
   }
 
@@ -669,7 +769,8 @@ class BrushStudio {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (!this.discardBar.hidden) setHidden(this.discardBar, true); else this.cancel();
+      if (this.pop.isOpen()) this.pop.close();
+      else if (!this.discardBar.hidden) setHidden(this.discardBar, true); else this.cancel();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !inText) {
@@ -712,7 +813,11 @@ class BrushStudio {
         else if (p?.kind === 'bool') patch[k] = false;
         else if (k === 'blend') patch[k] = 'normal';
         else if (k === 'grainBlend') patch[k] = 'multiply';
-        else if (k === 'colorDyn') patch[k] = {};
+        else if (k === 'burntMode') patch[k] = 'normal';
+        else if (k === 'tipFilter') patch[k] = 'classic';
+        else if (k === 'tipSharp') patch[k] = false;
+        else if (k === 'colorDyn' || k === 'curves') patch[k] = {};
+        else if (k === 'cursor') patch[k] = '';   // falsy: the app's outline style
       }
     }
     if (Object.keys(patch).length) brushStore.edit(id, patch as Partial<Brush>);

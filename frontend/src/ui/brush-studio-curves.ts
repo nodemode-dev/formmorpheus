@@ -55,12 +55,14 @@ function putCurve(b: Brush, key: Key, pts: number[], speed: number): void {
   if (Object.keys(next).length) b.curves = next; else delete b.curves;
 }
 
-export function buildCurvePanel(edit: (id: string, fn: (b: Brush) => void) => void): CurvePanel {
-  const root = el<HTMLElement>(`<div class="fm-bc"><p class="fm-bc-hint">${t('Click a graph to add a node (up to four). Drag a node to move it, double-click to remove it.')}</p><div class="fm-bc-grid"></div></div>`);
+/** `only` builds a single channel's graph (the per-setting popover) with no hint line and one column. */
+export function buildCurvePanel(edit: (id: string, fn: (b: Brush) => void) => void, only?: Key): CurvePanel {
+  const root = el<HTMLElement>(`<div class="fm-bc${only ? ' is-single' : ''}">${only ? '' : `<p class="fm-bc-hint">${t('Click a graph to add a node (up to four). Drag a node to move it, double-click to remove it.')}</p>`}<div class="fm-bc-grid"></div></div>`);
   const grid = q(root, '.fm-bc-grid');
   const blocks: Block[] = [];
 
   for (const ch of CHANNELS) {
+    if (only && ch.key !== only) continue;
     const card = el<HTMLElement>(`<div class="fm-bc-card" data-key="${ch.key}">
       <div class="fm-bc-head"><span class="fm-bc-name">${t(ch.label)}</span><button type="button" class="fm-bc-reset" title="${t('Reset curve')}" aria-label="${t('Reset curve')}: ${t(ch.label)}" hidden>${t('Reset')}</button></div>
       <div class="fm-bc-plot"></div>

@@ -1,0 +1,20 @@
+/* New Movie, the card page (FV-223): a large light card (the inverse of the window: light on a dark theme), the size
+   badge, the format name at 36 px, two outline buttons to begin, one dot per format. */
+.fm-nmh { display: grid; justify-items: center; gap: var(--space-4); outline: none; }
+.fm-nmh-card { position: relative; display: grid; justify-items: center; gap: var(--space-2); width: min(100%, 420px); padding: 36px 28px 28px; border-radius: var(--radius-2xl); background: var(--text-primary); color: var(--surface-0); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35); }
+.fm-nmh-badge { position: absolute; top: 14px; inset-inline-end: 14px; padding: 2px 10px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface-0) 14%, transparent); font-size: var(--fs-12); font-weight: 700; letter-spacing: 0.04em; }
+.fm-nmh-box { display: flex; align-items: center; justify-content: center; width: 72px; height: 72px; }
+.fm-nmh-outline { display: block; box-sizing: border-box; border: 3px solid var(--accent-color); border-radius: var(--radius-sm); }
+.fm-nmh-name { font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; text-align: center; }
+.fm-nmh-meta { color: color-mix(in srgb, var(--surface-0) 62%, transparent); font-size: var(--fs-13); font-variant-numeric: tabular-nums; }
+.fm-nmh-size { width: 100%; max-width: 220px; margin-top: var(--space-2); border-color: color-mix(in srgb, var(--surface-0) 22%, transparent); background-color: color-mix(in srgb, var(--surface-0) 8%, transparent); color: var(--surface-0); }
+.fm-nmh-size option { background: var(--surface-1); color: var(--text-primary); }
+.fm-nmh-note { margin: var(--space-2) 0 0; color: color-mix(in srgb, var(--surface-0) 62%, transparent); font-size: var(--fs-12); text-align: center; }
+.fm-nmh-note[hidden], .fm-nmh-size[hidden] { display: none; }
+.fm-nmh-go { display: flex; gap: var(--space-3); }
+.fm-nmh-start { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; min-width: 132px; padding: 14px 18px; border: 2px solid var(--accent-color); border-radius: var(--radius-xl); background: transparent; color: var(--accent-color); font: inherit; font-size: var(--fs-13); font-weight: 600; cursor: pointer; transition: background 0.12s ease; }
+.fm-nmh-start:hover, .fm-nmh-start:focus-visible { background: color-mix(in srgb, var(--accent-color) 16%, transparent); outline: none; }
+.fm-nmh-dots { display: flex; gap: 8px; }
+.fm-nmh-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text-primary) 28%, transparent); cursor: pointer; transition: background 0.12s ease, transform 0.12s ease; }
+.fm-nmh-dot:hover { background: color-mix(in srgb, var(--text-primary) 55%, transparent); }
+.fm-nmh-dot.is-active { background: var(--accent-color); transform: scale(1.25); }

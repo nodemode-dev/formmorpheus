@@ -18,6 +18,11 @@
 .fm-fxs-open:hover { background: var(--accent-soft); }
 .fm-fxs-ico { display: inline-flex; color: var(--accent-color); }
 .fm-fxs-ico svg { width: 16px; height: 16px; }
+.fm-fxs-sw { position: relative; flex: none; width: 26px; height: 14px; margin: 0 var(--space-1); padding: 0; border: 0; border-radius: 999px; background: var(--accent-color); cursor: pointer; }
+.fm-fxs-sw::after { content: ''; position: absolute; top: 2px; left: 14px; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.fm-fxs-sw[aria-checked="false"] { background: var(--surface-sunken, rgba(255, 255, 255, 0.16)); }
+.fm-fxs-sw[aria-checked="false"]::after { left: 2px; }
+.fm-fxs-row.is-off .fm-fxs-open { opacity: 0.5; }
 .fm-fxs-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--space-2); }
 .fm-fxs-chip { display: inline-flex; align-items: center; border-radius: 999px; background: var(--accent-soft); }
 .fm-fxs-apply { padding: 2px var(--space-2); border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--fs-11); cursor: pointer; }

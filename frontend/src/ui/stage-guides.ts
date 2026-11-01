@@ -2,10 +2,11 @@
 // plus the rulers a guide line is dragged from. Drawing aids only: nothing here reaches an exported picture.
 // Built once; every update sets attributes on pooled elements (no subtree is rebuilt).
 import type { Engine } from '../engine/engine';
-import { GRID_DEFAULT, SAFE_ACTION, SAFE_TITLE, anyGuide, gridAxis, insetRect, verticalRect, type GuideLine, type Guides, type Inset } from '../engine/guides';
+import { GRID_DEFAULT, aspectRect, SAFE_ACTION, SAFE_TITLE, anyGuide, gridAxis, insetRect, verticalRect, type GuideLine, type Guides, type Inset } from '../engine/guides';
 import * as ops from '../engine/ops';
 import type { View } from '../engine/render';
 import { el, setHidden } from './dom';
+import { t } from './i18n';
 import '../styles/stage-guides.css';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -34,7 +35,11 @@ export class StageGuides {
   private readonly major = svgEl<SVGPathElement>('path', 'fm-gd-grid');
   private readonly minor = svgEl<SVGPathElement>('path', 'fm-gd-grid is-minor');
   private readonly thirds = svgEl<SVGPathElement>('path', 'fm-gd-thirds');
-  private readonly rects = { title: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-title'), action: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-action'), vertical: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-vertical') };
+  private readonly rects = { title: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-title'), action: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-action'), vertical: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-vertical'), square: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-square'), portrait: svgEl<SVGRectElement>('rect', 'fm-gd-safe is-portrait') };
+  // the margin outside a safe area is dimmed and each outline is named, so the areas read at any Stage size
+  private readonly shade = svgEl<SVGPathElement>('path', 'fm-gd-shade');
+  private readonly shadeV = svgEl<SVGPathElement>('path', 'fm-gd-shade is-vertical');
+  private readonly names = { title: svgEl<SVGTextElement>('text', 'fm-gd-name is-title'), action: svgEl<SVGTextElement>('text', 'fm-gd-name is-action'), vertical: svgEl<SVGTextElement>('text', 'fm-gd-name is-vertical'), square: svgEl<SVGTextElement>('text', 'fm-gd-name is-square'), portrait: svgEl<SVGTextElement>('text', 'fm-gd-name is-portrait') };
   private readonly lineLayer = svgEl<SVGGElement>('g', 'fm-gd-lines');
   private readonly pool: Pooled[] = [];
   private readonly rulerTop = el<HTMLCanvasElement>('<canvas class="fm-gd-ruler is-top" hidden></canvas>');
@@ -50,7 +55,12 @@ export class StageGuides {
     this.root.setAttribute('class', 'fm-gd');
     this.root.setAttribute('hidden', '');
     this.root.setAttribute('aria-hidden', 'true');
-    this.root.append(this.major, this.minor, this.thirds, this.rects.title, this.rects.action, this.rects.vertical, this.lineLayer);
+    this.root.append(this.major, this.minor, this.thirds, this.shade, this.shadeV, this.rects.title, this.rects.action, this.rects.vertical, this.rects.square, this.rects.portrait, this.names.title, this.names.action, this.names.vertical, this.names.square, this.names.portrait, this.lineLayer);
+    this.names.square.textContent = '1:1';
+    this.names.portrait.textContent = '4:5';
+    this.names.title.textContent = t('Title safe');
+    this.names.action.textContent = t('Action safe');
+    this.names.vertical.textContent = t('Vertical safe');
     space.appendChild(this.root);
     stageRoot.append(this.rulerTop, this.rulerLeft);
     this.rulerTop.addEventListener('pointerdown', (e) => this.createFrom(e, 'y', this.rulerTop));
@@ -95,9 +105,26 @@ export class StageGuides {
       n.setAttribute('x', (x0 + r.x0 * s).toFixed(1)); n.setAttribute('y', (y0 + r.y0 * s).toFixed(1));
       n.setAttribute('width', ((r.x1 - r.x0) * s).toFixed(1)); n.setAttribute('height', ((r.y1 - r.y0) * s).toFixed(1));
     };
-    rect(this.rects.title, g.titleSafe, insetRect(w, h, SAFE_TITLE));
-    rect(this.rects.action, g.actionSafe, insetRect(w, h, SAFE_ACTION));
-    rect(this.rects.vertical, g.verticalSafe, verticalRect(w, h));
+    const rt = insetRect(w, h, SAFE_TITLE), ra = insetRect(w, h, SAFE_ACTION), rv = verticalRect(w, h);
+    rect(this.rects.title, g.titleSafe, rt);
+    rect(this.rects.action, g.actionSafe, ra);
+    rect(this.rects.vertical, g.verticalSafe, rv);
+    const rs = aspectRect(w, h, 1), rp = aspectRect(w, h, 4 / 5);
+    rect(this.rects.square, g.squareFrame, rs);
+    rect(this.rects.portrait, g.portraitFrame, rp);
+    // names sit just inside each outline's top left corner; the dim margin lies outside the inner of title / action
+    const name = (n: SVGTextElement, on: boolean | undefined, r: Inset, right: boolean): void => {
+      n.toggleAttribute('hidden', !on);
+      if (!on) return;
+      // title and action sit a few pixels apart, so action is named at its top right and title at its top left
+      n.setAttribute('text-anchor', right ? 'end' : 'start');
+      n.setAttribute('x', (right ? x0 + r.x1 * s - 6 : x0 + r.x0 * s + 6).toFixed(1)); n.setAttribute('y', (y0 + r.y0 * s + 14).toFixed(1));
+    };
+    name(this.names.title, g.titleSafe, rt, false); name(this.names.action, g.actionSafe, ra, true); name(this.names.vertical, g.verticalSafe, rv, false);
+    name(this.names.square, g.squareFrame, rs, true); name(this.names.portrait, g.portraitFrame, rp, false);
+    const ring = (on: boolean | undefined, r: Inset): string => (on ? `M${x0.toFixed(1)} ${y0.toFixed(1)}H${x1.toFixed(1)}V${y1.toFixed(1)}H${x0.toFixed(1)}ZM${(x0 + r.x0 * s).toFixed(1)} ${(y0 + r.y0 * s).toFixed(1)}V${(y0 + r.y1 * s).toFixed(1)}H${(x0 + r.x1 * s).toFixed(1)}V${(y0 + r.y0 * s).toFixed(1)}Z` : '');
+    this.shade.setAttribute('d', g.titleSafe ? ring(true, rt) : ring(g.actionSafe, ra));
+    this.shadeV.setAttribute('d', ring(g.verticalSafe, rv));
     const list = g.lines ?? [];
     while (this.pool.length < list.length) this.pool.push(this.makeLine(this.pool.length));
     this.pool.forEach((p, i) => {

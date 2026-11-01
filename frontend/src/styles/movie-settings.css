@@ -5,20 +5,27 @@
 .fm-ms-title { padding: var(--space-1) var(--space-3) var(--space-3); color: var(--text-primary); font-size: var(--fs-18); font-weight: 700; }
 .fm-ms-pane { gap: 2px; }
 .fm-ms-pair { gap: var(--space-1); }
-.fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { flex: none; width: 36px; padding-inline: 0; }
+.fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { flex: none; width: 30px; padding-inline: 0; }
+/* FV-211: four-digit sizes fit (no spinner eating the field) and the h/m/s row stays inside the panel */
+.fm-ms-pair .fm-ms-input[type="number"] { flex: none; width: 76px; padding-inline: var(--space-2); -moz-appearance: textfield; appearance: textfield; }
+.fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { width: 30px; padding-inline: 0; }
+.fm-ms-pair .fm-ms-input[type="number"]::-webkit-inner-spin-button, .fm-ms-pair .fm-ms-input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.fm-ms-row > .fm-ms-label { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-ms-pair { flex: none; }
+.fm-ms-row > .fm-ms-input.fm-ms-wide { width: 200px; }
 .fm-ms-sub { display: grid; gap: 2px; }
 .fm-ms-sub[hidden] { display: none; }
 .fm-ms-pane[hidden] { display: none; }
 .fm-ms-head { padding-top: var(--space-4); }
 
 .fm-ms-tabs { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding: var(--space-2) var(--space-2) var(--space-2); border-top: 1px solid var(--line-2); background: transparent; border-radius: 0; margin: 0; }
-.fm-ms-tab { display: grid; justify-items: center; align-content: center; gap: 2px; height: 52px; border: 0; border-radius: var(--radius-xl); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-11); cursor: default; }
+.fm-ms-tab { display: grid; justify-items: center; align-content: center; gap: 2px; height: 52px; border: 0; border-radius: var(--radius-row); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-11); cursor: default; }
 .fm-ms-tab:hover { color: var(--text-primary); }
 .fm-ms-tab.is-active { background: transparent; color: var(--accent-color); }
 .fm-ms-tab-label { font-weight: 600; }
 
 /* rows are rounded cells, values on the right */
-.fm-ms-row { border-radius: var(--radius-xl); }
+.fm-ms-row { border-radius: var(--radius-row); }
 .fm-ms-link { width: 100%; border: 0; font: inherit; color: inherit; text-align: left; cursor: default; }
 .fm-ms-link:hover { background: color-mix(in srgb, var(--surface-raised) 80%, var(--text-primary) 10%); }
 .fm-ms-go { display: inline-flex; color: var(--text-muted); }
@@ -32,7 +39,7 @@
 
 /* Playback: three radio rows with a check circle */
 .fm-ms-group { display: grid; gap: 2px; }
-.fm-ms-radio { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fm-pop-row-h); padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-xl); background: var(--surface-raised); font: inherit; text-align: left; cursor: default; }
+.fm-ms-radio { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--fm-pop-row-h); padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-row); background: var(--surface-raised); font: inherit; text-align: left; cursor: default; }
 .fm-ms-radio:hover { background: color-mix(in srgb, var(--surface-raised) 80%, var(--text-primary) 10%); }
 .fm-ms-check { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: transparent; box-shadow: inset 0 0 0 1.5px var(--line-3); }
 .fm-ms-radio.is-on .fm-ms-check { background: var(--accent-color); color: var(--text-on-accent); box-shadow: none; }

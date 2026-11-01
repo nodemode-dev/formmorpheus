@@ -4,6 +4,11 @@ import * as tops from '../engine/transform-ops';
 import { Popover, popRow, type PopRow } from './popover';
 import { setClass } from './dom';
 import { anchorMode } from './anchor-mode';
+import { ensureLane, newKeyState } from './action-menu';
+import { animate, laneOf } from '../engine/keys';
+import * as keyOps from '../engine/key-ops';
+import { updateContent } from '../engine/ops';
+import type { Movie } from '../engine/types';
 
 /** Flip horizontal, Flip vertical and Reset rows, shared by the Stage box's ellipsis menu and the content menu. */
 export class TransformRows {
@@ -13,9 +18,28 @@ export class TransformRows {
   readonly rows: HTMLElement[] = [this.flipH.el, this.flipV.el, this.reset.el];
 
   constructor(private readonly engine: Engine, private readonly ids: () => string[], private readonly done: () => void) {
-    this.flipH.el.addEventListener('click', () => { this.run('Flip Horizontal', (m, ids) => tops.flip(m, ids, 'h')); });
-    this.flipV.el.addEventListener('click', () => { this.run('Flip Vertical', (m, ids) => tops.flip(m, ids, 'v')); });
+    this.flipH.el.addEventListener('click', () => { this.run('Flip Horizontal', (m, ids) => this.flip(m, ids, 'h')); });
+    this.flipV.el.addEventListener('click', () => { this.run('Flip Vertical', (m, ids) => this.flip(m, ids, 'v')); });
     this.reset.el.addEventListener('click', () => { this.run('Reset Transform', (m, ids) => tops.resetTransform(m, ids)); });
+  }
+
+  /** Compose flips the base transform. Keyframe and Perform key a mirrored (negative) scale at the Playhead, so a flip can happen mid-clip. */
+  private flip(m: Movie, ids: string[], axis: 'h' | 'v'): Movie {
+    if (this.engine.mode === 'compose') return tops.flip(m, ids, axis);
+    const f = this.engine.frame, ease = newKeyState().lastEase;
+    const ch = axis === 'h' ? 'scaleX' : 'scaleY';
+    let out = m;
+    for (const id of ids) {
+      const at = locate(out, id);
+      if (!at || at.content.kind === 'audio') continue;
+      const local = f - at.content.start;
+      if (local < 0 || local >= at.content.duration) continue;
+      out = updateContent(out, id, (c) => {
+        const v = animate(c, local)[ch];
+        return keyOps.setKeys(laneOf(c, 'move') ? c : ensureLane(c, 'move', local, m.addKeyAtStart, ease), 'move', local, { [ch]: -v });
+      });
+    }
+    return out;
   }
 
   private run(label: string, fn: (m: import('../engine/types').Movie, ids: string[]) => import('../engine/types').Movie): void {

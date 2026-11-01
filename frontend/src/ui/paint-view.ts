@@ -45,6 +45,8 @@ import { PaintSettings, loadPaintPrefs, savePaintPrefs, type PaintPrefs } from '
 import { gesturePrefsNow } from './gestures';
 import { PaintTools, type Interaction, type ToolHost } from './paint-tools';
 import { ColourDrop } from './paint-drop';
+import { paintHint } from './paint-hint';
+import { PAINT_ICONS } from './paint-icons';
 import { HoldRepeat, SpinDrag, TriSwipe, resetRotation } from './paint-gestures';
 import { Loupe } from './paint-loupe';
 import { PredictTail } from './paint-predict';
@@ -54,7 +56,8 @@ import { BrushSlots } from './brush-slots';
 import { wireSlider, type SliderKind } from './paint-sliders';
 import { wireBrushDrop } from './brush-drop';
 import { PaintClip } from './paint-clip';
-import { FeelPopover, FeelStore, drawBrushCursor } from './paint-feel';
+import { FeelPopover, FeelStore } from './paint-feel';
+import { PaintCursorLayer } from './paint-cursor';
 import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys';
 import { ROLL_NAME, brushScale } from '../paint/feel';
 import type { BarrelAction } from '../paint/pen-arbiter';
@@ -91,13 +94,13 @@ const TEMPLATE = `<div class="fm-paint" hidden>
   </div>
   <div class="fm-paint-frame-label"></div>
   <div class="fm-paint-tools">
-    <button class="fm-paint-tool" type="button" data-tool="paint" title="Paint (B); click again for brushes">${icon('paintbrush', 20)}</button>
-    <button class="fm-paint-tool" type="button" data-tool="smudge" title="Smudge (S); click again for brushes">${icon('smudge', 20)}</button>
-    <button class="fm-paint-tool" type="button" data-tool="erase" title="Erase (E); click again for brushes">${icon('eraser', 20)}</button>
-    <button class="fm-paint-tool" type="button" data-tool="eyedropper" title="Eyedropper (I, or hold Alt): click the picture to pick a color">${icon('tEyedropper', 20)}</button>
-    <button class="fm-paint-tool" type="button" data-tool="fill" title="Fill (G): click an area to fill it, drag sideways for the threshold; click again to stop">${icon('tBucket', 20)}</button>
-    <button class="fm-paint-tool" type="button" data-tool="layers" title="Drawing layers (L)">${icon('layers', 20)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="paint" title="Paint (B); click again for brushes">${icon('paintbrush', 24)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="smudge" title="Smudge (S); click again for brushes">${icon('smudge', 24)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="erase" title="Erase (E); click again for brushes">${icon('eraser', 24)}</button>
+    <button class="fm-paint-tool" type="button" data-tool="layers" title="Drawing layers (L)">${icon('layers', 24)}</button>
     <button class="fm-paint-colour" type="button" title="Color: click to open, hold for the previous color, drag onto the canvas to fill"><span></span></button>
+    <button class="fm-paint-tool fm-paint-tool-extra" type="button" data-tool="eyedropper" title="Eyedropper (I, or hold Alt): click the picture to pick a color">${PAINT_ICONS.eyedropper}</button>
+    <button class="fm-paint-tool fm-paint-tool-extra" type="button" data-tool="fill" title="Fill (G): click an area to fill it, drag sideways for the threshold; click again to stop">${PAINT_ICONS.bucket}</button>
   </div>
 </div>
 <div class="fm-paint-side">
@@ -268,6 +271,7 @@ export class PaintView {
     host.appendChild(this.root);
     this.canvas = q<HTMLCanvasElement>(this.root, '.fm-paint-canvas');
     this.ctx = this.canvas.getContext('2d') as CanvasRenderingContext2D;
+    this.curLayer = new PaintCursorLayer(this.canvas);
     this.bar = q(this.root, '.fm-paint-bar');
     this.modeName = q(this.root, '.fm-paint-mode-name');
     this.modeIcon = q(this.root, '.fm-paint-mode-icon');
@@ -417,6 +421,16 @@ export class PaintView {
     const st = this.state(this.brush());
     return { open: this.isOpen(), erase: this.tool === 'erase', size: st.size, opacity: st.opacity };
   }
+  /** Pen Link: where the drawing sits in the view (the bounds of its corners, clipped to the view), in CSS pixels. */
+  penLinkFrame(): { x: number; y: number; w: number; h: number } | null {
+    const m = this.engine.movie;
+    if (!m || !this.cssW || !this.cssH) return null;
+    const kv = canvasOf(this.content(), m);
+    const cs = [canvasToScreen(this.view, 0, 0), canvasToScreen(this.view, kv.w, 0), canvasToScreen(this.view, 0, kv.h), canvasToScreen(this.view, kv.w, kv.h)];
+    const x0 = Math.max(0, Math.min(...cs.map((p) => p.x))), y0 = Math.max(0, Math.min(...cs.map((p) => p.y)));
+    const x1 = Math.min(this.cssW, Math.max(...cs.map((p) => p.x))), y1 = Math.min(this.cssH, Math.max(...cs.map((p) => p.y)));
+    return x1 - x0 >= 8 && y1 - y0 >= 8 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+  }
   penLinkApply(p: { erase?: boolean; size?: number; opacity?: number; history?: 'undo' | 'redo' }): void {
     if (!this.isOpen()) return;
     if (p.history === 'undo') this.undo();
@@ -550,6 +564,7 @@ export class PaintView {
     paintBridge()?.dispose();
     underlayView.release();
     this.root.hidden = true;
+    paintHint(null);
     this.deps.onOpenChange(false);
   }
 
@@ -1077,13 +1092,14 @@ export class PaintView {
     ctx.lineWidth = 1.5;
     roundRect(ctx, v.ox, v.oy, w, h, own ? 0 : 12);
     ctx.stroke();
-    this.drawCursor(ctx);
+    this.drawCursor();
     ctx.restore();
     this.full = false;
     this.dirty = null;
   }
 
   private cursorBox: Rect | null = null;
+  private readonly curLayer: PaintCursorLayer;
 
   /** Settings > Canvas > Keyframe effects: the picture shows the opacity, blur and color keys at the Playhead. */
   private compositeEffects(ctx: CanvasRenderingContext2D, c: Content, m: Movie): void {
@@ -1099,18 +1115,15 @@ export class PaintView {
     ctx.restore();
   }
 
-  private drawCursor(ctx: CanvasRenderingContext2D): void {
+  private drawCursor(): void {
     const p = this.cursor;
     this.cursorBox = null;
-    if (!p || !this.cursorShown() || this.interaction || this.tools.mode() !== 'paint' || this.loupe.active || this.dropper.active || this.pickArmed) return;
+    if (!p || !this.cursorShown() || this.interaction || this.tools.mode() !== 'paint' || this.loupe.active || this.dropper.active || this.pickArmed) { this.curLayer.clear(); return; }
     const b = this.brush();
     const st = this.state(b);
     const rr = this.cursorRadius(b, st.size);
     const sx = this.view.ox + p.x * this.view.scale, sy = this.view.oy + p.y * this.view.scale;
-    drawBrushCursor(ctx, { x: sx, y: sy, r: rr, style: this.prefs.outline, colour: this.colour.get(), brush: b, tiltX: this.lastTilt.x, tiltY: this.lastTilt.y, roll: this.rollOn(b) ? this.lastTilt.roll : 0, stroking: !!this.stroke });
-    const at = canvasToScreen(this.view, p.x, p.y);
-    const ext = this.cursorExtent(rr);
-    this.cursorBox = { x: at.x - ext - 3, y: at.y - ext - 3, w: ext * 2 + 6, h: ext * 2 + 6 };
+    this.curLayer.draw(this.canvas, this.rotM(), { x: sx, y: sy, r: rr, style: this.prefs.outline, colour: this.colour.get(), brush: b, tiltX: this.lastTilt.x, tiltY: this.lastTilt.y, roll: this.rollOn(b) ? this.lastTilt.roll : 0, stroking: !!this.stroke });
   }
 
   /** Cursor visibility: hover shows it only between strokes, painting only during one. */
@@ -1193,14 +1206,11 @@ export class PaintView {
       loop.forEach((p, i) => { const x = v.ox + p.x * v.scale, y = v.oy + p.y * v.scale; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
       ctx.closePath();
     }
+    // a finished selection shows only the diagonal lines over the unselected area (the marching line is for drawing one)
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
     ctx.stroke();
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = 'rgba(0,0,0,0.95)';
-    ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   private checkerPattern: CanvasPattern | null = null;
@@ -1236,7 +1246,10 @@ export class PaintView {
       setClass(b, 'is-active', (w === 'settings' && this.settings.isOpen()) || (w === this.tools.mode()));
     }
     const c = this.content();
-    setText(this.frameLabel, c?.kind === 'flipbook' ? `${c.flip[this.row]?.name ?? ''} · ${tr('frame {n} of {m}').replace('{n}', String((this.playTimer ? this.playIndex() : this.index) + 1)).replace('{m}', String(c.flip[this.row]?.frames.length ?? 0))}` : '');
+    const where = c?.kind === 'flipbook' ? `${c.flip[this.row]?.name ?? ''} · ${tr('frame {n} of {m}').replace('{n}', String((this.playTimer ? this.playIndex() : this.index) + 1)).replace('{m}', String(c.flip[this.row]?.frames.length ?? 0))}` : '';
+    // the top bar keeps only the tools: the label is in the status bar (and the mode pill's tooltip)
+    setText(this.frameLabel, where);
+    if (this.isOpen()) paintHint(where || null);
     const st = this.state(this.brush());
     setStyleVar(this.sizeSlider, '--v', String(st.size));
     setStyleVar(this.opacitySlider, '--v', String(st.opacity));
@@ -1250,6 +1263,7 @@ export class PaintView {
     }
     this.slots?.sync();
     setClass(this.root, 'is-side-right', this.prefs.sidebarRight);
+    setClass(this.root, 'no-extras', !!this.prefs.hideToolExtras);
     setHidden(this.undoBtn, !!this.prefs.hideUndoButtons);
     setHidden(this.redoBtn, !!this.prefs.hideUndoButtons);
     this.syncUndo();
@@ -1355,7 +1369,7 @@ export class PaintView {
     this.toastTimer = window.setTimeout(() => setHidden(this.toastEl, true), 1400);
   }
 
-  private holdHud(ms = 2600): void {
+  private holdHud(ms = 1500): void {
     clearTimeout(this.hudTimer);
     this.hudTimer = window.setTimeout(() => setHidden(this.hud, true), ms);
   }
@@ -1375,7 +1389,10 @@ export class PaintView {
     cancelAnimationFrame(this.hudFrame);
     this.hudFrame = requestAnimationFrame(() => {
       const s2 = this.state(this.brush());
-      drawBubble(this.hudDot, { brush: this.brush(), size: engineSize(s2.size), opacity: s2.opacity, color: this.colour.get(), canvasLong: mv ? Math.max(mv.width, mv.height) : 0, viewScale: this.view.scale });
+      const col = this.colour.get();
+      // the sample sits on a ground that contrasts with the color, and the Size bubble shows the stroke at full strength
+      setClass(this.hud, 'is-lightink', 0.299 * col.r + 0.587 * col.g + 0.114 * col.b > 150);
+      drawBubble(this.hudDot, { brush: this.brush(), size: engineSize(s2.size), opacity: kind === 'opacity' ? s2.opacity : 1, color: col, canvasLong: mv ? Math.max(mv.width, mv.height) : 0, viewScale: this.view.scale });
     });
   }
 
@@ -1809,8 +1826,8 @@ export class PaintView {
       this.pickArmed = false;
       if (this.tools.mode() !== 'paint') this.tools.setMode('paint');
       this.closePanels();
+      // the ColorDrop toast ("Continue filling" and the tick) now says it; the how-to is the button's tooltip
       this.dropper.startContinue(this.colour.get());
-      this.say(tr('Click an area to fill it, drag sideways for the threshold'));
     }
     this.syncChrome();
   }
@@ -1911,6 +1928,7 @@ export class PaintView {
       this.hideHud();
       if (this.strip.closeMenus()) { e.preventDefault(); e.stopPropagation(); return; }
       if (this.brushPanel.isOpen() && this.brushPanel.closeInner()) { e.preventDefault(); e.stopPropagation(); return; }
+      if (this.layersPanel.isOpen() && this.layersPanel.closeInner()) { e.preventDefault(); e.stopPropagation(); return; }
       const open =[this.colour, this.brushPanel, this.layersPanel, this.settings].some((p) => p.isOpen() && !(p === this.colour && this.colour.isDetached())) || !this.menu.hidden || this.clip.isOpen();
       if (open) { this.closePanels(); this.clip.hide(); this.menu.hidden = true; this.syncChrome(); }
       else if (this.pickArmed || this.dropper.continuing) { this.pickArmed = false; this.dropper.stopContinue(); this.syncChrome(); }
@@ -2054,7 +2072,7 @@ export class PaintView {
     const doc = this.doc as PaintDoc;
     const layer = doc.activeLayer();
     const target = doc.paintTarget();
-    if (!target) { this.say('Select a layer to paint on'); return; }
+    if (!target) { this.say(tr('Select a layer to paint on')); return; }
     if (!layer.visible && !target.mask) { this.say('This layer is hidden'); return; }
     const b = this.brush();
     const st = this.state(b);
@@ -2230,15 +2248,9 @@ export class PaintView {
     if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; if (!this.qs.moved(e)) this.feed(this.input.move(e)); }
     else if (!this.stroke && !this.busy && this.doc && e.pointerId === this.resumePointer && e.buttons) { this.resumePointer = -1; this.startStroke(e); }
     if (e.pointerType !== 'touch') {
-      const old = this.cursorBox;
       this.cursor = this.toCanvas(e.clientX, e.clientY);
       if (e.pointerType === 'pen') this.lastTilt = this.input.runtime.settings.tiltAngle ? { x: e.tiltX || 0, y: e.tiltY || 0, roll: e.twist || 0 } : { x: 0, y: 0, roll: e.twist || 0 };
-      if (this.cursorShown() || old) {
-        if (old) this.dirtyScreen(old);
-        const b = this.brush();
-        const r = (this.cursorExtent(this.cursorRadius(b, this.state(b).size)) + 4) / this.view.scale;
-        this.redraw({ x: this.cursor.x - r, y: this.cursor.y - r, w: r * 2, h: r * 2 });
-      }
+      this.drawCursor();
     }
   }
 

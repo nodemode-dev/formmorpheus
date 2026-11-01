@@ -1,0 +1,44 @@
+/* FV-214 · Stage box looks. Compose: a 1 px blue box, eight round filled 12 px handles, a hollow rotation node above.
+   Keyframe and Perform keep the accent with a dotted line and round dots (the mode cue). Union box for several contents. */
+.fm-stage-box:not(.is-keyed) .fm-box-line { stroke: var(--cv-action-blue); stroke-width: 1; }
+.fm-stage-box:not(.is-keyed) .fm-box-stem { stroke: var(--cv-action-blue); stroke-width: 1; }
+.fm-stage-box:not(.is-keyed) .fm-box-h,
+.fm-stage-box:not(.is-keyed) .fm-box-s { fill: var(--cv-action-blue); stroke: var(--bg-primary); stroke-width: 1.5; }
+.fm-stage-box:not(.is-keyed) .fm-box-s { rx: 6px; ry: 6px; }
+.fm-stage-box:not(.is-keyed) .fm-box-rot { fill: transparent; stroke: var(--cv-action-blue); stroke-width: 1.5; }
+.fm-stage-box:not(.is-keyed) .fm-box-more circle:first-of-type { stroke: var(--cv-action-blue); }
+.fm-stage-box:not(.is-keyed) .fm-box-more .d { fill: var(--cv-action-blue); }
+.fm-stage-box.is-keyed .fm-box-line { stroke-dasharray: 1.5 4; stroke-linecap: round; stroke-width: 1.5; }
+.fm-stage-box.is-keyed .fm-box-h, .fm-stage-box.is-keyed .fm-box-s { fill: var(--accent-color); stroke: var(--bg-primary); rx: 6px; ry: 6px; }
+
+/* FV-233 · the area outside the frame: a faint 20 px grid and a soft glow around the frame */
+.fm-surround-grid { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px); background-size: 20px 20px; }
+.fm-surround-glow { position: absolute; pointer-events: none; box-shadow: 0 0 56px 8px rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(255, 255, 255, 0.14); }
+.fm-surround-grid[hidden], .fm-surround-glow[hidden] { display: none; }
+
+/* Perform count-in cue: the pre-roll's frames left, big over the Stage, so the pre-roll can be seen */
+.fm-perf-cue { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: var(--z-raised); min-width: 96px; padding: var(--space-3) var(--space-5, 20px); border-radius: var(--radius-2xl); background: color-mix(in srgb, var(--bg-primary) 62%, transparent); box-shadow: inset 0 0 0 2px var(--accent-color); color: var(--text-primary); font: 700 56px/1 var(--font-mono); text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+.fm-perf-cue[hidden] { display: none; }
+.fm-perf-banner.is-counting { box-shadow: inset 0 0 0 1px var(--accent-color); }
+
+/* the shape tool strip steps aside while the Camera card is open */
+.fm-stage.is-camera-card .fm-shtool { display: none; }
+
+/* FV-232 · the zoom cluster rests out of the way after 2 s */
+.fm-nav { transition: opacity var(--dur-slow, 0.25s) ease; }
+.fm-nav.is-faded:not(:hover):not(:focus-within) { opacity: 0; }
+
+/* FV-234 · the Stage panel: no gutter above (it bleeds under the menu), bottom corners 24 px */
+.fm-stage-wrap.cv-stage { padding-top: 0; }
+.fm-stage-wrap.cv-stage .fm-stage { border-radius: 0 0 var(--radius-2xl) var(--radius-2xl); }
+
+/* several contents selected (Compose): one union box, scale and turn all */
+.fm-multi { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: var(--z-raised); }
+.fm-multi[hidden] { display: none; }
+.fm-multi-line { fill: none; stroke: var(--cv-action-blue); stroke-width: 1; stroke-dasharray: 5 4; pointer-events: none; }
+.fm-multi-stem { stroke: var(--cv-action-blue); stroke-width: 1; }
+.fm-multi-h { fill: var(--cv-action-blue); stroke: var(--bg-primary); stroke-width: 1.5; pointer-events: all; }
+.fm-multi-h[data-h="0"], .fm-multi-h[data-h="2"] { cursor: nwse-resize; }
+.fm-multi-h[data-h="1"], .fm-multi-h[data-h="3"] { cursor: nesw-resize; }
+.fm-multi-rot { fill: transparent; stroke: var(--cv-action-blue); stroke-width: 1.5; pointer-events: all; cursor: grab; }
+.fm-multi-rot:active { cursor: grabbing; }

@@ -2,7 +2,7 @@
 // range select, the previous selection for Reload, and the box that a lasso drag draws over the rows.
 import type { FrameRef } from '../engine/flip-ops';
 import type { Content } from '../engine/types';
-import { el, setHidden, setStyleVar } from './dom';
+import { el } from './dom';
 
 export class FlipSelect {
   private sets = new Map<string, Set<string>>();
@@ -116,33 +116,56 @@ export class FlipSelect {
   }
 }
 
-/** The box a lasso drag draws: created once, then moved with CSS variables. */
+/** True when the point is inside the closed loop (even-odd). */
+export function loopContains(pts: readonly { x: number; y: number }[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** True when the line the pointer drew passes through the rectangle (sampled every few pixels, so a fast flick still counts). */
+export function pathTouches(pts: readonly { x: number; y: number }[], r: { left: number; right: number; top: number; bottom: number }): boolean {
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[i + 1] ?? a;
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4));
+    for (let k = 0; k <= n; k++) {
+      const x = a.x + ((b.x - a.x) * k) / n, y = a.y + ((b.y - a.y) * k) / n;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+    }
+  }
+  return false;
+}
+
+/** The loop a lasso drag draws, freehand: one SVG built once, its points patched as the pointer moves. A loop that closes on itself
+ *  selects the cells it encloses; a plain stroke across cells selects the cells it crosses. */
 export class Lasso {
-  readonly el: HTMLElement;
-  private x0 = 0;
-  private y0 = 0;
+  readonly el: SVGSVGElement;
+  private readonly poly: SVGPolygonElement;
+  private pts: { x: number; y: number }[] = [];
   constructor(private readonly host: HTMLElement) {
-    this.el = el<HTMLElement>('<div class="fm-fs-lasso" hidden></div>');
+    this.el = el('<svg class="fm-fs-lasso" hidden aria-hidden="true"><polygon class="fm-fs-lasso-fill" points=""/></svg>') as unknown as SVGSVGElement;
+    this.poly = this.el.querySelector('polygon') as SVGPolygonElement;
     host.appendChild(this.el);
   }
 
+  // an SVG element has no .hidden property, so the attribute is toggled
   begin(x: number, y: number): void {
-    this.x0 = x;
-    this.y0 = y;
-    setHidden(this.el, false);
+    this.pts = [{ x, y }];
+    this.el.removeAttribute('hidden');
     this.move(x, y);
   }
 
-  /** Moves the free corner; returns the box in client coordinates. */
-  move(x: number, y: number): DOMRect {
+  /** Adds a point; returns the loop so far in client coordinates. */
+  move(x: number, y: number): readonly { x: number; y: number }[] {
+    const last = this.pts[this.pts.length - 1];
+    if (!last || Math.hypot(x - last.x, y - last.y) >= 2) this.pts.push({ x, y });
     const r = this.host.getBoundingClientRect();
-    const l = Math.min(this.x0, x), t = Math.min(this.y0, y), w = Math.abs(x - this.x0), h = Math.abs(y - this.y0);
-    setStyleVar(this.el, '--lx', `${l - r.left}px`);
-    setStyleVar(this.el, '--ly', `${t - r.top}px`);
-    setStyleVar(this.el, '--lw', `${w}px`);
-    setStyleVar(this.el, '--lh', `${h}px`);
-    return new DOMRect(l, t, w, h);
+    this.poly.setAttribute('points', this.pts.map((p) => `${(p.x - r.left).toFixed(1)},${(p.y - r.top).toFixed(1)}`).join(' '));
+    return this.pts;
   }
 
-  end(): void { setHidden(this.el, true); }
+  end(): void { this.el.setAttribute('hidden', ''); this.pts = []; }
 }

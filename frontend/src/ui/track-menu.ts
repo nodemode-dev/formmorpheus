@@ -95,6 +95,10 @@ export class TrackMenu {
     this.lock.setDisabled(at < 0);
     this.mute.setChecked(at >= 0 && !!m?.tracks[at].mute);
     this.solo.setChecked(at >= 0 && !!m?.tracks[at].solo);
+    // the row names what a click does now
+    this.lock.setLabel(at >= 0 && m?.tracks[at].locked ? 'Unlock track' : 'Lock track');
+    this.mute.setLabel(at >= 0 && m?.tracks[at].mute ? 'Unmute sound' : 'Mute sound');
+    this.solo.setLabel(at >= 0 && m?.tracks[at].solo ? 'Unsolo sound' : 'Solo sound');
     this.mute.setDisabled(at < 0);
     this.solo.setDisabled(at < 0);
     this.up.setDisabled(at <= 0);

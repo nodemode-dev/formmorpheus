@@ -10,6 +10,8 @@ export class StageHud {
   private readonly chip = el('<div class="fm-hud-chip" hidden>Snapping on</div>');
   private timer = 0;
   private last = '';
+  /** The stored scale that reads 100 percent for the content being dragged (its fit). */
+  base = 1;
 
   constructor(private readonly host: HTMLElement) {
     host.append(this.read, this.chip);
@@ -19,7 +21,7 @@ export class StageHud {
   show(clientX: number, clientY: number, v: HudValues): void {
     window.clearTimeout(this.timer);
     const r = this.host.getBoundingClientRect();
-    const sx = Math.round(v.sx * 1000) / 10, sy = Math.round(v.sy * 1000) / 10;
+    const sx = Math.round(v.sx / this.base * 1000) / 10, sy = Math.round(v.sy / this.base * 1000) / 10;
     const scale = Math.abs(sx - sy) < 0.05 ? `${sx}%` : `${sx}% x ${sy}%`;
     const text = `X ${Math.round(v.x)}  Y ${Math.round(v.y)}  ·  ${scale}  ·  ${Math.round(v.rot * 10) / 10}°`;
     if (text !== this.last) { this.last = text; setText(this.read, text); }

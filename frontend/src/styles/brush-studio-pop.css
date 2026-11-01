@@ -1,0 +1,40 @@
+/* Brush Studio: the per-setting pen card, the pad settings row, the reset point row. Tokens only. */
+.fm-bs-row.has-adv { grid-template-columns: 112px minmax(0, 1fr) 52px 22px 22px; }
+.fm-bs-adv { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: default; }
+.fm-bs-adv svg { width: 14px; height: 14px; }
+.fm-bs-adv:hover { background: var(--bg-hover); color: var(--text-primary); }
+.fm-bs-adv.is-on { color: var(--accent-color); }
+.fm-bs-adv:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+
+.fm-bs-pop { position: absolute; z-index: 5; width: 272px; max-height: calc(100% - 72px); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--bg-secondary); box-shadow: var(--shadow-lg); color: var(--text-secondary); }
+.fm-bs-pop[hidden], .fm-bs-pop-sec[hidden], .fm-bs-pop .fm-bc[hidden], .fm-bp-curves .fm-bc[hidden], .fm-bs-pop-angle[hidden] { display: none; }
+.fm-bs-pop-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.fm-bs-pop-title { color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; }
+.fm-bs-pop-val { display: grid; grid-template-columns: 1fr 80px 24px; align-items: center; column-gap: var(--space-2); }
+.fm-bs-pop-val input { height: 24px; padding: 0 var(--space-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--surface-field); color: var(--text-primary); font: inherit; font-size: var(--fs-12); font-variant-numeric: tabular-nums; text-align: right; }
+.fm-bs-pop-val input:focus { outline: 1px solid var(--accent-color); border-color: var(--accent-color); }
+.fm-bs-pop-val em { color: var(--text-muted); font-style: normal; font-size: var(--fs-10); }
+.fm-bs-pop-sec { display: flex; flex-direction: column; gap: var(--space-2); }
+.fm-bs-pop-h { color: var(--text-muted); font-size: var(--fs-10); letter-spacing: 0.08em; text-transform: uppercase; }
+.fm-bs-pop .fm-bc-grid { grid-template-columns: minmax(0, 1fr); }
+.fm-bs-pop-note { margin: 0; color: var(--text-muted); font-size: var(--fs-11); line-height: 1.4; }
+.fm-bs-pop-chk { display: inline-flex; align-items: center; gap: var(--space-2); }
+.fm-bs-pop-chk input { accent-color: var(--accent-color); }
+.fm-bs-pop-angle { display: flex; flex-direction: column; gap: var(--space-1); }
+.fm-bs-pop-svg { display: block; width: 100%; max-width: 220px; align-self: center; touch-action: none; cursor: crosshair; outline: none; overflow: visible; }
+.fm-bs-pop-svg:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.fm-bs-pop-quad { fill: var(--surface-field); stroke: var(--line-2); stroke-width: 0.8; }
+.fm-bs-pop-tick { stroke: var(--line-1); stroke-width: 0.5; }
+.fm-bs-pop-sweep { fill: var(--accent-wash); stroke: var(--accent-color); stroke-width: 1; }
+.fm-bs-pop-knob { fill: var(--accent-color); stroke: var(--bg-secondary); stroke-width: 1.4; cursor: grab; }
+.fm-bs-pop-angle-out { text-align: center; color: var(--text-primary); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
+
+.fm-bs-padmore { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); flex: 0 0 auto; padding: var(--space-2) 0 0; border-top: 1px solid var(--line-1); }
+.fm-bs-padmore[hidden] { display: none; }
+.fm-bs-swatches { display: inline-flex; gap: 4px; }
+.fm-bs-sw { width: 18px; height: 18px; padding: 0; border: 1px solid var(--line-3); border-radius: 50%; cursor: default; }
+.fm-bs-sw.is-on { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+.fm-bs-sw:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+
+.fm-bs-field.is-rp { grid-template-columns: 112px auto; row-gap: var(--space-1); }
+.fm-bs-rp-state { grid-column: 1 / -1; color: var(--text-muted); font-size: var(--fs-11); line-height: 1.4; }

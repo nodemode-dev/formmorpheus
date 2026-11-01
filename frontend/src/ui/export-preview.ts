@@ -52,7 +52,7 @@ export class ExportPreview {
     '<div class="fm-ex-prev">' +
     '<div class="fm-ex-pwin"><canvas class="fm-ex-pcanvas" width="' + WIN_W + '" height="' + WIN_H + '"></canvas><span class="fm-ex-pcap"></span></div>' +
     '<div class="fm-ex-pbarbox"><canvas class="fm-ex-pbar" width="' + BAR_W + '" height="' + BAR_H + '"></canvas><i class="fm-ex-phead"></i></div>' +
-    '<div class="fm-ex-pfoot"><button class="cv-btn fm-ex-pbtn" type="button">Preview</button><span class="fm-ex-pstat cv-note"></span></div>' +
+    '<div class="fm-ex-pfoot"><button class="fm-ex-pplay" type="button" aria-label="Play the preview" title="Play the preview"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path class="fm-pp-play" d="M8 5.5v13l11-6.5z"/><path class="fm-pp-stop" d="M7 7h10v10H7z" hidden/></svg></button><button class="cv-btn fm-ex-pbtn" type="button">Preview</button><span class="fm-ex-pstat cv-note"></span></div>' +
     '</div>');
   private readonly win = q<HTMLCanvasElement>(this.root, '.fm-ex-pcanvas');
   private readonly bar = q<HTMLCanvasElement>(this.root, '.fm-ex-pbar');
@@ -77,6 +77,7 @@ export class ExportPreview {
 
   constructor(private readonly deps: PreviewDeps) {
     this.btn.addEventListener('click', () => { if (this.state === 'rendering') this.stop(); else void this.render(); });
+    this.playBtn.addEventListener('click', () => this.togglePlay());
     const scrub = (e: PointerEvent): void => {
       if (!this.bitmaps.length) return;
       const r = this.bar.getBoundingClientRect();
@@ -163,6 +164,18 @@ export class ExportPreview {
     }
     if (!spec) return;
     if (this.state === 'none' || this.state === 'fresh' || this.state === 'stale') this.setState(this.bitmaps.length && spec.key === this.renderedKey ? 'fresh' : this.bitmaps.length ? 'stale' : 'none');
+    this.scheduleRefresh();
+  }
+
+  private refreshTimer = 0;
+
+  /** A setting changed after a preview was drawn: draw it again once the changes stop for a moment (no need to press Preview). */
+  private scheduleRefresh(): void {
+    clearTimeout(this.refreshTimer);
+    if (this.state !== 'stale' || !this.bitmaps.length) return;
+    this.refreshTimer = window.setTimeout(() => {
+      if (this.state === 'stale' && this.root.offsetParent !== null) void this.render();
+    }, 700);
   }
 
   get needsRender(): boolean { return this.state === 'none' || this.state === 'stale'; }
@@ -250,6 +263,8 @@ export class ExportPreview {
   /** Releases the pictures (the dialog closed). */
   release(): void {
     this.token++;
+    clearTimeout(this.refreshTimer);
+    this.stopPlay();
     for (const b of this.bitmaps) b.close();
     this.bitmaps = [];
     this.renderedKey = '';
@@ -278,6 +293,25 @@ export class ExportPreview {
     setClass(this.root, 'is-rendering', s === 'rendering');
     setClass(this.root, 'is-empty', this.bitmaps.length === 0);
     if (s !== 'rendering') setText(this.stat, s === 'fresh' ? 'Up to date' : s === 'stale' ? 'Settings changed' : 'No preview yet');
+  }
+
+  private readonly playBtn = q<HTMLButtonElement>(this.root, '.fm-ex-pplay');
+  private playTimer = 0;
+
+  /** Plays the rendered samples in a loop at about 12 a second; the square stops it. */
+  private togglePlay(): void {
+    if (this.playTimer) { this.stopPlay(); return; }
+    if (this.bitmaps.length < 2) return;
+    q(this.playBtn, '.fm-pp-play').toggleAttribute('hidden', true);
+    q(this.playBtn, '.fm-pp-stop').toggleAttribute('hidden', false);
+    this.playTimer = window.setInterval(() => this.show((this.current + 1) % Math.max(1, this.bitmaps.length)), 83);
+  }
+
+  private stopPlay(): void {
+    clearInterval(this.playTimer);
+    this.playTimer = 0;
+    q(this.playBtn, '.fm-pp-play').toggleAttribute('hidden', false);
+    q(this.playBtn, '.fm-pp-stop').toggleAttribute('hidden', true);
   }
 
   private show(i: number): void {

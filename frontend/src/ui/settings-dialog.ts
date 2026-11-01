@@ -7,6 +7,7 @@ import { languages, onLanguage, setLanguage, t, type Lang } from './i18n';
 import { checkRow, colorRow, selectRow, sliderRow } from './panels/controls';
 import { SCRUB_SPEEDS, UI_FONT_SIZES, UI_SCALES, UNDO_CHOICES, loadPrefs, savePrefs, setUiScale, uiScaleChoice, type Prefs, type ScrubSpeed, type UiFontSize } from './prefs';
 import { LibraryFolderDialog } from './library-folder';
+import { THEATER_LAYOUTS, setTheaterLayout, theaterLayout } from './shell-opts';
 import { PenSettingsPage } from './pen-settings';
 import { THEMES, readChoice, setAccent, setIntensity, setTheme, themeSwatchesHtml } from './themes';
 
@@ -29,6 +30,8 @@ export class SettingsDialog extends Dialog {
   private wireRaf = 0;
   private spyRaf = 0;
   private spyMuted = 0;
+  /** The section a tab click or a "show this section" asked for; the scroll spy leaves it marked until the person scrolls. */
+  private pinned: string | null = null;
   private wireD = '';
   private portY = Number.NaN;
   private prefs: Prefs = loadPrefs();
@@ -37,6 +40,7 @@ export class SettingsDialog extends Dialog {
   private readonly homeRow = checkRow('Show Home screen at launch', (v) => this.change({ autoShowHome: v }));
   private readonly homeCloseRow = checkRow('Show Home screen when the last movie closes', (v) => this.change({ homeOnLastClose: v }));
   private readonly whatsNewRow = checkRow('Show What\'s New after an update', (v) => this.change({ whatsNewAuto: v }));
+  private readonly layoutRow = selectRow('Theater layout', THEATER_LAYOUTS, (v) => setTheaterLayout(v === 'library' ? 'library' : 'gallery'));
   private readonly autosaveRow = selectRow('Autosave every', AUTOSAVE_CHOICES, (v) => this.change({ autosaveSeconds: Number(v) }));
   private readonly accentRow = colorRow('Accent', (v) => { setAccent(v); this.sync(); });
   private readonly intensityRow = sliderRow('Accent intensity (%)', 0, 150, 5, (v) => setIntensity(v / 100));
@@ -123,8 +127,9 @@ export class SettingsDialog extends Dialog {
       });
     });
     add('General',
-      grp('Startup', this.homeRow.el, this.homeCloseRow.el, this.whatsNewRow.el, nt('The Home screen covers the stage while no movie is open. What\'s New lists the recent additions and opens once after an update when the third choice is on.')),
-      grp('Saving', this.autosaveRow.el, nt('Autosave writes the open movie to its project file at this interval while there are unsaved changes.')),
+      grp('Startup', this.homeRow.el, this.homeCloseRow.el, this.whatsNewRow.el, nt('The Theater, your wall of movies, covers the stage while no movie is open. What\'s New lists the recent additions and opens once after an update when the third choice is on.')),
+      grp('Theater', this.layoutRow.el, nt('Gallery shows your movies as a wall of posters with their names. Library adds a standing sidebar, filter and sort, and each movie\'s kind and age.')),
+      grp('Saving', this.autosaveRow.el, nt('A movie is in the Theater from the moment you make it, and every step you take is written to it within a moment. There is nothing to save. This interval is a safety net: it writes the open movie again if a write was ever missed.')),
       grp('Settings Storage', pathRow('Settings folder', this.dataPath), pathRow('Library folder', this.libraryPath), this.libraryBtn, nt('The library is where your movies are kept: on this computer, in iCloud Drive or in a folder of your own. Window preferences such as this page, the theme and the interface scale stay in this window\'s own storage.')),
       grp('Reset', reset));
     add('Interface',
@@ -175,6 +180,8 @@ export class SettingsDialog extends Dialog {
     frame.append(rail, wire, port);
     this.shell = { frame, rail, port, shade: q<SVGPathElement>(wire, '.cv-prefs-wire-shade'), line: q<SVGPathElement>(wire, '.cv-prefs-wire-line') };
     pages.addEventListener('scroll', () => this.queueSpy(), { passive: true });
+    // a tab the person chose stays marked until they scroll the page themselves (the scroll that follows a click is ours)
+    for (const ev of ['wheel', 'touchstart', 'pointerdown', 'keydown']) pages.addEventListener(ev, () => { this.pinned = null; }, { passive: true });
     new ResizeObserver(() => this.queueWire()).observe(frame);
     window.addEventListener('resize', () => this.queueWire());
     this.button('Done', 'primary', () => this.close());
@@ -198,11 +205,13 @@ export class SettingsDialog extends Dialog {
 
   show(section?: string): void {
     this.prefs = loadPrefs();
+    this.pinned = null;
     const p = this.prefs;
     this.homeRow.set(p.autoShowHome);
     this.homeCloseRow.set(p.homeOnLastClose);
     this.whatsNewRow.set(p.whatsNewAuto);
     this.autosaveRow.set(String(p.autosaveSeconds));
+    this.layoutRow.set(theaterLayout());
     this.themeAutoRow.set(p.themeAuto);
     this.themeLightRow.set(p.themeLight);
     this.themeDarkRow.set(p.themeDark);
@@ -287,6 +296,8 @@ export class SettingsDialog extends Dialog {
     const sec = this.sections.get(name), pages = this.pagesEl;
     if (!sec || !pages) return;
     if (sec.classList.contains('is-folded')) this.foldSection(name);
+    this.pinned = name;
+    this.markSection(name);
     const top = sec.getBoundingClientRect().top - pages.getBoundingClientRect().top + pages.scrollTop - 12;
     this.spyMuted = performance.now() + 700;
     pages.scrollTo({ top, behavior });
@@ -308,7 +319,7 @@ export class SettingsDialog extends Dialog {
     this.spyRaf = requestAnimationFrame(() => {
       this.spyRaf = 0;
       const pages = this.pagesEl;
-      if (!pages || !pages.clientHeight || performance.now() < this.spyMuted) return;
+      if (!pages || !pages.clientHeight || performance.now() < this.spyMuted || this.pinned) return;
       const edge = pages.getBoundingClientRect().top + 24;
       const names = Array.from(this.sections.keys());
       let best = '', bestD = Infinity;

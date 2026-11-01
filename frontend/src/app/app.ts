@@ -59,6 +59,7 @@ import { GraphEditor } from '../ui/graph-editor';
 import { MediaBin } from '../ui/media-bin';
 import { TitleTools } from '../ui/titlebar-tools';
 import { installUndoUi } from '../ui/undo-banner';
+import { installTextWarpNote } from '../ui/text-warp-note';
 import { TitleName, movieLabel } from '../ui/title-name';
 import { Tips } from '../ui/tips';
 import { findContent } from '../engine/transform';
@@ -67,9 +68,12 @@ import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
 import { pushCommands } from './push-commands';
 import { loopCommands } from './loop-commands';
+import { deleteChosenKeys, keyCommands } from './key-commands';
 import { edCommands } from './ed-commands';
 import { timelineViewCommands } from './timeline-view-commands';
+import { shuttleCommands } from './shuttle-commands';
 import { a11yCommands, installA11y } from '../ui/a11y';
+import { chromeCommands } from '../ui/shell-opts';
 import { installPenPlay } from '../ui/pen-play';
 import { toast } from '../ui/toast';
 import { gestures } from '../ui/gestures';
@@ -191,6 +195,8 @@ export function startApp(): void {
     saveOutput: async (blob, name) => { try { await api.writeOutput(name, blob); home.sync(); } catch { /* the download already happened; the Exports list is the engine's */ } },
     exportFmo: (withHistory) => { void exportFile(withHistory); },
   });
+  // the Movie settings Share tab: one-click exports with the default settings
+  document.addEventListener('fm:export-quick', (e) => { exportDialog.runQuick(String((e as CustomEvent).detail)); });
   const paint = new PaintView(q(root, '.fm-main'), {
     engine,
     renderer,
@@ -202,6 +208,7 @@ export function startApp(): void {
     },
   });
   const tips = new Tips();
+  tips.frame = () => stage?.frameClientRect() ?? null;
   engine.on('mode', (m) => { if (engine.movie && (m === 'perform' || m === 'keyframe')) tips.enter(m); });
   newMovie.onFlipbook = (id) => { void paint.open(id); };
   const status = new StatusBar(q(root, '.cv-status'), engine);
@@ -285,6 +292,8 @@ export function startApp(): void {
       // the library name is the movie's name (a copy or a rename outside the app leaves the old one inside)
       if (file.movie.name !== name) file.movie = { ...file.movie, name };
       engine.open(file.movie, name, file.assets, file.past, file.recovery);
+      // the movie opens where it was left (the stored Playhead frame)
+      if (file.playhead) engine.seek(file.playhead);
       remember(name);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'The movie could not be opened.', 'error');
@@ -327,7 +336,7 @@ export function startApp(): void {
   // (debounced, one write at a time, the movie file replaced atomically by the engine). There is no unsaved state.
   interface SaveOpts { quiet?: boolean; poster?: boolean; notice?: boolean }
   let writeChain: Promise<boolean> = Promise.resolve(true);
-  let posterCache: { frame: number; at: number; blob: Blob | null } | null = null;
+  let posterCache: { frame: number; at: number; rev: number; blob: Blob | null } | null = null;
   let lastCost = 0;
   let failedOnce = false;
   const freeLibraryName = async (base: string): Promise<string> => {
@@ -347,14 +356,15 @@ export function startApp(): void {
     const movie = engine.movie, name = engine.libraryName;
     if (!movie || !name) return false;
     const frame = Math.min(engine.frame, movie.duration - 1);
-    const stalePoster = !posterCache || (opts.poster ? posterCache.frame !== frame || engine.modified : Date.now() - posterCache.at > 5000);
+    const stalePoster = !posterCache || (opts.poster ? posterCache.frame !== frame || engine.modified || posterCache.rev !== engine.revision : Date.now() - posterCache.at > 5000);
     if (!engine.modified && !(opts.poster && stalePoster)) { if (opts.notice) toast(t('Saved'), 'info', { ms: 1200 }); return true; }
     const t0 = performance.now();
     try {
       const past = engine.history.past.slice(), rec = engine.history.recovery.slice(), assets = new Map(engine.assets);
-      if (stalePoster) posterCache = { frame, at: Date.now(), blob: stage ? await stage.snapshot(480) : null };
-      const preview = await previewFor(name, renderer, movie);
-      const blob = await packMovie(movie, past, rec, assets, posterCache?.blob ?? null, true, preview);
+      // `rev` is read before the snapshot: an edit made during it leaves the poster marked old, so leaving the movie draws it again
+      if (stalePoster) { const rev = engine.revision; posterCache = { frame, at: Date.now(), rev, blob: stage ? await stage.snapshot(480) : null }; }
+      const preview = await previewFor(name, renderer, movie, engine.revision);
+      const blob = await packMovie(movie, past, rec, assets, posterCache?.blob ?? null, true, preview, frame);
       const saved = await api.writeMovie(name, blob);
       if (engine.libraryName === name) {
         const moved = engine.movie !== movie;
@@ -583,7 +593,7 @@ export function startApp(): void {
     { id: 'duplicate-after', label: 'Duplicate After', keys: ['Alt+Mod+D'], enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Duplicate After', (m) => { const r = ops.duplicateAfter(m, id); return { movie: r.movie, select: [r.copy] }; }); } },
     { id: 'split', label: 'Split Content', keys: ['Mod+B'], enabled: () => engine.selected.some((c) => engine.isOver(c)), run: () => { const c = engine.selected.find((x) => engine.isOver(x)); if (c) engine.run('Split Content', (m) => { const r = ops.splitContent(m, c.id, engine.frame); return { movie: r.movie, select: [r.right] }; }); } },
     { id: 'fill-duration', label: 'Fill Duration', enabled: sel, run: () => { const id = engine.selection.content[0]; engine.run('Fill Duration', (m) => ops.fillDuration(m, id)); } },
-    { id: 'delete', label: 'Delete Content', keys: ['Delete', 'Backspace'], enabled: sel, run: () => { void (async () => { if (prefs.confirmDelete && !(await confirmAction('Delete content', 'Delete the selected content?', 'Delete', true))) return; const ids = engine.selection.content.slice(); engine.run('Delete Content', (m) => ops.deleteContent(m, ids)); })(); } },
+    { id: 'delete', label: 'Delete Content', keys: ['Delete', 'Backspace'], enabled: sel, run: () => { if (deleteChosenKeys(engine)) return; void (async () => { if (prefs.confirmDelete && !(await confirmAction('Delete content', 'Delete the selected content?', 'Delete', true))) return; const ids = engine.selection.content.slice(); engine.run('Delete Content', (m) => ops.deleteContent(m, ids)); })(); } },
     { id: 'group', label: 'Group', keys: ['Mod+G'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Group', (m) => { const r = ops.groupContent(m, ids); return { movie: r.movie, select: [r.group] }; }); } },
     { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.some((c) => c.kind === 'group'), run: () => { const g = engine.selected.find((c) => c.kind === 'group'); if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
@@ -666,9 +676,12 @@ export function startApp(): void {
     ...paint.paintCommands(),
     ...pushCommands(engine),
     ...loopCommands(engine),
+    ...keyCommands(engine),
     ...edCommands(engine),
     ...timelineViewCommands(engine, () => timeline),
+    ...shuttleCommands(engine),
     ...a11yCommands(engine),
+    ...chromeCommands(),
     ...ckCommands({
       engine,
       nudge: (dx, dy) => stage?.nudge(dx, dy),
@@ -692,7 +705,7 @@ export function startApp(): void {
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'pen-link', 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'marker-add', 'marker-prev', 'marker-next', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
@@ -759,6 +772,7 @@ export function startApp(): void {
 
   installNumberFields();
   installA11y(engine);
+  installTextWarpNote(engine);
   window.addEventListener('keydown', (e) => {
     if (anyDialogOpen() || e.defaultPrevented || paint.isOpen()) return;
     if (menubar.isOpen || createMenu.isOpen) {

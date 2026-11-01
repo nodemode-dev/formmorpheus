@@ -47,7 +47,7 @@ export class ShapePanel {
   private readonly joinSeg = new Map<string, HTMLButtonElement>();
   private readonly fillColor: HTMLInputElement;
   private readonly strokeColor: HTMLInputElement;
-  private readonly stops: Array<{ wrap: HTMLElement; color: HTMLInputElement; del: HTMLButtonElement }> = [];
+  private readonly stops: Array<{ wrap: HTMLElement; color: HTMLInputElement; del: HTMLButtonElement; key: HTMLButtonElement }> = [];
   private readonly addStop: HTMLButtonElement;
   private readonly note: HTMLElement;
   private readonly closed: HTMLButtonElement;
@@ -142,15 +142,18 @@ export class ShapePanel {
     // gradient stops: colour, position (keyable) and remove
     const stopHost = q(root, '[data-g="stops"]');
     for (let i = 0; i < MAX_STOPS; i++) {
-      const wrap = el<HTMLElement>('<div class="fm-shp-stop"><label class="fm-tc-swatch"><input type="color" aria-label="Stop color"></label><span class="fm-shp-stopat"></span><button class="fm-tc-mini fm-shp-del" type="button" title="Remove stop" aria-label="Remove stop">x</button></div>');
+      const wrap = el<HTMLElement>(`<div class="fm-shp-stop"><label class="fm-tc-swatch"><input type="color" aria-label="Stop color"></label><span class="fm-shp-stopat"></span><button class="fm-shp-key fm-shp-stopkey" type="button" title="Animate this color" aria-label="Animate this color" aria-pressed="false">${DIAMOND}</button><button class="fm-tc-mini fm-shp-del" type="button" title="Remove stop" aria-label="Remove stop">x</button></div>`);
       const color = q<HTMLInputElement>(wrap, 'input[type="color"]');
+      const key = q<HTMLButtonElement>(wrap, '.fm-shp-stopkey');
       const del = q<HTMLButtonElement>(wrap, '.fm-shp-del');
       const at = q(wrap, '.fm-shp-stopat');
       at.appendChild(this.makeRow(`o${i}`, true).wrap);
-      color.addEventListener('input', () => this.edit('Gradient stop color', (d) => this.stopColor(d, i, color.value)));
+      // written as three channels: a saved color, or a key when the stop's color is animated
+      color.addEventListener('input', () => { const [r, g, b] = rgbOf(color.value); this.write({ [`g${i}R`]: r, [`g${i}G`]: g, [`g${i}B`]: b }); });
       color.addEventListener('change', () => this.end());
+      key.addEventListener('click', (e) => { this.toggleStopKey(i, e.altKey); });
       del.addEventListener('click', () => { this.edit('Remove gradient stop', (d) => this.removeStop(d, i)); this.end(); });
-      this.stops.push({ wrap, color, del });
+      this.stops.push({ wrap, color, del, key });
       stopHost.appendChild(wrap);
     }
     this.addStop.addEventListener('click', () => { this.edit('Add gradient stop', (d) => this.insertStop(d)); this.end(); });
@@ -271,6 +274,21 @@ export class ShapePanel {
     this.end();
   }
 
+  /** Keys the three channels of one gradient stop's color at the Playhead in one step; Alt removes the animation. */
+  private toggleStopKey(i: number, remove: boolean): void {
+    const c = this.cur(), frame = this.engine.frame;
+    if (!c) return;
+    const vals = resolveShape(c.shape, animate(c, frame - c.start).shape);
+    const ids = ['R', 'G', 'B'].map((k) => `g${i}${k}`);
+    this.engine.run(remove ? 'Remove shape keys' : 'Shape keyframe', (m) => ops.updateContent(m, this.id, (cc) => {
+      const local = Math.max(0, Math.min(cc.duration - 1, frame - cc.start));
+      let out = cc;
+      for (const id of ids) out = remove ? unkeyParam(out, id, local, vals[id]) : keyParam(out, id, local, vals[id], m.addKeyAtStart, newKeyState().lastEase);
+      return out;
+    }));
+    this.end();
+  }
+
   private retype(d: ShapeDef, type: ShapeType): ShapeDef {
     if (d.type === type) return d;
     const line = type === 'line' || type === 'arrow';
@@ -373,7 +391,11 @@ export class ShapePanel {
     const stops = d.fill?.stops && d.fill.stops.length >= 2 ? d.fill.stops : defaultStops(d.fill?.color);
     this.stops.forEach((s, i) => {
       setHidden(s.wrap, !grad || i >= stops.length);
-      if (i < stops.length && document.activeElement !== s.color && s.color.value !== stops[i].color) s.color.value = stops[i].color;
+      const shown = i < stops.length ? hexOf(v[`g${i}R`], v[`g${i}G`], v[`g${i}B`]) : '';
+      if (shown && document.activeElement !== s.color && s.color.value !== shown) s.color.value = shown;
+      const kd = !!c && ['R', 'G', 'B'].some((k) => isKeyed(c, `g${i}${k}`));
+      setClass(s.key, 'is-keyed', kd);
+      s.key.setAttribute('aria-pressed', String(kd));
       setHidden(s.del, stops.length <= 2);
     });
     setHidden(this.addStop, stops.length >= MAX_STOPS);

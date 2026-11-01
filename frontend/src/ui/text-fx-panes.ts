@@ -4,6 +4,7 @@ import { locate, textColorFor } from '../engine/model';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import { animSpans, layoutText } from '../engine/text-layout';
+import { TITLE_PRESETS } from '../engine/text-presets';
 import { DEFAULT_SIDE, paintRun, runValue, type AnimDir, type AnimOrder, type AnimUnit, type TextAnimSide, type TextRun } from '../engine/text-rich';
 import { EASES, type Content, type Ease, type TextStyle } from '../engine/types';
 import { ensureTextFont, fontCatalog } from '../media/fonts';
@@ -23,7 +24,7 @@ const hex = (v: string | undefined, d: string): string => (v && /^#[0-9a-f]{6}$/
 /** Drops fields that were cleared so a movie only carries what is used. */
 function tidy(s: TextStyle): TextStyle {
   const o = { ...s } as unknown as Record<string, unknown>;
-  for (const k of ['runs', 'shadow', 'box', 'anim']) if (o[k] === undefined) delete o[k];
+  for (const k of ['runs', 'shadow', 'box', 'anim', 'fillTo', 'glow', 'path']) if (o[k] === undefined) delete o[k];
   if (!s.runs || !s.runs.length) delete o.runs;
   if (s.anim) {
     const a = { ...s.anim } as Record<string, unknown>;
@@ -233,6 +234,36 @@ export class TextFxPanes {
 
   private buildEffects(): void {
     const host = this.effects;
+    this.head(host, 'Title presets');
+    // choosing one lays its look and build over the words; the select then names it
+    this.select(host, 'Preset', [['', 'Choose a preset'], ...TITLE_PRESETS.map((p): [string, string] => [p.id, p.label])], (s) => s.preset ?? '',
+      (s, id) => { const p = TITLE_PRESETS.find((x) => x.id === id), m = this.engine.movie; return p && m ? { ...p.apply(s, m.width, m.height), preset: id } : s; }, 'preset');
+    this.head(host, 'Gradient fill');
+    const gradRows: HTMLElement[] = [];
+    this.seg(host, 'Use', [{ id: 'on', text: 'On' }], (s) => new Set(s.fillTo ? ['on'] : []),
+      (s) => (s.fillTo ? { ...s, fillTo: undefined } : { ...s, fillTo: { color: s.color === '#ffffff' ? '#7aa7ff' : '#ffffff', angle: 90 } }), 'fill-to');
+    gradRows.push(this.color(host, 'End color', (s) => s.fillTo?.color, (s, v) => (s.fillTo ? { ...s, fillTo: { ...s.fillTo, color: v } } : s), 'fill-to-color'));
+    gradRows.push(this.num(host, 'Angle', -360, 360, 1, (s) => s.fillTo?.angle, (s, v) => (s.fillTo ? { ...s, fillTo: { ...s.fillTo, angle: v } } : s), 'fill-to-angle'));
+    this.ctls.push({ sync: (s) => { for (const r of gradRows) setHidden(r, !s.fillTo); } });
+    this.head(host, 'Glow');
+    const glowRows: HTMLElement[] = [];
+    this.seg(host, 'Use', [{ id: 'on', text: 'On' }], (s) => new Set(s.glow ? ['on'] : []),
+      (s) => (s.glow ? { ...s, glow: undefined } : { ...s, glow: { color: '#ffd24a', radius: 24, intensity: 2 } }), 'glow');
+    glowRows.push(this.color(host, 'Color', (s) => s.glow?.color, (s, v) => (s.glow ? { ...s, glow: { ...s.glow, color: v } } : s), 'glow-color'));
+    glowRows.push(this.num(host, 'Radius', 0, 300, 1, (s) => s.glow?.radius, (s, v) => (s.glow ? { ...s, glow: { ...s.glow, radius: v } } : s), 'glow-radius'));
+    glowRows.push(this.num(host, 'Intensity', 0, 6, 0.1, (s) => s.glow?.intensity, (s, v) => (s.glow ? { ...s, glow: { ...s.glow, intensity: v } } : s), 'glow-intensity'));
+    this.ctls.push({ sync: (s) => { for (const r of glowRows) setHidden(r, !s.glow); } });
+    this.head(host, 'Text on a path');
+    const pathRows: HTMLElement[] = [];
+    const pth = (s: TextStyle, patch: Partial<NonNullable<TextStyle['path']>>): TextStyle => (s.path ? { ...s, path: { ...s.path, ...patch } } : s);
+    this.select(host, 'Path', [['none', 'None'], ['arc', 'Arc'], ['wave', 'Wave'], ['circle', 'Circle']], (s) => s.path?.kind ?? 'none',
+      (s, v) => (v === 'none' ? { ...s, path: undefined } : { ...s, path: { ...s.path, kind: v as 'arc' | 'wave' | 'circle', start: s.path?.start ?? 0 } }), 'path-kind');
+    pathRows.push(this.num(host, 'Bend', -1, 1, 0.05, (s) => s.path?.bend ?? 0.5, (s, v) => pth(s, { bend: v }), 'path-bend'));
+    pathRows.push(this.num(host, 'Amplitude', 0, 600, 1, (s) => s.path?.amp ?? 40, (s, v) => pth(s, { amp: v }), 'path-amp'));
+    pathRows.push(this.num(host, 'Wavelength', 8, 4000, 1, (s) => s.path?.len ?? 400, (s, v) => pth(s, { len: v }), 'path-len'));
+    pathRows.push(this.num(host, 'Radius', 4, 4000, 1, (s) => s.path?.radius, (s, v) => pth(s, { radius: v }), 'path-radius'));
+    pathRows.push(this.num(host, 'Start', -100, 100, 1, (s) => s.path?.start ?? 0, (s, v) => pth(s, { start: v }), 'path-start'));
+    this.ctls.push({ sync: (s) => { for (const r of pathRows) setHidden(r, !s.path); } });
     this.head(host, 'Shadow');
     const shadowRows: HTMLElement[] = [];
     this.seg(host, 'Use', [{ id: 'on', text: 'On' }], (s) => new Set(s.shadow ? ['on'] : []),
@@ -282,6 +313,14 @@ export class TextFxPanes {
     rows.push(this.num(host, 'Seed', 0, 9999, 1, (s) => get(s)?.seed, (s, v) => upd(s, { seed: Math.round(v) }), `anim-${which}-seed`));
     rows.push(this.select(host, 'Ease', EASE_CHOICES.map((e) => [e.id, e.label] as [string, string]), (s) => get(s)?.ease, (s, v) => upd(s, { ease: v as Ease }), `anim-${which}-ease`));
     rows.push(this.num(host, which === 'in' ? 'Delay' : 'Finish', 0, 3000, 1, (s) => get(s)?.offset, (s, v) => upd(s, { offset: v }), `anim-${which}-offset`));
+    // selector: a window of the units (percent of the text) that animate; 0 to 100 with no shift is every unit
+    const rg = (s: TextStyle, patch: Partial<NonNullable<TextAnimSide['range']>>): TextStyle => {
+      const r = { start: 0, end: 100, shift: 0, ...get(s)?.range, ...patch };
+      return upd(s, { range: r.start === 0 && r.end === 100 && r.shift === 0 ? undefined : r });
+    };
+    rows.push(this.num(host, 'Range start', 0, 100, 1, (s) => get(s)?.range?.start ?? 0, (s, v) => rg(s, { start: v }), `anim-${which}-rstart`));
+    rows.push(this.num(host, 'Range end', 0, 100, 1, (s) => get(s)?.range?.end ?? 100, (s, v) => rg(s, { end: v }), `anim-${which}-rend`));
+    rows.push(this.num(host, 'Range shift', -100, 100, 1, (s) => get(s)?.range?.shift ?? 0, (s, v) => rg(s, { shift: v }), `anim-${which}-rshift`));
     this.ctls.push({ sync: (s) => { for (const r of rows) setHidden(r, !get(s)); } });
   }
 

@@ -6,7 +6,8 @@ import { Popover, popRow, popSep, type PopRow } from './popover';
 import { t, tn } from './i18n';
 import { toast } from './toast';
 import { shareMovie } from './theater-share';
-import { copyMoviesToFolder, copyMoviesToIcloud, hasIcloud } from './theater-storage';
+import { editTags, showMovieInfo } from './theater-info';
+import { cloudTarget, copyMoviesToCloud, copyMoviesToFolder } from './theater-storage';
 import '../styles/theater.css';
 
 /** Theater management on Home's Movies page: Select mode (several movies at once), a context menu per movie
@@ -27,13 +28,16 @@ export interface TheaterHost {
   setManual(): void;
 }
 
+/** `t` is a parameter name in several methods below; this stays reachable inside them. */
+const tl = (s: string): string => t(s);
+
 export interface Target { movie?: string; stack?: string }
 export type DropZone = 'before' | 'after' | 'into';
 const OLD_ORDER = 'formmorpheus.theater-order';
 
 export const keyOf = (t: Target): string => (t.stack ? `stk:${t.stack}` : `lib:${t.movie}`);
 
-const MENU_ICONS = { open: 'folderOpen', rename: 'tPencil', dup: 'duplicate', share: 'upload', copy: 'folder', cloud: 'upload', out: 'chevronLeft', ungroup: 'folderOpen', select: 'check', del: 'delete' } as const;
+const MENU_ICONS = { open: 'folderOpen', rename: 'tPencil', dup: 'duplicate', share: 'upload', copy: 'folder', cloud: 'upload', out: 'chevronLeft', ungroup: 'folderOpen', select: 'check', del: 'delete', info: 'search', tags: 'tPencil' } as const;
 
 export class TheaterTools {
   stacks: LibraryStack[] = [];
@@ -52,7 +56,8 @@ export class TheaterTools {
       <span class="cv-th-count"></span>
       <button class="cv-th-act" type="button" data-act="stack">${icon('folder', 14)}<span>Stack</span></button>
       <button class="cv-th-act" type="button" data-act="dup">${icon('duplicate', 14)}<span>Duplicate</span></button>
-      <button class="cv-th-act" type="button" data-act="copy">${icon('folder', 14)}<span>Copy to Folder...</span></button>
+      <button class="cv-th-act" type="button" data-act="copy">${icon('folder', 14)}<span>Copy to...</span></button>
+      <button class="cv-th-act" type="button" data-act="cloud" hidden>${icon('upload', 14)}<span>Copy to Cloud</span></button>
       <button class="cv-th-act is-danger" type="button" data-act="del">${icon('delete', 14)}<span>Delete</span></button>
     </div>
   </div>`);
@@ -84,6 +89,7 @@ export class TheaterTools {
       if (b.dataset.act === 'stack') void this.stackThem(names);
       else if (b.dataset.act === 'dup') void this.duplicate(names);
       else if (b.dataset.act === 'copy') void copyMoviesToFolder(names);
+      else if (b.dataset.act === 'cloud') void copyMoviesToCloud(names);
       else void this.trashSelection();
     });
     const mk = (id: keyof typeof MENU_ICONS, label: string, danger = false): PopRow => {
@@ -91,9 +97,10 @@ export class TheaterTools {
       r.el.addEventListener('click', () => { this.menu.hide(); void this.run(id); });
       return r;
     };
-    this.rows = { open: mk('open', 'Open'), rename: mk('rename', 'Rename'), dup: mk('dup', 'Duplicate'), share: mk('share', 'Share / Export'), copy: mk('copy', 'Copy to Folder...'), cloud: mk('cloud', 'Copy to iCloud Drive'),
-      out: mk('out', 'Remove from stack'), ungroup: mk('ungroup', 'Ungroup'), select: mk('select', 'Select'), del: mk('del', 'Delete', true) };
-    this.menu.body.append(this.rows.open.el, this.rows.rename.el, this.rows.dup.el, this.rows.share.el, this.rows.copy.el, this.rows.cloud.el, this.rows.out.el, this.rows.ungroup.el, popSep(), this.rows.select.el, popSep(), this.rows.del.el);
+    this.rows = { open: mk('open', 'Open'), rename: mk('rename', 'Rename'), dup: mk('dup', 'Duplicate'), share: mk('share', 'Share / Export'), copy: mk('copy', 'Copy to Folder...'), cloud: mk('cloud', 'Copy to Cloud'),
+      out: mk('out', 'Remove from stack'), ungroup: mk('ungroup', 'Ungroup'), select: mk('select', 'Select'), del: mk('del', 'Delete', true),
+      info: mk('info', 'Info...'), tags: mk('tags', 'Tags...') };
+    this.menu.body.append(this.rows.open.el, this.rows.rename.el, this.rows.info.el, this.rows.tags.el, this.rows.dup.el, this.rows.share.el, this.rows.copy.el, this.rows.cloud.el, this.rows.out.el, this.rows.ungroup.el, popSep(), this.rows.select.el, popSep(), this.rows.del.el);
     this.title.body.append(this.titleInput);
     this.titleInput.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -186,6 +193,7 @@ export class TheaterTools {
     setClass(this.selBtn, 'is-active', this.selecting);
     this.selBtn.setAttribute('aria-pressed', String(this.selecting));
     setHidden(this.actions, !this.selecting);
+    if (this.selecting) void cloudTarget().then((to) => setHidden(q(this.actions, '[data-act="cloud"]'), !to));
     const n = this.selected.size;
     setText(q(this.actions, '.cv-th-count'), tn(n, '{n} selected', '{n} selected'));
     const movies = this.selectedMovies().length;
@@ -201,10 +209,12 @@ export class TheaterTools {
     const stack = !!t.stack;
     const inStack = !!t.movie && !!this.stackOf(t.movie);
     setHidden(this.rows.share.el, stack);
+    setHidden(this.rows.info.el, stack);
+    setHidden(this.rows.tags.el, stack);
     setHidden(this.rows.dup.el, stack);
     setHidden(this.rows.copy.el, stack);
-    setHidden(this.rows.cloud.el, true);   // shown below only when this computer has an iCloud Drive folder
-    if (!stack) void hasIcloud().then((yes) => { if (yes && this.target === t) setHidden(this.rows.cloud.el, false); });
+    setHidden(this.rows.cloud.el, true);   // shown below only when a cloud folder is set or this computer has an iCloud Drive folder
+    if (!stack) void cloudTarget().then((to) => { if (to && this.target === t) { this.rows.cloud.setLabel(tl('Copy to {name}').replace('{name}', to.name)); setHidden(this.rows.cloud.el, false); } });
     setHidden(this.rows.out.el, !inStack);
     setHidden(this.rows.ungroup.el, !stack);
     this.rows.del.setLabel(stack ? 'Delete stack' : 'Delete');
@@ -218,14 +228,16 @@ export class TheaterTools {
       if (id === 'open') { if (t.stack) this.enter(t.stack); else if (t.movie) this.h.open(t.movie); }
       else if (id === 'select') { this.setSelecting(!this.selecting); }
       else if (id === 'rename') await (t.stack ? this.renameStack(t.stack) : this.rename(t.movie ?? ''));
+      else if (id === 'info' && t.movie) showMovieInfo(t.movie, () => { void this.h.refresh(); });
+      else if (id === 'tags' && t.movie) { if (await editTags(t.movie)) await this.h.refresh(); }
       else if (id === 'dup' && t.movie) await this.duplicate([t.movie]);
       else if (id === 'share' && t.movie) await this.share(t.movie);
       else if (id === 'copy' && t.movie) await copyMoviesToFolder(this.selecting && this.selectedMovies().includes(t.movie) ? this.selectedMovies() : [t.movie]);
-      else if (id === 'cloud' && t.movie) await copyMoviesToIcloud(this.selecting && this.selectedMovies().includes(t.movie) ? this.selectedMovies() : [t.movie]);
+      else if (id === 'cloud' && t.movie) await copyMoviesToCloud(this.selecting && this.selectedMovies().includes(t.movie) ? this.selectedMovies() : [t.movie]);
       else if (id === 'out' && t.movie) await this.moveOut([t.movie]);
       else if (id === 'ungroup' && t.stack) await this.ungroup(t.stack);
       else if (id === 'del') {
-        if (t.stack) await this.ungroup(t.stack);
+        if (t.stack) await this.removeStack(t.stack);
         else if (t.movie) await this.trash([t.movie]);
       }
     } catch (err) { toast((err as Error).message, 'error'); }
@@ -293,10 +305,18 @@ export class TheaterTools {
     document.dispatchEvent(new CustomEvent('fm:library-changed'));   // the Recently Deleted count follows
   }
 
+  /** Deleting a stack (G21) asks first: it is the one delete that dissolves a folder. Its movies are not deleted; they return to the wall. */
+  async removeStack(id: string): Promise<void> {
+    const s = this.stackById(id);
+    const ok = await confirmAction('Delete stack?', t('The stack "{name}" is taken apart. Its movies are kept and go back to the Theater.').replace('{name}', s?.name ?? ''), 'Delete stack', true);
+    if (ok) await this.ungroup(id);
+  }
+
   private async trashSelection(): Promise<void> {
     const stacks = [...this.selected].filter((k) => k.startsWith('stk:')).map((k) => k.slice(4));
     const movies = this.selectedMovies();
     try {
+      if (stacks.length && !(await confirmAction('Delete stack?', tn(stacks.length, 'This stack is taken apart. Its movies are kept and go back to the Theater.', 'These {n} stacks are taken apart. Their movies are kept and go back to the Theater.'), 'Delete', true))) return;
       if (movies.length) await this.trash(movies);
       for (const s of stacks) await this.ungroupInPlace(s);
       if (stacks.length) { this.selected.clear(); this.paint(); await this.h.refresh(); }

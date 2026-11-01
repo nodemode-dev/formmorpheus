@@ -10,6 +10,7 @@ import { loadPaintPrefs } from './paint-settings';
 import { attachPenStorage } from './paint-feel';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { onLanguage, t } from './i18n';
+import { tf } from './i18n-fill';
 import { checkRow, selectRow, sliderRow } from './panels/controls';
 
 const CURVE = 168, PAD = 10, MAX_POINTS = 8, MIN_GAP = 0.03;
@@ -20,10 +21,17 @@ const ACTIONS: ReadonlyArray<readonly [string, string]> = [
 
 function osAdvice(kind: 'flat' | 'zero' | 'mouse'): string {
   const ua = navigator.userAgent;
-  const lead = kind === 'mouse' ? 'Your tablet is arriving as a mouse.' : 'This pen reports no pressure.';
-  if (/Windows/i.test(ua)) return `${lead} In your tablet driver, turn on Windows Ink, restart the driver, then reopen formmorpheus.`;
-  if (/Mac/i.test(ua)) return `${lead} Install your tablet's own driver (the system's generic one gives no pressure), then reopen formmorpheus.`;
-  return `${lead} On Linux the web view may not pass pressure through; an X11 session with your tablet's driver gives the best chance.`;
+  const mouse = kind === 'mouse';
+  // whole sentences, one per case, so a language can order them as it needs
+  if (/Windows/i.test(ua)) return mouse
+    ? t('Your tablet is arriving as a mouse. In your tablet driver, turn on Windows Ink, restart the driver, then reopen formmorpheus.')
+    : t('This pen reports no pressure. In your tablet driver, turn on Windows Ink, restart the driver, then reopen formmorpheus.');
+  if (/Mac/i.test(ua)) return mouse
+    ? t('Your tablet is arriving as a mouse. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen formmorpheus.')
+    : t('This pen reports no pressure. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen formmorpheus.');
+  return mouse
+    ? t('Your tablet is arriving as a mouse. On Linux the web view may not pass pressure through; an X11 session with your tablet\'s driver gives the best chance.')
+    : t('This pen reports no pressure. On Linux the web view may not pass pressure through; an X11 session with your tablet\'s driver gives the best chance.');
 }
 
 const same = (a: CurvePoint[], b: CurvePoint[]): boolean => a.length === b.length && a.every((p, i) => Math.abs(p[0] - b[i][0]) < 2e-3 && Math.abs(p[1] - b[i][1]) < 2e-3);
@@ -161,7 +169,7 @@ export class PenSettingsPage {
   private syncDevice(): void {
     const rt = penRuntime, key = rt.tracker.key('pen'), known = !key.endsWith(':?');
     const saved = !!rt.profiles[key];
-    setText(this.devName, known ? (saved ? `Saved pen: ${key}` : `Pen: ${key}`) : 'No pen seen yet');
+    setText(this.devName, known ? tf(saved ? 'Saved pen: {pen}' : 'Pen: {pen}', { pen: key }) : t('No pen seen yet'));
     this.saveBtn.disabled = !known;
     setHidden(this.forgetBtn, !saved);
   }
@@ -301,9 +309,12 @@ export class PenSettingsPage {
     if (kind) { msg = osAdvice(kind); bad = true; }
     else if (tk.stats('pen')) {
       const s = tk.stats('pen');
-      msg = s && s.contact > 4 ? `Pen detected: pressure ${s.pMin.toFixed(2)} to ${s.pMax.toFixed(2)}${s.tilt ? ', tilt' : ''}${s.twist ? ', twist' : ''}.` : 'Pen detected. Press and draw to check its pressure.';
-    } else if (tk.stats('touch') || tk.stats('mouse')) msg = 'Only mouse or touch input seen so far. Draw with your pen to test it.';
-    else msg = 'Draw on the pad with your pen to test it.';
+      const v = { min: s ? s.pMin.toFixed(2) : '', max: s ? s.pMax.toFixed(2) : '' };
+      msg = s && s.contact > 4
+        ? s.tilt && s.twist ? tf('Pen detected: pressure {min} to {max}, tilt, twist.', v) : s.tilt ? tf('Pen detected: pressure {min} to {max}, tilt.', v) : s.twist ? tf('Pen detected: pressure {min} to {max}, twist.', v) : tf('Pen detected: pressure {min} to {max}.', v)
+        : t('Pen detected. Press and draw to check its pressure.');
+    } else if (tk.stats('touch') || tk.stats('mouse')) msg = t('Only mouse or touch input seen so far. Draw with your pen to test it.');
+    else msg = t('Draw on the pad with your pen to test it.');
     setText(this.diag, msg);
     setClass(this.diag, 'is-bad', bad);
     this.syncDevice();

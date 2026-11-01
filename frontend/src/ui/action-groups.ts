@@ -15,9 +15,9 @@ export const MOTION_GROUPS: ActionGroup[] = [
 /** Filters is also where a kind with no entry lands. */
 export const FILTER_GROUPS: ActionGroup[] = [
   { title: 'Filters', kinds: ['opacity', 'noise', 'boil'] },
-  { title: 'Color', kinds: ['hsb', 'colorcorrect', 'vignette'] },
-  { title: 'Blur', kinds: ['blur', 'sharpen', 'lensblur', 'dirblur', 'radblur', 'motionblur'] },
-  { title: 'Stylize', kinds: ['glow', 'shadow', 'pixelate', 'chromatic', 'mirror'] },
+  { title: 'Color', kinds: ['hsb', 'colorcorrect', 'vignette', 'gradmap', 'hueshift'] },
+  { title: 'Blur', kinds: ['blur', 'sharpen', 'lensblur', 'dirblur', 'radblur', 'motionblur', 'gblur', 'unsharp'] },
+  { title: 'Stylize', kinds: ['glow', 'shadow', 'pixelate', 'chromatic', 'mirror', 'ripple', 'halftone', 'outline', 'glitch', 'kaleido'] },
   { title: 'Keying', kinds: ['chromakey', 'lumakey'] },
 ];
 

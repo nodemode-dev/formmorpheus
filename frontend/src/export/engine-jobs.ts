@@ -11,7 +11,7 @@ type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
 export type EngineTarget = 'prores' | 'prores4444' | 'hevc' | 'h264';
 
 export interface TargetInfo { available: boolean; encoder: string; reason: string; encoders?: string[] }
-export interface JobCapabilities { ffmpeg: boolean; path: string; version: string; gpl: boolean; aac: boolean; targets: Record<EngineTarget, TargetInfo> }
+export interface JobCapabilities { ffmpeg: boolean; path: string; version: string; gpl: boolean; aac: boolean; mp3?: boolean; targets: Record<EngineTarget, TargetInfo> }
 
 const BASE = '/api/jobs';
 const UPLOADS = 4;
@@ -143,6 +143,10 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
         target: o.target, fps: rate, width, height, frames: total, has_audio: wav !== null, alpha: keepAlpha,
         quality: o.quality, container: o.format === 'hevc-mov' || o.format === 'h264-mov' ? 'mov' : 'mp4', name: safeName(movie.name),
         audio_codec: o.audioCodec ?? 'aac', profile: o.target === 'prores' || o.target === 'prores4444' ? profile : '',
+        // bitrate and size targets: two passes for software H.264 / HEVC, a profile pick plus a per-frame cap for ProRes
+        // each marker inside the range becomes a chapter (a ProRes or HEVC file in a player's chapter list)
+        chapters: (movie.markers ?? []).filter((mk) => mk.frame >= from && mk.frame < to).map((mk) => ({ start: (mk.frame - from) / movie.fps, title: mk.name })),
+        video_kbps: o.videoBitrate ? Math.round(o.videoBitrate / 1000) : 0, target_bytes: !o.videoBitrate && o.targetBytes ? Math.round(o.targetBytes) : 0,
       }),
     })).json() as { id: string };
     jobId = made.id;
@@ -180,9 +184,11 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     for (;;) {
       await new Promise((r) => setTimeout(r, POLL_MS));
       check();
-      const s = await (await call(`/${jobId}`)).json() as { state: string; progress: number; output: string; error: string; encoder: string };
+      const s = await (await call(`/${jobId}`)).json() as { state: string; progress: number; output: string; error: string; encoder: string; note?: string; passes?: number };
       if (s.state === 'encoding') { progress('encoding', Math.round(s.progress * total), total); continue; }
       if (s.state === 'done') {
+        if (s.note) warnings.push(s.note);
+        if ((s.passes ?? 1) > 1) warnings.push(`Encoded in two passes (${s.encoder}) to reach the ${o.videoBitrate ? 'bitrate' : 'file size'} you asked for.`);
         progress('finishing', 0, 1);
         const res = await fetch(`/api/exports/${encodeURIComponent(s.output)}`, { signal: abort.signal });
         if (!res.ok) throw new Error('The finished file could not be read back from Exports.');
@@ -196,7 +202,8 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     }
   };
 
-  const result = go().catch(async (e: unknown) => {
+  const unpinOriginals = deps.renderer.pinOriginals();   // the file is made from the original videos, not editing proxies
+  const result = go().finally(unpinOriginals).catch(async (e: unknown) => {
     closeFrames?.();
     // a failed or stopped job leaves nothing behind in the engine
     if (jobId) await fetch(`${BASE}/${jobId}`, { method: 'DELETE' }).catch(() => {});

@@ -305,8 +305,22 @@ export class FlipMini {
     // the handle: drag to move and throw, double-click to dock
     const handle = q(this.root, '.fm-fm-handle');
     handle.addEventListener('dblclick', () => this.dock());
-    handle.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+    handle.addEventListener('pointerdown', (e) => { if (e.button === 0) this.beginMove(e, handle); });
+    // the docked strip's handle pulled away: the card appears under the pointer and the same drag carries on
+    this.strip.onTear = (e, from) => {
+      if (this.floating) return;
+      this.undock();
+      const p = this.parent.getBoundingClientRect(), r = this.root.getBoundingClientRect();
+      this.mx = Math.round(e.clientX - p.left - r.width / 2);
+      this.my = Math.round(e.clientY - p.top - 8);
+      this.place();
+      this.beginMove(e, from);
+    };
+  }
+
+  /** Drags the card by `handle` (its own, or the strip's handle it was torn from): drop near an edge to snap, throw it to fly to one. */
+  private beginMove(e: PointerEvent, handle: HTMLElement): void {
+    {
       handle.setPointerCapture(e.pointerId);
       window.clearTimeout(this.flyTimer);
       setClass(this.root, 'is-fly', false);
@@ -347,6 +361,6 @@ export class FlipMini {
       handle.addEventListener('pointermove', move);
       handle.addEventListener('pointerup', up);
       handle.addEventListener('pointercancel', up);
-    });
+    }
   }
 }

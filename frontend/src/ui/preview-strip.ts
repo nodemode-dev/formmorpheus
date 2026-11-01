@@ -8,7 +8,7 @@ const CELL_W = 240;
 /** The strip of a movie is re-drawn at most this often, so autosave stays cheap. */
 const REUSE_MS = 60000;
 
-const cache = new Map<string, { at: number; blob: Blob | null }>();
+const cache = new Map<string, { at: number; rev: number; blob: Blob | null }>();
 
 export async function previewStrip(renderer: Renderer, movie: Movie): Promise<Blob | null> {
   if (typeof OffscreenCanvas === 'undefined') return null;
@@ -34,10 +34,11 @@ export async function previewStrip(renderer: Renderer, movie: Movie): Promise<Bl
 }
 
 /** The strip for a save: drawn now, or the one drawn less than a minute ago for the same movie name. */
-export async function previewFor(name: string, renderer: Renderer, movie: Movie): Promise<Blob | null> {
+export async function previewFor(name: string, renderer: Renderer, movie: Movie, rev = -1): Promise<Blob | null> {
   const hit = cache.get(name);
-  if (hit && Date.now() - hit.at < REUSE_MS) return hit.blob;
+  // an edit since the cached strip was drawn makes it old at once (a strip of the empty movie must not outlive the first Solid)
+  if (hit && hit.rev === rev && Date.now() - hit.at < REUSE_MS) return hit.blob;
   const blob = await previewStrip(renderer, movie);
-  cache.set(name, { at: Date.now(), blob });
+  cache.set(name, { at: Date.now(), rev, blob });
   return blob;
 }

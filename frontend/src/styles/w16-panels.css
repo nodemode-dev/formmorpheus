@@ -1,0 +1,83 @@
+/* v0.16.0 · Draw & Paint panels: Settings prefs fade and headings, Layers cards, Color companion, Flipbook strip tiers. */
+
+/* Settings: section headings and the fade that says the list goes on (no scrollbars in this app) */
+.fm-ps-sect { padding: var(--space-2) var(--space-3) 0; color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-ps-pane[data-pane="prefs"].is-more { -webkit-mask-image: linear-gradient(#000 calc(100% - 34px), transparent); mask-image: linear-gradient(#000 calc(100% - 34px), transparent); }
+.fm-ps-folder-note { padding: 0 var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); line-height: 1.3; word-break: break-all; user-select: text; }
+.fm-ps-folder-note[hidden] { display: none; }
+.fm-ps-row[title] { cursor: default; }
+
+/* Motion: these panels grow out of the button that opened them (entry only; a hidden panel cannot play an exit) */
+@keyframes fm-w16-in { from { opacity: 0; scale: 0.96; } to { opacity: 1; scale: 1; } }
+.fm-ps:not([hidden]), .fm-col:not([hidden]):not(.is-detached), .fm-lp-card, .fm-lp-side:not([hidden]), .fm-col-pm:not([hidden]) { animation: fm-w16-in 140ms var(--ease-glass, ease-out); transform-origin: top right; }
+.fm-ps:not([hidden]) { transform-origin: top left; }
+.fm-lp-side:not([hidden]) { transform-origin: right center; }
+@media (prefers-reduced-motion: reduce) {
+  .fm-ps:not([hidden]), .fm-col:not([hidden]), .fm-lp-card, .fm-lp-side:not([hidden]), .fm-col-pm:not([hidden]) { animation: none; }
+}
+
+/* Color: a palette's ellipsis menu and the active tick */
+.fm-col-chead { position: relative; }
+.fm-col-tick { display: none; flex: none; align-items: center; color: var(--accent-color); }
+.fm-col-card.is-default .fm-col-tick { display: inline-flex; }
+.fm-col-more { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 20px; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); }
+.fm-col-more:hover { background: var(--surface-raised); color: var(--text-primary); }
+.fm-col-pm { position: absolute; right: 0; top: 24px; z-index: 6; min-width: 140px; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.fm-col-pm[hidden] { display: none !important; }
+.fm-col-pm button { display: block; width: 100%; height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text-primary); text-align: left; font-size: var(--fs-12); }
+.fm-col-pm button:hover { background: var(--surface-raised); }
+.fm-col-pm .is-danger { color: var(--danger-text); }
+.fm-col-card.is-lifted { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); }
+
+/* Color Companion: once pulled off its anchor the panel becomes a small floating square, the five modes as icons only */
+.fm-col.is-detached { width: 204px; padding: 4px 10px 0; }
+.fm-col.is-detached .fm-col-grip { position: relative; margin-bottom: 4px; }
+.fm-col.is-detached .fm-col-grip::after { content: ''; position: absolute; inset: -6px -40px -6px; cursor: grab; }
+.fm-col.is-detached .fm-col-head { height: 26px; margin-bottom: 4px; justify-content: flex-start; padding-right: 22px; }
+.fm-col.is-detached .fm-col-titles { display: none; }
+/* the Harmony style choice lives in the title block, so it stays while that mode shows */
+.fm-col.is-detached[data-mode="harmony"] .fm-col-titles { display: block; order: 2; margin-left: 6px; }
+.fm-col.is-detached[data-mode="harmony"] .fm-col-title { display: none; }
+.fm-col.is-detached[data-mode="harmony"] .fm-col-sub { height: 22px; }
+.fm-col.is-detached .fm-col-chip { width: 26px; height: 18px; }
+.fm-col.is-detached .fm-col-bodies { zoom: 0.8; }
+.fm-col.is-detached .fm-col-foot { display: none; }
+.fm-col.is-detached .fm-col-tabs { margin: 4px -10px 0; padding: 2px 2px 4px; }
+.fm-col.is-detached .fm-col-tab { padding: 5px 0; }
+.fm-col.is-detached .fm-col-tab span { display: none; }
+.fm-col.is-detached .fm-col-x { top: 5px; right: 6px; }
+
+/* Layers: the header is the title and a plus; picking several layers swaps the plus for Delete and Group (text buttons) */
+.fm-lp-txt { height: 28px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--text-primary); font: inherit; font-size: var(--fs-12); font-weight: 600; cursor: default; }
+.fm-lp-txt:hover { background: var(--accent-color); color: var(--text-on-accent); }
+.fm-lp-txt.is-danger { color: var(--danger-text); }
+.fm-lp-txt.is-danger:hover { background: var(--danger-fill); color: var(--text-on-accent); }
+.fm-lp-txt[hidden], .fm-lp-single[hidden] { display: none; }
+/* a row picked up to move lifts as a small card over the others */
+.fm-lp-row.is-lifted { scale: 0.94; border-radius: 14px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px color-mix(in srgb, var(--text-on-accent) 30%, transparent); }
+
+/* Flipbook strip: the 36 by 4 handle that tears the Mini Flipbook off, icon-only header buttons, cell tiers */
+.fm-fs { --fm-cell-paper: #fff; --fm-cell-empty: color-mix(in srgb, var(--text-primary) 40%, var(--bg-primary)); }
+.fm-fs-handle { display: flex; align-items: center; justify-content: center; height: 12px; margin: -4px 0 0; cursor: grab; touch-action: none; }
+.fm-fs-handle-bar { width: 36px; height: 4px; border-radius: 2px; background: var(--text-muted); opacity: 0.6; transition: opacity var(--dur-fast, 120ms) ease; }
+.fm-fs-handle:hover .fm-fs-handle-bar { opacity: 1; }
+.fm-fs-head > .fm-fs-ib:not(.has-lab) { width: 34px; }
+.fm-fs-head > .fm-fs-ib[data-act="multi"], .fm-fs-head > .fm-fs-ib[data-act="track"], .fm-fs-head > .fm-fs-ib[data-act="frame"] { color: var(--text-primary); }
+/* unused cells: a dark rounded tile for every column up to the longest track, under the cells */
+.fm-fs-lane-in {
+  width: calc(var(--fm-cols, 0) * 36px + 4px); box-sizing: border-box;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='26'%3E%3Crect width='34' height='26' rx='5' fill='black' fill-opacity='.42'/%3E%3C/svg%3E") 2px center / 36px 26px repeat-x;
+}
+.fm-fs .fm-fs-cell { background: var(--fm-cell-paper); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 14%, transparent); }
+.fm-fs .fm-fs-cell:hover { box-shadow: inset 0 0 0 1px var(--text-muted); }
+.fm-fs .fm-fs-cell.is-cur { box-shadow: 0 0 0 2px var(--accent-color); }
+.fm-fs .fm-fs-cell.is-sel { box-shadow: 0 0 0 2px var(--accent-color), 0 0 10px color-mix(in srgb, var(--accent-color) 55%, transparent); }
+.fm-fs .fm-fs-cell.is-sel.is-cur { box-shadow: 0 0 0 2px var(--text-primary), 0 0 10px color-mix(in srgb, var(--accent-color) 55%, transparent); }
+.fm-fs .fm-fs-cell.is-empty { background: var(--fm-cell-empty); }
+.fm-fs .fm-fs-cell.is-held:not(.is-empty) { background: var(--fm-cell-paper); }
+/* a hold is one long cell with a lighter tail: a faint tick at each column it covers */
+.fm-fs .fm-fs-cell.is-held::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 34px, color-mix(in srgb, #000 22%, transparent) 34px 36px); }
+.fm-fs .fm-fs-cell .fm-fs-no { color: #1d1d1f; text-shadow: 0 0 2px #fff; }
+.fm-fs .fm-fs-cell.is-empty .fm-fs-no { color: #fff; text-shadow: 0 0 2px #000; }
+.fm-fs .fm-fs-cell .fm-fs-hold { color: #1d1d1f; text-shadow: 0 0 2px #fff; }
+.fm-fs .fm-fs-cell.is-empty .fm-fs-hold { color: #fff; text-shadow: 0 0 2px #000; }

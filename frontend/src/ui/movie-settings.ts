@@ -15,6 +15,9 @@ import { MS_TAB_ICONS } from './ms-icons';
 import { t } from './i18n';
 import { api } from '../io/api';
 import { toast } from './toast';
+import { timelineSnap } from './timeline-ed';
+import { rulerDrag, snapSeconds } from './timeline-nav';
+import { previewSounds } from './preview-pref';
 import '../styles/movie-settings.css';
 
 /** The reference order: Share before Prefs. */
@@ -25,7 +28,9 @@ const GESTURES: Array<['penHover' | 'penRoll' | 'penPlay' | 'undoGestures' | 'mu
   ['penHover', 'Pen hover on Timeline'], ['penRoll', 'Rotate performing with a twisting pen'], ['penPlay', 'Pen button plays and pauses'],
   ['undoGestures', 'Undo and redo gestures'], ['multiFinger', 'Multi-select with finger'], ['rotatePinch', 'Rotate Stage with pinch zoom'],
 ];
-const UNDO_STEPS: Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
+/** The Share tab's one-click exports: the labels and the Quick share ids of the Export dialog. */
+const QUICK_EXPORTS: Array<[string, string]> = [['Video', 'mp4'], ['Animated GIF', 'gif'], ['Frames as images', 'png-frames'], ['Current frame', 'still']];
+const UNDO_STEPS:Array<[string, string]> = [['10', '10'], ['20', '20'], ['50', '50'], ['100', '100'], ['250', '250'], ['1000', '1000'], ['0', 'Unlimited']];
 
 function runCommand(id: string): void {
   document.dispatchEvent(new CustomEvent('fm:ms-close'));
@@ -75,6 +80,11 @@ export class MovieSettings {
   private readonly playbackRows: HTMLButtonElement[] = [];
   private readonly addKey = input('checkbox');
   private readonly loopVisible = input('checkbox');
+  /** Timeline editing: snapping, the Ruler's drag, and the sound preview (kept per person, not per movie). */
+  private readonly snapOn = input('checkbox');
+  private readonly snapSec = input('checkbox');
+  private readonly rulerScale = input('checkbox');
+  private readonly soundPreview = input('checkbox');
   private readonly mbOn = input('checkbox');
   private readonly mbShutter = input('number');
   private readonly mbSamples = input('number');
@@ -147,7 +157,9 @@ export class MovieSettings {
       this.playbackRows.push(b);
       modes.appendChild(b);
     }
-    this.panes[2].append(el<HTMLElement>('<div class="fm-ms-head">Playback</div>'), modes, row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)), row('Motion blur', toggleOf(this.mbOn)), row('Shutter angle', this.mbShutter), row('Motion blur maximum samples', this.mbSamples));
+    this.panes[2].append(el<HTMLElement>('<div class="fm-ms-head">Playback</div>'), modes, row('Loop only the visible region', toggleOf(this.loopVisible)), row('Add keyframe at start', toggleOf(this.addKey)),
+      el<HTMLElement>('<div class="fm-ms-head">Editing</div>'), row('Snap', toggleOf(this.snapOn)), row('Snap to seconds', toggleOf(this.snapSec)), row('Ruler drag scales time', toggleOf(this.rulerScale)), row('Preview sounds before import', toggleOf(this.soundPreview)),
+      el<HTMLElement>('<div class="fm-ms-head">Motion blur</div>'), row('Motion blur', toggleOf(this.mbOn)), row('Shutter angle', this.mbShutter), row('Motion blur maximum samples', this.mbSamples));
     this.mbShutter.min = '0'; this.mbShutter.max = '720'; this.mbSamples.min = '2'; this.mbSamples.max = '64';
     this.undoSteps.value = String(loadPrefs().undoDepth);
     this.undoSteps.addEventListener('change', () => {
@@ -202,10 +214,19 @@ export class MovieSettings {
       this.prefsGestures.append(row(label, toggleOf(box)));
     }
     this.panes[3].append(this.prefsMain, this.prefsGestures);
+    // G10: one-click rows run the export with default settings (the movie's size, rate and length); Advanced opens the dialog
+    this.panes[4].append(el<HTMLElement>('<div class="fm-ms-head">Export</div>'));
+    for (const [label, id] of QUICK_EXPORTS) {
+      const b = el<HTMLButtonElement>('<button class="fm-ms-row fm-ms-link" type="button"><span class="fm-ms-label"></span><span class="fm-ms-go" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13h10"/></svg></span></button>');
+      setText(q(b, '.fm-ms-label'), label);
+      b.addEventListener('click', () => { document.dispatchEvent(new CustomEvent('fm:ms-close')); document.dispatchEvent(new CustomEvent('fm:export-quick', { detail: id })); });
+      this.panes[4].append(b);
+    }
     this.panes[4].append(
-      row('Export', actionBtn('Export...', 'export')),
-      row('Movie file', actionBtn('Share Movie File', 'export-fmo')),
-      row('With undo history', actionBtn('Share Movie File with History', 'export-fmo-history')),
+      row('Advanced export', actionBtn('Export...', 'export')),
+      el<HTMLElement>('<div class="fm-ms-head">Share the movie</div>'),
+      row('Movie file', actionBtn('Share', 'export-fmo')),
+      row('Movie file with undo history', actionBtn('Share', 'export-fmo-history')),
     );
 
     const hms = el<HTMLElement>('<div class="fm-ms-pair"></div>');
@@ -304,6 +325,10 @@ export class MovieSettings {
       else this.patch(true);
     });
     this.loopVisible.addEventListener('change', () => this.run('Loop Visible Region', { loopVisible: this.loopVisible.checked }));
+    this.snapOn.addEventListener('change', () => timelineSnap.set(this.snapOn.checked));
+    this.snapSec.addEventListener('change', () => snapSeconds.set(this.snapSec.checked));
+    this.rulerScale.addEventListener('change', () => rulerDrag.set(this.rulerScale.checked ? 'scale' : 'scrub'));
+    this.soundPreview.addEventListener('change', () => previewSounds.set(this.soundPreview.checked));
     this.addKey.addEventListener('change', () => this.run('Keyframe at Start', { addKeyAtStart: this.addKey.checked }));
     const mb = (): void => {
       const sh = this.mbShutter.valueAsNumber, sm = this.mbSamples.valueAsNumber;
@@ -373,6 +398,10 @@ export class MovieSettings {
     for (const [key] of GESTURES) { const box = this.gestureBoxes.get(key); if (box) setChecked(box, p[key]); }
     setChecked(this.addKey, m.addKeyAtStart);
     setChecked(this.loopVisible, !!m.loopVisible);
+    setChecked(this.snapOn, timelineSnap.on);
+    setChecked(this.snapSec, snapSeconds.on);
+    setChecked(this.rulerScale, rulerDrag.mode === 'scale');
+    setChecked(this.soundPreview, previewSounds.on);
     setChecked(this.mbOn, !!m.motionBlur?.on);
     this.put(this.mbShutter, String(m.motionBlur?.shutter ?? 180), force);
     this.put(this.mbSamples, String(m.motionBlur?.samples ?? 16), force);

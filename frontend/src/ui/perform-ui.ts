@@ -2,6 +2,8 @@
 import type { Engine } from '../engine/engine';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { Popover } from './popover';
+import { t } from './i18n';
+import { tf } from './i18n-fill';
 
 const STORE = 'formmorpheus.perform';
 
@@ -23,6 +25,8 @@ class PerformState {
   mod: '' | 'rotating' | 'scaling' = '';
   /** The last take: the history depth before and after it and where it began, so Retake can undo it. */
   lastTake: { before: number; after: number; start: number } | null = null;
+  /** Frames left of the pre-roll before the take starts recording (0: not counting in). */
+  countIn = 0;
   private rec = false;
   private readonly subs = new Set<Listener>();
 
@@ -48,7 +52,14 @@ class PerformState {
   setRecording(on: boolean): void {
     if (on === this.rec) return;
     this.rec = on;
-    if (!on) this.mod = '';
+    if (!on) { this.mod = ''; this.countIn = 0; }
+    this.emit();
+  }
+
+  setCountIn(frames: number): void {
+    const n = Math.max(0, Math.round(frames));
+    if (n === this.countIn) return;
+    this.countIn = n;
     this.emit();
   }
 
@@ -177,6 +188,8 @@ export class PerformBanner {
   readonly root = el(`<div class="fm-perf-banner" hidden><span class="fm-perf-dot"></span><span class="fm-perf-text">Ready</span><button class="fm-perf-retake" type="button" title="Retake: undo the last take (Shift+R)" aria-label="Retake" hidden>Retake</button><button class="fm-perf-gear" type="button" title="Modifications" aria-label="Modifications">${GEAR}</button></div>`);
   private readonly text = q(this.root, '.fm-perf-text');
   private readonly retakeBtn = q<HTMLButtonElement>(this.root, '.fm-perf-retake');
+  /** The big count-in number over the Stage while the pre-roll runs. */
+  private cue: HTMLElement | null = null;
 
   constructor(private readonly engine: Engine) {
     mods.bind(engine);
@@ -196,7 +209,17 @@ export class PerformBanner {
 
   private sync(): void {
     setClass(this.root, 'is-recording', perform.recording);
-    setText(this.text, perform.recording ? (perform.mod ? `Action · ${perform.mod}` : 'Action') : 'Ready');
+    const counting = perform.recording && perform.countIn > 0;
+    setText(this.text, counting ? tf('Count-in · {n}', { n: String(perform.countIn) }) : perform.recording ? (perform.mod ? tf('Action · {mode}', { mode: t(perform.mod) }) : t('Action')) : t('Ready'));
+    setClass(this.root, 'is-counting', counting);
+    if (!this.cue && this.root.parentElement) {
+      this.cue = el('<div class="fm-perf-cue" aria-hidden="true" hidden></div>');
+      this.root.parentElement.appendChild(this.cue);
+    }
+    if (this.cue) {
+      setHidden(this.cue, !counting);
+      setText(this.cue, counting ? String(perform.countIn) : '');
+    }
     setHidden(this.retakeBtn, !perform.lastTake || perform.recording || this.engine.history.past.length !== perform.lastTake.after);
   }
 }

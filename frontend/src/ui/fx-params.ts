@@ -3,7 +3,7 @@
 import '../styles/brush-curves.css';
 import '../styles/fx-params.css';
 import { cleanPoints, curveAt, curveLut, MAX_NODES } from '../paint/curves';
-import { CURVE_IDS, parseCurve } from '../engine/fx/colorcorrect';
+import { CURVE_IDS, curvePointId, parseCurve } from '../engine/fx/colorcorrect';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { t } from './i18n';
 
@@ -41,9 +41,14 @@ export interface CurvesApi {
   end(): void;
   /** Stores a lane option ('' removes the curve). */
   set(id: string, value: string): void;
+  /** Writes keys at the Playhead for curve-point channels (`cv<curve><point>`: the point's offset up or down). */
+  key(vals: Record<string, number>): void;
+  /** Removes every key of one curve's point channels (the channel ids start with `prefix`). */
+  unkey(prefix: string): void;
 }
 
-export interface CurvesExtra { root: HTMLElement; sync(opts: Record<string, string | number | boolean>): void }
+/** `vals`: the lane's values at the Playhead; `keyed(channel)`: that channel has keys. */
+export interface CurvesExtra { root: HTMLElement; sync(opts: Record<string, string | number | boolean>, vals?: Record<string, number>, keyed?: (channel: string) => boolean): void }
 
 const CH_NAMES: Record<string, string> = { L: 'Master', R: 'Red', G: 'Green', B: 'Blue' };
 
@@ -59,9 +64,21 @@ export function buildCurves(api: CurvesApi): CurvesExtra {
   const plot = q(root, '.fm-kc-plot');
   const reset = q<HTMLButtonElement>(root, '.fm-bc-reset');
   setText(reset, t('Reset curve'));
+  // animating the curve: Key points writes a key for every point; then a point's up and down moves are keys, and adding or removing points waits
+  const keyBtn = el<HTMLButtonElement>('<button class="fm-bc-reset fm-kc-keypts" type="button"></button>');
+  setText(keyBtn, t('Key points'));
+  keyBtn.title = t('Animate this curve: moving a point sets a key at the Playhead');
+  const unkeyBtn = el<HTMLButtonElement>('<button class="fm-bc-reset fm-kc-keypts is-on" type="button" hidden></button>');
+  setText(unkeyBtn, t('Points keyed: stop animating'));
+  reset.after(keyBtn, unkeyBtn);
   const tabBtns = new Map<string, HTMLButtonElement>();
   let cur = 'L';
   let opts: Record<string, string | number | boolean> = {};
+  let vals: Record<string, number> = {};
+  let keyedFn: (channel: string) => boolean = () => false;
+  /** The saved curve of the tab (the straight line when none), before keyed offsets. */
+  let base = [0, 0, 1, 1];
+  const animated = (): boolean => { for (let i = 0; i < MAX_NODES + 2; i++) if (keyedFn(curvePointId(cur, i))) return true; return false; };
   for (const id of CURVE_IDS) {
     const b = el<HTMLButtonElement>('<button class="fm-kc-segbtn" type="button"></button>');
     setText(b, t(CH_NAMES[id]));
@@ -88,7 +105,29 @@ export function buildCurves(api: CurvesApi): CurvesExtra {
 
   let pts = [0, 0, 1, 1];
 
+  const store = (clean: number[]): void => {
+    const straight = clean.length === 4 && clean[1] === 0 && clean[3] === 1;
+    api.set('curve' + cur, straight ? '' : clean.map((v) => String(Math.round(v * 1000) / 1000)).join(','));
+  };
+
   function commit(next: number[]): void {
+    if (animated()) {
+      // an animated curve: a point's height is a key (its offset from the saved curve), its sideways move edits the saved curve
+      const n = Math.min(next.length, base.length) / 2;
+      const moved: number[] = base.slice();
+      let sideways = false;
+      const keys: Record<string, number> = {};
+      for (let i = 0; i < n; i++) {
+        if (Math.abs(next[i * 2] - base[i * 2]) > 1e-6) { moved[i * 2] = next[i * 2]; sideways = true; }
+        const off = Math.min(1, Math.max(-1, next[i * 2 + 1] - base[i * 2 + 1]));
+        if (Math.abs(off - (vals[curvePointId(cur, i)] ?? 0)) > 1e-6) keys[curvePointId(cur, i)] = off;
+      }
+      if (sideways) { base = cleanPoints(moved); store(base); }
+      if (Object.keys(keys).length) api.key(keys);
+      pts = next;
+      paint();
+      return;
+    }
     const clean = cleanPoints(next);
     const straight = clean.length === 4 && clean[1] === 0 && clean[3] === 1;
     pts = clean;
@@ -115,7 +154,7 @@ export function buildCurves(api: CurvesApi): CurvesExtra {
     }
     api.begin();
     if (hit < 0) {
-      if (n - 2 >= MAX_NODES || p.x < 0.03 || p.x > 0.97) { api.end(); return; }
+      if (n - 2 >= MAX_NODES || p.x < 0.03 || p.x > 0.97 || animated()) { api.end(); return; }
       let at = 1;
       while (at < n - 1 && next[at * 2] < p.x) at++;
       next.splice(at * 2, 0, p.x, p.y);
@@ -146,14 +185,22 @@ export function buildCurves(api: CurvesApi): CurvesExtra {
   svg.addEventListener('dblclick', (e) => {
     const i = nodes.indexOf(e.target as SVGCircleElement);
     const n = pts.length / 2;
-    if (i <= 0 || i >= n - 1) return;
+    if (i <= 0 || i >= n - 1 || animated()) return;
     const next = pts.slice();
     next.splice(i * 2, 2);
     api.begin();
     commit(next);
     api.end();
   });
-  reset.addEventListener('click', () => { api.begin(); pts = [0, 0, 1, 1]; api.set('curve' + cur, ''); api.end(); paint(); });
+  reset.addEventListener('click', () => { api.begin(); pts = [0, 0, 1, 1]; base = [0, 0, 1, 1]; api.set('curve' + cur, ''); if (animated()) api.unkey('cv' + cur); api.end(); paint(); });
+  keyBtn.addEventListener('click', () => {
+    const k: Record<string, number> = {};
+    for (let i = 0; i < base.length / 2; i++) k[curvePointId(cur, i)] = vals[curvePointId(cur, i)] ?? 0;
+    api.begin();
+    api.key(k);
+    api.end();
+  });
+  unkeyBtn.addEventListener('click', () => { api.begin(); api.unkey('cv' + cur); api.end(); });
 
   function paint(): void {
     const n = pts.length / 2;
@@ -171,17 +218,27 @@ export function buildCurves(api: CurvesApi): CurvesExtra {
         node.classList.toggle('is-end', i === 0 || i === n - 1);
       } else node.setAttribute('display', 'none');
     }
-    setHidden(reset, parseCurve(opts['curve' + cur]) === null && drag < 0);
+    const anim = animated();
+    setHidden(reset, parseCurve(opts['curve' + cur]) === null && !anim && drag < 0);
+    setHidden(keyBtn, anim);
+    setHidden(unkeyBtn, !anim);
   }
 
   function draw(): void {
+    const keyedCurve = (id: string): boolean => { for (let i = 0; i < MAX_NODES + 2; i++) if (keyedFn(curvePointId(id, i))) return true; return false; };
     for (const [id, b] of tabBtns) {
       setClass(b, 'is-active', id === cur);
-      setClass(b, 'is-set', parseCurve(opts['curve' + id]) !== null);
+      setClass(b, 'is-set', parseCurve(opts['curve' + id]) !== null || keyedCurve(id));
     }
-    if (drag < 0) pts = parseCurve(opts['curve' + cur]) ?? [0, 0, 1, 1];
+    base = parseCurve(opts['curve' + cur]) ?? [0, 0, 1, 1];
+    if (drag < 0) {
+      // the curve as it stands at the Playhead: the saved points with their keyed offsets laid on
+      const eff = base.slice();
+      for (let i = 0; i < eff.length / 2; i++) eff[i * 2 + 1] = Math.min(1, Math.max(0, eff[i * 2 + 1] + (vals[curvePointId(cur, i)] ?? 0)));
+      pts = eff;
+    }
     paint();
   }
 
-  return { root, sync(o) { opts = o; draw(); } };
+  return { root, sync(o, v, k) { opts = o; vals = v ?? {}; keyedFn = k ?? (() => false); draw(); } };
 }

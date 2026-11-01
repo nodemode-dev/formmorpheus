@@ -16,6 +16,10 @@ import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from '.
 import { t } from './i18n';
 import { toast } from './toast';
 import { AudioExportDialog } from './audio-export-dialog';
+import { ExportChip } from './export-chip';
+import { exportCard } from './export-cards';
+import { copyFrameToClipboard, exportSpriteSheet } from '../export/sprite-sheet';
+import { ProgressMeter, clock, planFor, type Reading } from '../export/progress-meter';
 
 const KEY = 'formmorpheus.export';
 
@@ -117,6 +121,8 @@ const TILES: Tile[] = [
   { id: 'gif', label: 'Animated GIF', sub: 'Small, loops forever', icon: TILE_ICONS.gif },
   { id: 'png-frames', label: 'Frames as images', sub: 'A PNG for every frame', icon: TILE_ICONS.frames },
   { id: 'still', label: 'Current frame', sub: 'A single PNG still', icon: TILE_ICONS.still },
+  { id: 'sprite', label: 'Sprite sheet', sub: 'A grid of frames (.png) and its rects (.json)', icon: svg('<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/>') },
+  { id: 'copy', label: 'Copy current frame', sub: 'A PNG on the clipboard', icon: svg('<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>') },
   { id: 'fmo', label: 'Movie file', sub: 'Smaller, keep editing (.fmo)', icon: TILE_ICONS.fmo },
   { id: 'audio', label: 'Sound only', sub: 'WAV, M4A, Opus, or one file per track', icon: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>') },
   { id: 'fmo-history', label: 'Movie file with full history', sub: 'Every undo step (.fmo)', icon: TILE_ICONS.fmo },
@@ -125,7 +131,7 @@ const TILES: Tile[] = [
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 
 export class ExportDialog {
-  private readonly dlg = new Dialog('Export', 960);
+  private readonly dlg = new Dialog('Export', 1120);
   private readonly state: Saved = load();
   private readonly extras: ExportExtras = new ExportExtras({
     applyKind: (p) => this.applyKind(p),
@@ -139,9 +145,11 @@ export class ExportDialog {
   private readonly shareBox = el<HTMLElement>('<div class="fm-ex-tiles"></div>');
   private readonly advBox = el<HTMLElement>('<div class="fm-ex-adv"></div>');
   private readonly runBox = el<HTMLElement>(
-    '<div class="fm-ex-run" hidden><div class="fm-ex-run-head"><span class="fm-ex-run-title"></span><span class="fm-ex-run-count"></span></div><div class="cv-run-bar"><i></i></div></div>');
+    '<div class="fm-ex-run" hidden><div class="fm-ex-run-head"><span class="fm-ex-run-title"></span><span class="fm-ex-run-count"></span></div><div class="cv-run-bar"><i></i></div><div class="fm-ex-run-time"></div></div>');
   private readonly notes = el<HTMLElement>('<div class="fm-ex-notes" hidden></div>');
   private readonly formBox = el<HTMLElement>('<div class="fm-ex-form"></div>');
+  private readonly actions = el<HTMLElement>('<div class="fm-ex-actions"></div>');
+  private footerHost: HTMLElement | null = null;
   private readonly kind = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Format">${KINDS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}</select>`);
   private readonly codec = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Video codec">${CODECS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}</select>`);
   private readonly profile = el<HTMLSelectElement>(`<select class="cv-input" aria-label="ProRes type">${PROFILES.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}</select>`);
@@ -189,6 +197,13 @@ export class ExportDialog {
   }
   private engineJob: ReturnType<Engine['startJob']> | null = null;
   private busy = false;
+  // the running export's readout: shown in the window, and in a chip when the window is closed
+  private meter: ProgressMeter | null = null;
+  private tick = 0;
+  private runName = '';
+  private runStage = '';
+  private runLast: Reading | null = null;
+  private readonly chip = new ExportChip({ show: () => this.open(), cancel: () => { this.job?.cancel(); } });
   private audioDlg: AudioExportDialog | null = null;
   private aspect = 16 / 9;
 
@@ -223,7 +238,7 @@ export class ExportDialog {
       if (this.rangeBad()) { this.note([this.range().error], 'error'); return; }
       this.start(this.fromForm());
     });
-    this.dlg.onClose = () => { save(this.state); this.preview.stop(); if (!this.busy) this.preview.release(); };
+    this.dlg.onClose = () => { save(this.state); this.preview.stop(); if (!this.busy) this.preview.release(); this.syncChip(); };
     body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && this.state.tab === 'advanced') { e.preventDefault(); this.run.click(); } });
   }
 
@@ -233,6 +248,7 @@ export class ExportDialog {
     this.setTab(tab ?? this.state.tab);
     void this.refreshEngine();
     this.dlg.open(this.state.tab === 'share' ? this.shareBox.querySelector<HTMLElement>('button') : this.kind);
+    this.syncChip();
     if (this.state.tab === 'advanced') this.autoPreview();
   }
 
@@ -336,36 +352,53 @@ export class ExportDialog {
     pal.append(this.palette, this.palPick, this.palAdd);
     const chipsRow = this.row('chips', '', this.palChips);
     const F = this.formBox;
+    // extras.rows: 0 Delivery head, 1 to 2 presets, then frame rate, scale, reframe, focus x / y (3 to 7), watermark (8 to 13),
+    // loudness (14), rate control, kbps, MB, loops, lossless (15 to 19), file names (20), estimate (21)
+    const ex = this.extras.rows;
     F.append(
-      ...this.extras.rows.slice(1, 3),
-      this.row('kind', 'Format', this.kind),
-      this.row('codec', 'Video codec', this.codec),
-      this.row('profile', 'ProRes type', this.profile),
-      this.row('container', 'File container', this.container),
-      this.row('picture', 'File container', this.picture),
-      this.row('tiffmode', 'TIFF compression', this.tiffMode),
-      this.row('preset', 'Resolution', this.preset),
-      this.row('dims', 'Size', dims, this.size),
-      this.row('range', 'Range', this.rangeSel),
-      this.row('inout', 'In and out', range, this.rangeNote),
-      this.row('mode', 'Playback', this.mode),
-      this.row('audio', 'Sound', this.check(this.audio, 'Include sound')),
-      this.row('audiokind', 'Audio encoding', this.audioKind),
-      this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background')),
-      this.row('quality', 'Quality', this.quality),
-      ...this.extras.rows.slice(3),
-      gifHead,
-      this.row('duration', 'Frame duration', this.duration),
-      this.row('gmode', 'Playback', this.gmode),
-      this.row('dither', 'Dithering', this.dither),
-      this.row('smooth', 'Smoothness', this.smooth),
-      this.row('intensity', 'Intensity', inten),
-      this.row('colorstep', 'Number of colors', this.colorStep, this.colors),
-      this.row('palon', 'Custom palette', this.check(this.palOn, 'Use my own palette')),
-      this.row('palette', 'Palette', pal),
-      chipsRow,
-      this.row('threshold', 'Alpha threshold', thr),
-      this.row('loop', 'Loop', this.check(this.loop, 'Loop forever')),
+      exportCard('Presets', ...ex.slice(1, 3)),
+      exportCard('Video',
+        this.row('kind', 'Format', this.kind),
+        this.row('codec', 'Video codec', this.codec),
+        this.row('profile', 'ProRes type', this.profile),
+        this.row('container', 'File container', this.container),
+        this.row('picture', 'File container', this.picture),
+        this.row('tiffmode', 'TIFF compression', this.tiffMode),
+        this.row('preset', 'Resolution', this.preset),
+        this.row('dims', 'Size', dims, this.size),
+        ...ex.slice(3, 5),
+        this.row('range', 'Range', this.rangeSel),
+        this.row('inout', 'In and out', range, this.rangeNote),
+        this.row('mode', 'Playback', this.mode),
+        this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background')),
+        ...ex.slice(5, 8),
+      ),
+      exportCard('Audio',
+        this.row('audio', 'Sound', this.check(this.audio, 'Include sound')),
+        this.row('audiokind', 'Audio encoding', this.audioKind),
+        ex[14],
+      ),
+      exportCard('Quality',
+        this.row('quality', 'Quality', this.quality),
+        ...ex.slice(15, 20),
+        ex[21],
+      ),
+      exportCard('Advanced',
+        ...ex.slice(8, 14),
+        ex[20],
+        gifHead,
+        this.row('duration', 'Frame duration', this.duration),
+        this.row('gmode', 'Playback', this.gmode),
+        this.row('dither', 'Dithering', this.dither),
+        this.row('smooth', 'Smoothness', this.smooth),
+        this.row('intensity', 'Intensity', inten),
+        this.row('colorstep', 'Number of colors', this.colorStep, this.colors),
+        this.row('palon', 'Custom palette', this.check(this.palOn, 'Use my own palette')),
+        this.row('palette', 'Palette', pal),
+        chipsRow,
+        this.row('threshold', 'Alpha threshold', thr),
+        this.row('loop', 'Loop', this.check(this.loop, 'Loop forever')),
+      ),
     );
     const change = (): void => { this.readForm(); this.sync(); };
     for (const c of [this.kind, this.codec, this.profile, this.container, this.audioKind, this.picture, this.tiffMode, this.duration, this.smooth, this.intensity, this.colorStep, this.palOn, this.gmode,
@@ -483,7 +516,6 @@ export class ExportDialog {
     this.container.value = s.container;
     if (s.container !== 'mov' && s.audioKind === 'pcm') { s.audioKind = 'aac'; this.audioKind.value = 'aac'; }
     s.preset = this.preset.value as Preset;
-    if (s.kind === 'video' && s.preset === '480') { s.preset = '720'; this.preset.value = '720'; }
     s.audio = this.audio.checked;
     s.alpha = this.alpha.checked;
     s.quality = this.quality.value as Quality;
@@ -582,7 +614,7 @@ export class ExportDialog {
     opt(this.container, 'mov', s.codec === 'h264' || s.codec === 'hevc' || s.codec === 'prores');
     opt(this.container, 'webm', s.codec === 'vp9');
     opt(this.audioKind, 'pcm', s.container === 'mov');
-    opt(this.preset, '480', !video);
+    opt(this.preset, '480', true);
     setText(this.intensityValue, String(s.intensity));
     this.paintChips();
     setHidden(q(this.rows.get('dims') as HTMLElement, '.fm-ex-dims'), this.state.preset !== 'custom');
@@ -671,6 +703,7 @@ export class ExportDialog {
     if (!m || this.busy) return;
     if (id === 'audio') { (this.audioDlg ??= new AudioExportDialog({ engine: this.deps.engine, audio: this.deps.audio, saveOutput: this.deps.saveOutput })).open(); return; }
     if (id === 'fmo' || id === 'fmo-history') { this.deps.exportFmo?.(id === 'fmo-history'); if (!this.deps.exportFmo) toast('Saving the movie file is not available here.'); this.close(); return; }
+    if (id === 'sprite' || id === 'copy') { void this.extraAction(id); return; }
     const base = this.fromFormDefaults();
     if (id === 'mp4') this.start({ ...base, format: 'mp4', includeAudio: true, quality: 'high' });
     else if (id === 'gif') {
@@ -678,6 +711,37 @@ export class ExportDialog {
       this.start({ ...base, format: 'gif', width: Math.max(1, Math.round(m.width * k)), height: Math.max(1, Math.round(m.height * k)), alpha: m.transparent });
     } else if (id === 'png-frames') this.start({ ...base, format: 'png-frames', alpha: m.transparent });
     else { const f = Math.min(Math.max(0, this.deps.engine.frame), Math.max(0, m.duration - 1)); this.start({ ...base, format: 'png-still', from: f, to: f + 1, alpha: m.transparent }); }
+  }
+
+  /** Sprite sheet (a PNG and a JSON of frame rects) and Copy current frame (PNG on the clipboard). */
+  private async extraAction(id: 'sprite' | 'copy'): Promise<void> {
+    const m = this.deps.engine.movie;
+    if (!m) return;
+    const deps = { movie: m, renderer: this.deps.renderer, audio: this.deps.audio() };
+    this.busy = true;
+    try {
+      if (id === 'copy') {
+        const ok = await copyFrameToClipboard(deps, Math.min(Math.max(0, this.deps.engine.frame), Math.max(0, m.duration - 1)), m.transparent);
+        toast(ok ? t('Copied the current frame.') : t('This browser would not put the picture on the clipboard.'), ok ? 'info' : 'error');
+        return;
+      }
+      const r = await exportSpriteSheet(deps, { from: 0, to: Math.max(1, m.duration), alpha: m.transparent }, (d, n) => this.paintBusy(true, 'Frames', n ? d / n : 0, `${d} / ${n}`));
+      for (const [blob, name] of [[r.png, `${r.name} sprites.png`], [r.json, `${r.name} sprites.json`]] as const) {
+        downloadBlob(blob, name);
+        try { await this.deps.saveOutput(blob, name); } catch { /* the download stands */ }
+      }
+      toast(t('Sprite sheet: {n} frames in {cols} by {rows}, cells {w} x {h}.').replace('{n}', String(r.frames)).replace('{cols}', String(r.cols)).replace('{rows}', String(r.rows)).replace('{w}', String(r.cell[0])).replace('{h}', String(r.cell[1])), 'info');
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : t('The export failed.'), 'error');
+    } finally {
+      this.busy = false;
+      this.paintBusy(false, '', 0);
+    }
+  }
+
+  /** A one-click export from outside the dialog (the Movie settings Share tab): default settings, the movie's own size, rate and length. */
+  runQuick(id: string): void {
+    this.quick(id);
   }
 
   private fromFormDefaults(): ExportOptions {
@@ -719,10 +783,18 @@ export class ExportDialog {
     const deps = { movie, renderer: this.deps.renderer, audio: this.deps.audio() };
     const job = target ? startEngineExport(deps, { ...opts, target }) : startExport(deps, opts);
     this.job = job;
+    const meter = new ProgressMeter(planFor(opts.format, { engine: !!target, audio: opts.includeAudio && VIDEO.includes(opts.format) }));
+    this.meter = meter;
+    this.runName = label;
+    this.runStage = t('Starting');
+    this.runLast = null;
+    this.tick = window.setInterval(() => { if (this.runLast) this.showReading(meter.read()); }, 500);
+    this.syncChip();
     job.onProgress((p) => {
       ej.total = Math.max(1, p.total);
       this.deps.engine.stepJob(ej, p.done);
-      this.paintBusy(true, STAGES[p.stage], p.total > 0 ? p.done / p.total : 0, `${p.done} / ${p.total}`);
+      this.runStage = t(STAGES[p.stage]);
+      this.showReading(meter.update(p));
     });
     void job.result.then(async (res) => {
       downloadBlob(res.blob, res.name);
@@ -730,15 +802,34 @@ export class ExportDialog {
       if (!res.kept) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
       const lines = [...res.warnings];
       if (!kept) lines.push('The file was downloaded, but it could not be kept in Exports.');
+      const took = clock(meter.read().elapsedMs);
       this.finish(off, ej);
-      if (this.dlg.isOpen) this.note([t('Saved {name}').replace('{name}', res.name), ...lines], lines.length ? 'warn' : 'ok');
-      else toast(t('Exported {name}.').replace('{name}', res.name) + (lines.length ? ` ${lines.join(' ')}` : ''),kept ? 'info' : 'error');
+      if (this.dlg.isOpen) this.note([t('Saved {name}').replace('{name}', res.name) + ` · ${took}`, ...lines], lines.length ? 'warn' : 'ok');
+      else toast(t('Exported {name} in {time}.').replace('{name}', res.name).replace('{time}', took) + (lines.length ? ` ${lines.join(' ')}` : ''), kept ? 'info' : 'error', kept ? { actions: [{ label: t('Show in Exports'), run: () => document.dispatchEvent(new CustomEvent('fm:show-exports')) }] } : undefined);
     }, (e: unknown) => {
       this.finish(off, ej);
-      if (e instanceof DOMException && e.name === 'AbortError') { this.note(['Export cancelled.'], 'warn'); return; }
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        if (this.dlg.isOpen) this.note(['Export cancelled.'], 'warn'); else toast(t('Export cancelled.'));
+        return;
+      }
       const text = e instanceof Error && e.message ? e.message : 'The export failed.';
       if (this.dlg.isOpen) this.note([text], 'error'); else toast(text, 'error');
     });
+  }
+
+  /** One reading to the window's readout and to the chip. */
+  private showReading(r: Reading): void {
+    this.runLast = r;
+    const count = r.total > 1 && r.stage !== 'finishing' ? t('{done} of {total} frames').replace('{done}', String(r.done)).replace('{total}', String(r.total)) : `${Math.round(r.frac * 100)}%`;
+    this.paintBusy(true, this.runStage, r.frac, count);
+    const left = r.etaMs === null ? '' : ` · ${t('{time} left').replace('{time}', clock(r.etaMs))}`;
+    setText(q(this.runBox, '.fm-ex-run-time'), `${t('Elapsed {time}').replace('{time}', clock(r.elapsedMs))}${left}`);
+    this.chip.paint(this.runName, this.runStage, r);
+  }
+
+  /** The chip is up while an export runs and its window is closed. */
+  private syncChip(): void {
+    this.chip.set(this.busy && !!this.job && !this.dlg.isOpen);
   }
 
   private finish(off: () => void, ej: NonNullable<ExportDialog['engineJob']>): void {
@@ -747,6 +838,10 @@ export class ExportDialog {
     this.engineJob = null;
     this.job = null;
     this.busy = false;
+    window.clearInterval(this.tick);
+    this.meter = null;
+    this.runLast = null;
+    this.syncChip();
     this.paintBusy(false, '', 0);
     // the Export button was disabled while running and focus fell to the page: bring it back so Escape closes
     q<HTMLElement>(this.dlg.scrim, '.cv-dialog').focus();
@@ -787,6 +882,11 @@ export class ExportDialog {
     setHidden(this.shareBox, tab !== 'share');
     setHidden(this.advBox, tab !== 'advanced');
     setHidden(this.run, tab !== 'advanced');
+    // on Advanced, Close / Cancel and Export sit at the top right of the option column; on Quick share they return to the footer
+    this.footerHost ??= this.cancel.parentElement;
+    if (!this.actions.isConnected) this.formBox.prepend(this.actions);
+    const host = tab === 'advanced' ? this.actions : this.footerHost;
+    if (host && this.run.parentElement !== host) host.append(this.cancel, this.run);
     if (tab === 'advanced') { this.sync(); if (this.lastTab !== 'advanced' && this.dlg.isOpen) this.autoPreview(); }
     this.lastTab = tab;
   }

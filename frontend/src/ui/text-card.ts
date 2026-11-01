@@ -27,6 +27,9 @@ interface Slider { range: HTMLInputElement; num: HTMLInputElement }
 
 /** Glass card for Text content: a Fonts tab (typeface list, variant, color) and a Format tab (size, tracking, kerning, leading,
  *  baseline, alignment, case, underline, outline, strikethrough, vertical, wrap width). One merged undo step per gesture. */
+/** Where the person last dragged the card to (kept while the page lives). */
+let tcMoved: { x: number; y: number } | null = null;
+
 export class TextCard {
   private readonly pop = new Popover('fm-tc', 340);
   private id = '';
@@ -89,6 +92,7 @@ export class TextCard {
     q<HTMLButtonElement>(root, '[data-f="importFont"]').addEventListener('click', () => this.onImportFont?.());
 
     const tabBar = q(root, '.fm-tc-tabs');
+    this.grab(tabBar);
     // Spans, Effects and Animate: styled words, shadow and box, build on / off (ui/text-fx-panes.ts)
     this.rich = new TextFxPanes(engine, () => this.id);
     const paneHost = q(root, '.fm-tc-panes');
@@ -190,6 +194,7 @@ export class TextCard {
     this.sync(true);
     if (anchor instanceof HTMLElement) this.pop.showFor(anchor, 'below');
     else this.pop.showAt(anchor.x, anchor.y);
+    this.dock();
     this.fit();
     // a range picked in the inline editor stays picked: the Spans tab styles it
     if (textSel.range(contentId)) return;
@@ -205,6 +210,37 @@ export class TextCard {
     for (const [k, b] of this.tabs) { setClass(b, 'is-on', k === id); b.setAttribute('aria-selected', String(k === id)); }
     for (const [k, p] of this.panes) if (p.hidden !== (k !== id)) p.hidden = k !== id;
     if (this.pop.isOpen) this.fit();
+  }
+
+  /** Puts the card beside the Stage (right of it when there is room, else in its top right corner), or where the person last dragged it; its height stays inside the Stage so the Timeline is never covered. */
+  private dock(): void {
+    const e = this.pop.el, st = document.querySelector('.fm-stage-wrap')?.getBoundingClientRect();
+    if (st) e.style.maxHeight = `${Math.max(240, Math.round(st.height - 16))}px`;
+    const w = e.offsetWidth, h = e.offsetHeight;
+    let x = tcMoved ? tcMoved.x : st ? (window.innerWidth - st.right >= w + 16 ? st.right + 8 : st.right - w - 8) : window.innerWidth - w - 8;
+    let y = tcMoved ? tcMoved.y : st ? st.top + 8 : 8;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
+    e.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  }
+
+  /** The tab strip is a handle: dragging it moves the card, and the place is kept for the next one. */
+  private grab(handle: HTMLElement): void {
+    handle.classList.add('fm-tc-grab');
+    handle.addEventListener('pointerdown', (ev) => {
+      if ((ev.target as HTMLElement).closest('button') || ev.button !== 0) return;
+      const e = this.pop.el, r = e.getBoundingClientRect(), dx = ev.clientX - r.left, dy = ev.clientY - r.top;
+      handle.setPointerCapture(ev.pointerId);
+      const move = (m: PointerEvent): void => {
+        const x = Math.max(8, Math.min(m.clientX - dx, window.innerWidth - r.width - 8)), y = Math.max(8, Math.min(m.clientY - dy, window.innerHeight - 40));
+        e.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+        tcMoved = { x, y };
+      };
+      const up = (): void => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); handle.removeEventListener('pointercancel', up); };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
   }
 
   /** Keeps the card on screen after its height changed (a tab switch). */

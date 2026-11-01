@@ -1,0 +1,14 @@
+/* View > Hide Menu Bar and Hide Status Bar (FV-231): the bar leaves the layout (its row is 0 high, the Stage and Timeline
+   take the room) and slides back over the picture while the pointer rests on the edge, or while it holds focus. */
+body.fm-hide-menu { --cv-titlebar-h: 0px; }
+body.fm-hide-status { --cv-status-h: 0px; }
+body.fm-hide-menu .cv-app.fm-app > .cv-main, body.fm-hide-status .cv-app.fm-app > .cv-main { grid-row: 2; }
+body.fm-hide-menu .cv-app.fm-app > .cv-titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: var(--z-menu); transform: translateY(-100%); transition: transform var(--dur-pop, 140ms) var(--ease-glass, ease); }
+body.fm-hide-status .cv-app.fm-app > .cv-status { position: fixed; left: 0; right: 0; bottom: 0; height: 28px; z-index: var(--z-menu); transform: translateY(100%); transition: transform var(--dur-pop, 140ms) var(--ease-glass, ease); }
+/* a thin sliver of the bar stays inside the window and catches the pointer */
+body.fm-hide-menu .cv-app.fm-app > .cv-titlebar::after, body.fm-hide-status .cv-app.fm-app > .cv-status::after { content: ''; position: absolute; inset-inline: 0; height: 6px; }
+body.fm-hide-menu .cv-app.fm-app > .cv-titlebar::after { top: 100%; }
+body.fm-hide-status .cv-app.fm-app > .cv-status::after { bottom: 100%; }
+body.fm-hide-menu .cv-app.fm-app > .cv-titlebar:hover, body.fm-hide-menu .cv-app.fm-app > .cv-titlebar:focus-within, body.fm-hide-menu .cv-app.fm-app > .cv-titlebar:has(.is-open) { transform: none; }
+body.fm-hide-status .cv-app.fm-app > .cv-status:hover, body.fm-hide-status .cv-app.fm-app > .cv-status:focus-within { transform: none; }
+@media (prefers-reduced-motion: reduce) { body.fm-hide-menu .cv-app.fm-app > .cv-titlebar, body.fm-hide-status .cv-app.fm-app > .cv-status { transition: none; } }

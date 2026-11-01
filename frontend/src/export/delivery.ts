@@ -54,8 +54,8 @@ export function estimateBytes(e: EstimateIn): number {
   const px = e.width * e.height, seconds = e.steps / e.fps;
   switch (e.kind) {
     case 'video': {
-      if (e.prores) return px * e.steps * 0.9;
       if (e.rate?.mode === 'size') return e.rate.mb * 1_048_576;
+      if (e.prores && e.rate?.mode !== 'bitrate') return px * e.steps * 0.9;
       const bits = e.rate?.mode === 'bitrate' ? e.rate.kbps * 1000 : px * e.fps * BPP[e.quality] * 0.6;
       return (bits + (e.audio ? AUDIO_BPS : 0)) * seconds / 8;
     }

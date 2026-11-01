@@ -10,9 +10,11 @@ import type { Renderer } from '../engine/render';
 import type { Asset, Content, Movie } from '../engine/types';
 import { importScale } from '../media/import-size';
 import { importMedia } from '../media/import';
+import { makeProxy } from '../media/proxy';
 import type { VideoPool } from '../media/video';
 import { el, patchList, q, setClass, setDisabled, setHidden, setText } from './dom';
 import { t } from './i18n';
+import { tf } from './i18n-fill';
 import { toast } from './toast';
 import type { TimelineView } from './timeline';
 import '../styles/media-bin.css';
@@ -45,7 +47,7 @@ const ACCEPT: Record<string, string> = {
 
 const TEMPLATE = `<section class="fm-bin" role="dialog" aria-label="Media" hidden>
   <div class="fm-bin-head"><span class="fm-bin-title"></span><span class="fm-bin-total"></span><button class="fm-bin-btn fm-bin-x" type="button" data-act="close">${CLOSE}</button></div>
-  <div class="fm-bin-tools"><button class="fm-bin-btn" type="button" data-act="unused"></button></div>
+  <div class="fm-bin-tools"><button class="fm-bin-btn" type="button" data-act="unused"></button><button class="fm-bin-btn" type="button" data-act="useproxy" aria-pressed="false"></button></div>
   <div class="fm-bin-list" role="list"></div>
   <div class="fm-bin-empty"></div>
   <input type="file" hidden>
@@ -53,7 +55,7 @@ const TEMPLATE = `<section class="fm-bin" role="dialog" aria-label="Media" hidde
 
 const ROW = `<div class="fm-bin-row" role="listitem">
   <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><canvas width="112" height="84"></canvas><span class="fm-bin-glyph" hidden></span></span><span class="fm-bin-info"><span class="fm-bin-name"></span><span class="fm-bin-meta"></span><span class="fm-bin-use"></span></span></button>
-  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="place"></button><button class="fm-bin-btn" type="button" data-act="replace"></button><button class="fm-bin-btn" type="button" data-act="relink"></button></span>
+  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="place"></button><button class="fm-bin-btn" type="button" data-act="replace"></button><button class="fm-bin-btn" type="button" data-act="relink"></button><button class="fm-bin-btn" type="button" data-act="proxy"></button></span>
 </div>`;
 
 function lengthText(a: Asset): string {
@@ -71,6 +73,7 @@ export class MediaBin {
   private pickFor: { entry: BinEntry; relink: boolean } | null = null;
   private opener: HTMLElement | null = null;
   private unusedCount = 0;
+  private readonly making = new Set<string>();
 
   constructor(private readonly engine: Engine, private readonly deps: BinDeps) {
     this.root = el(TEMPLATE);
@@ -174,6 +177,13 @@ export class MediaBin {
     const un = q<HTMLButtonElement>(this.root, '[data-act="unused"]');
     setText(un, this.unusedCount ? `${t('Remove unused')} (${this.unusedCount})` : t('Remove unused'));
     setDisabled(un, !this.unusedCount);
+    const up = q<HTMLButtonElement>(this.root, '[data-act="useproxy"]');
+    const on = this.deps.video.proxiesOn;
+    setText(up, on ? t('Using proxies') : t('Use proxies'));
+    up.setAttribute('aria-pressed', String(on));
+    setClass(up, 'is-on', on);
+    setDisabled(up, !on && !this.deps.video.proxyIds.length);
+    up.title = t('Play the proxies while editing. Exports always use the originals.');
     const empty = q(this.root, '.fm-bin-empty');
     setText(empty, t('Nothing imported yet. Import a picture, video, sound or font and it appears here.'));
     setHidden(empty, list.length > 0);
@@ -202,9 +212,10 @@ export class MediaBin {
       if (len) parts.push(len);
     }
     parts.push(bytesText(e.size));
+    if (e.kind === 'video' && this.deps.video.proxyIds.includes(a.id)) parts.push(t('Proxy ready'));
     setText(q(row, '.fm-bin-meta'), missing ? t('Source missing') : parts.join(' · '));
     const n = e.uses.length;
-    setText(q(row, '.fm-bin-use'), n ? `${t('Used in')} ${n} ${t(n === 1 ? 'block' : 'blocks')}` : t('Not used'));
+    setText(q(row, '.fm-bin-use'), n ? tf(n === 1 ? 'Used in {n} block' : 'Used in {n} blocks', { n }) : t('Not used'));
     setClass(row, 'is-missing', missing);
     setClass(row, 'is-unused', n === 0);
     setClass(row, 'is-selected', e.uses.some((u) => sel.has(u.id)));
@@ -215,6 +226,12 @@ export class MediaBin {
     setHidden(place, !this.placeable(e));
     setHidden(replace, drawing || missing);
     setHidden(relink, !missing);
+    const px = q<HTMLButtonElement>(row, '[data-act="proxy"]');
+    const has = this.deps.video.proxyIds.includes(a.id), busy = this.making.has(a.id);
+    setHidden(px, e.kind !== 'video' || missing);
+    setText(px, busy ? t('Making proxy...') : has ? t('Remove proxy') : t('Make proxy'));
+    setDisabled(px, busy);
+    px.title = t('A smaller copy that plays smoothly while you edit. Exports always use the original.');
     const main = q(row, '.fm-bin-main');
     main.draggable = this.placeable(e);
     const label = `${e.name}, ${n ? `${t('Used in')} ${n}` : t('Not used')}`;
@@ -257,13 +274,33 @@ export class MediaBin {
   private act(act: string, key: string): void {
     if (act === 'close') { this.hide(); return; }
     if (act === 'unused') { this.removeUnused(); return; }
+    if (act === 'useproxy') { this.deps.video.setUseProxies(!this.deps.video.proxiesOn); this.refresh(); return; }
     const entry = this.entries.get(key);
     if (!entry) return;
+    if (act === 'proxy') { void this.proxy(entry); return; }
     if (act === 'place') this.place(entry, 'playhead');
     else if (act === 'replace' || act === 'relink') {
       this.pickFor = { entry, relink: act === 'relink' };
       this.picker.accept = ACCEPT[entry.kind] ?? '';
       this.picker.click();
+    }
+  }
+
+  private async proxy(entry: BinEntry): Promise<void> {
+    const id = entry.asset.id, video = this.deps.video;
+    if (video.proxyIds.includes(id)) { video.setProxy(id, null); this.refresh(); return; }
+    const blob = this.engine.assets.get(id);
+    if (!blob) return;
+    this.making.add(id);
+    this.refresh();
+    try {
+      video.setProxy(id, await makeProxy(blob));
+      toast(tf('{name}: proxy ready.', { name: entry.name }));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t('The proxy could not be made.'), 'error');
+    } finally {
+      this.making.delete(id);
+      this.refresh();
     }
   }
 
@@ -277,7 +314,7 @@ export class MediaBin {
     const ids = this.engine.movie ? unusedIds(this.engine.movie) : [];
     if (!ids.length) return;
     this.engine.run('Remove Unused Media', (m) => removeAssets(m, unusedIds(m)));
-    toast(`${ids.length} ${t(ids.length === 1 ? 'unused file removed.' : 'unused files removed.')}`);
+    toast(tf(ids.length === 1 ? '{n} unused file removed.' : '{n} unused files removed.', { n: ids.length }));
   }
 
   /** Puts a file in the movie again as a new block: at the Playhead, on the Timeline row and frame, or on the Stage. */
@@ -320,7 +357,7 @@ export class MediaBin {
       this.engine.assets.set(next.id, got.blob);
       if (next.kind === 'image') await this.deps.renderer.preload(new Map([[next.id, got.blob]]));
       this.engine.run(`${relink ? 'Relink' : 'Replace'} ${entry.name}`, (mv) => replaceAsset(mv, entry.asset.id, next));
-      toast(`${entry.name} ${t(relink ? 'relinked to' : 'replaced by')} ${file.name}.`);
+      toast(tf(relink ? '{name} relinked to {file}.' : '{name} replaced by {file}.', { name: entry.name, file: file.name }));
     } catch (e) {
       toast(e instanceof Error ? e.message : t('The file could not be read.'), 'error');
     }

@@ -1,8 +1,10 @@
 // Keyframe mode menus: the Action menu on the Playhead pill, the parameter cards, and the lane context menu.
 import type { Engine } from '../engine/engine';
-import { baseValues, easeCurve, evalLane, kindSpec, KEY_KINDS, laneFrames, laneOf, type ChannelSpec } from '../engine/keys';
+import { baseValues, easeAt, easeCurve, evalLane, kindSpec, KEY_KINDS, laneFrames, laneOf, type ChannelSpec } from '../engine/keys';
 import { locate } from '../engine/model';
-import { setEasePreview } from './key-lanes';
+import { fitBase, isScaleChannel } from '../engine/fit-base';
+import { setEasePreview, setLaneBase, setLaneShown } from './key-lanes';
+import { dropChannels } from '../engine/key-chan-ops';
 import * as keyOps from '../engine/key-ops';
 import type { KeyClip } from '../engine/key-ops';
 import * as ops from '../engine/ops';
@@ -11,6 +13,7 @@ import { perform } from './perform-ui';
 import { EASES, type Content, type Ease, type KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { icon } from './icons';
+import { t as tt } from './i18n';
 import { Popover, popRow, popSep, type PopRow } from './popover';
 import { WarpCard } from './warp-card';
 import { warpMode } from './warp-view';
@@ -81,8 +84,8 @@ interface CardTake { id: string; kind: KeyKind; channel: string; rec: Recorder; 
 const ADVANCED = new Set(['offsetX', 'offsetY', 'travel']);
 type View = 'action' | 'motion' | 'filter' | 'card';
 
-function fmt(ch: ChannelSpec, v: number): string {
-  const n = v * ch.display;
+function fmt(ch: ChannelSpec, v: number, base = 1): string {
+  const n = v * ch.display / (isScaleChannel(ch.id) ? base : 1);
   const r = Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10;
   const s = String(r);
   return ch.unit === '%' ? `${s}%` : ch.unit === 'deg' ? `${s}°` : ch.unit === 'x' ? `${s}x` : ch.unit === 'px' ? `${s} px` : s;
@@ -112,7 +115,10 @@ export class ActionMenu {
 
   constructor(private readonly engine: Engine, private readonly state: KeyState) {
     this.pop = new Popover('fm-ka');
-    this.stack = new FxStack(engine, (k) => this.choose(k));
+    setLaneBase((c) => (engine.movie ? fitBase(engine.movie, c) : 1));
+    // lanes show for the chosen blocks only (a lane being dragged or edited always belongs to a chosen block)
+    setLaneShown((c) => engine.selection.content.includes(c.id));
+    this.stack =new FxStack(engine, (k) => this.choose(k));
     const action = el('<div class="fm-ka-view"><div class="fm-ka-title">Action</div><div class="fm-ka-btns"></div></div>');
     const btns = q(action, '.fm-ka-btns');
     const mk = (label: string, svg: string): HTMLButtonElement => {
@@ -254,11 +260,11 @@ export class ActionMenu {
       this.paintKeyed();
     });
     wrap.append(r.el, clear);
-    this.keyRows.set(kind, { wrap, clear });
+    this.keyRows.set(kind, { wrap, clear, row: r });
     return wrap;
   }
 
-  private readonly keyRows = new Map<KeyKind, { wrap: HTMLElement; clear: HTMLButtonElement }>();
+  private readonly keyRows = new Map<KeyKind, { wrap: HTMLElement; clear: HTMLButtonElement; row: PopRow }>();
 
   /** Tints the rows (and the Move, Filter and Level buttons) of properties the target already animates. */
   private paintKeyed(): void {
@@ -271,6 +277,12 @@ export class ActionMenu {
       setHidden(r.clear, !on);
       if (kind === 'time') setHidden(r.wrap, !t || !(t.c.kind === 'video' || t.c.kind === 'flipbook' || t.c.kind === 'group'));
       if (kind === 'textanim') setHidden(r.wrap, !t || t.c.kind !== 'text');
+      if (kind === 'warp' || kind === 'distort') {
+        // an adjustment layer has no picture of its own to bend: the row stays, off, and says why
+        const off = !!t && t.c.kind === 'adjust';
+        r.row.setDisabled(off);
+        r.row.el.title = off ? tt('{kind} needs a picture, and an adjustment layer has none.').replace('{kind}', tt(kindSpec(kind).label)) : '';
+      }
     }
     this.groups.refresh();
     const has = (kinds: KeyKind[]): boolean => !!t && kinds.some((k) => laneOf(t.c, k) !== null);
@@ -283,6 +295,8 @@ export class ActionMenu {
     this.view = view;
     for (const k of ['action', 'motion', 'filter'] as const) setHidden(this.views[k], k !== view);
     setHidden(this.cardHost, view !== 'card');
+    // a view always opens at its top, so the effect stack is the first thing seen
+    for (const k of ['action', 'motion', 'filter'] as const) if (k === view) this.views[k].scrollTop = 0;
     if (this.pop.isOpen) this.reposition();
   }
 
@@ -348,6 +362,8 @@ export class ActionMenu {
     if (spec.fx) root.dataset.fx = '1';
     const heads = new Map<HTMLElement, string>();
     for (const ch of spec.channels) {
+      // keyed on demand by the curve editor, not a slider
+      if (ch.demand) continue;
       const box = ADVANCED.has(ch.id) || ch.adv ? adv : main;
       if (ch.group && heads.get(box) !== ch.group) { heads.set(box, ch.group); box.appendChild(groupHead(ch.group)); }
       if (ch.swatch) {
@@ -365,6 +381,11 @@ export class ActionMenu {
         begin: () => { this.tag = `kc-${Date.now()}`; },
         end: () => { this.engine.endGesture(); this.tag = null; },
         set: (id, value) => this.setOption(kind, id, value),
+        key: (vals) => this.write(kind, vals),
+        unkey: (prefix) => {
+          const t = targetOf(this.engine);
+          if (t) this.engine.run('Stop Animating Curve', (m) => ops.updateContent(m, t.c.id, (cc) => dropChannels(cc, kind, (id) => id.startsWith(prefix))), this.tag);
+        },
       });
       root.appendChild(card.curves.root);
     }
@@ -406,14 +427,14 @@ export class ActionMenu {
     range.addEventListener('input', () => {
       const v = range.valueAsNumber;
       setStyleVar(range, '--p', this.pct(row, v));
-      setText(pill, fmt(ch, v));
+      setText(pill, fmt(ch, v, this.baseNow()));
       if (this.take) this.recordValue(this.take, v);
       else this.write(card.kind, { [ch.id]: v });
     });
     range.addEventListener('change', () => { this.engine.endGesture(); this.tag = null; });
 
     const begin = (): void => {
-      edit.value = String(Math.round((range.valueAsNumber * ch.display) * 100) / 100);
+      edit.value = String(Math.round((range.valueAsNumber * ch.display / (isScaleChannel(ch.id) ? this.baseNow() : 1)) * 100) / 100);
       setHidden(pill, true);
       setHidden(edit, false);
       edit.focus();
@@ -425,7 +446,7 @@ export class ActionMenu {
       setHidden(edit, true);
       setHidden(pill, false);
       if (commit && Number.isFinite(n)) {
-        const v = Math.min(ch.max, Math.max(ch.min, n / ch.display));
+        const v = Math.min(ch.max, Math.max(ch.min, n / ch.display * (isScaleChannel(ch.id) ? this.baseNow() : 1)));
         this.write(card.kind, { [ch.id]: v });
         this.engine.endGesture();
       }
@@ -505,6 +526,12 @@ export class ActionMenu {
     }), this.tag);
   }
 
+  /** What the selected picture's scale reads as 100 percent (its fit). */
+  private baseNow(): number {
+    const m = this.engine.movie, t = targetOf(this.engine);
+    return m && t ? fitBase(m, t.c) : 1;
+  }
+
   /** Patch the open card to the values at the Playhead. */
   private syncCard(): void {
     const kind = this.cardKind;
@@ -527,14 +554,14 @@ export class ActionMenu {
       if (row.range.max !== String(hi)) row.range.max = String(hi);
       if (document.activeElement !== row.range && row.range.valueAsNumber !== v) row.range.value = String(v);
       setStyleVar(row.range, '--p', this.pct(row, v));
-      setText(row.pill, fmt(row.ch, v));
+      setText(row.pill, fmt(row.ch, v, fitBase(m, t.c)));
     }
     const spec = kindSpec(kind);
     if (card.swatches) for (const [sid, sw] of card.swatches) sw.set([vals[sid + 'R'] ?? 0, vals[sid + 'G'] ?? 0, vals[sid + 'B'] ?? 0]);
     if (card.curves) {
       const o: Record<string, string | number | boolean> = {};
       for (const opt of spec.options ?? []) o[opt.id] = lane?.options[opt.id] ?? opt.def;
-      card.curves.sync(o);
+      card.curves.sync(o, vals, (id) => !!lane?.channels[id]?.length);
     }
     for (const opt of spec.options ?? []) {
       if (opt.hidden) continue;
@@ -612,7 +639,7 @@ export class LaneMenu {
     this.pop.attachSub(this.setEase.el, this.easePanel(false));
     this.pop.attachSub(this.setAll.el, this.easePanel(true));
     this.reverse.el.addEventListener('click', () => this.edit('Reverse Keyframes', (c, k) => keyOps.reverseKeys(c, k)));
-    this.expand.el.addEventListener('click', () => { const x = this.ctx; if (x) this.edit(x.expanded ? 'Collapse Lane' : 'Expand Lane', (c, k) => keyOps.setExpanded(c, k, !x.expanded)); });
+    this.expand.el.addEventListener('click', () => { const x = this.ctx; if (x) this.engine.view((m) => ops.updateContent(m, x.id, (c) => keyOps.setExpanded(c, x.kind, !x.expanded))); });
     this.del.el.addEventListener('click', () => {
       const x = this.ctx;
       if (!x) return;
@@ -626,8 +653,17 @@ export class LaneMenu {
 
   private easePanel(all: boolean): HTMLElement {
     const panel = Popover.panel('fm-pop fm-cm-sub fm-lm-ease fm-pop-sub');
-    for (const e of EASES) {
-      const r = popRow(null, e.label);
+    // the four everyone knows first, the extras under "More" (a check marks the stretch's current easing)
+    const MAIN = 4;
+    EASES.forEach((e, i) => {
+      if (i === MAIN) {
+        panel.appendChild(popSep());
+        const head = el('<div class="fm-lm-more"></div>');
+        setText(head, 'More');
+        panel.appendChild(head);
+      }
+      const r = popRow(null, e.label, { check: true });
+      if (!all) this.easeRows.set(e.id, r);
       r.ico.innerHTML = curveIcon(e.id);
       r.el.addEventListener('click', () => {
         const x = this.ctx;
@@ -638,15 +674,18 @@ export class LaneMenu {
         this.pop.hide();
       });
       panel.appendChild(r.el);
-    }
+    });
     return panel;
   }
+
+  /** The single-stretch panel's rows by easing, to show a check on the current one. */
+  private readonly easeRows = new Map<Ease, PopRow>();
 
   open(px: number, py: number, ctx: LaneCtx): void {
     this.ctx = ctx;
     const label = kindSpec(ctx.kind).label;
     const onKey = ctx.onKey;
-    setClass(this.cut, 'is-gone', !onKey);
+    setClass(this.cut, 'is-gone', false); // off a key it cuts the whole lane
     setClass(this.paste, 'is-disabled', !this.state.clip);
     setClass(this.sepA, 'is-gone', false);
     setClass(this.reverse.el, 'is-gone', onKey);
@@ -662,6 +701,8 @@ export class LaneMenu {
     // the stretch between the two keys shows its easing name and tick markers while the menu is open
     const m = this.engine.movie, lane = m ? locate(m, ctx.id)?.content.keys.find((l) => l.kind === ctx.kind) : undefined;
     const frames = lane ? laneFrames(lane, ctx.channel ?? undefined) : [];
+    const cur = lane && ctx.prev !== null ? easeAt(lane, ctx.prev, ctx.channel ?? undefined) : null;
+    for (const [id, r] of this.easeRows) r.setChecked(id === cur);
     const next = ctx.prev === null ? undefined : frames.find((f) => f > (ctx.prev as number));
     setEasePreview(next === undefined || ctx.prev === null ? null : { id: ctx.id, kind: ctx.kind, channel: ctx.channel, a: ctx.prev, b: next });
   }
@@ -679,7 +720,7 @@ export class LaneMenu {
     if (!c) return;
     const clip = keyOps.copyKeys(c, x.kind, x.onKey ? x.at : undefined);
     if (clip) this.state.clip = clip;
-    if (cut && clip) this.edit('Cut Keyframe', (cc, k) => keyOps.deleteKey(cc, k, x.at));
+    if (cut && clip) this.edit(x.onKey ? 'Cut Keyframe' : 'Cut Lane', (cc, k) => (x.onKey ? keyOps.deleteKey(cc, k, x.at) : keyOps.deleteLane(cc, k)));
   }
 
   private doPaste(): void {

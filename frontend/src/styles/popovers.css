@@ -20,7 +20,7 @@
   overscroll-behavior: contain;
   padding: var(--space-1);
   background: var(--glass-menu-bg);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--glass-pop-border);
   border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-menu-filter);
@@ -41,11 +41,16 @@
 @keyframes fm-rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes fm-pill-in { from { opacity: 0; scale: 0.9; } to { opacity: 1; scale: 1; } }
 .fm-pop:not([hidden]), .cv-menu:not([hidden]) { animation: fm-pop-in var(--dur-pop) var(--ease-glass) backwards; }
-.cv-menu { transform-origin: var(--fm-ox, 0) var(--fm-oy, 0); }
+.cv-menu, .fm-pop { transform-origin: var(--fm-ox, 0) var(--fm-oy, 0); }
 .cv-menu.cv-menu { border-radius: var(--radius-pop); }
 .cv-menu.cv-menu .cv-menu-item { border-radius: var(--radius-lg); }
 /* the big card (Movie Settings) takes the big radius */
 .fm-pop.fm-ms { border-radius: var(--radius-2xl); }
+/* exit: 90 ms, never takes a press, ends hidden (popover.ts sets the attribute when it is over) */
+@keyframes fm-pop-out { from { opacity: 1; scale: 1; } to { opacity: 0; scale: 0.97; } }
+.fm-pop.is-closing:not([hidden]) { animation: fm-pop-out 90ms var(--ease-glass) forwards; }
+#overlay-root > .fm-pop.is-closing { pointer-events: none; }
+.fm-pop.is-still:not([hidden]) { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .fm-pop:not([hidden]), .cv-menu:not([hidden]) { animation: none; }
 }

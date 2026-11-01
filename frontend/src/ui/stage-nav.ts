@@ -334,6 +334,15 @@ export class StageNav {
   }
 
   // ---- input ----
+  private fadeTimer = 0;
+
+  /** FV-232: the zoom cluster fades after 2 s without pointer movement over the Stage and comes back on movement or hover. */
+  private showCluster(): void {
+    setClass(this.cluster, 'is-faded', false);
+    window.clearTimeout(this.fadeTimer);
+    this.fadeTimer = window.setTimeout(() => { if (!this.cluster.matches(':hover') && !this.cluster.contains(document.activeElement)) setClass(this.cluster, 'is-faded', true); }, 2000);
+  }
+
   private wire(): void {
     const root = this.root;
     gestureRegion(root, {
@@ -344,7 +353,8 @@ export class StageNav {
     });
     root.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     root.addEventListener('pointerdown', (e) => this.down(e), true);
-    root.addEventListener('pointermove', (e) => { this.moveDrag(e); if (this.previewing) this.wake(); });
+    root.addEventListener('pointermove', (e) => { this.moveDrag(e); if (this.previewing) this.wake(); else this.showCluster(); });
+    this.showCluster();
     root.addEventListener('pointerup', (e) => this.endDrag(e));
     root.addEventListener('pointercancel', (e) => this.endDrag(e));
     root.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
@@ -442,8 +452,9 @@ export class StageNav {
     if (e.code !== 'Space' || e.ctrlKey || e.metaKey || e.altKey) return;
     if (this.spaceDown) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     const target = e.target instanceof Element ? e.target : null;
-    if (anyDialogOpen() || !this.engine.movie || !this.hovered() || target?.closest('input, textarea, select, button, [contenteditable="true"]')) return;
-    // Space held over the Stage is the hand; a tap with no drag still plays
+    if (anyDialogOpen() || !this.engine.movie || !this.hovered() || target?.closest('input:not([type="checkbox"]):not([type="range"]), textarea, select, [contenteditable="true"]')) return;
+    // Space held over the Stage is the hand, armed at once (G18: a button left focused by the last click must not block it);
+    // keyup decides: a tap with no drag still plays
     e.preventDefault();
     e.stopImmediatePropagation();
     this.panned = false;

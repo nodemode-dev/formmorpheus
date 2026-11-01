@@ -3,7 +3,7 @@
 // Built once; every update only patches rows (visibility, CSS order, text), so nothing flashes.
 import type { Engine } from '../engine/engine';
 import { allEffects, fxKind } from '../engine/fx/registry';
-import { clearFx, copyFx, fxLanes, moveFx, pasteFx, type FxPreset } from '../engine/fx/stack';
+import { clearFx, copyFx, fxLanes, moveFx, pasteFx, setFxOff, type FxPreset } from '../engine/fx/stack';
 import { kindSpec } from '../engine/keys';
 import * as ops from '../engine/ops';
 import type { Content, KeyKind, KeyLane } from '../engine/types';
@@ -29,7 +29,7 @@ function storePresets(list: FxPreset[]): void {
 /** Effects copied from a block; shared by every Action menu. */
 let clipboard: KeyLane[] | null = null;
 
-interface Row { kind: KeyKind; el: HTMLElement; name: HTMLElement; grip: HTMLButtonElement }
+interface Row { kind: KeyKind; el: HTMLElement; name: HTMLElement; grip: HTMLButtonElement; sw: HTMLButtonElement }
 
 export class FxStack {
   readonly root: HTMLElement;
@@ -74,8 +74,17 @@ export class FxStack {
 
     for (const e of allEffects()) {
       const kind = fxKind(e.id);
-      const row = el(`<div class="fm-fxs-row" hidden><button class="fm-fxs-grip" type="button">${GRIP}</button><button class="fm-fxs-open" type="button"><span class="fm-fxs-ico">${kindSpec(kind).icon}</span><span class="fm-fxs-name-t"></span></button></div>`);
+      const row = el(`<div class="fm-fxs-row" hidden><button class="fm-fxs-grip" type="button">${GRIP}</button><button class="fm-fxs-open" type="button"><span class="fm-fxs-ico">${kindSpec(kind).icon}</span><span class="fm-fxs-name-t"></span></button><button class="fm-fxs-sw" type="button" role="switch" aria-checked="true"></button></div>`);
       const name = q(row, '.fm-fxs-name-t');
+      const sw = q<HTMLButtonElement>(row, '.fm-fxs-sw');
+      sw.title = 'Effect on or off';
+      sw.setAttribute('aria-label', `${e.label}: on or off`);
+      sw.addEventListener('click', () => {
+        const t = this.target;
+        if (!t) return;
+        const off = sw.getAttribute('aria-checked') === 'true';
+        this.engine.run(off ? 'Effect off' : 'Effect on', (m) => ops.updateContent(m, t.id, (cc) => setFxOff(cc, kind, off)));
+      });
       setText(name, e.label);
       const grip = q<HTMLButtonElement>(row, '.fm-fxs-grip');
       grip.title = 'Drag to reorder';
@@ -89,7 +98,7 @@ export class FxStack {
         this.commitMove(kind, i + (ev.key === 'ArrowUp' ? -1 : 1));
       });
       this.list.appendChild(row);
-      this.rows.set(kind, { kind, el: row, name, grip });
+      this.rows.set(kind, { kind, el: row, name, grip, sw });
     }
 
     this.copyBtn.addEventListener('click', () => { if (this.target) { clipboard = copyFx(this.target); this.sync(this.target); } });
@@ -122,6 +131,13 @@ export class FxStack {
     if (!showable || this.drag) return;
     this.order = lanes.map((l) => l.kind);
     this.paintOrder();
+    for (const l of lanes) {
+      const r = this.rows.get(l.kind);
+      if (!r) continue;
+      const on = l.options.off !== true;
+      if (r.sw.getAttribute('aria-checked') !== String(on)) r.sw.setAttribute('aria-checked', String(on));
+      setClass(r.el, 'is-off', !on);
+    }
     setDisabled(this.copyBtn, !lanes.length);
     setDisabled(this.pasteBtn, !clipboard || !clipboard.length);
     setDisabled(this.saveBtn, !lanes.length);

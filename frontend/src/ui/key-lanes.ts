@@ -62,6 +62,26 @@ export function setEasePreview(p: EasePreview | null): void {
   onGlyphLoad?.();
 }
 
+/** Where the chosen keys stood before a group drag (id to refs): drawn as dashed outlines while the keys move. */
+let ghosts: ReadonlyMap<string, ReadonlyArray<{ kind: KeyKind; frame: number }>> | null = null;
+export function setKeyGhosts(g: typeof ghosts): void {
+  if (!g && !ghosts) return;
+  ghosts = g;
+  onGlyphLoad?.();
+}
+
+/** The lane under the pointer: its name shows on a collapsed lane only while it is hovered. */
+let hoverLane: { id: string; kind: KeyKind } | null = null;
+export function setLaneHover(h: { id: string; kind: KeyKind } | null): void {
+  if (hoverLane?.id === h?.id && hoverLane?.kind === h?.kind) return;
+  hoverLane = h;
+  onGlyphLoad?.();
+}
+
+/** Only the selected block shows its lanes (set once by the Action menu); the rows keep their room so nothing jumps. */
+let laneShown: (item: Content) => boolean = () => true;
+export function setLaneShown(fn: (item: Content) => boolean): void { laneShown = fn; }
+
 /** The easing's name in the interface language. */
 function easeName(e: string | null): string {
   if (!e) return '';
@@ -91,9 +111,13 @@ function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   c.roundRect(x, y, Math.max(0, w), Math.max(0, h), Math.min(r, Math.max(0, w) / 2, h / 2));
 }
 
-function drawGlyph(c: CanvasRenderingContext2D, kind: KeyKind, color: string, cx: number, cy: number): void {
+/** Key glyph size, and the larger one for the key the Playhead stands on. */
+const KEY_GLYPH = 14;
+const KEY_GLYPH_NOW = 19;
+
+function drawGlyph(c: CanvasRenderingContext2D, kind: KeyKind, color: string, cx: number, cy: number, size = KEY_GLYPH): void {
   const img = glyph(kind, color);
-  if (img) { c.drawImage(img, cx - GLYPH / 2, cy - GLYPH / 2, GLYPH, GLYPH); return; }
+  if (img) { c.drawImage(img, cx - size / 2, cy - size / 2, size, size); return; }
   c.fillStyle = color;
   c.beginPath();
   c.moveTo(cx, cy - 5); c.lineTo(cx + 5, cy); c.lineTo(cx, cy + 5); c.lineTo(cx - 5, cy);
@@ -111,7 +135,12 @@ function hasChev(slot: LaneSlot, row: LaneRow, g: LaneGeom): boolean {
 }
 
 /** Draw every lane of `c`; `top` is the y of the first lane. `thumb` gives a small picture of the content with its effects at a local frame. */
+let laneBase: (item: Content) => number = () => 1;
+/** Lets the lanes read a picture's scale relative to its fit (set once by the Action menu). */
+export function setLaneBase(fn: (item: Content) => number): void { laneBase = fn; }
+
 export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: number, g: LaneGeom, p: LanePalette, clipH: number, local?: number, chosen?: (kind: KeyKind, frame: number) => boolean, thumb?: (item: Content, local: number) => CanvasImageSource | null): void {
+  if (!laneShown(item)) return;
   const w = Math.max(3, g.x1 - g.x0);
   c.save();
   c.font = '600 9px Inter, system-ui, sans-serif';
@@ -132,22 +161,9 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
       c.beginPath();
       c.rect(0, ry, g.width, row.h);
       c.clip();
-      if (!row.channel && w > 120) {
-        // a collapsed lane: a picture of the effect at the Playhead, then the lane's name
-        const lx0 = Math.max(g.x0, 0) + 6;
-        const tp = thumb && local !== undefined ? thumb(item, local) : null;
-        let tx = lx0;
-        if (tp) {
-          const th = row.h - 6, tw = Math.round(th * 1.6);
-          c.drawImage(tp, tx, ry + 3, tw, th);
-          c.strokeStyle = p.accent;
-          c.globalAlpha = 0.5;
-          c.strokeRect(tx + 0.5, ry + 3.5, tw - 1, th - 1);
-          c.globalAlpha = 1;
-          tx += tw + 6;
-        }
-        // drawn after the key diamonds, on a chip, so dense keys never run over the name
-        nameAt = tx;
+      if (!row.channel && w > 120 && hoverLane && hoverLane.id === item.id && hoverLane.kind === kind) {
+        // a collapsed lane is its key glyphs only; the lane's name shows while the pointer is over it, on a chip so keys never run over it
+        nameAt = Math.max(g.x0, 0) + 8;
       }
       if (hasChev(slot, row, g)) {
         const cx = chevX(slot, g);
@@ -165,7 +181,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           const xa = g.x(frames[i]), xb = g.x(frames[i + 1]);
           if (xb < 0 || xa > g.width) continue;
           c.fillStyle = p.accent;
-          round(c, xa, cy - 8, xb - xa, 16, 8);
+          round(c, xa, cy - 9, xb - xa, 18, 9);
           c.fill();
           const e = easeAt(slot.lane, frames[i], row.channel);
           const english = EASES.find((x) => x.id === e)?.label ?? (e === 'custom' ? 'Custom' : '');
@@ -194,20 +210,68 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           c.globalAlpha = 1;
         }
       }
-      for (let i = 0; i < frames.length; i++) {
-        const x = g.x(frames[i]);
-        if (x < -GLYPH || x > g.width + GLYPH) continue;
-        const onBar = !!row.channel && frames.length > 1 && (i + 1 < frames.length || i > 0);
-        if (chosen?.(kind, frames[i])) {
-          // a chosen key: a ring in the text color behind its glyph
-          c.strokeStyle = p.text;
-          c.lineWidth = 2;
+      // too many keys for glyphs at this zoom: one tick per key and a count, instead of a pile of overlapping glyphs
+      const span = Math.min(g.x1, g.width) - Math.max(g.x0, 0);
+      const dense = frames.length >= 8 && span / frames.length < 7;
+      if (dense) {
+        for (let i = 0; i < frames.length; i++) {
+          const x = Math.round(g.x(frames[i])) + 0.5;
+          if (x < -2 || x > g.width + 2) continue;
+          const on = !!chosen?.(kind, frames[i]);
+          c.strokeStyle = on ? p.text : p.accent;
+          c.lineWidth = on ? 2 : 1;
           c.beginPath();
-          c.arc(x, cy, GLYPH / 2 + 2, 0, Math.PI * 2);
+          c.moveTo(x, cy - (on ? 8 : 6));
+          c.lineTo(x, cy + (on ? 8 : 6));
           c.stroke();
-          c.lineWidth = 1;
         }
-        drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy);
+        c.lineWidth = 1;
+        if (span > 90) {
+          const label = tt('{n} keys').replace('{n}', String(frames.length)), lw = c.measureText(label).width + 12;
+          const lx = Math.max(g.x0, 0) + 6;
+          c.fillStyle = p.bar;
+          c.globalAlpha = 0.92;
+          round(c, lx, cy - 8, lw, 16, 8);
+          c.fill();
+          c.globalAlpha = 1;
+          c.fillStyle = p.accent;
+          c.textAlign = 'left';
+          c.fillText(label, lx + 6, cy);
+        }
+      } else {
+        for (let i = 0; i < frames.length; i++) {
+          const x = g.x(frames[i]);
+          if (x < -GLYPH || x > g.width + GLYPH) continue;
+          const onBar = !!row.channel && frames.length > 1 && (i + 1 < frames.length || i > 0);
+          if (chosen?.(kind, frames[i])) {
+            // a chosen key: a ring in the text color behind its glyph
+            c.strokeStyle = p.text;
+            c.lineWidth = 2;
+            c.beginPath();
+            c.arc(x, cy, GLYPH / 2 + 2, 0, Math.PI * 2);
+            c.stroke();
+            c.lineWidth = 1;
+          }
+          // the key under the Playhead is drawn larger (the pill sits over it)
+          drawGlyph(c, kind, onBar ? p.onAccent : p.accent, x, cy, local === frames[i] ? KEY_GLYPH_NOW : KEY_GLYPH);
+        }
+      }
+      // a group drag leaves a dashed outline where each chosen key stood
+      const gh = ghosts?.get(item.id);
+      if (gh) {
+        c.strokeStyle = p.text;
+        c.globalAlpha = 0.75;
+        c.setLineDash([3, 3]);
+        for (const r of gh) {
+          if (r.kind !== kind) continue;
+          const x = g.x(r.frame);
+          if (x < -GLYPH || x > g.width + GLYPH) continue;
+          c.beginPath();
+          c.arc(x, cy, GLYPH / 2 + 1, 0, Math.PI * 2);
+          c.stroke();
+        }
+        c.setLineDash([]);
+        c.globalAlpha = 1;
       }
       // held or in the lane menu: the stretch's easing name at its midpoint and tick markers at the easing's cadence
       if (preview && preview.id === item.id && preview.kind === kind && preview.channel === row.channel) {
@@ -233,6 +297,32 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
             c.textAlign = 'center';
             c.fillText(label, mid, cy);
           }
+        }
+      }
+      if (!row.channel && local !== undefined && span > 240 && frames.length) {
+        // a collapsed lane reads out its values at the Playhead (and the easing of the stretch it is in) at the right end
+        const spec = kindSpec(kind), parts: string[] = [];
+        const vals = evalLane(item, slot.lane, local);
+        for (const ch of spec.channels) {
+          if (parts.length >= 2) break;
+          if (!slot.lane.channels[ch.id]?.length || ch.id === 'px' || ch.id === 'py' || !Number.isFinite(vals[ch.id])) continue;
+          const shown = Math.round(vals[ch.id] * ch.display / (ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
+          parts.push(`${tt(ch.short)} ${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ''}`);
+        }
+        const before = keyBefore(slot.lane, Math.floor(local)), after = before === null ? undefined : frames.find((f) => f > (before as number));
+        const en = before !== null && after !== undefined && span > 380 ? easeName(easeAt(slot.lane, before)) : '';
+        if (en) parts.push(en);
+        if (parts.length) {
+          const text = parts.join(' · '), tw = c.measureText(text).width + 12;
+          const rx = Math.min(g.x1, g.width) - (hasChev(slot, row, g) ? 28 : 8);
+          c.fillStyle = p.bar;
+          c.globalAlpha = 0.88;
+          round(c, rx - tw, cy - 8, tw, 16, 8);
+          c.fill();
+          c.globalAlpha = 1;
+          c.fillStyle = p.text;
+          c.textAlign = 'right';
+          c.fillText(text, rx - 6, cy);
         }
       }
       if (nameAt !== null) {
@@ -269,7 +359,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           const ch = channelSpec(kind, row.channel);
           const v = evalLane(item, slot.lane, local)[row.channel];
           if (ch && Number.isFinite(v)) {
-            const shown = Math.round(v * ch.display * 10) / 10;
+            const shown = Math.round(v * ch.display / (ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
             const text = `${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ch.unit === 'x' ? 'x' : ''}`;
             const rx = Math.min(g.x1, g.width) - 10 - (hasGraphPill(slot, row, g) ? GRAPH_PILL_W + 6 : 0);
             const lastX = frames.length ? g.x(frames[frames.length - 1]) : g.x0;
@@ -310,7 +400,7 @@ function hasGraphPill(slot: LaneSlot, row: LaneRow, g: LaneGeom): boolean {
  * canvas coordinates, `local` converts an x to a content-local frame (fractional).
  */
 export function hitLanes(item: Content, top: number, x: number, y: number, g: LaneGeom, local: (x: number) => number): LaneHit | null {
-  if (x < g.x0 - KEY_HIT || x > g.x1 + KEY_HIT) return null;
+  if (x < g.x0 - KEY_HIT || x > g.x1 + KEY_HIT || !laneShown(item)) return null;
   for (const slot of laneSlots(item)) {
     for (const row of slot.rows) {
       const ry = top + slot.y + row.y;

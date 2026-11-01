@@ -10,7 +10,7 @@ import '../styles/stage-guides.css';
 
 export class GuidesSection {
   readonly el: HTMLElement;
-  private readonly rows: Record<'show' | 'rulers' | 'grid' | 'thirds' | 'title' | 'action' | 'vertical' | 'snap', Row<boolean>>;
+  private readonly rows: Record<'show' | 'rulers' | 'grid' | 'thirds' | 'title' | 'action' | 'vertical' | 'square' | 'portrait' | 'snap', Row<boolean>>;
   private readonly size: Row<number>;
   private readonly div: Row<number>;
   private readonly clear: HTMLButtonElement;
@@ -29,6 +29,8 @@ export class GuidesSection {
       title: toggleRow(t('Title safe area'), (v) => set('Title Safe Area', (g) => ({ ...g, titleSafe: v }))),
       action: toggleRow(t('Action safe area'), (v) => set('Action Safe Area', (g) => ({ ...g, actionSafe: v }))),
       vertical: toggleRow(t('Vertical video safe area'), (v) => set('Vertical Safe Area', (g) => ({ ...g, verticalSafe: v }))),
+      square: toggleRow(t('1:1 frame'), (v) => set('Square Frame Guide', (g) => ({ ...g, squareFrame: v }))),
+      portrait: toggleRow(t('4:5 frame'), (v) => set('Portrait Frame Guide', (g) => ({ ...g, portraitFrame: v }))),
       snap: toggleRow(t('Snap to guides'), (v) => set('Snap to Guides', (g) => ({ ...g, snap: v }))),
     };
     this.size = sliderRow(t('Grid size'), 10, 500, 5, (v) => set('Grid Size', (g) => ({ ...g, gridSize: v }), 'guides-size'), { def: GRID_DEFAULT });
@@ -38,7 +40,7 @@ export class GuidesSection {
     setText(this.clear, t('Clear guide lines'));
     this.clear.addEventListener('click', () => set('Clear Guides', (g) => ({ ...g, lines: [] })));
     const r = this.rows;
-    this.el.append(r.show.el, r.rulers.el, r.grid.el, this.size.el, this.div.el, r.thirds.el, r.title.el, r.action.el, r.vertical.el, r.snap.el, this.clear);
+    this.el.append(r.show.el, r.rulers.el, r.grid.el, this.size.el, this.div.el, r.thirds.el, r.title.el, r.action.el, r.vertical.el, r.square.el, r.portrait.el, r.snap.el, this.clear);
   }
 
   sync(): void {
@@ -52,6 +54,8 @@ export class GuidesSection {
     this.rows.title.set(g.titleSafe === true);
     this.rows.action.set(g.actionSafe === true);
     this.rows.vertical.set(g.verticalSafe === true);
+    this.rows.square.set(g.squareFrame === true);
+    this.rows.portrait.set(g.portraitFrame === true);
     this.rows.snap.set(g.snap !== false);
     this.size.set(g.gridSize ?? GRID_DEFAULT);
     this.div.set(g.gridDiv ?? 1);

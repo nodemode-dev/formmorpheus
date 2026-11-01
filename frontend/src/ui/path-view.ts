@@ -8,7 +8,7 @@ import * as keyOps from '../engine/key-ops';
 import * as pathOps from '../engine/path-ops';
 import * as ops from '../engine/ops';
 import { locate } from '../engine/model';
-import { animate, evalLane, laneOf } from '../engine/keys';
+import { animate, evalLane, laneFrames, laneOf } from '../engine/keys';
 import { laneSegments, smoothPathOn, type PathNode } from '../engine/path';
 import type { Content, Movie } from '../engine/types';
 import { apply, invert, mul, postMatrix, viewMat, type Mat } from '../engine/transform';
@@ -35,6 +35,8 @@ type Drag =
   | {
       kind: 'pivot'; id: string; tag: string; pointer: number; x0: number; y0: number; alt: boolean; keyed: boolean;
       base: { px: number; py: number; x: number; y: number; sx: number; sy: number; rot: number };
+      /** Keyed content: the pose at every key frame (and the Playhead), so each key keeps the picture still when the pivot moves. */
+      frames: { f: number; b: { px: number; py: number; x: number; y: number; sx: number; sy: number; rot: number } }[];
     };
 
 /** Move's pose of a content as the Stage shows it: animated in Keyframe mode, the plain transform in Compose. */
@@ -140,7 +142,7 @@ export class PathView {
     if (mode === 'compose' && anchorMode.on) anchorMode.stop();
     setHiddenAttr(this.pivotRoot, mode === 'compose');
     setAttr(this.pv, 'transform', `translate(${sx.toFixed(1)} ${sy.toFixed(1)})`);
-    this.syncAnchor(m, c, view, b.x, b.y);
+    this.syncAnchor(m, c, view, b);
     const lane = keyed ? laneOf(c, 'move') : null;
     const ls = lane ? laneSegments(lane) : null;
     if (!lane || !ls) {
@@ -233,7 +235,7 @@ export class PathView {
   }
 
   /** Edit anchor: nine sector dots around the box, the Done bar, a bolder crosshair. Dots are grown once and patched. */
-  private syncAnchor(m: Movie, c: Content, view: View, bx: number, by: number): void {
+  private syncAnchor(m: Movie, c: Content, view: View, pose: { px: number; py: number; x: number; y: number; sx: number; sy: number; rot: number }): void {
     const on = anchorMode.on && anchorMode.id === c.id;
     setClass(this.pv as unknown as HTMLElement, 'is-editing', on);
     setHiddenAttr(this.anchorBar, !on);
@@ -247,12 +249,16 @@ export class PathView {
       this.sectorDots.appendChild(d);
       this.sectorDotEls.push(d);
     }
+    // a sector sits at a picture point; the content's turn and scale about the pivot carry it to the Stage
+    const r = (pose.rot * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
     this.sectorDotEls.forEach((d, i) => {
       const p = pts[i];
       if (!p) { setHiddenAttr(d, true); return; }
       setHiddenAttr(d, false);
-      setAttr(d, 'cx', (view.ox + (m.width / 2 + p[0] + bx) * view.scale).toFixed(1));
-      setAttr(d, 'cy', (view.oy + (m.height / 2 + p[1] + by) * view.scale).toFixed(1));
+      const ex = p[0] - pose.px, ey = p[1] - pose.py;
+      const wx = pose.px + pose.x + cos * pose.sx * ex - sin * pose.sy * ey, wy = pose.py + pose.y + sin * pose.sx * ex + cos * pose.sy * ey;
+      setAttr(d, 'cx', (view.ox + (m.width / 2 + wx) * view.scale).toFixed(1));
+      setAttr(d, 'cy', (view.oy + (m.height / 2 + wy) * view.scale).toFixed(1));
     });
   }
 
@@ -317,7 +323,11 @@ export class PathView {
     if (tg.classList.contains('fm-pivot-hit')) {
       const keyed = this.engine.mode !== 'compose';
       const [x0, y0] = this.local(e);
-      this.drag = { kind: 'pivot', id: t.c.id, tag, pointer: e.pointerId, x0, y0, alt: e.altKey, keyed, base: basis(t.c, keyed, t.local) };
+      const lane = keyed ? laneOf(t.c, 'move') : null;
+      const fs = new Set<number>([t.local]);
+      if (lane) for (const f of laneFrames(lane)) fs.add(f);
+      const frames = keyed ? [...fs].map((f) => ({ f, b: basis(t.c, true, f) })) : [];
+      this.drag = { kind: 'pivot', id: t.c.id, tag, pointer: e.pointerId, x0, y0, alt: e.altKey, keyed, base: basis(t.c, keyed, t.local), frames };
     } else if (tg.classList.contains('fm-path-key')) {
       const frame = Number(tg.getAttribute('data-f'));
       this.selFrame = frame;
@@ -345,33 +355,41 @@ export class PathView {
     if (!found) return;
     const c = found.content;
     if (d.kind === 'pivot') {
+      // the pointer's move in the world, taken back into the picture's own space (undo the content's turn and scale)
       const dx = (x - d.x0) / v.scale, dy = (y - d.y0) / v.scale;
       const b = d.base;
-      const alt = d.alt || e.altKey;
-      let npx = Math.round(b.px + dx), npy = Math.round(b.py + dy);
+      const inv = (p: { rot: number; sx: number; sy: number }, wx: number, wy: number): [number, number] => {
+        const r = (-p.rot * Math.PI) / 180, cs = Math.cos(r), sn = Math.sin(r);
+        const sx = Math.abs(p.sx) < 1e-6 ? 1e-6 : p.sx, sy = Math.abs(p.sy) < 1e-6 ? 1e-6 : p.sy;
+        return [(cs * wx - sn * wy) / sx, (sn * wx + cs * wy) / sy];
+      };
+      const [qx, qy] = inv(b, dx, dy);
+      let npx = Math.round(b.px + qx), npy = Math.round(b.py + qy);
+      // Shift gives a free drag; otherwise the pivot snaps to the nearest of the nine sectors of the content's bounds when within reach
       if (anchorMode.on && anchorMode.id === d.id && !e.shiftKey) {
-        // snap to the nearest of the nine sectors when within reach
-        let best: [number, number] | null = null, bd = 18 / v.scale;
-        for (const p of this.sectors?.(c) ?? []) { const dd = Math.hypot(p[0] - (b.px + dx), p[1] - (b.py + dy)); if (dd < bd) { bd = dd; best = p; } }
+        let best: [number, number] | null = null;
+        const unit = Math.max(1e-3, (Math.abs(b.sx) + Math.abs(b.sy)) / 2);
+        let bd = 18 / v.scale / unit;
+        for (const p of this.sectors?.(c) ?? []) { const dd = Math.hypot(p[0] - (b.px + qx), p[1] - (b.py + qy)); if (dd < bd) { bd = dd; best = p; } }
         if (best) { npx = Math.round(best[0]); npy = Math.round(best[1]); }
       }
-      let nx = b.x, ny = b.y;
-      if (alt) {
-        // keep the picture still: pos' = pos + (I - M)(P - P'), M = rotation * scale
-        const r = (b.rot * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
-        const ex = npx - b.px, ey = npy - b.py;
-        const mx = (cos * b.sx) * ex - (sin * b.sy) * ey, my = (sin * b.sx) * ex + (cos * b.sy) * ey;
-        nx = Math.round(b.x - ex + mx);
-        ny = Math.round(b.y - ey + my);
-      }
+      // the picture stays put: pos' = pos + (R S - I)(P' - P) for each pose
+      const still = (p: { px: number; py: number; x: number; y: number; sx: number; sy: number; rot: number }): { x: number; y: number } => {
+        const r = (p.rot * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
+        const ex = npx - p.px, ey = npy - p.py;
+        return { x: Math.round(p.x - ex + (cos * p.sx * ex - sin * p.sy * ey)), y: Math.round(p.y - ey + (sin * p.sx * ex + cos * p.sy * ey)) };
+      };
       if (d.keyed) {
         const local = this.engine.frame - c.start;
         const ease = newKeyState().lastEase;
-        const vals: Record<string, number> = { px: npx, py: npy };
-        if (alt) { vals.x = nx; vals.y = ny; }
-        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => keyOps.setKeys(laneOf(cc, 'move') ? cc : ensureLane(cc, 'move', local, mv.addKeyAtStart, ease), 'move', local, vals)), d.tag);
+        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => {
+          let out = laneOf(cc, 'move') ? cc : ensureLane(cc, 'move', local, mv.addKeyAtStart, ease);
+          for (const fr of d.frames) { const s = still(fr.b); out = keyOps.setKeys(out, 'move', fr.f, { px: npx, py: npy, x: s.x, y: s.y }); }
+          return out;
+        }), d.tag);
       } else {
-        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => ({ ...cc, pivot: { x: npx, y: npy }, transform: alt ? { ...cc.transform, x: nx, y: ny } : cc.transform })), d.tag);
+        const s = still(b);
+        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => ({ ...cc, pivot: { x: npx, y: npy }, transform: { ...cc.transform, x: s.x, y: s.y } })), d.tag);
       }
       return;
     }

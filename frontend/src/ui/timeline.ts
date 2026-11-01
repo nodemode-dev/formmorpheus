@@ -13,11 +13,14 @@ import { contentName, redrawOnLanguage, secondsLabel } from './canvas-words';
 import { t } from './i18n';
 import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
 import { keyHome, keyTip, snapKeyFrame } from './key-snap';
+import { openKeyField } from './key-inline';
+import { KeyGroupDrag } from './key-group';
+import { keyChosen } from './key-state';
 import { mods, perform, REC_GLYPH } from './perform-ui';
 import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { cameraMode } from './camera-view';
-import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeight, setGlyphLoadHandler, type LaneGeom, type LaneHit } from './key-lanes';
+import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeight, setGlyphLoadHandler, setLaneHover, type LaneGeom, type LaneHit } from './key-lanes';
 import { EndBarMenu, KeySelMenu, KeySelection, inPoly, lassoTouches, nearTrail, type Pt } from './timeline-extras';
 import type { KeyRef } from '../engine/key-sel-ops';
 import { gestureRegion, penHover, touchModifier } from './gestures';
@@ -28,9 +31,13 @@ import { TimelineEd } from './timeline-ed';
 import { MasterMeter, drawTrackMeter } from './audio-meter';
 import { srcFrame } from '../engine/retime';
 import * as lockOps from '../engine/lock-ops';
+import * as hideOps from '../engine/hide-ops';
 import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
+import { chipFill, drawFlipCells, drawGroupPreview } from './timeline-look';
 import { TrackHeads } from './timeline-heads';
-import { loadView, saveView } from './timeline-view';
+import { loadView, saveView, type SavedView } from './timeline-view';
+type SavedViewArgs = SavedView & { id: string };
+import { rulerDrag, SpacePan } from './timeline-nav';
 import { toast } from './toast';
 
 const RULER_H = 28;
@@ -75,7 +82,8 @@ type Drag =
   | { kind: 'keylasso'; pts: Pt[]; base: Map<string, KeyRef[]> }
   | { kind: 'duration'; x0: number; d0: number; tag: string; moved?: boolean }
   | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number }
-  | { kind: 'key'; id: string; lk: KeyKind; channel: string | null; from0: number; cur: number; base: Content; x0: number; tag: string };
+  | { kind: 'key'; id: string; lk: KeyKind; channel: string | null; from0: number; cur: number; base: Content; x0: number; tag: string }
+  | { kind: 'keygroup'; g: KeyGroupDrag; id: string; lk: KeyKind; key: number };
 
 interface Palette {
   keyBar: string;
@@ -88,6 +96,8 @@ interface Palette {
   text: string;
   muted: string;
   accent: string;
+  /** The selected block's outline: the accent unless a theme sets --fm-tl-select. */
+  select: string;
   playhead: string;
   ruler: string;
   tick: string;
@@ -170,7 +180,7 @@ export class TimelineView {
   private multi = false;
   private readonly freeBanner = q(this.root, '.fm-freetrim');
   private altDown = false;
-  private readonly keySel = new KeySelection();
+  private readonly keySel: KeySelection = keyChosen;
   private readonly keyMenu: KeySelMenu;
   private readonly endMenu: EndBarMenu;
   /** The selection before the current one, and the press that brings it back (hold the Multi-select button). */
@@ -202,12 +212,21 @@ export class TimelineView {
   /** A saved view waiting for the first fit of a reopened movie. */
   private pendingView: ReturnType<typeof loadView> = null;
   private viewKey = '';
+  /** The view waiting for its 400 ms write; flushed at once when another movie opens. */
+  private viewSnap: SavedViewArgs | null = null;
   private viewTimer = 0;
+  /** The track row under the pointer (tinted, so a right-click on it, the track menu, is findable); -1 for none. */
+  private hoverLane = -1;
+  private headsToast: (() => void) | null = null;
+  private headsToastTimer = 0;
+  private readonly space: SpacePan;
 
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
+    this.space = new SpacePan(engine, q(this.root, '.fm-tl-body'), this.root);
     this.heads = new TrackHeads(this.lanes, engine, {
       laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, laneAt: (y) => this.laneAt(y),
+      menu: (x, y, id) => { this.engine.select([], id); this.hooks.trackMenu(x, y, id); },
       layout: () => this.headsLayout(),
     });
     LEFT = LEFT_BASE + (this.heads.width ? this.heads.width + 4 : 0);
@@ -257,11 +276,14 @@ export class TimelineView {
     this.root.addEventListener('click', (e) => this.onClick(e));
     this.ruler.addEventListener('pointerdown', (e) => this.rulerDown(e));
     // a cue for the ruler's drag: a slide scales time, the Playhead handle or Shift scrubs
-    this.ruler.title = 'Drag to scale time. Drag the Playhead, or hold Shift, to scrub.';
+    this.ruler.title = 'Drag to scrub. Hold Alt and drag to scale time.';
     this.ruler.addEventListener('pointermove', (e) => {
       if (this.drag || e.pointerType === 'touch') return;
       const nearHead = Math.abs(e.clientX - this.ruler.getBoundingClientRect().left - this.fx(this.engine.frame)) < 10;
-      this.ruler.style.cursor = e.shiftKey || nearHead ? 'grab' : 'ew-resize';
+      const scale = e.altKey || (rulerDrag.mode === 'scale' && !e.shiftKey && !nearHead);
+      this.ruler.style.cursor = scale ? 'ew-resize' : 'grab';
+      const tip = rulerDrag.mode === 'scale' ? 'Drag to scale time. Drag the Playhead, or hold Shift, to scrub.' : 'Drag to scrub. Hold Alt and drag to scale time.';
+      if (this.ruler.title !== tip) this.ruler.title = tip;
     });
     this.tracksCanvas.addEventListener('pointerdown', (e) => this.tracksDown(e));
     for (const c of [this.ruler, this.tracksCanvas]) {
@@ -270,6 +292,8 @@ export class TimelineView {
       c.addEventListener('pointercancel', (e) => this.pointerUp(e));
     }
     this.tracksCanvas.addEventListener('pointermove', (e) => { if (!this.drag) this.hover(e); });
+    this.tracksCanvas.addEventListener('pointerleave', () => { if (this.hoverLane !== -1) { this.hoverLane = -1; this.schedule(); } });
+    this.tracksCanvas.addEventListener('pointerleave', () => setLaneHover(null));
     this.tracksCanvas.addEventListener('contextmenu', (e) => this.contextMenu(e));
     this.tracksCanvas.addEventListener('dblclick', (e) => this.doubleClick(e));
     this.lanes.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
@@ -288,13 +312,14 @@ export class TimelineView {
         if (this.lastSel.length) this.prevSel = this.lastSel;
         this.lastSel = now.slice();
         this.keySel.keepOnly(new Set(now));
+        this.revealSelected();
       }
       this.schedule();
     });
     engine.on('time', () => this.schedule());
     engine.on('mode', (m) => this.syncMode(m));
     engine.on('playing', (on) => this.syncPlay(on));
-    engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.pendingView = id ? loadView(id) : null; this.viewKey = ''; this.schedule(); } });
+    engine.on('projects', () => { const id = engine.movie?.id ?? ''; if (id !== this.lastMovieId) { this.flushView(); this.lastMovieId = id; this.fitted = false; this.scrollY = 0; this.pendingView = id ? loadView(id) : null; this.viewKey = ''; this.schedule(); } });
     redrawOnLanguage(() => this.schedule());
     document.addEventListener('nm:ui-settings-changed', () => { this.pal = null; this.thumbs = new WeakMap(); this.schedule(); });
     cameraMode.onChange(() => {
@@ -306,8 +331,19 @@ export class TimelineView {
     this.syncPlay(false);
   }
 
+  /** A picked block never sits under the mode switch and the zoom buttons: the lanes scroll until its row clears them. */
+  private revealSelected(): void {
+    const m = this.engine.movie, id = this.engine.selection.content[0];
+    const at = m && id ? locate(m, id) : null;
+    if (!m || !at || this.height <= 0 || this.drag?.kind === 'move') return;
+    const clear = this.height - (this.modesEl.offsetHeight || 56) - 20;
+    const bottom = this.laneTop(at.trackIndex) + BLOCK_H;
+    if (bottom > clear) { this.scrollY = this.clampScroll(this.scrollY + (bottom - clear), m); }
+  }
+
   refreshThumbs(): void {
     this.thumbs = new WeakMap();
+    this.flipTiles = new WeakMap();
     this.schedule();
   }
 
@@ -488,7 +524,15 @@ export class TimelineView {
     else if (act === 'zh-out') this.zoomBy(1 / 1.4);
     else if (act === 'zv-in') this.zoomRows(1.25);
     else if (act === 'zv-out') this.zoomRows(0.8);
-    else if (act === 'heads') { this.heads.cycle(); toast(this.heads.mode === 'off' ? 'Track headers hidden' : this.heads.mode === 'full' ? 'Track headers shown' : 'Track headers narrow', 'info', { ms: 1100 }); }
+    else if (act === 'heads') {
+      this.heads.cycle();
+      // the last notice goes at once and this one is also taken down by our own timer, so none lingers
+      this.headsToast?.();
+      window.clearTimeout(this.headsToastTimer);
+      const off = toast(this.heads.mode === 'off' ? 'Track headers hidden' : this.heads.mode === 'full' ? 'Track headers shown' : 'Track headers narrow', 'info', { ms: 1100 });
+      this.headsToast = off;
+      this.headsToastTimer = window.setTimeout(() => { off(); if (this.headsToast === off) this.headsToast = null; }, 1300);
+    }
   }
 
   /** The header column changed width: frame zero moves with it, the zoom and scroll stay. */
@@ -549,16 +593,24 @@ export class TimelineView {
     this.setRowHeight(v.row);
   }
 
+  private flushView(): void {
+    const s = this.viewSnap;
+    window.clearTimeout(this.viewTimer);
+    this.viewSnap = null;
+    if (s) saveView(s.id, { ppf: s.ppf, start: s.start, row: s.row, fit: s.fit });
+  }
+
   /** Writes the view when it changed (after a pause, so a drag does not write on every move). */
   private rememberView(m: Movie): void {
     const k = `${m.id}|${this.ppf.toFixed(3)}|${this.start.toFixed(1)}|${BLOCK_H}`;
     if (k === this.viewKey || this.pendingView) return;
     this.viewKey = k;
+    // the values are taken now, not when the timer fires: a movie opened inside the 400 ms must not write its view under this id
+    const fitPpf = Math.min(MAX_PPF, Math.max(MIN_PPF, (this.width - LEFT - RIGHT) / Math.max(1, m.duration)));
+    const snap: SavedViewArgs = { id: m.id, ppf: this.ppf, start: this.start, row: BLOCK_H, fit: Math.abs(this.ppf - fitPpf) < 0.002 && this.start === 0 && BLOCK_H === 44 };
     window.clearTimeout(this.viewTimer);
-    this.viewTimer = window.setTimeout(() => {
-      const fitPpf = Math.min(MAX_PPF, Math.max(MIN_PPF, (this.width - LEFT - RIGHT) / Math.max(1, m.duration)));
-      saveView(m.id, { ppf: this.ppf, start: this.start, row: BLOCK_H, fit: Math.abs(this.ppf - fitPpf) < 0.002 && this.start === 0 && BLOCK_H === 44 });
-    }, 400);
+    this.viewTimer = window.setTimeout(() => { saveView(snap.id, { ppf: snap.ppf, start: snap.start, row: snap.row, fit: snap.fit }); this.viewSnap = null; }, 400);
+    this.viewSnap = snap;
   }
 
   /** Track height by a factor (the on-screen buttons and the vertical-only zoom commands). */
@@ -597,7 +649,7 @@ export class TimelineView {
     const v = (n: string, d: string): string => s.getPropertyValue(n).trim() || d;
     this.pal = {
       lane: v('--fm-lane', '#1b1b1f'), laneAlt: v('--fm-lane-alt', '#202026'), block: v('--fm-block', '#2c2c33'), blockLine: v('--fm-block-line', '#3a3a44'),
-      text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#f97316'), playhead: v('--fm-playhead', '#f2f2f2'),
+      text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#f97316'), select: v('--fm-tl-select', v('--accent-color', '#f97316')), playhead: v('--fm-playhead', '#f2f2f2'),
       keyBar: v('--fm-key-bar', '#1e1e22'), keyRow: v('--fm-key-row', '#1a1a1e'), onAccent: v('--text-on-accent', '#ffffff'),
       ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-chip', 'rgba(10,10,12,.72)'),
       hl: {
@@ -682,23 +734,58 @@ export class TimelineView {
     const { major, minor, seconds } = this.tickStep(m);
     const first = Math.max(0, Math.floor(this.start / minor) * minor);
     const last = Math.min(m.duration, Math.ceil(this.xf(this.width) / minor) * minor);
-    c.font = '600 10px Inter, system-ui, sans-serif';
     c.textBaseline = 'top';
+    const fpsI = Math.max(1, Math.round(m.fps));
+    const edge = Math.min(this.width, this.fx(m.duration)) - 2;
+    // Left-aligned whatever the page direction; a label that would pass the movie's end (or the right edge) ends at its tick instead.
+    const put = (label: string, x: number, ty: number): void => {
+      const lw = c.measureText(label).width;
+      c.textAlign = x + 3 + lw > edge ? 'right' : 'left';
+      c.fillText(label, c.textAlign === 'left' ? x + 3 : x - 3, ty);
+    };
+    // frames: short ticks with small dim numbers; zoomed out the ticks count seconds alone
     for (let f = first; f <= last; f += minor) {
       const x = Math.round(this.fx(f)) + 0.5;
       const isMajor = f % major === 0;
       c.strokeStyle = p.tick;
       c.beginPath();
       c.moveTo(x, RULER_H);
-      c.lineTo(x, RULER_H - (isMajor ? 10 : 5));
+      c.lineTo(x, RULER_H - (isMajor ? (seconds ? 10 : 8) : seconds ? 5 : 4));
       c.stroke();
-      if (isMajor) {
+      if (!isMajor) continue;
+      if (seconds) {
+        c.font = '700 10px Inter, system-ui, sans-serif';
+        c.fillStyle = p.text;
+        c.globalAlpha = 0.85;
+        put(secondsLabel(Math.round(f / m.fps)), x, 5);
+        c.globalAlpha = 1;
+      } else if (f % fpsI !== 0 || this.ppf * fpsI < 30) {
+        // not under or against a second's own label
+        const into = f % fpsI;
+        if (this.ppf * fpsI >= 30 && into !== 0 && (into * this.ppf < 24 || (fpsI - into) * this.ppf < 20)) continue;
+        c.font = '500 9px Inter, system-ui, sans-serif';
         c.fillStyle = p.muted;
-        const label = seconds ? secondsLabel(Math.round(f / m.fps)) : String(f);
-        // Left-aligned whatever the page direction; a label that would pass the movie's end (or the right edge) ends at its tick instead.
-        const lw = c.measureText(label).width;
-        c.textAlign = x + 3 + lw > Math.min(this.width, this.fx(m.duration)) - 2 ? 'right' : 'left';
-        c.fillText(label, c.textAlign === 'left' ? x + 3 : x - 3, 5);
+        c.globalAlpha = 0.62;
+        put(String(f), x, 14);
+        c.globalAlpha = 1;
+      }
+    }
+    // seconds: a taller tick and a bold label over the dim frame numbers, whenever frames show
+    if (!seconds) {
+      c.font = '700 10px Inter, system-ui, sans-serif';
+      for (let f = Math.ceil(first / fpsI) * fpsI; f <= last; f += fpsI) {
+        const x = Math.round(this.fx(f)) + 0.5;
+        c.strokeStyle = p.tick;
+        c.beginPath();
+        c.moveTo(x, RULER_H);
+        c.lineTo(x, RULER_H - 13);
+        c.stroke();
+        if (this.ppf * fpsI >= 30) {
+          c.fillStyle = p.text;
+          c.globalAlpha = 0.9;
+          put(secondsLabel(Math.round(f / fpsI)), x, 3);
+          c.globalAlpha = 1;
+        }
       }
     }
     const endX = this.fx(m.duration);
@@ -756,6 +843,7 @@ export class TimelineView {
       c.fillStyle = t.id === this.engine.selection.track ? p.laneAlt : p.lane;
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
+      if (i === this.hoverLane && !this.drag) { c.fillStyle = 'rgba(255,255,255,.045)'; c.fill(); }
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
       if (this.audio && this.engine.playing) drawTrackMeter(c, this.audio.meter(t.id), 1, y, 4, BLOCK_H, p.accent);
       if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined, (it, lf) => this.laneThumb(m, it, lf));
@@ -785,11 +873,17 @@ export class TimelineView {
       c.lineJoin = 'round';
       c.strokeStyle = FREE_RED;
       c.shadowColor = FREE_RED;
-      c.shadowBlur = 10;
-      c.lineWidth = 2.5;
+      // a soft bloom under a 4 px trail
+      c.shadowBlur = 18;
+      c.lineWidth = 8;
+      c.globalAlpha = 0.28;
       c.beginPath();
       c.moveTo(pts[0][0], pts[0][1]);
       for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+      c.stroke();
+      c.globalAlpha = 1;
+      c.shadowBlur = 8;
+      c.lineWidth = 4;
       c.stroke();
       c.globalAlpha = 0.35;
       c.setLineDash([3, 5]);
@@ -921,18 +1015,32 @@ export class TimelineView {
     c.save();
     this.round(c, x0, y, w, BLOCK_H, 6);
     c.clip();
-    c.fillStyle = item.highlight === 'none' ? p.block : p.hl[item.highlight];
+    // a Flipbook keeps its paper and shows its color on the name chip; other blocks are washed with theirs
+    c.fillStyle = item.highlight === 'none' || item.kind === 'flipbook' ? p.block : p.hl[item.highlight];
     c.fillRect(x0, y, w, BLOCK_H);
     this.drawThumbs(c, m, item, x0, y, w);
+    // past the movie's end the block is dimmed and hatched: it is clipped when the movie plays or exports
+    const endX = this.fx(m.duration);
+    if (x1 > endX + 1) {
+      const a = Math.max(x0, endX);
+      c.fillStyle = 'rgba(13,13,16,.62)';
+      c.fillRect(a, y, x1 - a, BLOCK_H);
+      c.strokeStyle = p.text;
+      c.globalAlpha = 0.22;
+      c.beginPath();
+      for (let hx = a - BLOCK_H; hx < x1; hx += 7) { c.moveTo(hx, y + BLOCK_H); c.lineTo(hx + BLOCK_H, y); }
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     if (item.kind === 'audio') drawSoundOverlay(c, item, x0, y, w, BLOCK_H, this.ppf, selected, 'rgba(0,0,0,.38)', p.accent);
-    if (t.hidden) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(x0, y, w, BLOCK_H); }
+    if (t.hidden || item.hidden) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(x0, y, w, BLOCK_H); }
     const sounds = this.hasSound(m, item);
     // a sound that will not be heard (muted, or another track on solo) is dimmed
     if (sounds && (t.mute || (this.anySolo && !t.solo))) { c.fillStyle = 'rgba(0,0,0,.42)'; c.fillRect(x0, y, w, BLOCK_H); }
     c.restore();
     if (t.locked) drawLockHatch(c, x0, y, w, BLOCK_H, p.text);
     // a Multi-select pick is outlined red, as its lasso trail is
-    c.strokeStyle = selected ? (this.multi ? '#e5484d' : p.accent) : p.blockLine;
+    c.strokeStyle = selected ? (this.multi ? '#e5484d' : p.select) : p.blockLine;
     c.lineWidth = selected ? 2 : 1;
     this.round(c, x0 + (selected ? 1 : 0.5), y + (selected ? 1 : 0.5), w - (selected ? 2 : 1), BLOCK_H - (selected ? 2 : 1), 6);
     c.stroke();
@@ -940,14 +1048,16 @@ export class TimelineView {
     if (w > 46) {
       const label = contentName(item.name);
       c.font = '600 10px Inter, system-ui, sans-serif';
-      const tw = Math.min(w - 16, c.measureText(label).width + 24 + (item.kind === 'group' ? 14 : 0));
-      c.fillStyle = p.chip;
-      this.round(c, x0 + 5, y + 5, tw, 15, 4);
+      const tw = Math.min(w - 16, c.measureText(label).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
+      const chip = chipFill(item.highlight, p.chip, p.hl);
+      const ink = chip.ink ?? p.text;
+      c.fillStyle = chip.fill;
+      this.round(c, x0 + 5, y + 5, tw, 15, 7.5);
       c.fill();
-      c.strokeStyle = p.text;
+      c.strokeStyle = ink;
       c.strokeRect(x0 + 9.5, y + 8.5, 7, 7);
-      if (!t.hidden) { c.beginPath(); c.moveTo(x0 + 10.5, y + 12); c.lineTo(x0 + 12.5, y + 14); c.lineTo(x0 + 16, y + 9.5); c.stroke(); }
-      c.fillStyle = p.text;
+      if (!t.hidden && !item.hidden) { c.beginPath(); c.moveTo(x0 + 10.5, y + 12); c.lineTo(x0 + 12.5, y + 14); c.lineTo(x0 + 16, y + 9.5); c.stroke(); }
+      c.fillStyle = ink;
       c.textBaseline = 'middle';
       c.textAlign = 'left';   // not the page direction: the chip sits at the block's left edge
       c.save();
@@ -956,7 +1066,7 @@ export class TimelineView {
       c.clip();
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
-      if (item.kind === 'group') drawChevron(c, x0 + tw - 8, y + 12.5, this.opened.has(item.id), p.text);
+      if (item.kind === 'group' || item.kind === 'flipbook') drawChevron(c, x0 + tw - 8, y + 12.5, item.kind === 'group' && this.opened.has(item.id), ink);
       if (t.locked) {
         c.fillStyle = p.text;
         c.fillRect(x0 + w - 17, y + BLOCK_H - 13, 9, 7);
@@ -1056,6 +1166,13 @@ export class TimelineView {
       return;
     }
     const tileW = Math.round(BLOCK_H * (m.width / m.height));
+    if (item.kind === 'flipbook') {
+      drawFlipCells(c, item, x0, y, BLOCK_H, this.ppf, this.width, tileW, (local) => this.flipTile(m, item, local, tileW));
+      return;
+    }
+    if (item.kind === 'group') { drawGroupPreview(c, item, x0, y, w, BLOCK_H, this.ppf, this.palette().text); return; }
+    // a Drawing, Text or Shape sits on the paper it will be seen on
+    if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape') { c.fillStyle = m.transparent ? '#d9d9de' : m.background; c.fillRect(x0, y, w, BLOCK_H); }
     const thumb = this.thumbFor(m, item, tileW);
     if (!thumb) return;
     const from = Math.max(x0, x0 + Math.floor((0 - x0) / tileW) * tileW);
@@ -1150,6 +1267,24 @@ export class TimelineView {
   }
   private laneThumbs = new WeakMap<Content, HTMLCanvasElement>();
 
+  /** One Flipbook cell's picture: the content at a local frame, kept until the movie or the size changes. */
+  private flipTiles = new WeakMap<Content, Map<string, HTMLCanvasElement>>();
+  private flipTile(m: Movie, item: Content, local: number, tileW: number): HTMLCanvasElement | null {
+    let by = this.flipTiles.get(item);
+    if (!by) { by = new Map(); this.flipTiles.set(item, by); }
+    if (by.size > 320) by.clear();
+    const key = `${this.thumbGen}:${tileW}:${BLOCK_H}:${this.dpr}:${local}`;
+    const have = by.get(key);
+    if (have) return have;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(tileW * this.dpr));
+    cv.height = Math.max(1, Math.round(BLOCK_H * this.dpr));
+    const ctx = cv.getContext('2d') as CanvasRenderingContext2D;
+    try { this.renderer.thumb(ctx, m, item, local, cv.width, cv.height); } catch { return null; }
+    by.set(key, cv);
+    return cv;
+  }
+
   private thumbFor(m: Movie, item: Content, tileW: number): HTMLCanvasElement | null {
     const have = this.thumbs.get(item);
     if (have && have.dataset.gen === String(this.thumbGen) && have.width === Math.round(tileW * this.dpr)) return have;
@@ -1171,7 +1306,9 @@ export class TimelineView {
     const editable = !!c && (c.kind === 'text' || c.kind === 'drawing' || c.kind === 'flipbook');
     if (!c || !at || !editable || this.drag?.kind === 'move') { setHidden(this.editPill, true); return; }
     const y = this.laneTop(at.trackIndex) - 16;
-    const x = Math.max(LEFT, Math.min(this.width - 120, this.fx(c.start) + 6));
+    // to the right of the block's name chip, never over it (the chip's checkbox and chevron stay reachable)
+    const bx = this.fx(c.start), cw = this.chipWidth(c, Math.max(3, this.fx(end(c)) - bx));
+    const x = Math.max(LEFT, Math.min(this.width - 120, bx + (cw > 0 ? cw + 10 : 6)));
     setText(this.editPill, t('Edit {kind}').replace('{kind}', t(kindName(c.kind))));
     this.editPill.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     setHidden(this.editPill, y < -20 || y > this.height);
@@ -1187,7 +1324,7 @@ export class TimelineView {
     if (w <= 46) return 0;
     const c = this.tracksCanvas.getContext('2d') as CanvasRenderingContext2D;
     c.font = '600 10px Inter, system-ui, sans-serif';
-    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.kind === 'group' ? 14 : 0));
+    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
   }
 
   private round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -1250,11 +1387,21 @@ export class TimelineView {
     const m = this.engine.movie;
     const nearEnd = !!m && Math.abs((e.clientX - this.tracksCanvas.getBoundingClientRect().left) - this.fx(m.duration) - 4) < 6;
     this.tracksCanvas.style.cursor = h?.edge || nearEnd ? 'ew-resize' : h?.item ? 'grab' : 'default';
+    const lane = h ? h.index : -1;
+    if (lane !== this.hoverLane) { this.hoverLane = lane; this.schedule(); }
+    const lh = this.laneHit(e);
+    setLaneHover(lh ? { id: lh.c.id, kind: lh.hit.slot.lane.kind } : null);
   }
 
   private rulerDown(e: PointerEvent): void {
     const m = this.engine.movie;
     if (!m || e.button !== 0) return;
+    if (this.space.held) {
+      this.space.take();
+      this.ruler.setPointerCapture(e.pointerId);
+      this.drag = { kind: 'pan', x0: e.clientX, start0: this.start, y0: e.clientY, scroll0: this.scrollY };
+      return;
+    }
     if (this.ed.rulerDown(e)) return;
     this.ruler.setPointerCapture(e.pointerId);
     this.engine.stop();
@@ -1263,7 +1410,9 @@ export class TimelineView {
     // a plain slide on the Ruler changes the time scale (the frame under the pen stays put); the Playhead
     // handle, or Shift, scrubs; a click without a slide still moves the Playhead there
     // (a finger always scrubs: its pinch and two-finger slide change the scale)
-    if (e.pointerType !== 'touch' && (e.altKey || (!e.shiftKey && Math.abs(rx - this.fx(this.engine.frame)) >= 10))) {
+    // "Ruler drag" (a command in the View menu) chooses what a plain drag does; Alt always scales
+    const slides = e.altKey || (rulerDrag.mode === 'scale' && !e.shiftKey && Math.abs(rx - this.fx(this.engine.frame)) >= 10);
+    if (e.pointerType !== 'touch' && slides) {
       this.drag = { kind: 'zoom', x0: e.clientX, ppf0: this.ppf, anchorFrame: this.xf(rx) };
       if (!e.altKey) this.scrubTo(e);
       return;
@@ -1281,9 +1430,17 @@ export class TimelineView {
   private tracksDown(e: PointerEvent): void {
     const m = this.engine.movie;
     if (!m) return;
-    if (e.button === 1) {
+    if (e.button === 1 || (e.button === 0 && this.space.held)) {
+      // middle button, or Space held: the drag pans
+      if (this.space.held) this.space.take();
       this.tracksCanvas.setPointerCapture(e.pointerId);
       this.drag = { kind: 'pan', x0: e.clientX, start0: this.start, y0: e.clientY, scroll0: this.scrollY };
+      return;
+    }
+    // the eraser end of a pen deletes the block under it (one undo step)
+    if (e.button === 5 || (e.pointerType === 'pen' && (e.buttons & 32) !== 0)) {
+      const eh = this.hit(e);
+      if (eh?.item) { const id = eh.item.id; this.engine.run('Delete Content', (mv) => ops.deleteContent(mv, [id])); }
       return;
     }
     if (e.button !== 0) return;
@@ -1299,9 +1456,17 @@ export class TimelineView {
       if (cw > 0 && ly >= 2 && ly <= 23 && !h.edge) {
         if (lx >= 3 && lx <= 24) {
           const tr = h.track;
+          // Alt: hide or show this block alone, the track stays
+          if (e.altKey) {
+            const it = h.item;
+            this.engine.run(it.hidden ? 'Show Content' : 'Hide Content', (mv) => hideOps.setContentHidden(mv, it.id, !it.hidden));
+            return;
+          }
           this.engine.run(tr.hidden ? 'Show Track' : 'Hide Track', (mv) => ops.setTrackHidden(mv, tr.id, !tr.hidden));
           return;
         }
+        // a Flipbook's chevron opens it in Draw & Paint, where its rows are
+        if (h.item.kind === 'flipbook' && lx >= cw - 15 && lx <= cw + 1) { this.engine.select([h.item.id], h.track.id); this.hooks.edit(h.item); return; }
         if (h.item.kind === 'group' && this.engine.mode === 'compose' && lx >= cw - 15 && lx <= cw + 1) {
           if (this.opened.has(h.item.id)) this.opened.delete(h.item.id); else this.opened.add(h.item.id);
           this.layoutFor = null;
@@ -1316,7 +1481,9 @@ export class TimelineView {
       return;
     }
     const lh = this.laneHit(e);
-    if (lh && !this.addsToSelection(e)) { this.keySel.clear(); this.laneDown(e, lh); return; }
+    // a press on one of several chosen keys drags them all (keyDown); any other press drops the choice
+    const onChosen = !!lh && lh.hit.key !== null && this.keySel.size > 1 && this.keySel.has(lh.c.id, lh.hit.slot.lane.kind, lh.hit.key);
+    if (lh && !this.addsToSelection(e) && !onChosen) { this.keySel.clear(); this.laneDown(e, lh); return; }
     const additive = this.addsToSelection(e);
     if (lh) { this.keyDown(e, lh, x, e.clientY - r.top); return; }
     const inner = this.engine.mode === 'compose' ? this.innerHit(e) : null;
@@ -1434,7 +1601,7 @@ export class TimelineView {
     if (hit.toggle) {
       const lane = hit.slot.lane;
       this.engine.select([c.id], track.id);
-      this.engine.run(lane.expanded ? 'Collapse Lane' : 'Expand Lane', (mv) => ops.updateContent(mv, c.id, (x) => keyOps.setExpanded(x, lane.kind, !lane.expanded)));
+      this.engine.view((mv) => ops.updateContent(mv, c.id, (x) => keyOps.setExpanded(x, lane.kind, !lane.expanded))); // view state: no undo step
       return;
     }
     this.tracksCanvas.setPointerCapture(e.pointerId);
@@ -1459,6 +1626,12 @@ export class TimelineView {
     this.tracksCanvas.setPointerCapture(e.pointerId);
     const { c, hit } = lh;
     if (hit.key !== null) {
+      const lk = hit.slot.lane.kind;
+      // a chosen key among several chosen keys drags them all (a tap without a move still drops it)
+      if (this.keySel.size > 1 && this.keySel.has(c.id, lk, hit.key)) {
+        this.drag = { kind: 'keygroup', g: new KeyGroupDrag(this.engine, this.keySel, { id: c.id, kind: lk, frame: hit.key }, e.clientX), id: c.id, lk, key: hit.key };
+        return;
+      }
       this.keySel.toggle(c.id, hit.slot.lane.kind, hit.key);
       if (!this.engine.selection.content.includes(c.id)) this.engine.toggleSelect(c.id);
       this.schedule();
@@ -1538,6 +1711,8 @@ export class TimelineView {
         d.cur = to;
         this.engine.seek(c.start + to);
       }
+    } else if (d.kind === 'keygroup') {
+      d.g.move(e.clientX, e.clientY, e.altKey, this.ppf);
     } else if (d.kind === 'scrub') {
       if (this.flick) { this.flick.push([e.timeStamp, e.clientX]); if (this.flick.length > 12) this.flick.shift(); }
       const r = this.ruler.getBoundingClientRect();
@@ -1690,7 +1865,8 @@ export class TimelineView {
     }
     if (d.kind === 'trim') { window.clearTimeout(d.hold); this.syncFreeTrim(); }
     // a tap on a key (no drag) opens its values
-    if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform') this.actionMenu.editKey(this.keyPill, d.lk);
+    // (a key in an expanded row opens a numeric field right at the key; a collapsed lane opens the card)
+    if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform' && !(d.channel && openKeyField(this.engine, d.id, d.lk, d.channel, d.from0, e.clientX, e.clientY))) this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
     if (d.kind === 'move' && d.moved && e.type === 'pointerup') {
       const ids = this.engine.selection.content, at = d.insert, extra = d.want - d.applied;
@@ -1702,7 +1878,11 @@ export class TimelineView {
       }
     }
     if (d.kind === 'key') keyTip.hide();
-    if (d.kind === 'move' || d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade') this.engine.endGesture();
+    if (d.kind === 'keygroup') {
+      d.g.end();
+      if (!d.g.moved && e.type === 'pointerup') this.keySel.toggle(d.id, d.lk, d.key);
+    }
+    if (d.kind === 'move' ||d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !this.addsToSelection(e)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);

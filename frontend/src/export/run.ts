@@ -197,7 +197,9 @@ export class Run {
   private async once(): Promise<ExportResult> {
     const fmt = this.o.format;
     // the GPU switch holds still for the whole export, so no frame is composed by the other path
-    const unpin = this.deps.renderer.pinGpu();
+    const unpinGpu = this.deps.renderer.pinGpu();
+    const unpinOriginals = this.deps.renderer.pinOriginals();
+    const unpin = (): void => { unpinOriginals(); unpinGpu(); };
     try {
       this.check();
       let r: Omit<ExportResult, 'warnings'>;

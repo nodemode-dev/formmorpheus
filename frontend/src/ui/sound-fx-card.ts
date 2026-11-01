@@ -1,6 +1,7 @@
 // The Sound effects card: the effect chain of one sound block or one track (noise gate, de-esser, EQ, compressor,
 // reverb) and, for a track, ducking under another track. Built once; every control patches in place and every
 // edit is one undo step (sliders merge while dragged).
+import { duckProbe } from '../media/duck-meter';
 import { DUCK_DEFAULT, FX_DEFAULTS, FX_MODULES, FX_RANGES, activeDuck, cleanFx, setBlockFx, setParam, setTrackDuck, setTrackFx, toggleModule, type AudioFx, type Duck, type FxModule } from '../engine/audio-fx';
 import type { Engine } from '../engine/engine';
 import { locate } from '../engine/model';
@@ -159,6 +160,12 @@ export class SoundFxCard {
       this.duckRows.push({ key: d.key, input, val: q(row, '.fm-sfx-val') });
       duckBody.appendChild(row);
     }
+    // gain reduction: how far the ducked track is turned down at the Playhead, live while the card is open
+    const gr = el<HTMLElement>('<div class="fm-sfx-row fm-sfx-gr"><span class="fm-sfx-lab"></span><span class="fm-sfx-grbar"><i></i></span><span class="fm-sfx-val"></span></div>');
+    setText(q(gr, '.fm-sfx-lab'), t('Gain reduction'));
+    this.grBar = q(gr, '.fm-sfx-grbar i');
+    this.grVal = q(gr, '.fm-sfx-val');
+    duckBody.appendChild(gr);
     this.duckOn.addEventListener('change', () => {
       const tr = this.trackId();
       if (!tr) return;
@@ -182,11 +189,32 @@ export class SoundFxCard {
     this.open = true;
     setHidden(this.root, false);
     this.patch();
+    if (!this.raf) this.raf = requestAnimationFrame(() => this.meterTick());
   }
 
   close(): void {
     this.open = false;
     setHidden(this.root, true);
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+  }
+
+  private grBar!: HTMLElement;
+  private grVal!: HTMLElement;
+  private raf = 0;
+  private grLast = Number.NaN;
+
+  /** Reads the ducked track's gain at the Playhead (0 to -24 dB shown) and patches the bar in place. */
+  private meterTick(): void {
+    this.raf = 0;
+    if (!this.open) return;
+    this.raf = requestAnimationFrame(() => this.meterTick());
+    const m = this.engine.movie, id = this.trackId();
+    const db = m && id && this.duckOn.checked ? duckProbe.read?.(id, this.engine.frame / m.fps) ?? 0 : 0;
+    if (db === this.grLast) return;
+    this.grLast = db;
+    this.grBar.style.transform = `scaleX(${Math.min(1, -db / 24)})`;
+    setText(this.grVal, db < -0.05 ? `${db.toFixed(1)} dB` : '0 dB');
   }
 
   private trackId(): string | null {

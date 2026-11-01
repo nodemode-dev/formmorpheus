@@ -2,8 +2,10 @@ import type { Engine } from '../engine/engine';
 import { FPS_PRESETS } from '../engine/time';
 import { MAX_SIDE, MOVIE_PRESETS } from '../engine/types';
 import { Dialog } from './dialogs';
-import { el, q, setClass, setText } from './dom';
+import { el, q, setClass, setHidden, setText } from './dom';
 import { followLanguage, fpsText } from './fps-label';
+import { t } from './i18n';
+import { NewMovieHero, badgeOf } from './new-movie-hero';
 
 const KEY = 'formmorpheus.newMovie2';
 const BOX = 44;
@@ -18,10 +20,9 @@ function screenSizes(): Array<[number, number]> {
   return [1, 0.75, 0.5, 0.25].map((s): [number, number] => [Math.max(16, Math.round((w * k * s) / 2) * 2), Math.max(16, Math.round((h * k * s) / 2) * 2)]);
 }
 
-/** Wide screen starts at 4K on a display of 1440p or more (the reference default), else at HD. */
+/** Wide screen starts at 4K on every display (the reference default; the tester found HD chosen on a 1600 px screen). */
 function wideDefault(): string {
-  const dpr = window.devicePixelRatio || 1;
-  return Math.max(window.screen?.width || 0, window.screen?.height || 0) * dpr >= 2560 ? '0' : '2';
+  return '0';
 }
 
 interface Saved { card: number; start: 'empty' | 'flipbook' }
@@ -53,6 +54,11 @@ export class NewMovieDialog extends Dialog {
   private readonly starts: HTMLButtonElement[] = [];
   private state: Saved = load();
   private screen: Array<[number, number]> = [];
+  private readonly hero: NewMovieHero;
+  private readonly grid: HTMLElement;
+  private readonly startBtns: HTMLButtonElement[] = [];
+  private readonly pageBtn: HTMLButtonElement;
+  private view: 'card' | 'all' = 'card';
   /** Called with the id of the Flipbook a "Flipbook" start made, so the editor can open at once. */
   onFlipbook: ((contentId: string) => void) | null = null;
 
@@ -97,15 +103,19 @@ export class NewMovieDialog extends Dialog {
     const opts = el<HTMLElement>('<div class="fm-nm-opts"></div>');
     opts.append(this.optRow('Frame rate', this.fps), this.optRow('Duration (seconds)', this.seconds));
     this.fps.value = '24';
-    this.body.append(grid, opts);
+    // page one is the format card (FV-223); "All sizes" is the grid above
+    this.grid = grid;
+    this.hero = new NewMovieHero({ start: (k) => this.create(k), go: (i) => this.pick(Math.max(0, Math.min(CUSTOM, i))), size: (at) => { this.sizes[this.state.card].value = String(at); this.paint(); } }, CUSTOM + 1);
+    this.body.append(this.hero.root, grid, opts);
     this.body.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); this.create(this.state.start); }
     });
 
     this.button('Reset to defaults', 'ghost', () => this.reset()).classList.add('cv-btn-apart');
+    this.pageBtn = this.button('All sizes', 'ghost', () => this.setView(this.view === 'card' ? 'all' : 'card'));
     this.button('Cancel', 'ghost', () => this.close());
-    this.button('Flipbook', 'primary', () => this.create('flipbook'));
-    this.button('Empty', 'primary', () => this.create('empty'));
+    this.startBtns.push(this.button('Flipbook', 'primary', () => this.create('flipbook')), this.button('Empty', 'primary', () => this.create('empty')));
+    this.setView('card');
     this.remember([], {
       read: () => ({ card: String(this.state.card), start: this.state.start }),
       write: (v) => {
@@ -140,7 +150,7 @@ export class NewMovieDialog extends Dialog {
   }
 
   private pick(i: number): void {
-    if (this.state.card === i) return;
+    if (this.state.card === i) { this.paint(); return; }
     this.state.card = i;
     this.paint();
     save(this.state);
@@ -155,6 +165,24 @@ export class NewMovieDialog extends Dialog {
   private paint(): void {
     this.cards.forEach((c, i) => setClass(c, 'is-active', i === this.state.card));
     this.starts.forEach((b, i) => setClass(b, 'is-active', (i === 1) === (this.state.start === 'flipbook')));
+    const i = this.state.card, [w, h] = this.size();
+    const preset = i < SCREEN ? MOVIE_PRESETS[i] : null;
+    this.hero.paint({
+      name: preset ? preset.label : i === SCREEN ? 'Screen size' : 'Custom',
+      ratio: preset ? `${preset.aspect[0]}:${preset.aspect[1]}` : i === SCREEN ? t('This display') : t('Any size'),
+      badge: badgeOf(w, h), size: `${w} x ${h}`,
+      sizes: i === CUSTOM ? [] : (preset ? preset.sizes : this.screen).map(([a, b]) => `${a} x ${b}`),
+      sizeAt: i === CUSTOM ? 0 : Number(this.sizes[i].value), index: i, w, h,
+    });
+  }
+
+  /** The card page or the grid of every size; the two start buttons in the footer belong to the grid page only. */
+  private setView(v: 'card' | 'all'): void {
+    this.view = v;
+    setHidden(this.hero.root, v !== 'card');
+    setHidden(this.grid, v !== 'all');
+    for (const b of this.startBtns) setHidden(b, v === 'card');
+    setText(this.pageBtn, v === 'card' ? 'All sizes' : 'Format card');
   }
 
   private size(): [number, number] {

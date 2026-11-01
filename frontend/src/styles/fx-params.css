@@ -9,3 +9,4 @@
 .fm-kc-plot { width: 168px; justify-self: center; }
 .fm-kc-curvetabs .fm-kc-segbtn.is-set:not(.is-active)::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 4px; border-radius: 50%; background: var(--accent-color); vertical-align: middle; }
 .fm-kc-curves .fm-bc-reset { justify-self: center; }
+.fm-kc-keypts.is-on { border-color: var(--accent-color); color: var(--accent-color); }

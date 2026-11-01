@@ -388,7 +388,8 @@ export class ExportExtras {
 
   /** Bitrate control reaches only the codecs the window encodes itself. */
   private rateOk(info: ExtraInfo): boolean {
-    return info.kind === 'video' && (info.codec === 'h264' || info.codec === 'vp9');
+    // HEVC and ProRes are encoded by the engine's ffmpeg: two passes for a software HEVC, a profile pick for ProRes
+    return info.kind === 'video' && (info.codec === 'h264' || info.codec === 'vp9' || info.codec === 'hevc' || info.codec === 'prores');
   }
 
   /** Shows the rows that fit the format and fills the size estimate (patched in place). */
@@ -433,7 +434,8 @@ export class ExportExtras {
     const limit = canRate && mode === 'size' ? s.mb * 1_048_576 : 0;
     const m = this.measured && this.measured.key === key && key !== '' ? this.measured : null;
     const text = limit ? `${t('Aims for')} ${formatBytes(limit)} · ${steps} ${t('frames')}` : m ? `${t('Measured about')} ${formatBytes(m.bytes)} · ${steps} ${steps === 1 ? t('frame') : t('frames')}` : `${t('About')} ${formatBytes(bytes)} · ${steps} ${steps === 1 ? t('frame') : t('frames')}${info.kind === 'psd' ? ` · ${info.layers} ${t('layers')}` : ''}`;
-    setText(this.estimate, text);
+    const viaEngine = canRate && mode !== 'quality' && info.kind === 'video' && (info.codec === 'hevc' || info.codec === 'prores');
+    setText(this.estimate, viaEngine ? `${text} · ${t(info.codec === 'prores' ? 'ProRes picks the nearest profile, by the engine ffmpeg' : 'Two passes by the engine ffmpeg')}` : text);
     setClass(this.estimate, 'is-estimate', true);
   }
 }

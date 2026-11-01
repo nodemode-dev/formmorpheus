@@ -13,6 +13,7 @@ import { resample, reversed, stretch } from '../engine/time-stretch';
 import { timeKeys } from '../engine/retime';
 import type { Movie, Track } from '../engine/types';
 import type { AudioClip, ClockSource } from './types';
+import { duckProbe, reductionAt } from './duck-meter';
 
 export interface Peaks { min: Float32Array; max: Float32Array; perSecond: number }
 
@@ -119,7 +120,7 @@ export class AudioEngine implements ClockSource {
   }
 
   /** Short-term (3 s) and integrated loudness of what has played since resetLoudness; call about once per frame. */
-  loudness(): { short: number; integrated: number } {
+  loudness(): { short: number; integrated: number; truePeak: number } {
     if (this.lrAn.length === 2 && this.ctx) {
       this.lrAn.forEach((an, i) => {
         if (this.lrBuf[i]?.length !== an.fftSize) this.lrBuf[i] = new Float32Array(an.fftSize);
@@ -129,7 +130,7 @@ export class AudioEngine implements ClockSource {
       for (const b of this.lrBuf) for (let i = b.length - 256; i < b.length; i++) if (b[i] > 0.00003 || b[i] < -0.00003) { loud = true; break; }
       if (loud) this.live.push(this.lrBuf, this.ctx.sampleRate, performance.now() / 1000);
     }
-    return { short: this.live.shortTerm(), integrated: this.live.integrated() };
+    return { short: this.live.shortTerm(), integrated: this.live.integrated(), truePeak: this.live.truePeak() };
   }
 
   resetLoudness(): void { this.live.reset(); }
@@ -182,7 +183,12 @@ export class AudioEngine implements ClockSource {
     return this.buffers.get(assetId) ?? null;
   }
 
-  constructor(private blobOf: (assetId: string) => Blob | undefined, private onPeaks: (assetId: string) => void) {}
+  constructor(private blobOf: (assetId: string) => Blob | undefined, private onPeaks: (assetId: string) => void) {
+    duckProbe.read = (id, seconds) => { const c = this.duckCurves.get(id); return c ? reductionAt(c.g, c.from, seconds * BUS_RATE) : null; };
+  }
+
+  /** The gain each ducked track was last rendered with (linear factors at BUS_RATE from sample `from`), for the ducking meter. */
+  private readonly duckCurves = new Map<string, { g: Float32Array; from: number }>();
 
   get active(): boolean {
     return this.session !== null && this.session.clips.length > 0;
@@ -518,7 +524,9 @@ export class AudioEngine implements ClockSource {
           for (let i = Math.max(0, -lo), j = Math.max(0, lo); i < c.length && j < n; i++, j++) o[j] = c[i];
           return o;
         });
-        span = { chs: applyGainCurve(span.chs, duckGain(sc, BUS_RATE, duck)), from: span.from };
+        const curve = duckGain(sc, BUS_RATE, duck);
+        this.duckCurves.set(t.id, { g: curve, from: span.from });
+        span = { chs: applyGainCurve(span.chs, curve), from: span.from };
       }
     }
     this.busCache.set(t.id, { sig, span });

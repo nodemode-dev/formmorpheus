@@ -12,6 +12,7 @@ import { firstPictures } from '../media/plan';
 import type { VideoPool } from '../media/video';
 import { toast } from '../ui/toast';
 import { isSoundFile, previewSound } from '../ui/import-preview';
+import { previewSounds } from '../ui/preview-pref';
 
 export interface DropPoint {
   where: 'timeline' | 'stage';
@@ -45,7 +46,7 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
     const movie = files.find((f) => /\.fmo$/i.test(f.name));
     if (movie) { await d.openMovie(movie); return; }
     let list = files;
-    if (opts.preview && list.length === 1 && isSoundFile(list[0]) && !(await previewSound(list[0]))) return;
+    if (opts.preview && list.length === 1 && isSoundFile(list[0]) && !(await previewSound(list[0], previewSounds.on))) return;
     if (!list.length) return;
     list = [...list];
     const job = engine.startJob(list.length === 1 ? `Import ${list[0].name}` : `Import ${list.length} files`, 1000);

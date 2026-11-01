@@ -9,7 +9,7 @@ import type { Movie } from '../engine/types';
 import type { AudioEngine } from '../media/audio';
 import type { ExportResult } from './types';
 
-export type AudioFormat = 'wav16' | 'wav24' | 'm4a' | 'webm-opus' | 'ogg-opus';
+export type AudioFormat = 'wav16' | 'wav24' | 'm4a' | 'webm-opus' | 'ogg-opus' | 'mp3';
 
 export interface AudioExportOptions {
   format: AudioFormat;
@@ -22,6 +22,24 @@ export interface AudioExportOptions {
   sampleRate: number;
   /** Bring the mix (each stem, with stems) to this integrated loudness in LUFS. */
   lufs?: number;
+  /** MP3 only: 96 to 320 kilobits per second (default 192). */
+  mp3Kbps?: number;
+}
+
+/** MP3 has no encoder in the browser: the WAV mixdown goes to the engine, whose ffmpeg (libmp3lame) sends the MP3 back. */
+async function encodeMp3(buf: AudioBuffer, kbps: number): Promise<{ bytes: Uint8Array; mime: string; ext: string }> {
+  const chs = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+  const wav = wavBytes(chs, buf.sampleRate, 16);
+  let res: Response;
+  try {
+    res = await fetch(`/api/audio-encode/mp3?kbps=${kbps}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: new Blob([wav.slice()], { type: 'audio/wav' }) });
+  } catch (e) { throw new Error('MP3 needs the formmorpheus engine and its ffmpeg, and the engine is not answering.', { cause: e }); }
+  if (!res.ok) {
+    let detail = '';
+    try { const b = (await res.json()) as { detail?: unknown }; if (typeof b?.detail === 'string') detail = b.detail; } catch { /* not JSON */ }
+    throw new Error(detail || `The engine could not make the MP3 (${res.status}).`);
+  }
+  return { bytes: new Uint8Array(await res.arrayBuffer()), mime: 'audio/mpeg', ext: 'mp3' };
 }
 
 function normNote(audio: AudioEngine, lufs: number | undefined, warnings: string[]): void {
@@ -33,7 +51,7 @@ function normNote(audio: AudioEngine, lufs: number | undefined, warnings: string
 
 export const AUDIO_FORMATS: { id: AudioFormat; label: string; ext: string }[] = [
   { id: 'wav16', label: 'WAV 16-bit', ext: 'wav' }, { id: 'wav24', label: 'WAV 24-bit', ext: 'wav' },
-  { id: 'm4a', label: 'AAC in M4A', ext: 'm4a' }, { id: 'webm-opus', label: 'Opus in WebM', ext: 'webm' }, { id: 'ogg-opus', label: 'Opus in OGG', ext: 'ogg' },
+  { id: 'm4a', label: 'AAC in M4A', ext: 'm4a' }, { id: 'mp3', label: 'MP3 (engine ffmpeg)', ext: 'mp3' }, { id: 'webm-opus', label: 'Opus in WebM', ext: 'webm' }, { id: 'ogg-opus', label: 'Opus in OGG', ext: 'ogg' },
 ];
 
 const safe = (s: string): string => s.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/^\.+/, '').trim() || 'sound';
@@ -100,6 +118,7 @@ async function encodeOne(buf: AudioBuffer, o: AudioExportOptions, warnings: stri
     const chs = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
     return { bytes: wavBytes(chs, buf.sampleRate, o.format === 'wav24' ? 24 : 16), mime: 'audio/wav', ext: 'wav' };
   }
+  if (o.format === 'mp3') return encodeMp3(buf, o.mp3Kbps ?? 192);
   return encodeLossy(buf, o.format, warnings);
 }
 

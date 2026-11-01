@@ -9,11 +9,11 @@ import { readRect } from '../paint/history';
 import { autoMask, combine, ellipseMask, extract, invertMask, isEmpty, maskBounds, maskOutline, polygonMask, rectMask } from '../paint/select';
 import { MESH_MAX, MESH_MIN, bendFor, bendHandles, makeGrid, nudgePoints, refineGridBent, resampleGrid, transformMesh, transformQuad, zeroBends, type Bend } from '../paint/transform';
 import type { CombineMode, Interpolation, Mask, PaintLayer, Point, Raster, Rect, RGB, SelectMode, TransformMode } from '../paint/types';
-import { el, q, setHidden, setText } from './dom';
+import { el, q, setClass, setHidden, setText } from './dom';
 import { t as tr } from './i18n';
 import { HoldRepeat } from './paint-gestures';
 import { sampleAll } from './paint-sample-all';
-import { popRow, popSep, Popover } from './popover';
+import { popRow, popSep, Popover, type PopRow } from './popover';
 import { drawGridPreview, drawQuadPreview } from './warp-drag-preview';
 
 export interface Interaction {
@@ -150,6 +150,7 @@ export class PaintTools {
   private fopts = { style: 'clouds' as 'clouds' | 'billows' | 'ridges', additive: false, multichannel: false };
   private readonly valueUndo: Record<string, number>[] = [];
   private fmenu: Popover | null = null;
+  private more: { pop: Popover; all: PopRow } | null = null;
   private previewing = false;
   /** The transform box hugs the content (tight) or spans the whole layer (canvas). */
   private fit: 'tight' | 'canvas' = 'tight';
@@ -311,13 +312,15 @@ export class PaintTools {
     setHidden(this.modes, this.current === 'filters');
     if (this.current === 'select') {
       this.variant(this.modes, 'select', () => htmlOf(SELECT_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-sel="${m.id}">${tr(m.label)}</button>`).join('')));
+      // the six reference actions, then an overflow for the extras (Sample all layers, Reload, Deselect) and Done
       this.variant(this.actions, 'select', () => htmlOf([
-        ['add', 'Add'], ['remove', 'Remove'], ['invert', 'Invert'],
-        ['all', 'Sample all layers'], ['reload', 'Reload'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'], ['none', 'Deselect'], ['done', 'Done'],
-      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${SEL_TIPS[id] ? ` title="${tr(SEL_TIPS[id])}"` : ''}>${tr(label)}</button>`).join('')));
+        ['add', 'Add'], ['remove', 'Remove'], ['invert', 'Invert'], ['copy', 'Copy & Paste'], ['fill', 'Color Fill'], ['clear', 'Clear'],
+      ].map(([id, label]) => `<button type="button" class="fm-ptools-act" data-act="${id}"${SEL_TIPS[id] ? ` title="${tr(SEL_TIPS[id])}"` : ''}>${tr(label)}</button>`).join('')
+        + `<button type="button" class="fm-ptools-act fm-ptools-more" data-act="more" title="${tr('More: sample all layers, reload, deselect')}" aria-label="${tr('More')}"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg></button>`
+        + `<button type="button" class="fm-ptools-act" data-act="done">${tr('Done')}</button>`));
       for (const b of this.modes.querySelectorAll<HTMLElement>('[data-sel]')) b.classList.toggle('is-active', b.dataset.sel === this.selectMode);
       for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="add"],[data-act="remove"]')) b.classList.toggle('is-active', b.dataset.act === this.combineMode);
-      for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="all"]')) b.classList.toggle('is-active', sampleAll.on);
+      for (const b of this.actions.querySelectorAll<HTMLElement>('[data-act="more"]')) b.classList.toggle('has-on', sampleAll.on);
     } else if (this.current === 'transform') {
       this.variant(this.modes, 'transform', () => htmlOf(TRANSFORM_MODES.map((m) => `<button type="button" class="fm-ptools-mode" data-tr="${m.id}">${tr(m.label)}</button>`).join('')));
       this.variant(this.actions, 'transform', () => htmlOf(nudgePad() + [
@@ -326,7 +329,8 @@ export class PaintTools {
       for (const b of this.modes.querySelectorAll<HTMLElement>('[data-tr]')) b.classList.toggle('is-active', b.dataset.tr === this.transformMode);
       setText(this.actions.querySelector('[data-act="interp"]'), tr(INTERP_LABEL[this.interp]));
       const mesh = this.actions.querySelector<HTMLElement>('[data-act="mesh"]');
-      if (mesh) { setHidden(mesh, this.transformMode !== 'warp'); setText(mesh, tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN))); }
+      // Advanced Mesh is dim outside Warp, as the reference shows it
+      if (mesh) { setClass(mesh, 'is-dim', this.transformMode !== 'warp'); (mesh as HTMLButtonElement).disabled = this.transformMode !== 'warp'; setText(mesh, tr('Mesh {n} x {n}').replace(/\{n\}/g, String(this.meshN))); }
     } else if (this.current === 'filters' && this.filter) {
       const f = FILTERS.find((x) => x.id === this.filter)!;
       this.variant(this.params, f.id, () => {
@@ -439,7 +443,33 @@ export class PaintTools {
     if (!t) return;
     if (t.dataset.sel) { this.selectMode = t.dataset.sel as SelectMode; this.build(); return; }
     if (t.dataset.tr) { this.setTransformMode(t.dataset.tr as TransformMode); return; }
-    const act = t.dataset.act;
+    if (t.dataset.act === 'more') { this.openMore(t); return; }
+    this.runAct(t.dataset.act, t);
+  }
+
+  /** The Select bar's overflow: the extras that are not among the six reference actions. */
+  private openMore(anchor: HTMLElement): void {
+    if (!this.more) {
+      const pop = new Popover('fm-pmore', 220);
+      const row = (id: string, label: string, tip: string, check = false): PopRow => {
+        const r = popRow(null, tr(label), { check });
+        r.el.title = tr(tip);
+        r.el.addEventListener('click', () => { pop.hide(); this.runAct(id, anchor); });
+        return r;
+      };
+      const all = row('all', 'Sample all layers', SEL_TIPS.all, true);
+      const reload = row('reload', 'Reload', 'Bring back the previous selection of this session');
+      const none = row('none', 'Deselect', SEL_TIPS.none);
+      pop.el.append(all.el, reload.el, popSep(), none.el);
+      pop.onHide(() => { setClass(anchor, 'is-open', false); });
+      this.more = { pop, all };
+    }
+    this.more.all.setChecked(sampleAll.on);
+    setClass(anchor, 'is-open', true);
+    this.more.pop.showFor(anchor, 'above');
+  }
+
+  private runAct(act: string | undefined, t: HTMLElement): void {
     const doc = this.host.doc();
     if (!act || !doc) return;
     const sel = this.host.selection();
@@ -581,7 +611,21 @@ export class PaintTools {
       this.host.setSelection(isEmpty(next) ? null : next);
       return;
     }
+    if (this.current === 'transform' && d.kind === 'move' && e.pointerType === 'touch' && this.edgeTap(d, p)) return;
     if (this.current === 'transform' && (this.transformMode === 'distort' || this.transformMode === 'warp')) this.refreshPreview();
+  }
+
+  /** Touch: a tap just outside an outer edge nudges the content 1 px toward it, outside a corner diagonally. */
+  private edgeTap(d: NonNullable<PaintTools['drag']>, p: Point): boolean {
+    const s = this.host.view().scale;
+    if (!d.quad0.length || Math.hypot(p.x - d.start.x, p.y - d.start.y) * s > 5) return false;
+    const xs = d.quad0.map((a) => a.x), ys = d.quad0.map((a) => a.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const dx = d.start.x < x0 ? -1 : d.start.x > x1 ? 1 : 0, dy = d.start.y < y0 ? -1 : d.start.y > y1 ? 1 : 0;
+    if (!dx && !dy) return false;
+    const gx = dx < 0 ? x0 - d.start.x : dx > 0 ? d.start.x - x1 : 0, gy = dy < 0 ? y0 - d.start.y : dy > 0 ? d.start.y - y1 : 0;
+    if (Math.max(gx, gy) * s > 44) return false;
+    return this.nudge(dx, dy);
   }
 
   /** A Freehand tap adds a polygon corner; tapping the first dot or double tapping closes it. False when the press was a trace. */
@@ -626,7 +670,6 @@ export class PaintTools {
       ctx.drawImage(this.cand, o.x, o.y, this.cand.width * v.scale, this.cand.height * v.scale);
     }
     if (this.current === 'select' && d) {
-      ctx.setLineDash([5, 4]);
       ctx.beginPath();
       if (d.kind === 'freehand') d.pts.forEach((p, i) => { const s = S(p); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
       else if (d.kind === 'rectangle' || d.kind === 'ellipse') {
@@ -634,7 +677,18 @@ export class PaintTools {
         const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y);
         if (d.kind === 'rectangle') ctx.rect(x, y, w, h); else ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       }
+      // a moving black and white line while the selection is drawn (it advances with every pointer move)
+      ctx.lineWidth = 1.25;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
       ctx.stroke();
+      ctx.setLineDash([5, 5]);
+      ctx.lineDashOffset = -(performance.now() / 45) % 10;
+      ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+      ctx.stroke();
+      ctx.lineDashOffset = 0;
+      ctx.strokeStyle = accent();
+      ctx.lineWidth = 1.5;
     }
     if (this.current === 'select' && this.poly.length) {
       ctx.setLineDash([5, 4]);
@@ -677,10 +731,12 @@ export class PaintTools {
           }
         }
       } else {
-        for (const p of q4) dot(ctx, p, 6);
-        for (let i = 0; i < 4; i++) dot(ctx, mid(q4[i], q4[(i + 1) % 4]), 4.5);
-        // the amber node fits the box to the content (tight) or the whole layer
+        // small filled round dots; the amber node below the box fits it to the content (tight) or the whole layer
+        for (const p of q4) dot(ctx, p, 4.5);
+        for (let i = 0; i < 4; i++) dot(ctx, mid(q4[i], q4[(i + 1) % 4]), 3.5);
         const fn = fitNode(q4);
+        const fb = mid(q4[2], q4[3]);
+        ctx.beginPath(); ctx.moveTo(fb.x, fb.y); ctx.lineTo(fn.x, fn.y); ctx.stroke();
         ctx.beginPath(); ctx.arc(fn.x, fn.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#f2a900'; ctx.fill(); ctx.stroke();
         if (this.transformMode !== 'distort') {
           const r = this.rotateHandle(q4);
@@ -1108,9 +1164,10 @@ function scaleQuad(q0: Point[], kind: string, i: number, p: Point, uniform: bool
 
 /** Where the amber fit node sits: just outside the box's first corner. */
 function fitNode(q4: Point[]): Point {
-  const c = centre(q4);
-  const dx = q4[0].x - c.x, dy = q4[0].y - c.y, len = Math.hypot(dx, dy) || 1;
-  return { x: q4[0].x + (dx / len) * 22, y: q4[0].y + (dy / len) * 22 };
+  // below the bottom edge, mirrored from the green node above the top edge
+  const b = mid(q4[2], q4[3]), c = centre(q4);
+  const dx = b.x - c.x, dy = b.y - c.y, len = Math.hypot(dx, dy) || 1;
+  return { x: b.x + (dx / len) * 28, y: b.y + (dy / len) * 28 };
 }
 
 /** The point on a 45 degree diagonal from `a` that is nearest `p`: a square or a circle for the box. */

@@ -128,10 +128,10 @@
 }
 .fm-col-clear:hover, .fm-col-palname:hover { color: var(--text-primary); }
 .fm-col-palname { padding: 0; border: 0; background: transparent; color: var(--text-secondary); font-size: var(--fs-10); }
-.fm-col-hstrip { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.fm-col-hstrip { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
 .fm-col-hstrip .fm-col-sw { height: 22px; border-radius: 5px; }
 .fm-col-defpal { margin-top: 2px; }
-.fm-col-grid { display: grid; grid-template-columns: repeat(10, 1fr); border-radius: 8px; overflow: hidden; }
+.fm-col-grid { display: grid; grid-template-columns: repeat(9, 1fr); border-radius: 8px; overflow: hidden; }
 .fm-col-grid .fm-col-sw { height: 24px; border-radius: 0; }
 
 .fm-col-sw {
@@ -165,7 +165,7 @@
 .fm-col-def:hover, .fm-col-del:hover { color: var(--text-primary); background: var(--surface-raised); }
 .fm-col-card.is-default .fm-col-def { background: var(--accent-tint-strong); color: var(--accent-color); }
 .fm-col-del { padding: 0 6px; font-size: 14px; }
-.fm-col-cgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0; border-radius: 6px; overflow: hidden; }
+.fm-col-cgrid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 0; border-radius: 6px; overflow: hidden; }
 .fm-col-cgrid .fm-col-sw { height: 20px; }
 .fm-col-pl.is-cards .fm-col-card { padding: 8px; border: 1px solid var(--glass-border); border-radius: 12px; background: var(--surface-raised); }
 .fm-col-pl.is-cards .fm-col-cgrid { gap: 3px; overflow: visible; }

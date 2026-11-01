@@ -4,6 +4,7 @@ import { Dialog } from './dialogs';
 import { el, q, setChecked, setDisabled, setHidden, setText, setValue } from './dom';
 import { t } from './i18n';
 import { toast } from './toast';
+import { cloudFolder, setCloudFolder } from './theater-storage';
 
 /** Where the movie library lives: on this computer (the default), in the iCloud Drive folder when the computer has one,
  *  or in a folder of your own. The engine checks the folder (a full path of your own, writable) and can copy the
@@ -30,6 +31,8 @@ export class LibraryFolderDialog extends Dialog {
     <input class="cv-input fm-lib-path" type="text" dir="ltr" spellcheck="false" placeholder="/path/to/folder" aria-label="Folder path" data-f="path">
     <label class="cv-field cv-check"><span>Copy my movies into the new folder</span><input type="checkbox" data-f="copy" checked></label>
     <p class="fm-lib-note" data-f="note" hidden></p>
+    <label class="cv-field fm-lib-cloud"><span>Cloud folder (optional)</span><input class="cv-input" type="text" dir="ltr" spellcheck="false" placeholder="/path/to/a/synced/folder" aria-label="Cloud folder" data-f="cloud"></label>
+    <p class="fm-share-note">A second place for your movies: a folder your own sync service keeps in step. Copy to Cloud in the Theater sends a copy of a movie there; your library stays where it is.</p>
   </div>`);
   private info: Info | null = null;
   private readonly use: HTMLButtonElement;
@@ -41,6 +44,8 @@ export class LibraryFolderDialog extends Dialog {
     this.button('Cancel', '', () => this.close());
     this.use = this.button('Use This Folder', 'primary', () => { void this.apply(); });
     this.form.addEventListener('input', () => this.sync());
+    // the cloud folder is its own choice (G08): kept when the field is left, no library change
+    q<HTMLInputElement>(this.form, '[data-f="cloud"]').addEventListener('change', (e) => setCloudFolder((e.target as HTMLInputElement).value.trim()));
   }
 
   private choice(): string { return q<HTMLInputElement>(this.form, 'input[name="fm-lib"]:checked').value; }
@@ -66,6 +71,7 @@ export class LibraryFolderDialog extends Dialog {
       setChecked(r, r.value === (i.source === 'default' ? 'default' : i.icloud && i.dir === i.icloud ? 'icloud' : 'custom'));
     }
     setValue(q(this.form, '[data-f="path"]'), i.source === 'custom' && i.dir !== i.icloud ? i.dir : '');
+    setValue(q(this.form, '[data-f="cloud"]'), cloudFolder());
     const note = q(this.form, '[data-f="note"]');
     setText(note, t('This folder is set by FORMMORPHEUS_LIBRARY_DIR, so it cannot be changed here.'));
     setHidden(note, i.source !== 'override');

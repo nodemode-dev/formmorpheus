@@ -98,4 +98,5 @@
 .fm-lm-tiles { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
 .fm-cm-tile.is-gone { display: none; }
 .fm-lm-ease { min-width: 176px; }
+.fm-lm-more { padding: 4px var(--space-3) 2px; color: var(--text-tertiary, var(--text-secondary)); font-size: var(--fs-11, 11px); letter-spacing: 0.04em; text-transform: uppercase; }
 .fm-lm .fm-pop-ico svg, .fm-lm-ease .fm-pop-ico svg { width: 16px; height: 16px; }

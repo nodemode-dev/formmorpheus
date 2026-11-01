@@ -375,6 +375,7 @@ export class ContentMenu {
     setClass(this.lip.el, 'is-gone', !lipOk);
     setClass(this.soundRow.el, 'is-gone', !(sel.length === 1 && first.kind === 'audio'));
     setClass(this.shapeRow.el, 'is-gone', !(sel.length === 1 && (first.kind === 'shape' || first.kind === 'solid' || first.kind === 'adjust')));
+    this.shapeRow.setLabel(sel.length === 1 && first.kind === 'adjust' ? 'Adjustment options...' : 'Shape options...');
     setClass(this.formvis.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     const isGroup = sel.length === 1 && first.kind === 'group';
     setClass(this.group.el, 'is-gone', sel.length < 2);

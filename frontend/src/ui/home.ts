@@ -4,8 +4,9 @@ import { HomeFiles } from './home-files';
 import { HomeTrash } from './home-trash';
 import { icon } from './icons';
 import { ExamplesRow } from './examples-row';
-import { mountStorageButton } from './theater-storage';
+import { mountCloudButton, mountStorageButton } from './theater-storage';
 import { Popover, popRow } from './popover';
+import { theaterLayout } from './shell-opts';
 import '../styles/theater-wall.css';
 
 export interface HomeDeps {
@@ -53,6 +54,7 @@ export class HomeScreen {
     </header>
     <nav class="cv-home-nav" aria-label="Home">
       <button class="cv-home-nav-item cv-home-storage" type="button" data-storage>${icon('folder', 16)}<span>Library folder</span></button>
+      <button class="cv-home-nav-item cv-home-storage" type="button" data-cloud>${icon('upload', 16)}<span>Cloud folder</span></button>
       ${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
       <div class="cv-home-nav-sep"></div>
       <div class="cv-home-nav-title">Create</div>
@@ -116,7 +118,13 @@ export class HomeScreen {
     const brandBtn = this.root.querySelector('[data-brand]') as HTMLElement;
     brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
     this.wireTop();
+    // G06: Gallery (the poster wall) or Library (the file manager look: a standing sidebar, filter and sort, kind and age)
+    const applyLayout = (): void => { setClass(this.root, 'is-library', theaterLayout() === 'library'); };
+    applyLayout();
+    document.addEventListener('fm:theater-layout', applyLayout);
+    document.addEventListener('fm:show-exports', () => { this.show('outputs'); });
     mountStorageButton(this.root.querySelector('[data-storage]') as HTMLElement);
+    mountCloudButton(this.root.querySelector('[data-cloud]') as HTMLElement);
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.forced && d.engine.projects.length) { this.forced = false; this.sync(); } });
@@ -136,7 +144,7 @@ export class HomeScreen {
     nav(get(NAV));
     toggle.addEventListener('click', () => nav(!this.root.classList.contains('is-nav-open')));
     // choosing a page or a command from the sidebar puts it away again, so the wall stays a wall
-    this.root.querySelector('.cv-home-nav')?.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-v], [data-cmd], [data-storage], [data-back]')) nav(false); });
+    this.root.querySelector('.cv-home-nav')?.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-v], [data-cmd], [data-storage], [data-cloud], [data-back]')) nav(false); });
     tools.addEventListener('click', () => { const on = !this.root.classList.contains('show-tools'); setClass(this.root, 'show-tools', on); tools.setAttribute('aria-pressed', String(on)); });
     const inner = this.root.querySelector('[data-page="projects"] .cv-th-select') as HTMLElement | null;
     if (!inner) return;

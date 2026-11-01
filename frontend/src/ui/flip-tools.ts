@@ -53,6 +53,8 @@ export class FlipTools {
   readonly timing: Popover;
   readonly under: Popover;
   private wholeTrack = false;
+  /** The speed picked under "Re-time frames to" since the menu opened (0: none). */
+  private picked = 0;
   private readonly newSeg: Seg;
   private readonly timeSeg: Seg;
   private readonly whole: ReturnType<typeof popRow>;
@@ -80,7 +82,11 @@ export class FlipTools {
     this.newSeg = segment('New frames on', (n) => this.setShoot(n));
     this.timeSeg = segment('Re-time frames to', (n) => this.retime(n));
     this.whole = popRow(null, 'Re-time the whole track', { check: true });
-    this.whole.el.addEventListener('click', () => { this.wholeTrack = !this.wholeTrack; this.whole.setChecked(this.wholeTrack); });
+    this.whole.el.addEventListener('click', () => {
+      this.wholeTrack = !this.wholeTrack; this.whole.setChecked(this.wholeTrack);
+      // a speed was already chosen in this menu: one click on the chip carries it over the whole track
+      if (this.wholeTrack && this.picked > 0) this.retime(this.picked);
+    });
     const rev = popRow('swap', 'Reverse and append');
     rev.el.addEventListener('click', () => this.reverse(false));
     const pong = popRow('swap', 'Ping-pong (no repeats)');
@@ -149,6 +155,7 @@ export class FlipTools {
     const t = c?.flip[this.host.row()];
     this.newSeg.set(t?.shoot ?? 1);
     this.timeSeg.set(0);
+    this.picked = 0;
     this.whole.setChecked(this.wholeTrack);
     this.syncNumbers();
     this.under.hide();
@@ -210,6 +217,7 @@ export class FlipTools {
   private retime(n: number): void {
     const refs = this.refs(this.wholeTrack);
     if (!refs.length) return;
+    this.picked = n;
     this.timeSeg.set(n);
     this.host.run(`Re-time on ${SHOOT_LABEL[n - 1].toLowerCase()}`, (c) => shootOn(c, refs, n));
   }

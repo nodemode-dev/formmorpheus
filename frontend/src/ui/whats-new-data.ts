@@ -5,6 +5,19 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.16.0', name: 'Every gap closed, deeper effects and a calmer export',
+    additions: [
+      { title: 'Export progress', text: 'Frames done, time elapsed and time left, with Cancel, and a chip that stays while you work.', command: 'export' },
+      { title: 'More effects', text: 'Ripple, Halftone, Outline, Gradient Map, Glitch, Kaleidoscope, Hue Range Shift and more, each with its own switch.', command: 'mode-keyframe' },
+      { title: 'Titles', text: 'Presets, gradient fill, glow, text on a path and animators over a range of letters, words or lines.', command: 'add-text' },
+      { title: 'Camera', text: 'Shake, follow and parallax depth per track, and a count-in before a Perform take.', command: 'mode-keyframe' },
+      { title: 'Watercolor and oil', text: 'Watercolor pools, darkens at its rim and bleeds while wet; oil frays at the ends and widens with tilt.', command: 'new-flipbook' },
+      { title: 'Timeline', text: 'Hide one block, J K L shuttle, Space to pan, seconds and frames on the ruler, Flipbook cells on the blocks.', command: 'home' },
+      { title: 'Theater', text: 'Gallery or Library layout, movie Info and Tags, and movies that reopen where you left them.', command: 'home' },
+      { title: 'Sound and delivery', text: 'MP3, loudness and true peak, beat markers, sprite sheets, proxies for big videos and clear safe areas.', command: 'export' },
+    ],
+  },
+  {
     version: '0.15.0', name: 'Pens and tablets, brush presets and a closer feel',
     additions: [
       { title: 'Pen tablets', text: 'Pressure, tilt, the eraser end and barrel buttons, with a test pad, a pressure curve and palm rejection in Preferences.', command: 'settings' },

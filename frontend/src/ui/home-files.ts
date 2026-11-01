@@ -4,6 +4,7 @@ import { el, patchList, q, setClass, setHidden, setText, setTitle, swapMedia } f
 import { confirmAction } from './dialogs';
 import { icon } from './icons';
 import { dateText, onLanguage, t } from './i18n';
+import { tf } from './i18n-fill';
 import { toast } from './toast';
 import { TheaterTools, type Target } from './home-theater';
 import { TheaterCarry } from './theater-carry';
@@ -27,7 +28,7 @@ type Sort = 'opened' | 'name' | 'size' | 'kind' | 'manual';
 type View = 'grid' | 'list';
 type Thumb = { name: string } | { path: string; project: boolean } | null;
 
-interface Item { inside?: string[]; key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null; target?: Target }
+interface Item { tags?: string[]; inside?: string[]; key: string; name: string; kind: string; size: number; when: number; missing: boolean; where: string; thumb: Thumb; open: () => void; remove: (() => void) | null; target?: Target }
 
 const PREFS = 'formmorpheus.home';
 const PICTURE = /\.(png|jpe?g|webp|gif|avif)$/i;
@@ -76,6 +77,7 @@ export class HomeFiles {
       </div>
       <label class="cv-hf-filter">${icon('search', 14)}<input class="cv-hf-input" type="search" placeholder="Filter files" aria-label="Filter files" spellcheck="false"></label>
       <label class="cv-hf-sortbox"><span>Sort</span><select class="cv-hf-sort" aria-label="Sort by"><option value="opened">Most recent</option><option value="name">Name</option><option value="size">Size</option><option value="kind">Kind</option><option value="manual">Manual</option></select></label>
+      <label class="cv-hf-sortbox cv-hf-tagbox" hidden><span>Tag</span><select class="cv-hf-tagsel" aria-label="Filter by tag"><option value="">All</option></select></label>
       <div class="cv-hf-views" role="group" aria-label="View">
         <button class="cv-hf-view" type="button" data-view="grid" title="Thumbnails" aria-label="Thumbnails">${icon('viewGrid', 16)}</button>
         <button class="cv-hf-view" type="button" data-view="list" title="List" aria-label="List">${icon('viewList', 16)}</button>
@@ -89,6 +91,7 @@ export class HomeFiles {
   private readonly empty = q(this.root, '.cv-hf-empty');
   private readonly filter = q<HTMLInputElement>(this.root, '.cv-hf-input');
   private readonly sort = q<HTMLSelectElement>(this.root, '.cv-hf-sort');
+  private readonly tagSel = q<HTMLSelectElement>(this.root, '.cv-hf-tagsel');
   private prefs = readPrefs();
   private all: Item[] = [];
   private readonly thumbs = new Map<string, string>();
@@ -110,6 +113,7 @@ export class HomeFiles {
     this.sort.value = this.prefs.sort;
     this.sort.addEventListener('change', () => { this.prefs.sort = this.sort.value as Sort; this.save(); this.render(); });
     this.filter.addEventListener('input', () => this.render());
+    this.tagSel.addEventListener('change', () => this.render());
     onLanguage(() => this.render());   // dates follow the language
     this.items.addEventListener('click', (e) => {
       const t = e.target as HTMLElement, row = t.closest<HTMLElement>('.cv-hf-item'), item = row ? this.all.find((i) => i.key === row.dataset.key) : undefined;
@@ -159,7 +163,8 @@ export class HomeFiles {
     let items: Item[] = [];
     if (tab === 'projects') {
       await this.theater?.load();
-      items = (await api.library().catch(() => [])).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, target: { movie: i.name }, open: () => this.d.openRecent(i.name), remove:() => { if (this.d.openName?.() === i.name) { toast('Close the movie before deleting it.', 'error'); return; } void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
+      const tagMap = this.theater ? await api.tags() : {};
+      items = (await api.library().catch(() => [])).map((i) => ({ ...i, tags: tagMap[i.name] })).map((i) => ({ key: `lib:${i.name}`, name: i.name, kind: 'FMO', tags: i.tags, size: i.size, when: i.modified, missing: false, where: 'Library', thumb: { name: i.name }, target: { movie: i.name }, open: () => this.d.openRecent(i.name), remove:() => { if (this.d.openName?.() === i.name) { toast('Close the movie before deleting it.', 'error'); return; } void this.trashIt(`"${i.name}"`, async () => { await api.deleteMovie(i.name); this.d.removeRecent(i.name); }); } }));
       if (this.theater) {
         const byName = new Map(items.map((i) => [i.name, i]));
         for (const s of this.theater.stacks) {
@@ -167,7 +172,7 @@ export class HomeFiles {
           if (!inside.length) continue;
           const id = s.id;
           items.push({ inside: inside.map((i) => i.name), key: `stk:${id}`, name: s.name, kind: `Stack · ${inside.length}`, size: inside.reduce((a, i) => a + i.size, 0), when: Math.max(...inside.map((i) => i.when)), missing: false,
-            where: 'Stack', thumb: inside[0].thumb, target: { stack: id }, open: () => this.theater?.enter(id), remove: () => { void this.theater?.ungroup(id); } });
+            where: 'Stack', thumb: inside[0].thumb, target: { stack: id }, open: () => this.theater?.enter(id), remove: () => { void this.theater?.removeStack(id); } });
         }
       }
     } else if (tab === 'outputs') {
@@ -189,12 +194,27 @@ export class HomeFiles {
     this.render();
   }
 
+  /** The Tag filter lists every tag in use; options are added and dropped in place. */
+  private syncTags(): void {
+    const all = [...new Set(this.all.flatMap((i) => i.tags ?? []))].sort((a, b) => a.localeCompare(b));
+    const have = Array.from(this.tagSel.options).slice(1).map((o) => o.value);
+    if (have.join('\n') !== all.join('\n')) {
+      for (const o of Array.from(this.tagSel.options).slice(1)) if (!all.includes(o.value)) o.remove();
+      all.forEach((g, n) => { if (!have.includes(g)) { const o = document.createElement('option'); o.value = g; o.textContent = g; this.tagSel.add(o, n + 1); } });
+    }
+    if (this.tagSel.value && !all.includes(this.tagSel.value)) this.tagSel.value = '';
+    setHidden(q(this.root, '.cv-hf-tagbox'), all.length === 0);
+  }
+
   /** Filter and sort the read files, then patch the rows by key. */
   private render(): void {
     const f = this.filter.value.trim().toLowerCase(), sort = this.prefs.sort;
     const th = this.theater;
     // a stack matches when its own name or any movie inside it does
-    const matches = (i: Item): boolean => !f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f || !!i.inside?.some((n) => n.toLowerCase().includes(f));
+    this.syncTags();
+    const tag = this.tagSel.value;
+    const byTag = (i: Item): boolean => !tag || !!i.tags?.includes(tag) || !!i.inside?.some((n) => this.all.find((x) => x.name === n)?.tags?.includes(tag));
+    const matches = (i: Item): boolean => byTag(i) && (!f || i.name.toLowerCase().includes(f) || i.kind.toLowerCase() === f || !!i.tags?.some((g) => g.toLowerCase().includes(f)) || !!i.inside?.some((n) => n.toLowerCase().includes(f)));
     const inView = (i: Item): boolean => !th || !i.target || (i.target.stack ? !th.current : th.visible(i.target.movie ?? ''));
     const shown = this.all.filter((i) => matches(i) && inView(i));
     setClass(this.root, 'is-selecting', !!th?.selecting);
@@ -256,7 +276,7 @@ export class HomeFiles {
     setText(q(n, '.cv-hf-size'), i.missing ? 'Missing' : sizeText(i.size));
     setText(q(n, '.cv-hf-when'), whenText(i.when));
     // the card shows the poster and the name only; kind and age wait in the tooltip
-    setTitle(q(n, '.cv-hf-open'), i.missing ? `${i.where} (not found)` : [i.name, i.kind.startsWith('Stack · ') ? `${t('Stack')}${i.kind.slice(5)}` : i.kind, whenText(i.when)].filter(Boolean).join(' · '));
+    setTitle(q(n, '.cv-hf-open'), i.missing ? tf('{where} (not found)', { where: i.where }) : [i.name, i.kind.startsWith('Stack · ') ? `${t('Stack')}${i.kind.slice(5)}` : i.kind, whenText(i.when), i.tags?.length ? `#${i.tags.join(' #')}` : ''].filter(Boolean).join(' · '));
     setClass(n, 'is-missing', i.missing);
     setClass(n, 'is-selected', !!this.theater?.selected.has(i.key));
     setClass(n, 'is-stack', !!i.target?.stack);

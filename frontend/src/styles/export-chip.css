@@ -1,0 +1,12 @@
+/* The export readout shown while the Export window is closed. */
+.fm-exchip { position: fixed; left: var(--space-4); bottom: calc(var(--cv-status-h) + var(--space-3)); z-index: var(--z-toast); width: 300px; max-width: calc(100vw - 32px); display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--bg-secondary); box-shadow: var(--shadow-md); font-size: var(--fs-12); color: var(--text-secondary); }
+.fm-exchip[hidden] { display: none; }
+.fm-exchip-main, .fm-exchip-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.fm-exchip-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-exchip-count, .fm-exchip-time { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fm-exchip-bar { position: relative; height: 6px; border-radius: var(--radius-sm); background: var(--bg-tertiary); overflow: hidden; }
+.fm-exchip-bar > i { position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); background: var(--accent-color); transition: width 120ms linear; }
+.fm-exchip-btns { display: flex; gap: var(--space-1); }
+.fm-exchip-btn { border: 1px solid var(--line-2); border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font: inherit; padding: 2px var(--space-2); cursor: pointer; }
+.fm-exchip-btn:hover { color: var(--text-primary); border-color: var(--accent-line); }
+.fm-exchip-btn:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }

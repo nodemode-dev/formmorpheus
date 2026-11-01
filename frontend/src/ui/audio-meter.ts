@@ -95,14 +95,14 @@ export class MasterMeter {
     c.beginPath();
     c.arc(this.barW - lightW / 2, h / 2, 3, 0, Math.PI * 2);
     c.fill();
-    const ld = this.audio()?.loudness() ?? { short: -Infinity, integrated: -Infinity };
+    const ld = this.audio()?.loudness() ?? { short: -Infinity, integrated: -Infinity, truePeak: -Infinity };
     const num = (v: number): string => (Number.isFinite(v) ? v.toFixed(1) : '--');
-    // short-term (3 s) and integrated loudness sit right of the bars
+    // short-term (3 s), integrated loudness and the highest true peak sit right of the bars
     c.fillStyle = st.getPropertyValue('--text-secondary').trim() || '#999';
     c.font = '9px ui-monospace, monospace';
     c.textBaseline = 'middle';
-    c.fillText(`S ${num(ld.short)}  I ${num(ld.integrated)}`, this.barW + 8, h / 2 + 0.5);
-    this.canvas.title = `Peak ${dbText(lv.peak)} · RMS ${dbText(lv.rms)} · ${lufsText(ld.short)} short-term · ${lufsText(ld.integrated)} integrated${lv.clip ? ' · clipped' : ''} (click to reset)`;
+    c.fillText(`S ${num(ld.short)}  I ${num(ld.integrated)}  TP ${num(ld.truePeak)}`, this.barW + 8, h / 2 + 0.5);
+    this.canvas.title = `Peak ${dbText(lv.peak)} · RMS ${dbText(lv.rms)} · ${lufsText(ld.short)} short-term · ${lufsText(ld.integrated)} integrated · ${num(ld.truePeak)} dBTP true peak${lv.clip ? ' · clipped' : ''} (click to reset)`;
   }
 
   dispose(): void {

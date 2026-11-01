@@ -4,10 +4,21 @@
 .fm-gd-grid { fill: none; stroke: var(--accent-color); stroke-width: 1; stroke-opacity: .38; }
 .fm-gd-grid.is-minor { stroke-opacity: .16; }
 .fm-gd-thirds { fill: none; stroke: #fff; stroke-width: 1; stroke-opacity: .55; stroke-dasharray: 4 4; }
-.fm-gd-safe { fill: none; stroke-width: 1.25; stroke-dasharray: 6 4; }
-.fm-gd-safe.is-title { stroke: #5ad1ff; stroke-opacity: .85; }
-.fm-gd-safe.is-action { stroke: #ffd24a; stroke-opacity: .85; }
-.fm-gd-safe.is-vertical { stroke: #ff6ad5; stroke-opacity: .85; }
+/* Safe areas: a 2 px dashed outline with a dark edge so it reads on white and on black, a dimmed margin outside it, and a name */
+.fm-gd-safe { fill: none; stroke-width: 2; stroke-dasharray: 8 5; filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 1px rgba(0, 0, 0, .9)); }
+.fm-gd-safe.is-title { stroke: #3cc8ff; }
+.fm-gd-safe.is-action { stroke: #ffd21f; }
+.fm-gd-safe.is-vertical { stroke: #ff5fd0; }
+.fm-gd-safe.is-square { stroke: #9dff6a; }
+.fm-gd-safe.is-portrait { stroke: #ff9a3c; }
+.fm-gd-name.is-square { fill: #9dff6a; }
+.fm-gd-name.is-portrait { fill: #ff9a3c; }
+.fm-gd-shade { fill: rgba(0, 0, 0, .3); fill-rule: evenodd; stroke: none; }
+.fm-gd-shade.is-vertical { fill: rgba(255, 95, 208, .12); }
+.fm-gd-name { font: 600 11px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: .02em; paint-order: stroke; stroke: rgba(0, 0, 0, .85); stroke-width: 3px; stroke-linejoin: round; }
+.fm-gd-name.is-title { fill: #3cc8ff; }
+.fm-gd-name.is-action { fill: #ffd21f; }
+.fm-gd-name.is-vertical { fill: #ff5fd0; }
 .fm-gd-vis { stroke: #19c2c9; stroke-width: 1; stroke-opacity: .95; }
 .fm-gd-hit { stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: col-resize; }
 .fm-gd-line[data-axis="y"] .fm-gd-hit { cursor: row-resize; }

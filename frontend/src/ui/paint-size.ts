@@ -21,7 +21,9 @@ export function sliderOf(engine: number): number {
 export function defaultSlider(b: Brush): number {
   const range = b.maxSize - b.minSize;
   if (range <= 0) return 1;
-  const want = Math.max(b.minSize * 1.2, Math.min(11, b.maxSize * 0.85));
+  let want = Math.max(b.minSize * 1.2, Math.min(14, b.maxSize * 0.85));
+  // a wash is laid broad: at a pen's size its rim, pool and bleed are a few pixels and read as a marker
+  if ((b.wetEdges ?? 0) > 0 || b.wet || (b.render && /glaze|blending/.test(b.render))) want = Math.max(want, Math.min(b.maxSize * 0.6, 64));
   return Math.round(sliderOf((want - b.minSize) / range) * 100) / 100;
 }
 

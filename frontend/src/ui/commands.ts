@@ -18,6 +18,8 @@ export interface Command {
   mutates?: boolean;
   /** Undo cannot reverse it: it overwrites or exports over a file, closes without saving, deletes several layers, prints or publishes. */
   risky?: boolean;
+  /** Keys that only count inside one mode (e.g. 'paint'): they never clash with the global keys. */
+  scope?: string;
 }
 
 export interface CommandParam { type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'; required?: boolean; enum?: ReadonlyArray<string | number>; min?: number; max?: number; description?: string }
@@ -70,6 +72,7 @@ export class Commands {
   onRun: ((cmd: Command, label: string) => void) | null = null;
   private readonly map = new Map<string, Command>();
   private readonly byKey = new Map<string, Command>();
+  private readonly byScope = new Map<string, Command>();
   private readonly defaults = new Map<string, string[]>();
 
   add(...cmds: Command[]): void {
@@ -79,6 +82,7 @@ export class Commands {
       this.map.set(cmd.id, cmd);
       this.defaults.set(cmd.id, [...(cmd.keys ?? [])]);
       for (const k of cmd.keys ?? []) {
+        if (cmd.scope) { this.byScope.set(`${cmd.scope}|${k}`, cmd); continue; }
         const had = this.byKey.get(k);
         if (had && had !== cmd) console.warn(`shortcut ${k} is the default of both ${had.id} and ${cmd.id}`);
         this.byKey.set(k, cmd);
@@ -95,6 +99,16 @@ export class Commands {
     const cmd = this.map.get(id);
     if (!cmd) return;
     keys = Array.from(new Set(keys.map(canonCombo)));
+    if (cmd.scope) {
+      for (const k of cmd.keys ?? []) if (this.byScope.get(`${cmd.scope}|${k}`) === cmd) this.byScope.delete(`${cmd.scope}|${k}`);
+      for (const k of keys) {
+        const had = this.byScope.get(`${cmd.scope}|${k}`);
+        if (had && had !== cmd) had.keys = (had.keys ?? []).filter((x) => x !== k);
+        this.byScope.set(`${cmd.scope}|${k}`, cmd);
+      }
+      cmd.keys = [...keys];
+      return;
+    }
     for (const k of cmd.keys ?? []) if (this.byKey.get(k) === cmd) this.byKey.delete(k);
     for (const k of keys) {
       const had = this.byKey.get(k);
@@ -106,6 +120,8 @@ export class Commands {
 
   /** The command that has `combo`, if any. */
   forCombo(combo: string): Command | undefined { return this.byKey.get(canonCombo(combo)); }
+  /** The command that has `combo` inside a mode's own keys. */
+  forScoped(scope: string, combo: string): Command | undefined { return this.byScope.get(`${scope}|${canonCombo(combo)}`); }
 
   /** A command's keys as defined, before any rebinding. */
   defaultKeys(id: string): string[] { return [...(this.defaults.get(id) ?? [])]; }
@@ -118,10 +134,10 @@ export class Commands {
   }
 
   /** Back to every command's defined keys. */
-  resetKeys(): void { this.byKey.clear(); for (const [id, cmd] of this.map) { cmd.keys = [...(this.defaults.get(id) ?? [])]; for (const k of cmd.keys) this.byKey.set(k, cmd); } }
+  resetKeys(): void { this.byKey.clear(); this.byScope.clear(); for (const [id, cmd] of this.map) { cmd.keys = [...(this.defaults.get(id) ?? [])]; for (const k of cmd.keys) { if (cmd.scope) this.byScope.set(`${cmd.scope}|${k}`, cmd); else this.byKey.set(k, cmd); } } }
 
   /** Takes a command away (1.52.6: a plugin turned off or removed). */
-  remove(id: string): void { const c = this.map.get(id); if (!c) return; this.map.delete(id); for (const k of c.keys ?? []) if (this.byKey.get(k) === c) this.byKey.delete(k); this.onChange?.(); }
+  remove(id: string): void { const c = this.map.get(id); if (!c) return; this.map.delete(id); for (const k of c.keys ?? []) { if (this.byKey.get(k) === c) this.byKey.delete(k); if (c.scope && this.byScope.get(`${c.scope}|${k}`) === c) this.byScope.delete(`${c.scope}|${k}`); } this.onChange?.(); }
 
   get(id: string): Command | undefined { return this.map.get(id); }
   all(): Command[] { return [...this.map.values()]; }

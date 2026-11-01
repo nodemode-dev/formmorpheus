@@ -2,6 +2,8 @@ import type { OnionSettings } from '../engine/types';
 import type { CursorMode, OutlineStyle, PenButton, ScalingMode } from '../paint/feel';
 import { loadPrefs, updatePrefs } from './prefs';
 import { ColourPanel } from './colour-panel';
+import { brushStore } from './brush-store';
+import '../styles/w16-panels.css';
 import { el, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 
 export interface PaintPrefs {
@@ -28,18 +30,22 @@ export interface PaintPrefs {
   keyframeEffects: boolean;
   /** Hide the Undo and Redo buttons on the sidebar (the gestures and keys still work). */
   hideUndoButtons: boolean;
+  /** Hide the Eyedropper and Fill buttons on the top bar (the keys I and G and the Alt hold still work). */
+  hideToolExtras?: boolean;
   /** Hold at the end of a stroke to snap it to a shape: for a pen only, for pen and mouse, or never. */
   quickShape: 'pen' | 'all' | 'off';
   /** Hold still after pressing to pick a color with the loupe: touch only, any pointer, or never. */
   holdPick: 'touch' | 'all' | 'off';
+  /** The person picked the hold-to-pick choice themselves; until then every older stored 'touch' follows the default. */
+  holdPickChosen?: boolean;
 }
 
 export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   cursor: true,
-  dynamicScaling: true,
+  dynamicScaling: false,
   cursorMode: 'both',
   outline: 'contrast',
-  scaling: 'screen',
+  scaling: 'off',
   motionFilter: false,
   expression: 0.5,
   penButton: 'cycle',
@@ -53,7 +59,7 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   keyframeEffects: false,
   hideUndoButtons: false,
   quickShape: 'pen',
-  holdPick: 'touch',
+  holdPick: 'all',
 };
 
 const KEY = 'formmorpheus.paint';
@@ -77,14 +83,16 @@ export function loadPaintPrefs(): PaintPrefs {
     const raw = localStorage.getItem(KEY);
     if (!raw) return out;
     const o = JSON.parse(raw) as Partial<PaintPrefs>;
-    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd', 'keyframeEffects', 'hideUndoButtons'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
+    for (const k of ['cursor', 'dynamicScaling', 'sidebarRight', 'fingerPaints', 'motionFilter', 'eraserEnd', 'keyframeEffects', 'hideUndoButtons', 'hideToolExtras'] as const) if (typeof o[k] === 'boolean') out[k] = o[k];
     // older files only had the two booleans: they decide the new choices
     out.cursorMode = o.cursorMode && ['hover', 'painting', 'both', 'off'].includes(o.cursorMode) ? o.cursorMode : out.cursor ? 'both' : 'off';
     out.scaling = o.scaling && ['off', 'canvas', 'screen'].includes(o.scaling) ? o.scaling : out.dynamicScaling ? 'screen' : 'off';
     if (o.outline && ['contrast', 'colour', 'brush'].includes(o.outline)) out.outline = o.outline;
     if (o.penButton && ['cycle', 'eyedropper', 'off'].includes(o.penButton)) out.penButton = o.penButton;
     if (o.quickShape && ['pen', 'all', 'off'].includes(o.quickShape)) out.quickShape = o.quickShape;
-    if (o.holdPick && ['touch', 'all', 'off'].includes(o.holdPick)) out.holdPick = o.holdPick;
+    // 'touch' saved by an older build was the default, not a choice: it follows the new default (pen and mouse too)
+    if (o.holdPick && ['touch', 'all', 'off'].includes(o.holdPick) && (o.holdPick !== 'touch' || o.holdPickChosen === true)) out.holdPick = o.holdPick;
+    if (o.holdPickChosen === true) out.holdPickChosen = true;
     out.cursor = out.cursorMode !== 'off';
     out.dynamicScaling = out.scaling !== 'off';
     for (const k of ['smoothing', 'maskVisibility', 'expression'] as const) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = clamp01(o[k]);
@@ -143,6 +151,7 @@ const ROW_ICONS = {
   photo: svg('<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5L20 16"/>'),
   crop: svg('<path d="M7 3v13a1 1 0 0 0 1 1h13"/><path d="M3 7h13a1 1 0 0 1 1 1v13"/>'),
   chevron: svg('<path d="M9 6l6 6-6 6"/>'),
+  folder: svg('<path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
 };
 
 const TOGGLE_TRACK = '<span class="cv-toggle-track"><span class="cv-toggle-knob"></span></span>';
@@ -244,6 +253,7 @@ export class PaintSettings {
   private readonly smooth: SliderRow;
   private readonly undoDelay: SliderRow;
   private readonly hideUndo: ToggleRow;
+  private readonly hideExtras: ToggleRow;
   private readonly curveRow: HTMLElement;
   private readonly curveWrap: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -251,6 +261,23 @@ export class PaintSettings {
   private curveOpen = false;
   private dragIdx = -1;
   private pts: [number, number][] = [];
+  private folderNote!: HTMLElement;
+  private moreFade: () => void = () => undefined;
+
+  private async showBrushFolder(): Promise<void> {
+    const dir = brushStore.folder();
+    const say = (s: string): void => { setText(this.folderNote, s); setHidden(this.folderNote, !s); };
+    if (!dir) { say('The brush folder is not available yet'); return; }
+    if ('__TAURI_INTERNALS__' in window) {
+      try {
+        const core = await import('@tauri-apps/api/core');
+        await core.invoke('reveal_folder', { path: dir });
+        say('');
+        return;
+      } catch { /* the shell refused the folder: the path is shown instead */ }
+    }
+    say(dir);
+  }
 
   private readonly down = (e: PointerEvent): void => {
     const t = e.target as Node | null;
@@ -353,7 +380,9 @@ export class PaintSettings {
     this.cursor = cur.seg;
     const out = seg('Cursor outline', ['High contrast', 'Color', 'Brush'], (i) => o.setPrefs({ outline: OUT[i] }));
     this.outline = out.seg;
-    const scl = seg('Dynamic brush scaling', ['Off', 'Canvas', 'Screen'], (i) => o.setPrefs({ scaling: SCL[i], dynamicScaling: SCL[i] !== 'off' }));
+    // 'off' keeps one size in canvas pixels; canvas and screen follow the picture's size or the zoom
+    const scl = seg('Dynamic brush scaling', ['Pixel', 'Canvas', 'Screen'], (i) => o.setPrefs({ scaling: SCL[i], dynamicScaling: SCL[i] !== 'off' }));
+    scl.row.title = 'Pixel: one size in canvas pixels. Canvas: relative to the canvas size. Screen: the same size on the screen at any zoom.';
     this.dyn = scl.seg;
     this.motion = toggleRow('Motion filtering', (v) => o.setPrefs({ motionFilter: v }));
     this.expr = sliderRow('Expression', 0, 1, 0.01, (v) => o.setPrefs({ expression: v }));
@@ -363,7 +392,8 @@ export class PaintSettings {
     const QS = ['pen', 'all', 'off'] as const, HP = ['touch', 'all', 'off'] as const;
     const qs = seg('QuickShape (hold to snap)', ['Pen', 'Pen and mouse', 'Off'], (i) => o.setPrefs({ quickShape: QS[i] }));
     this.quick = qs.seg;
-    const hp = seg('Hold to pick a color', ['Touch', 'All', 'Off'], (i) => o.setPrefs({ holdPick: HP[i] }));
+    const hp = seg('Hold to pick a color', ['Touch', 'All', 'Off'], (i) => o.setPrefs({ holdPick: HP[i], holdPickChosen: true }));
+    hp.row.title = 'Press and hold still on the picture to open the color loupe. Touch: fingers only. All: pen and mouse too.';
     this.holdPickSeg = hp.seg;
     this.finger = toggleRow('Paint with finger', (v) => o.setPrefs({ fingerPaints: v }));
     const sideRow = el('<div class="fm-ps-row fm-ps-sidebar"><span class="fm-ps-label">Size and opacity sidebar</span></div>');
@@ -372,6 +402,7 @@ export class PaintSettings {
     this.smooth = sliderRow('Stabilization', 0, 1, 0.01, (v) => o.setPrefs({ smoothing: v }));
     this.undoDelay = sliderRow('Rapid undo delay', 150, 1000, 10, (v) => o.setPrefs({ undoDelay: v }));
     this.hideUndo = toggleRow('Hide Undo and Redo buttons', (v) => o.setPrefs({ hideUndoButtons: v }));
+    this.hideExtras = toggleRow('Hide Eyedropper and Fill buttons', (v) => o.setPrefs({ hideToolExtras: v }));
     const pressure = actionRow('', 'Pressure', () => this.toggleCurve(), true);
     this.curveRow = pressure.el;
     q(this.curveRow, '.fm-ps-ico').remove();
@@ -388,7 +419,19 @@ export class PaintSettings {
     const SPD = ['precise', 'medium', 'fast'] as const;
     const spd = seg('Scrub speed', ['Precise', 'Medium', 'Fast'], (i) => { updatePrefs({ scrubSpeed: SPD[i] }); this.refresh(); });
     this.scrubSpeed = spd.seg;
-    pr.append(cur.row, out.row, scl.row, this.finger.el, this.eraser.el, pen.row, qs.row, hp.row, sideRow, this.smooth.el, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, spd.row, this.curveRow, this.curveWrap);
+    // Brush folder (desktop: opens it in the file browser; the browser build shows where it is)
+    const folder = actionRow(ROW_ICONS.folder, 'Brush folder', () => this.showBrushFolder(), true);
+    this.folderNote = el('<div class="fm-ps-folder-note" hidden></div>');
+    const sect = (text: string): HTMLElement => { const h = el('<div class="fm-ps-sect"></div>'); setText(h, text); return h; };
+    // the reference's order first (cursor, outline, Pressure, smoothing, scaling, sidebar, finger, scrub speed),
+    // then the desktop pen and input rows under their own headings
+    pr.append(cur.row, out.row, this.curveRow, this.curveWrap, this.smooth.el, scl.row, sideRow, this.finger.el, spd.row,
+      sect('Pen and input'), this.eraser.el, pen.row, qs.row, hp.row, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, this.hideExtras.el,
+      sect('Files'), folder.el, this.folderNote);
+    // the panel has no scrollbar (a house rule): a fade at the foot says there is more below
+    const more = (): void => { const p = this.panes.get('prefs'); if (p) setClass(p, 'is-more', p.scrollTop + p.clientHeight < p.scrollHeight - 6); };
+    this.panes.get('prefs')?.addEventListener('scroll', more, { passive: true });
+    this.moreFade = more;
 
     this.showTab(this.tab, true);
   }
@@ -414,6 +457,7 @@ export class PaintSettings {
       document.addEventListener('keydown', this.key, true);
     }
     this.drawCurve();
+    this.moreFade();
   }
 
   close(): void {
@@ -448,6 +492,7 @@ export class PaintSettings {
     this.smooth.set(p.smoothing, pct(p.smoothing));
     this.undoDelay.set(p.undoDelay, `${Math.round(p.undoDelay)} ms`);
     this.hideUndo.set(p.hideUndoButtons);
+    this.hideExtras.set(!!p.hideToolExtras);
     if (this.dragIdx < 0) this.pts = p.pressure.map((pt) => [pt[0], pt[1]] as [number, number]);
     setClass(this.curveRow, 'is-open', this.curveOpen);
     setHidden(this.curveWrap, !this.curveOpen);
@@ -485,6 +530,7 @@ export class PaintSettings {
     }
     for (const [k, p] of this.panes) setHidden(p, k !== t);
     if (!quiet) this.refresh();
+    this.moreFade();
   }
 
   private toggleCurve(): void {
@@ -492,6 +538,7 @@ export class PaintSettings {
     setClass(this.curveRow, 'is-open', this.curveOpen);
     setHidden(this.curveWrap, !this.curveOpen);
     this.drawCurve();
+    this.moreFade();
   }
 
   private commitCurve(): void {

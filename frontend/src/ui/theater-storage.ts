@@ -2,6 +2,7 @@ import '../styles/rw-extras.css';
 import { api, capabilities, downloadBlob } from '../io/api';
 import { LibraryFolderDialog } from './library-folder';
 import { t } from './i18n';
+import { tf } from './i18n-fill';
 import { toast } from './toast';
 
 /** Storage choices of the Theater: the side panel button that opens the library folder choice (its tooltip shows the
@@ -27,25 +28,59 @@ export function mountStorageButton(btn: HTMLElement): void {
   void tip();
 }
 
+/** The second storage entry of the side panel (G08): named for the cloud folder, "Cloud folder" while none is set; a click opens the Library Folder window where it is chosen. */
+export function mountCloudButton(btn: HTMLElement): void {
+  const paint = async (): Promise<void> => {
+    const to = await cloudTarget();
+    const name = to ? to.name : t('Cloud folder');
+    const span = btn.lastElementChild;
+    if (span && span.textContent !== name) span.textContent = name;
+    btn.title = to ? `${t('Cloud folder')}: ${to.dir}` : t('Cloud folder: not set');
+  };
+  btn.addEventListener('click', () => { dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void paint(); }); });
+  document.addEventListener('fm:cloud-folder', () => { void paint(); });
+  document.addEventListener('fm:library-changed', () => { void paint(); });
+  void paint();
+}
+
 interface Locations { dir: string; default: string; source: string; icloud: string | null }
 
 /** The library's current folder and the iCloud Drive folder when this computer has one (null when the engine is away). */
 export async function locations(): Promise<Locations | null> {
-  try { const r = await fetch('/api/system/library'); return r.ok ? ((await r.json()) as Locations) : null; } catch { return null; }
+  // a few seconds of memory: Select mode asks on every tick of the selection
+  if (seen && Date.now() - seen.at < 4000) return seen.info;
+  try { const r = await fetch('/api/system/library'); const info = r.ok ? ((await r.json()) as Locations) : null; seen = { at: Date.now(), info }; return info; } catch { return null; }
+}
+let seen: { at: number; info: Locations | null } | null = null;
+document.addEventListener('fm:library-changed', () => { seen = null; });
+
+const CLOUD_KEY = 'formmorpheus.cloudFolder';
+
+/** The second storage (G08): a folder the person's sync service keeps (any folder they pick); empty when none. */
+export function cloudFolder(): string {
+  try { return localStorage.getItem(CLOUD_KEY) ?? ''; } catch { return ''; }
 }
 
-/** True when this computer has an iCloud Drive folder the movies can be copied to. */
-export async function hasIcloud(): Promise<boolean> {
-  return !!(await locations())?.icloud;
+export function setCloudFolder(dir: string): void {
+  try { if (dir) localStorage.setItem(CLOUD_KEY, dir); else localStorage.removeItem(CLOUD_KEY); } catch { /* this session only */ }
+  document.dispatchEvent(new CustomEvent('fm:cloud-folder'));
 }
 
-/** Copy to iCloud Drive: the movies' files go to the iCloud Drive folder; never overwrites. */
-export async function copyMoviesToIcloud(names: string[]): Promise<void> {
-  const dir = (await locations())?.icloud;
-  if (!dir) { toast(t('iCloud Drive was not found on this computer.'), 'error'); return; }
+/** Where "Copy to Cloud" sends movies: the chosen cloud folder, else this computer's iCloud Drive folder; null when neither exists. */
+export async function cloudTarget(): Promise<{ dir: string; name: string } | null> {
+  const own = cloudFolder();
+  if (own) return { dir: own, name: own.split(/[\\/]/).filter(Boolean).pop() ?? t('Cloud folder') };
+  const icloud = (await locations())?.icloud;
+  return icloud ? { dir: icloud, name: t('iCloud Drive') } : null;
+}
+
+/** Copy to Cloud: the movies' files go to the cloud folder; never overwrites (the engine numbers a taken name). */
+export async function copyMoviesToCloud(names: string[]): Promise<void> {
+  const to = await cloudTarget();
+  if (!to) { toast(t('No cloud folder is set. Choose one in the Library Folder window.'), 'error'); return; }
   try {
-    for (const n of names) await api.copyMovieTo(n, dir);
-    toast(names.length === 1 ? `${t('Copied to')} ${dir}.` : `${names.length} ${t('movies copied')} ${dir}.`);
+    for (const n of names) await api.copyMovieTo(n, to.dir);
+    toast(tf(names.length === 1 ? 'Copied to {dir}.' : '{n} movies copied to {dir}.', { n: names.length, dir: to.dir }));
   } catch (err) { toast((err as Error).message, 'error'); }
 }
 

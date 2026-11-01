@@ -80,7 +80,11 @@ export class Popover {
     if (!this.open) return;
     this.open = false;
     this.closeSubs();
-    this.el.hidden = true;
+    // a short exit (90 ms): the card is already out of the way of input (pointer-events none) while it fades
+    if (!this.el.hidden && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.el.classList.add('is-closing');
+      this.closeT = window.setTimeout(() => this.finishClose(), 90);
+    } else this.el.hidden = true;
     this.anchor = null;
     document.removeEventListener('pointerdown', this.down, true);
     document.removeEventListener('keydown', this.key, true);
@@ -126,7 +130,23 @@ export class Popover {
     for (const [p, r] of this.subs) { p.hidden = true; setClass(r, 'is-open', false); }
   }
 
+  private closeT = 0;
+
+  private finishClose(): void {
+    this.closeT = 0;
+    if (this.open) return;
+    this.el.classList.remove('is-closing');
+    this.el.hidden = true;
+  }
+
   private reveal(): void {
+    if (this.closeT) {
+      // shown again while the exit runs: carry on from the card as it stands, with no second entry animation
+      window.clearTimeout(this.closeT);
+      this.closeT = 0;
+      this.el.classList.remove('is-closing');
+      this.el.classList.add('is-still');
+    } else if (this.el.hidden) this.el.classList.remove('is-still');
     this.el.hidden = false;
     if (this.open) return;
     this.open = true;

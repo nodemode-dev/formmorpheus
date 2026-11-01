@@ -67,7 +67,8 @@ export class ColourDrop {
   private show(live: boolean): void {
     clearTimeout(this.hideTimer);
     const continuing = this.again !== null;
-    setText(this.valEl, live ? t('Threshold {p}%').replace('{p}', String(shownPercent(this.threshold))) : '');
+    // while the fill stands, the toast says so next to the tick that ends it
+    setText(this.valEl, live ? t('Threshold {p}%').replace('{p}', String(shownPercent(this.threshold))) : continuing ? t('Continue filling') : '');
     this.lineEl.parentElement?.classList.toggle('is-off', !live);
     this.bubble.style.setProperty('--v', String(Math.min(1, this.threshold / MAX_T)));
     setHidden(this.pillEl, live || continuing || !this.offered);
@@ -88,7 +89,8 @@ export class ColourDrop {
     const p = this.host.toCanvas(clientX, clientY);
     if (p.x < 0 || p.y < 0 || p.x >= doc.width || p.y >= doc.height) return false;
     const layer = doc.activeLayer();
-    if (!layer.visible) return false;
+    // a group row holds no pixels of its own: the fill waits for a layer (the host says so)
+    if (!layer.visible || layer.group) return false;
     const r = this.host.root.getBoundingClientRect();
     this.origin = { left: r.left, top: r.top };
     this.live = { patch: null, layer: layer.id, x: Math.floor(p.x), y: Math.floor(p.y), color, x0: clientX, t0: this.threshold };

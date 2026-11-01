@@ -29,7 +29,7 @@ export function drawBubble(cv: HTMLCanvasElement, s: BubbleSpec): void {
   const b = s.brush;
   const screenDia = baseDiameter(b, s.size, s.canvasLong) * Math.min(1, s.viewScale * 2);
   // the preview is drawn at 2x, so the stroke is twice its screen diameter, kept inside the picture
-  const target = Math.min(BUBBLE_H * 0.62, Math.max(3, screenDia * 2));
+  const target = Math.min(BUBBLE_H * 0.62, Math.max(7, screenDia * 3));
   const range = b.maxSize - b.minSize;
   const size = range > 0 ? Math.min(1, Math.max(0, (target - b.minSize) / range)) : 1;
   try {
@@ -49,7 +49,8 @@ export function drawBubble(cv: HTMLCanvasElement, s: BubbleSpec): void {
       const t = i / n;
       const x = padX + (BUBBLE_W - padX * 2) * t;
       const y = BUBBLE_H / 2 + Math.sin(t * Math.PI * 2) * BUBBLE_H * 0.2;
-      const pressure = 0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, t * 1.1)) ** 0.6;
+      // a firm pressure the whole way so a light-touch pencil still reads as a clear mark
+      const pressure = 0.7 + 0.3 * Math.sin(Math.PI * Math.min(1, t * 1.1)) ** 0.6;
       const p: PenSample = { x, y, pressure, tiltX: 0, tiltY: 0, twist: 0, time: i * 8, kind: 'pen' };
       st.add(p);
     }

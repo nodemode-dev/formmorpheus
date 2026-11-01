@@ -1,5 +1,7 @@
 /* Text card: the glass card for Text content (popover shell comes from .fm-pop). */
 .fm-tc { max-height: calc(100vh - var(--cv-status-h, 28px) - 16px); overflow-y: auto; }
+.fm-tc-grab { cursor: grab; touch-action: none; }
+.fm-tc-grab:active { cursor: grabbing; }
 /* Both panes share one grid cell so the card keeps one height on either tab. */
 .fm-tc-panes { display: grid; }
 .fm-tc-panes > .fm-tc-pane { grid-area: 1 / 1; align-content: start; }

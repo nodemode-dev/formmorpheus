@@ -2,11 +2,14 @@ import '../styles/pen-link.css';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { t } from './i18n';
+import { drawQr } from './qr';
 
 /** What Pen Link needs of Draw & Paint. */
 export interface PenLinkPaint {
   penLinkState(): { open: boolean; erase: boolean; size: number; opacity: number };
   penLinkApply(p: { erase?: boolean; size?: number; opacity?: number; history?: 'undo' | 'redo' }): void;
+  /** The drawing's own area inside the view, in the view's CSS pixels and clipped to it; null when it cannot say (the whole view is used). */
+  penLinkFrame?(): { x: number; y: number; w: number; h: number } | null;
 }
 
 interface Status { on: boolean; port: number; urls: string[]; code: string; codeSeconds: number; locked: boolean; paired: boolean; connected: boolean; device: string }
@@ -23,6 +26,9 @@ export class PenLink extends Dialog {
   private readonly codeEl: HTMLElement;
   private readonly codeNote: HTMLElement;
   private readonly urlEl: HTMLElement;
+  private readonly qrEl: HTMLCanvasElement;
+  private qrFor = '';
+  private qrOk = false;
   private readonly statusEl: HTMLElement;
   private readonly newCode: HTMLButtonElement;
   private readonly forget: HTMLButtonElement;
@@ -61,6 +67,7 @@ export class PenLink extends Dialog {
       <div class="fm-pl-on-box" hidden>
         <div class="fm-pl-code" aria-live="polite"></div>
         <div class="fm-pl-note"></div>
+        <canvas class="fm-pl-qr" width="168" height="168" role="img"></canvas>
         <div class="fm-pl-url"></div>
         <div class="fm-pl-status"></div>
         <div class="fm-pl-row"><button class="cv-btn fm-pl-new" type="button"></button><button class="cv-btn fm-pl-forget" type="button"></button></div>
@@ -75,6 +82,8 @@ export class PenLink extends Dialog {
     this.codeEl = q(root, '.fm-pl-code');
     this.codeNote = q(root, '.fm-pl-note');
     this.urlEl = q(root, '.fm-pl-url');
+    this.qrEl = q<HTMLCanvasElement>(root, '.fm-pl-qr');
+    this.qrEl.setAttribute('aria-label', t('QR code of the address'));
     this.statusEl = q(root, '.fm-pl-status');
     this.newCode = q<HTMLButtonElement>(root, '.fm-pl-new');
     this.forget = q<HTMLButtonElement>(root, '.fm-pl-forget');
@@ -140,6 +149,11 @@ export class PenLink extends Dialog {
     setClass(this.codeEl, 'fm-pl-dim', !code);
     setText(this.codeNote, s.paired ? t('Paired. The code is used up.') : code ? t('Code expires in {n} s').replace('{n}', String(left)) : s.locked ? t('Too many wrong tries. Ask for a new code.') : t('The code expired. Ask for a new one.'));
     setText(this.urlEl, s.urls.join('\n'));
+    // the first address as a code to scan; redrawn only when the address changes
+    const first = s.on && !s.paired ? s.urls[0] ?? '' : '';
+    if (first && first !== this.qrFor) { this.qrFor = first; this.qrOk = drawQr(this.qrEl, first, 168); }
+    // invisible, not removed: the dialog keeps its height, so Close does not move when the tablet pairs
+    setClass(this.qrEl, 'fm-pl-qr-off', !first || !this.qrOk);
     setText(this.statusEl, !s.on ? '' : s.connected ? `${t('Paired')}: ${s.device || t('Tablet')} · ${this.latency ? `${this.latency} ms` : '...'}` : s.paired ? t('Paired tablet is reconnecting') : t('Waiting for the tablet'));
     setClass(this.statusEl, 'fm-pl-live', s.connected);
     setText(this.newCode, s.paired ? t('Pair another tablet') : t('New code'));
@@ -208,6 +222,15 @@ export class PenLink extends Dialog {
   }
   private readonly guarded = new WeakSet<HTMLCanvasElement>();
 
+  /** The part of the paint view the tablet shows: the drawing itself, not the grey around it. `css` is relative to the
+   *  view; the rest is the same rectangle on the page. */
+  private frame(c: HTMLCanvasElement): { left: number; top: number; width: number; height: number; css: { x: number; y: number; w: number; h: number } } {
+    const r = c.getBoundingClientRect();
+    const f = this.paint.penLinkFrame?.() ?? null;
+    const css = f && f.w >= 8 && f.h >= 8 ? f : { x: 0, y: 0, w: r.width, h: r.height };
+    return { left: r.left + css.x, top: r.top + css.y, width: css.w, height: css.h, css };
+  }
+
   private fire(c: HTMLCanvasElement, type: string, x: number, y: number, o: { pressure: number; tiltX: number; tiltY: number; twist: number; buttons: number; button: number; alt: number; az: number }): void {
     const init: PointerEventInit & Record<string, unknown> = {
       pointerId: POINTER, pointerType: 'pen', isPrimary: true, width: 1, height: 1, clientX: x, clientY: y, screenX: x, screenY: y,
@@ -225,7 +248,7 @@ export class PenLink extends Dialog {
     if (!c) return;
     this.activeAt = performance.now();
     const n = Math.min(v.getUint8(1), Math.floor((v.byteLength - 4) / 20));
-    const r = c.getBoundingClientRect();
+    const r = this.frame(c);
     for (let i = 0; i < n; i++) {
       const o = 4 + i * 20;
       const x = r.left + v.getFloat32(o + 2, true) * r.width, y = r.top + v.getFloat32(o + 6, true) * r.height;
@@ -264,13 +287,17 @@ export class PenLink extends Dialog {
   // ---------------------------------------------------------------- the mirror and the tablet's toolbar
   private pushState(force = false): void {
     const c = this.canvas();
-    if (!c) return;
-    const r = c.getBoundingClientRect();
+    if (!c) {
+      // Draw & Paint is not open: the tablet shows its own message instead of a blank pad
+      if (this.lastKey !== 'closed' || force) { this.lastKey = 'closed'; this.send({ t: 'state', open: false }); }
+      return;
+    }
+    const r = this.frame(c);
     const s = this.paint.penLinkState();
     const key = `${Math.round(r.width)}x${Math.round(r.height)}:${s.erase}:${s.size.toFixed(3)}:${s.opacity.toFixed(3)}`;
     if (!force && key === this.lastKey) return;
     this.lastKey = key;
-    this.send({ t: 'state', w: Math.round(r.width), h: Math.round(r.height), erase: s.erase, size: s.size, opacity: s.opacity });
+    this.send({ t: 'state', open: true, w: Math.round(r.width), h: Math.round(r.height), erase: s.erase, size: s.size, opacity: s.opacity });
   }
 
   private mirror(): void {
@@ -282,13 +309,16 @@ export class PenLink extends Dialog {
     if (this.pending && now - this.sentAt < 1500) return;   // ack backpressure: one frame in flight
     const gap = Math.min(200, Math.max(70, this.ackMs * 1.5));
     if (now - this.lastSend < gap) return;
-    // fit the tablet's pixels, never above the canvas's own
-    const k = Math.min(1, this.view.w / c.width, this.view.h / c.height);
-    const w = Math.max(16, Math.round(c.width * k)), h = Math.max(16, Math.round(c.height * k));
+    // only the drawing's area of the view, fitted to the tablet's pixels and never above the canvas's own
+    const fr = this.frame(c).css, bx = c.width / Math.max(1, c.getBoundingClientRect().width);
+    const cx = Math.max(0, Math.round(fr.x * bx)), cy = Math.max(0, Math.round(fr.y * bx));
+    const sw = Math.max(1, Math.min(c.width - cx, Math.round(fr.w * bx))), sh = Math.max(1, Math.min(c.height - cy, Math.round(fr.h * bx)));
+    const k = Math.min(1, this.view.w / sw, this.view.h / sh);
+    const w = Math.max(16, Math.round(sw * k)), h = Math.max(16, Math.round(sh * k));
     if (!this.out) this.out = new OffscreenCanvas(w, h);
     if (this.out.width !== w || this.out.height !== h) { this.out.width = w; this.out.height = h; this.lastSig = ''; }
     const x = this.out.getContext('2d') as OffscreenCanvasRenderingContext2D;
-    x.drawImage(c, 0, 0, w, h);
+    x.drawImage(c, cx, cy, sw, sh, 0, 0, w, h);
     // a cheap look at the picture: unchanged for a while means nothing to send, but a frame a second keeps it fresh
     const sx = this.sig.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
     sx.drawImage(this.out, 0, 0, 24, 24);

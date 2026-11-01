@@ -4,6 +4,7 @@ import type { Engine } from '../engine/engine';
 import type { AudioEngine } from '../media/audio';
 import { AUDIO_FORMATS, exportAudio, type AudioFormat } from '../export/audio-export';
 import { downloadBlob } from '../io/api';
+import { jobCapabilities } from '../export/engine-jobs';
 import { LUFS_PRESETS } from '../media/loudness';
 import { Dialog } from './dialogs';
 import { el, q, setDisabled, setHidden, setText } from './dom';
@@ -12,13 +13,14 @@ import { toast } from './toast';
 
 const KEY = 'formmorpheus.audioExport';
 
-interface Saved { format: AudioFormat; stems: boolean; rate: number; lufs: number }
+interface Saved { format: AudioFormat; stems: boolean; rate: number; lufs: number; kbps: number }
+const MP3_RATES = [96, 128, 160, 192, 256, 320];
 
 function load(): Saved {
   try {
     const r = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Saved>;
-    return { format: AUDIO_FORMATS.some((f) => f.id === r.format) ? (r.format as AudioFormat) : 'wav16', stems: r.stems === true, rate: r.rate === 44100 ? 44100 : 48000, lufs: (LUFS_PRESETS as readonly number[]).includes(r.lufs ?? 0) ? (r.lufs as number) : 0 };
-  } catch { return { format: 'wav16', stems: false, rate: 48000, lufs: 0 }; }
+    return { format: AUDIO_FORMATS.some((f) => f.id === r.format) ? (r.format as AudioFormat) : 'wav16', stems: r.stems === true, rate: r.rate === 44100 ? 44100 : 48000, lufs: (LUFS_PRESETS as readonly number[]).includes(r.lufs ?? 0) ? (r.lufs as number) : 0, kbps: MP3_RATES.includes(r.kbps ?? 0) ? (r.kbps as number) : 192 };
+  } catch { return { format: 'wav16', stems: false, rate: 48000, lufs: 0, kbps: 192 }; }
 }
 
 export interface AudioExportDeps {
@@ -34,6 +36,10 @@ export class AudioExportDialog {
   private readonly scope = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Files"><option value="mix">${t('One mixed file')}</option><option value="stems">${t('One file per track (stems)')}</option></select>`);
   private readonly rate = el<HTMLSelectElement>('<select class="cv-input" aria-label="Sample rate"><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option></select>');
   private readonly loud = el<HTMLSelectElement>(`<select class="cv-input" aria-label="${t('Loudness')}"><option value="0">${t('Off')}</option>${LUFS_PRESETS.map((v) => `<option value="${v}">${v} LUFS</option>`).join('')}</select>`);
+  private readonly kbps = el<HTMLSelectElement>(`<select class="cv-input" aria-label="${t('MP3 bitrate')}">${MP3_RATES.map((v) => `<option value="${v}">${v} kbps</option>`).join('')}</select>`);
+  private readonly kbpsRow: HTMLElement;
+  private readonly mp3Note = el<HTMLElement>('<div class="fm-ex-notes is-warn" hidden></div>');
+  private mp3Ok: boolean | null = null;
   private readonly note = el<HTMLElement>('<div class="fm-ex-notes" hidden></div>');
   private readonly bar = el<HTMLElement>('<div class="cv-run-bar" hidden><i></i></div>');
   private readonly rateRow: HTMLElement;
@@ -49,9 +55,11 @@ export class AudioExportDialog {
     };
     const form = el<HTMLElement>('<div class="fm-ex-form"></div>');
     this.rateRow = row('Sample rate', this.rate);
-    form.append(row('Format', this.format), row('Files', this.scope), this.rateRow, row('Normalize loudness', this.loud));
+    this.kbpsRow = row('MP3 bitrate', this.kbps);
+    form.append(row('Format', this.format), row('Files', this.scope), this.rateRow, this.kbpsRow, row('Normalize loudness', this.loud));
     this.loud.value = String(this.state.lufs);
-    this.dlg.body.append(form, this.bar, this.note);
+    this.kbps.value = String(this.state.kbps);
+    this.dlg.body.append(form, this.mp3Note, this.bar, this.note);
     this.format.value = this.state.format;
     this.scope.value = this.state.stems ? 'stems' : 'mix';
     this.rate.value = String(this.state.rate);
@@ -60,10 +68,13 @@ export class AudioExportDialog {
       this.state.stems = this.scope.value === 'stems';
       this.state.rate = Number(this.rate.value);
       this.state.lufs = Number(this.loud.value);
+      this.state.kbps = Number(this.kbps.value);
       setHidden(this.rateRow, !this.state.format.startsWith('wav'));
+      setHidden(this.kbpsRow, this.state.format !== 'mp3');
+      this.paintMp3();
       try { localStorage.setItem(KEY, JSON.stringify(this.state)); } catch { /* not kept */ }
     };
-    for (const c of [this.format, this.scope, this.rate, this.loud]) c.addEventListener('change', change);
+    for (const c of [this.format, this.scope, this.rate, this.loud, this.kbps]) c.addEventListener('change', change);
     change();
     this.dlg.button('Close', 'ghost', () => this.dlg.close());
     this.go = this.dlg.button('Export', 'primary', () => { void this.run(); });
@@ -72,6 +83,19 @@ export class AudioExportDialog {
   open(): void {
     if (!this.deps.engine.movie) { toast('Open or create a movie first.'); return; }
     this.dlg.open(this.format);
+    // the engine's ffmpeg decides whether MP3 can be made; asked each time the dialog opens
+    void jobCapabilities().then((c) => { this.mp3Ok = c?.ffmpeg === true && c.mp3 === true; this.paintMp3(); });
+  }
+
+  /** Tells, in the dialog, that MP3 goes through the engine's ffmpeg, and when that is missing. */
+  private paintMp3(): void {
+    const on = this.state.format === 'mp3';
+    setHidden(this.mp3Note, !on);
+    if (!on) return;
+    setText(this.mp3Note, this.mp3Ok === false
+      ? t('MP3 needs ffmpeg with the libmp3lame encoder, and this engine has none. Pick WAV, AAC or Opus, or install ffmpeg and reopen this dialog.')
+      : t('The browser cannot encode MP3, so the engine\'s own ffmpeg encodes it from your mix.'));
+    if (this.go) setDisabled(this.go, this.busy || this.mp3Ok === false);
   }
 
   private say(lines: string[], kind: 'ok' | 'warn' | 'error'): void {
@@ -90,7 +114,7 @@ export class AudioExportDialog {
     setHidden(this.bar, false);
     this.say([], 'ok');
     try {
-      const res = await exportAudio(audio, m, { format: this.state.format, from: 0, to: Math.max(1, m.duration), stems: this.state.stems, sampleRate: this.state.rate, ...(this.state.lufs ? { lufs: this.state.lufs } : {}) }, (d, n) => {
+      const res = await exportAudio(audio, m, { format: this.state.format, from: 0, to: Math.max(1, m.duration), stems: this.state.stems, sampleRate: this.state.rate, mp3Kbps: this.state.kbps, ...(this.state.lufs ? { lufs: this.state.lufs } : {}) }, (d, n) => {
         q<HTMLElement>(this.bar, 'i').style.transform = `scaleX(${n > 0 ? d / n : 0})`;
       });
       downloadBlob(res.blob, res.name);
@@ -104,6 +128,7 @@ export class AudioExportDialog {
     } finally {
       this.busy = false;
       setDisabled(this.go, false);
+      this.paintMp3();
       setHidden(this.bar, true);
     }
   }

@@ -1,0 +1,34 @@
+/* The numeric field at a key in an expanded lane row, the group-drag ghosts' tooltip, and the dense key band's count. */
+.fm-keyfield {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-context);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  box-shadow: inset 0 0 0 1px var(--accent-color), var(--shadow-menu, 0 6px 18px rgba(0, 0, 0, 0.35));
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+}
+.fm-keyfield[hidden] { display: none; }
+.fm-keyfield-l { color: var(--text-secondary); white-space: nowrap; }
+.fm-keyfield-i {
+  width: 64px;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-field);
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+}
+.fm-keyfield-i:focus { box-shadow: 0 0 0 1px var(--accent-color); }
+.fm-keyfield-u { min-width: 10px; color: var(--text-secondary); }

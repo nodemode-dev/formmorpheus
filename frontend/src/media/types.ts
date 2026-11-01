@@ -33,6 +33,8 @@ export interface VideoSource {
   prefetch(assetId: string, seconds: number, ahead: number, lane?: string): void;
   /** Drops a lane that is no longer needed (a prefetch for the start of a looping movie). */
   release?(assetId: string, lane: string): void;
+  /** While held (an export), editing proxies are set aside and the original files are read. */
+  holdOriginals?(on: boolean): void;
 }
 
 /** One sounding block for the audio engine: where it plays in the movie and which asset seconds it reads. */

@@ -209,7 +209,7 @@ export function drawBrushCursor(ctx: CanvasRenderingContext2D, s: CursorShape): 
     const t = tiltShape(b, s.tiltX, s.tiltY);
     const rn = Math.min(1, Math.max(0.12, b.roundness * t.roundnessMul));
     const ang = t.angle ?? (s.roll ? (s.roll * Math.PI) / 180 : baseAngle(b));
-    const sp = s.r > 2 ? tipSprite(b, 2 * s.r * t.sizeMul, rn, ang, s.colour, s.fill !== false) : null;
+    const sp = s.r > 2 ? tipSprite(b, 2 * s.r * t.sizeMul, rn, ang, s.colour, s.fill !== false && !s.stroking) : null;
     if (sp) {
       ctx.save();
       ctx.drawImage(sp.cv, s.x - sp.w / 2, s.y - sp.w / 2, sp.w, sp.w);
@@ -246,6 +246,10 @@ export function drawBrushCursor(ctx: CanvasRenderingContext2D, s: CursorShape): 
   ctx.lineJoin = 'round';
   const light = luma(s.colour) > 0.55;
   path();
+  if (s.fill !== false && !s.stroking) {
+    ctx.fillStyle = `rgba(${s.colour.r}, ${s.colour.g}, ${s.colour.b}, 0.17)`;
+    ctx.fill();
+  }
   if (s.style === 'colour') {
     ctx.strokeStyle = light ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.85)';
     ctx.lineWidth = 3.4;

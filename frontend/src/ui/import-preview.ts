@@ -53,8 +53,26 @@ class SoundPreview extends Dialog {
 let dialog: SoundPreview | null = null;
 
 /** Opens the preview for one sound; true when the person chose to import it. Without a window dialog layer it just says yes. */
-export function previewSound(file: File): Promise<boolean> {
-  if (!document.getElementById('overlay-root')) return Promise.resolve(true);
+export async function previewSound(file: File, always = false): Promise<boolean> {
+  if (!document.getElementById('overlay-root')) return true;
+  // the one rule (FT-GAP-20): a sound under a minute imports straight away unless "Preview sounds before import" is on
+  if (!always && (await soundSeconds(file)) < SHORT_SOUND) return true;
   dialog ??= new SoundPreview();
   return dialog.ask(file);
+}
+
+const SHORT_SOUND = 60;
+
+/** Length of a sound from its metadata; Infinity when the browser cannot tell within a moment (the dialog then opens). */
+function soundSeconds(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const a = new Audio();
+    const url = URL.createObjectURL(file);
+    const end = (s: number): void => { clearTimeout(timer); a.removeAttribute('src'); a.load(); URL.revokeObjectURL(url); resolve(s); };
+    const timer = setTimeout(() => end(Infinity), 1500);
+    a.preload = 'metadata';
+    a.addEventListener('loadedmetadata', () => end(Number.isFinite(a.duration) ? a.duration : Infinity));
+    a.addEventListener('error', () => end(Infinity));
+    a.src = url;
+  });
 }

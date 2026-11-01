@@ -29,6 +29,8 @@ export interface HeadsGeo {
   laneAt(y: number): number;
   /** Called when the column's width changes, so the Timeline can move its frame zero. */
   layout(): void;
+  /** Right-click on a header: the track's menu. */
+  menu?(x: number, y: number, id: string): void;
 }
 
 interface Row {
@@ -90,6 +92,7 @@ export class TrackHeads {
     row.mute.addEventListener('click', () => { const x = track(); if (x) this.engine.run(x.mute ? 'Unmute Track' : 'Mute Track', (mv) => setMute(mv, id, !x.mute)); });
     row.solo.addEventListener('click', () => { const x = track(); if (x) this.engine.run(x.solo ? 'Unsolo Track' : 'Solo Track', (mv) => setSolo(mv, id, !x.solo)); });
     row.name.addEventListener('click', () => this.engine.select([], id));
+    node.addEventListener('contextmenu', (e) => { e.preventDefault(); this.geo.menu?.(e.clientX, e.clientY, id); });
     row.name.addEventListener('dblclick', () => this.rename(row, id));
     const commit = (): void => {
       if (row.input.hidden) return;
@@ -173,8 +176,12 @@ export class TrackHeads {
       setClass(row.lock, 'is-on', !!t.locked);
       row.lock.innerHTML === (t.locked ? LOCK : UNLOCK) || (row.lock.innerHTML = t.locked ? LOCK : UNLOCK);
       setTitle(row.lock, t.locked ? 'Unlock track' : 'Lock track');
-      setHidden(row.mute, !sound);
-      setHidden(row.solo, !sound);
+      // a track with a mute or solo set always shows it, so the state is never invisible
+      setHidden(row.mute, !sound && !t.mute);
+      setHidden(row.solo, !sound && !t.solo);
+      setClass(row.el, 'is-muted', !!t.mute);
+      setClass(row.el, 'is-solo', !!t.solo);
+      setClass(row.el, 'is-quiet', anySolo && !t.solo && sound);
       setClass(row.mute, 'is-on', !!t.mute);
       row.mute.innerHTML === (t.mute ? SPEAKER_OFF : SPEAKER) || (row.mute.innerHTML = t.mute ? SPEAKER_OFF : SPEAKER);
       setTitle(row.mute, t.mute ? 'Unmute track' : 'Mute track');

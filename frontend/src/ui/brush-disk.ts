@@ -411,8 +411,16 @@ export class BrushDisk {
       const bytes = await packBrush(id, w.meta);
       if (!bytes) continue;
       const d = dirOf(setId);
-      await call('PUT', `/file${q({ lib: d.lib, set: d.set, file: name, ...(have ? { replace: '1' } : {}) })}`, undefined, bytes);
-      snap.files.set(id, { set: setId, file: name, sig });
+      // a new file whose name the folder already holds (an earlier save still landing, or a file made elsewhere): the next free numbered name, never an overwrite
+      let written = name;
+      for (let n = 2; ; n++) {
+        try { await call('PUT', `/file${q({ lib: d.lib, set: d.set, file: written, ...(have ? { replace: '1' } : {}) })}`, undefined, bytes); break; }
+        catch (err) {
+          if (have || !(err instanceof ApiError) || !/already there/.test(err.message) || n > 50) throw err;
+          written = `${name.endsWith(EXT) ? name.slice(0, -EXT.length) : name} ${n}${EXT}`;
+        }
+      }
+      snap.files.set(id, { set: setId, file: written, sig });
       this.known.files.add(id);
     }
 
