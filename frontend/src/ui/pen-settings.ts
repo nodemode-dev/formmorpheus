@@ -4,7 +4,7 @@
 
 import { PenInput } from '../paint/input';
 import { penRuntime } from '../paint/pen-device';
-import { CURVE_PRESETS, cleanCurve, type CurvePoint } from '../paint/pen-sample';
+import { CURVE_PRESETS, altAzToTilt, cleanCurve, type CurvePoint } from '../paint/pen-sample';
 import type { BarrelAction } from '../paint/pen-arbiter';
 import { loadPaintPrefs } from './paint-settings';
 import { attachPenStorage } from './paint-feel';
@@ -34,6 +34,8 @@ function osAdvice(kind: 'flat' | 'zero' | 'mouse'): string {
     : t('This pen reports no pressure. On Linux the web view may not pass pressure through; an X11 session with your tablet\'s driver gives the best chance.');
 }
 
+const onLinux = (): boolean => /Linux|X11/i.test(`${navigator.platform} ${navigator.userAgent}`) && !/Android/i.test(navigator.userAgent);
+
 const same = (a: CurvePoint[], b: CurvePoint[]): boolean => a.length === b.length && a.every((p, i) => Math.abs(p[0] - b[i][0]) < 2e-3 && Math.abs(p[1] - b[i][1]) < 2e-3);
 
 export class PenSettingsPage {
@@ -46,6 +48,9 @@ export class PenSettingsPage {
   private readonly bar: HTMLElement;
   private readonly barRaw: HTMLElement;
   private readonly diag: HTMLElement;
+  private readonly diag2: HTMLElement;
+  private readonly diag3: HTMLElement;
+  private readonly mouseRow = checkRow('Use pressure from the mouse', (v) => { penRuntime.update({ mousePressure: v }); this.refreshDiag(); });
   private readonly devName: HTMLElement;
   private readonly saveBtn: HTMLButtonElement;
   private readonly forgetBtn: HTMLButtonElement;
@@ -66,6 +71,8 @@ export class PenSettingsPage {
   private prev: { x: number; y: number; r: number } | null = null;
   private live: PointerEvent | null = null;
   private touchSays = '';
+  private touchSize = '';
+  private mouseForce = '';
   private raf = 0;
   private lastRaw = 0;
   private lastShaped = 0;
@@ -79,7 +86,7 @@ export class PenSettingsPage {
     this.pad = q<HTMLCanvasElement>(padBox, 'canvas');
     this.pctx = this.pad.getContext('2d');
     const read = el(`<dl class="fm-pen-read">${
-      [['dev', 'Device'], ['type', 'Pointer'], ['p', 'Pressure'], ['tilt', 'Tilt'], ['alt', 'Altitude and azimuth'], ['twist', 'Twist'], ['btn', 'Buttons'], ['hz', 'Rate'], ['touch', 'Touch']]
+      [['dev', 'Device'], ['type', 'Pointer'], ['p', 'Pressure'], ['tilt', 'Tilt'], ['alt', 'Altitude and azimuth'], ['twist', 'Twist'], ['btn', 'Buttons'], ['hz', 'Rate'], ['touch', 'Touch'], ['tsz', t('Touch size')], ['force', t('Mouse force')]]
         .map(([k, l]) => `<dt>${l}</dt><dd data-k="${k}">-</dd>`).join('')
     }</dl>`);
     for (const dd of Array.from(read.querySelectorAll<HTMLElement>('dd'))) this.out.set(dd.dataset.k ?? '', dd);
@@ -88,6 +95,8 @@ export class PenSettingsPage {
     this.barRaw = q(meter, '.fm-pen-meter-raw');
     this.out.get('p')?.after(meter);
     this.diag = el('<p class="fm-pen-diag" role="status"></p>');
+    this.diag2 = el('<p class="fm-pen-diag" role="status" hidden></p>');
+    this.diag3 = el('<p class="fm-pen-diag" role="status" hidden></p>');
     const clear = el<HTMLButtonElement>('<button class="cv-btn" type="button">Clear pad</button>');
     clear.addEventListener('click', () => this.clearPad());
     const resetSeen = el<HTMLButtonElement>('<button class="cv-btn" type="button">Forget readings</button>');
@@ -105,7 +114,7 @@ export class PenSettingsPage {
     this.cctx = this.curveCv.getContext('2d');
     const presets = q(curveBox, '.fm-pen-presets');
     this.presetBtns = CURVE_PRESETS.map((p) => {
-      const b = el<HTMLButtonElement>(`<button class="cv-btn" type="button" data-p="${p.id}">${p.label}</button>`);
+      const b = el<HTMLButtonElement>(`<button class="cv-btn" type="button" data-p="${p.id}">${t(p.label)}</button>`);
       b.addEventListener('click', () => { this.pts = p.points.map((x) => [...x] as CurvePoint); this.commit(); });
       presets.appendChild(b);
       return b;
@@ -128,8 +137,8 @@ export class PenSettingsPage {
     };
     const nt = (text: string): HTMLElement => el(`<p class="cv-note">${text}</p>`);
     this.groups = [
-      grp('Test pad', test, this.diag, padBtns, nt('The pad draws through the same pressure curve and smoothing as the canvas.')),
-      grp('Pressure', curveBox, this.minRow.el, this.maxRow.el, this.smoothRow.el, dev, nt('Minimum ignores the faintest touch; maximum is the pressure that already counts as full. A pen saved here keeps its own curve; others use the shared one.')),
+      grp('Test pad', test, this.diag, this.diag2, this.diag3, padBtns, nt('The pad draws through the same pressure curve and smoothing as the canvas.')),
+      grp('Pressure', curveBox, this.minRow.el, this.maxRow.el, this.smoothRow.el, this.mouseRow.el, dev, nt('Minimum ignores the faintest touch; maximum is the pressure that already counts as full. A pen saved here keeps its own curve; others use the shared one.')),
       grp('Pen buttons', this.eraserRow.el, this.b1Row.el, this.b2Row.el, this.tiltRow.el, this.palmRow.el, nt('The eraser end erases for that stroke only, then the tool you had comes back. Which button is 1 and which is 2 depends on your tablet driver.')),
     ];
 
@@ -159,6 +168,7 @@ export class PenSettingsPage {
     this.smoothRow.set(Math.round(rt.smoothing * 100));
     this.tiltRow.set(s.tiltAngle);
     this.palmRow.set(s.palm);
+    this.mouseRow.set(s.mousePressure);
     this.eraserRow.set(s.eraserEnd ?? (legacy.eraserEnd ? 'erase' : 'off'));
     this.b1Row.set(s.barrel1 ?? (legacy.penButton === 'off' ? 'none' : legacy.penButton));
     this.b2Row.set(s.barrel2 ?? 'none');
@@ -270,6 +280,9 @@ export class PenSettingsPage {
     this.live = e;
     this.lastRaw = e.buttons === 0 && e.pointerType === 'pen' ? 0 : e.pressure;
     if (e.pointerType === 'pen') penRuntime.noteDevice();
+    if (e.pointerType === 'touch') this.touchSize = `${Math.round(e.width)} x ${Math.round(e.height)} px`;
+    const wf = (e as { webkitForce?: number }).webkitForce;
+    if (typeof wf === 'number') this.mouseForce = wf.toFixed(3);
     if (e.buttons === 0) this.lastShaped = 0;
   }
 
@@ -285,13 +298,17 @@ export class PenSettingsPage {
     set('dev', st ? tk.key() : '-');
     set('hz', tk.rateHz() ? `${Math.round(tk.rateHz())} Hz` : '-');
     set('touch', this.touchSays || '-');
+    set('tsz', this.touchSize || '-');
+    set('force', this.mouseForce || '-');
     if (!e) { return; }
     const pen = e.pointerType === 'pen';
     set('type', pen ? (e.isTrusted ? 'pen' : 'pen (linked)') : e.pointerType);
     set('p', `${this.lastRaw.toFixed(3)}  to  ${this.lastShaped.toFixed(3)}`);
     this.barRaw.style.width = `${Math.round(Math.min(1, this.lastRaw) * 100)}%`;
     this.bar.style.width = `${Math.round(Math.min(1, Math.max(0, this.lastShaped)) * 100)}%`;
-    set('tilt', pen ? `${Math.round(e.tiltX)} , ${Math.round(e.tiltY)} deg` : '-');
+    const altOnly = pen && !e.tiltX && !e.tiltY && typeof e.altitudeAngle === 'number' && e.altitudeAngle < Math.PI / 2 - 1e-3;
+    const tl = altOnly ? altAzToTilt(e.altitudeAngle, e.azimuthAngle ?? 0) : { tiltX: e.tiltX, tiltY: e.tiltY };
+    set('tilt', pen ? `${Math.round(tl.tiltX)} , ${Math.round(tl.tiltY)} deg` : '-');
     const aa = pen ? { alt: (e.altitudeAngle ?? Math.PI / 2), az: e.azimuthAngle ?? 0 } : null;
     set('alt', aa ? `${Math.round((aa.alt * 180) / Math.PI)} , ${Math.round((aa.az * 180) / Math.PI)} deg` : '-');
     set('twist', pen ? `${Math.round(e.twist)} deg` : '-');
@@ -317,6 +334,13 @@ export class PenSettingsPage {
     else msg = t('Draw on the pad with your pen to test it.');
     setText(this.diag, msg);
     setClass(this.diag, 'is-bad', bad);
+    // a second line: a tablet that sends pressure as a mouse, and on Linux the way round it
+    const more = tk.mouseVaries() && !penRuntime.settings.mousePressure ? t('Your tablet sends pressure through mouse events. Turn on Use pressure from the mouse.') : '';
+    setText(this.diag2, more);
+    setHidden(this.diag2, !more);
+    const link = kind && onLinux() ? t('On Linux the web view sends your pen as a mouse. Link a tablet or another browser as a pen with Pen Link instead.') : '';
+    setText(this.diag3, link);
+    setHidden(this.diag3, !link);
     this.syncDevice();
   }
 

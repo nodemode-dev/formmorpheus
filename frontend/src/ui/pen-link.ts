@@ -45,6 +45,8 @@ export class PenLink extends Dialog {
   private hovering = false;
   private down = false;
   private lastKey = '';
+  private lastX = 0;
+  private lastY = 0;
   // mirror
   private mirrorTimer = 0;
   private view = { w: 0, h: 0 };
@@ -72,10 +74,12 @@ export class PenLink extends Dialog {
         <div class="fm-pl-status"></div>
         <div class="fm-pl-row"><button class="cv-btn fm-pl-new" type="button"></button><button class="cv-btn fm-pl-forget" type="button"></button></div>
       </div>
+      <p class="fm-pl-hint"></p>
       <p class="fm-pl-err" hidden></p>
     </div>`);
     this.body.appendChild(root);
     setText(q(root, '.fm-pl-intro'), t('Use a tablet with a pen as a drawing tablet. On the tablet, open the address below in its browser, then type the code. Both must be on the same network.'));
+    setText(q(root, '.fm-pl-hint'), t('Turn off handwriting-to-text on the tablet for Pen Link, and keep the page in the foreground while you draw.'));
     this.toggle = q<HTMLButtonElement>(root, '.fm-pl-on');
     this.offBox = q(root, '.fm-pl-off');
     this.onBox = q(root, '.fm-pl-on-box');
@@ -255,6 +259,7 @@ export class PenLink extends Dialog {
       const pr = v.getUint16(o + 10, true) / 65535;
       const f = v.getUint8(o + 16);
       const base = { tiltX: v.getInt8(o + 12), tiltY: v.getInt8(o + 13), twist: Math.round(v.getUint16(o + 14, true) / 10), alt: v.getUint8(o + 18) / 255 * Math.PI / 2, az: v.getUint8(o + 19) / 255 * 2 * Math.PI };
+      this.lastX = x; this.lastY = y;
       const erase = (f & F_ERASER) !== 0;
       const barrel = (f & F_BARREL) !== 0 ? 2 : 0;
       const contact = erase ? 32 : 1;
@@ -279,7 +284,8 @@ export class PenLink extends Dialog {
   /** The tablet went away or was turned off: an open stroke ends, a hover leaves. */
   private release(): void {
     const c = document.querySelector<HTMLCanvasElement>('.fm-paint-canvas');
-    if (c && this.down) this.fire(c, 'pointercancel', 0, 0, { tiltX: 0, tiltY: 0, twist: 0, alt: 0, az: 0, pressure: 0, buttons: 0, button: 0 });
+    // a lift at the last place seen, not a discard: a half stroke from a dropped socket stays as drawn
+    if (c && this.down) this.fire(c, 'pointerup', this.lastX, this.lastY, { tiltX: 0, tiltY: 0, twist: 0, alt: 0, az: 0, pressure: 0, buttons: 0, button: 0 });
     if (c && this.hovering) { this.fire(c, 'pointerout', 0, 0, { tiltX: 0, tiltY: 0, twist: 0, alt: 0, az: 0, pressure: 0, buttons: 0, button: -1 }); this.fire(c, 'pointerleave', 0, 0, { tiltX: 0, tiltY: 0, twist: 0, alt: 0, az: 0, pressure: 0, buttons: 0, button: -1 }); }
     this.down = this.hovering = false;
   }

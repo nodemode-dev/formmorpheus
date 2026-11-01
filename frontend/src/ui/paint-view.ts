@@ -77,6 +77,19 @@ const START_PAINT = 'an-sketch-lead-stub';
 const STATE_KEY = 'formmorpheus.paint.brushes';
 const TOOL_KEY = 'formmorpheus.paint.tools';
 
+let filterOk: boolean | null = null;
+/** Whether canvas filters work here: the property must exist and keep what is written (some engines hide it behind a flag). */
+function canvasFilter(ctx: CanvasRenderingContext2D): boolean {
+  if (filterOk !== null) return filterOk;
+  try {
+    const g = ctx as CanvasRenderingContext2D & { filter?: string };
+    const old = g.filter;
+    filterOk = 'filter' in ctx;
+    if (filterOk) { g.filter = 'blur(1px)'; filterOk = g.filter === 'blur(1px)'; g.filter = old ?? 'none'; }
+  } catch { filterOk = false; }
+  return filterOk;
+}
+
 function readJson<T>(key: string, fallback: T): T {
   try { const raw = localStorage.getItem(key); return raw ? { ...fallback, ...(JSON.parse(raw) as T) } : fallback; } catch { return fallback; }
 }
@@ -187,6 +200,10 @@ export class PaintView {
   /** Painting while the strip's scrub wheel is held: the pen that was painting when the frame changed, and its last move. */
   private resumePointer = -1;
   private lastStrokeMove: PointerEvent | null = null;
+  /** Moves fed to the live stroke since it began (a pen cancel with some keeps the stroke). */
+  private strokeMoves = 0;
+  /** Set once a hint about the missing preview filter has been shown. */
+  private filterSaid = false;
   private readonly touches = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
   private gesture: { d: number; ang: number; cx: number; cy: number; scale: number; rot: number; anchor: Point; d0: number; count: number; t: number; moved: boolean } | null = null;
   private pan: { x: number; y: number; ox: number; oy: number; id: number } | null = null;
@@ -1122,7 +1139,10 @@ export class PaintView {
     if (a.hsb) parts.push(`hue-rotate(${a.hsb.hue}deg) saturate(${Math.max(0, 1 + a.hsb.saturation)}) brightness(${Math.max(0, 1 + a.hsb.brightness)})`);
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, a.opacity));
-    if (parts.length) ctx.filter = parts.join(' ');
+    if (parts.length) {
+      if (canvasFilter(ctx)) ctx.filter = parts.join(' ');
+      else if (!this.filterSaid) { this.filterSaid = true; this.say(tr('This web view cannot preview blur and color keys here; the exported movie still has them.')); }
+    }
     doc.composite(ctx, this.live ?? undefined);
     ctx.restore();
   }
@@ -1738,7 +1758,9 @@ export class PaintView {
     cv.addEventListener('pointermove', (e) => this.move(e));
     cv.addEventListener('pointerup', (e) => this.up(e));
     cv.addEventListener('pointercancel', (e) => this.up(e, true));
-    cv.addEventListener('pointerleave', () => { if (this.cursor) { this.cursor = null; this.full = true; this.redraw(); } });
+    // capture dropped with no button down: the lift never reached us
+    cv.addEventListener('lostpointercapture', (e) => { if (this.stroke && e.pointerId === this.strokePointer && e.buttons === 0) this.up(e); });
+    cv.addEventListener('pointerleave', (e) => { this.input.runtime.arbiter.leave(e); if (this.cursor) { this.cursor = null; this.full = true; this.redraw(); } });
     cv.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     cv.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -2030,6 +2052,8 @@ export class PaintView {
     this.closePanels();
     this.hideHud();
     const cv = this.canvas;
+    // a pen arriving while a finger is painting: the finger was a palm or a stray, its mark goes
+    if (e.pointerType === 'pen' && this.stroke && this.touches.has(this.strokePointer)) { this.clearPickHold(); this.cancelStroke(); }
     if (e.pointerType === 'touch') {
       if (this.input.rejected(e)) return;
       // a second finger held during a Rectangle or Ellipse selection drag snaps it to a square or a circle (not a pinch)
@@ -2137,6 +2161,7 @@ export class PaintView {
     }) ?? null;
     this.stroke = this.remote ?? new PumpedStroke(new Stroke(target.raster, target.id, settings));
     this.strokePointer = e.pointerId;
+    this.strokeMoves = 0;
     this.feed(seed ?? this.input.down(e as PointerEvent));
   }
 
@@ -2275,7 +2300,7 @@ export class PaintView {
       this.showLoupe(e.clientX, e.clientY, false);
       return;
     }
-    if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; if (!this.qs.moved(e)) this.feed(this.input.move(e)); }
+    if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; this.strokeMoves++; if (!this.qs.moved(e)) this.feed(this.input.move(e)); }
     else if (!this.stroke && !this.busy && this.doc && e.pointerId === this.resumePointer && e.buttons) { this.resumePointer = -1; this.startStroke(e); }
     if (e.pointerType !== 'touch') {
       this.cursor = this.toCanvas(e.clientX, e.clientY);
@@ -2329,6 +2354,8 @@ export class PaintView {
       this.pickHold = null;
       if (this.interaction || this.gesture || this.loupe.active) return;
       if (touch ? !this.touches.has(id) || this.touches.size !== 1 : this.strokePointer !== id) return;
+      // only a hold before drawing starts: a pen that has moved, then rests, keeps its stroke
+      if (touch ? this.touches.get(id)?.moved : this.strokeMoves > 0 && this.lastStrokeMove && Math.hypot(this.lastStrokeMove.clientX - x, this.lastStrokeMove.clientY - y) > 7) return;
       this.cancelStroke();
       this.pan = null;
       this.showLoupe(x, y, true, id);
@@ -2376,6 +2403,9 @@ export class PaintView {
     if (this.interaction) { this.interaction.up(e); return; }
     if (e.pointerId === this.resumePointer && !this.stroke) this.resumePointer = -1;
     if (!this.stroke || e.pointerId !== this.strokePointer) return;
+    // a system gesture or palm check cancels a pen mid-stroke: what was drawn stays, as a normal lift (touch still discards)
+    // (a cancel may carry no position, so the lift is read at the last place the pen was)
+    if (cancelled && e.pointerType === 'pen' && this.strokeMoves > 0) { cancelled = false; if (this.lastStrokeMove && this.lastStrokeMove.pointerId === e.pointerId) e = this.lastStrokeMove; }
     const s = this.stroke;
     const doc = this.doc as PaintDoc;
     if (cancelled || !this.remote) this.clearTail();

@@ -69,6 +69,8 @@ export class PenInput {
     const rt = this.runtime;
     rt.arbiter.note(e, phase);
     if (!this.active && e.pointerType === 'pen') rt.tracker.observe(e);
+    // a tablet that arrives as a mouse is told apart by its pressure moving; a plain mouse reads 0.5 or 1
+    else if (e.pointerType === 'mouse') rt.tracker.observe(e);
   }
 
   /** Returns the first sample, or [] when this pointer should not paint (or must wait for its first pressure). */
@@ -113,6 +115,8 @@ export class PenInput {
   move(e: PointerEvent): PenSample[] {
     if (!this.active) return [];
     const out: PenSample[] = [];
+    // Read only position, pressure, tilt and time from a coalesced event: some engines leave its pointerId and target
+    // empty or wrong, so pointerId must never be read from them (use the parent event's).
     const list = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const evs = list.length ? list : [e];
     for (const ev of evs) {
@@ -157,7 +161,7 @@ export class PenInput {
       if (first) out.push(first);
     }
     const last = this.lastOut ?? end;
-    if (end.kind === 'pen' || end.pressure < 0) { end.pressure = last.pressure; end.hover = false; }
+    if (end.kind === 'pen' || end.pressure < 0 || (end.kind === 'mouse' && this.runtime.settings.mousePressure && last.pressure < 1)) { end.pressure = last.pressure; end.hover = false; }
     const d = Math.hypot(end.x - this.bx, end.y - this.by);
     if (this.rope > 0 && d > 0.01) {
       const steps = Math.max(1, Math.min(24, Math.ceil(d / 4)));
@@ -201,7 +205,7 @@ export class PenInput {
     const last = rt.smoother.last;
     const fallback = last >= 0 ? last : this.missed >= 6 ? 0.5 : -1;
     const s = readPointer(e, c.x, c.y, {
-      tiltAngle: rt.settings.tiltAngle, curve, smoother: rt.smoother, smoothing: rt.smoothing, advance, after: applyPressure, fallback,
+      tiltAngle: rt.settings.tiltAngle, curve, smoother: rt.smoother, smoothing: rt.smoothing, advance, after: applyPressure, fallback, mousePressure: rt.settings.mousePressure,
     });
     if (advance && s.kind === 'pen' && !s.hover) this.missed = s.rawPressure < 0 ? this.missed + 1 : 0;
     return s;

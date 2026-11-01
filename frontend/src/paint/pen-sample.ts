@@ -79,6 +79,8 @@ export const CURVE_PRESETS: { id: string; label: string; points: CurvePoint[] }[
   { id: 'normal', label: 'Normal', points: gammaPoints(0.8) },
   { id: 'firm', label: 'Firm', points: gammaPoints(1.8) },
   { id: 'linear', label: 'Linear', points: [[0, 0], [1, 1]] },
+  // a tablet driven from another device tends to answer harshly; this lifts the light end
+  { id: 'ipad', label: 'Linked tablet', points: gammaPoints(0.5) },
 ];
 
 function gammaPoints(g: number): CurvePoint[] {
@@ -205,6 +207,8 @@ export interface ReadOptions {
   after: (p: number) => number;
   /** Pressure to use when a pen in contact reports 0; -1 to leave it missing. */
   fallback: number;
+  /** A mouse event that carries a pressure above 0 is read like a pen (curve and smoother). Off: a mouse is full pressure. */
+  mousePressure?: boolean;
 }
 
 /** Turn one pointer record into a v2 sample at canvas position (x, y). A missing pen pressure comes back as rawPressure -1. */
@@ -228,6 +232,11 @@ export function readPointer(e: PointerLike, x: number, y: number, o: ReadOptions
   } else if (kind === 'touch') {
     raw = e.pressure > 0 ? e.pressure : 0.5;
     pressure = o.after(raw);
+  } else if (o.mousePressure && e.buttons !== 0 && e.pressure > 0) {
+    // a tablet that arrives as a mouse and still sends pressure
+    raw = e.pressure;
+    const sm = o.advance ? o.smoother.push(raw, e.timeStamp, o.smoothing) : raw;
+    pressure = o.after(o.curve.apply(sm));
   } else raw = 1;
   const tx = pen && o.tiltAngle ? e.tiltX || 0 : 0, ty = pen && o.tiltAngle ? e.tiltY || 0 : 0;
   let { altitude, azimuth } = tiltToAltAz(tx, ty);

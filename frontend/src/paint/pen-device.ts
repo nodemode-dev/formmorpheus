@@ -18,6 +18,8 @@ export interface PenSettings {
   barrel2?: BarrelAction;
   palm: boolean;
   palmWidth: number;
+  /** Read the pressure a mouse event carries (a tablet that arrives as a mouse). Off: some trackpads vary too. */
+  mousePressure: boolean;
 }
 
 export interface PenProfile {
@@ -29,7 +31,7 @@ export interface PenProfile {
 }
 
 export const DEFAULT_PEN_SETTINGS: PenSettings = {
-  curve: [[0, 0], [1, 1]], min: 0, max: 1, smoothing: 0.2, tiltAngle: true, barrel2: 'none', palm: true, palmWidth: 44,
+  curve: [[0, 0], [1, 1]], min: 0, max: 1, smoothing: 0.2, tiltAngle: true, barrel2: 'none', palm: true, palmWidth: 44, mousePressure: false,
 };
 
 export interface StorageIo { read(): string | null; write(s: string): void }
@@ -50,11 +52,13 @@ interface PointerStats {
   twist: boolean;
   tangential: boolean;
   deviceId: number;
+  /** Last webkitForce seen, -1 when the engine has none. */
+  force: number;
   hover: number;
   stamps: number[];
 }
 
-const blank = (type: string): PointerStats => ({ type, count: 0, contact: 0, pMin: 1, pMax: 0, distinct: new Set(), half: 0, full: 0, zero: 0, wMin: 1e9, wMax: 0, tilt: false, twist: false, tangential: false, deviceId: 0, hover: 0, stamps: [] });
+const blank = (type: string): PointerStats => ({ type, count: 0, contact: 0, pMin: 1, pMax: 0, distinct: new Set(), half: 0, full: 0, zero: 0, wMin: 1e9, wMax: 0, tilt: false, twist: false, tangential: false, deviceId: 0, force: -1, hover: 0, stamps: [] });
 
 export type MouseLike = null | 'flat' | 'zero' | 'mouse';
 
@@ -74,7 +78,10 @@ export class DeviceTracker {
     if (s.stamps.length > 96) s.stamps.shift();
     const w = e.width || 0, h = e.height || 0;
     if (w) { s.wMin = Math.min(s.wMin, w, h || w); s.wMax = Math.max(s.wMax, w, h); }
-    if (e.tiltX || e.tiltY) s.tilt = true;
+    // some engines give only altitude and azimuth; upright (pi/2) is the default and means no tilt
+    if (e.tiltX || e.tiltY || (typeof e.altitudeAngle === 'number' && e.altitudeAngle < Math.PI / 2 - 1e-3)) s.tilt = true;
+    const wf = (e as { webkitForce?: number }).webkitForce;
+    if (typeof wf === 'number') s.force = wf;
     if (e.twist) s.twist = true;
     if (e.tangentialPressure) s.tangential = true;
     if (e.persistentDeviceId) s.deviceId = e.persistentDeviceId;
@@ -116,6 +123,15 @@ export class DeviceTracker {
     while (i > 0 && end - st[i - 1] <= 1000) i--;
     const n = st.length - 1 - i, span = end - st[i];
     return span > 0 && n >= 2 ? (n / span) * 1000 : 0;
+  }
+
+  /** Mouse events with a pressure that really moves: at least 4 distinct values other than 0, 0.5 and 1. */
+  mouseVaries(): boolean {
+    const m = this.by.get('mouse');
+    if (!m) return false;
+    let n = 0;
+    for (const v of m.distinct) if (v !== 0 && v !== 500 && v !== 1000) n++;
+    return n >= 4;
   }
 
   /**
@@ -238,6 +254,7 @@ function sanitize(o?: Partial<PenSettings>): PenSettings {
     barrel2: o?.barrel2 && ACTIONS.includes(o.barrel2) ? o.barrel2 : d.barrel2,
     palm: typeof o?.palm === 'boolean' ? o.palm : d.palm,
     palmWidth: num(o?.palmWidth, d.palmWidth, 20, 200),
+    mousePressure: typeof o?.mousePressure === 'boolean' ? o.mousePressure : d.mousePressure,
   };
 }
 

@@ -8,7 +8,7 @@
   var mctx = mirror.getContext('2d'), ictx = ink.getContext('2d');
 
   var token = '', ws = null, aspect = 16 / 9, seq = 0, latency = 0, retryUntil = 0, closing = false;
-  var erase = false, dragging = false, inkClearAt = 0, penDown = false;
+  var erase = false, dragging = false, inkClearAt = 0, penDown = false, penStop = null;
 
   try { document.addEventListener('contextmenu', function (e) { e.preventDefault(); }); } catch (x) { /* none */ }
   ['gesturestart', 'gesturechange', 'gestureend', 'dblclick'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false }); });
@@ -55,6 +55,7 @@
     s.onclose = function (ev) {
       if (ws !== s) return;
       ws = null;
+      if (penStop) penStop();
       if (closing) return;
       if (ev.code === 1008 && liveEl.hidden) { toPair(L('pairfail')); return; }
       if (!retryUntil) retryUntil = Date.now() + 30000;
@@ -223,10 +224,29 @@
 
   function isDraw(e) { return e.pointerType === 'pen' || e.pointerType === 'mouse'; }
 
+  // A stroke always ends with a plain lift. `ev` is the event to lift at (the last one seen when the end is synthetic).
+  var lastHover = null;
+  function endStroke(ev) {
+    if (!penDown) return;
+    var at = ev || last;
+    penDown = false;
+    try { surface.releasePointerCapture(penId); } catch (x) { /* none */ }
+    if (at) emit([at], F_UP);
+    last = null;
+    inkClearAt = performance.now() + 450;
+  }
+  function leaveHover() {
+    if (hovering && lastHover) emit([lastHover], F_HOVER | F_LEAVE);
+    hovering = false; lastHover = null;
+  }
+  // The page left the foreground or the connection went: nothing may stay down on the desktop.
+  function stop() { endStroke(last); leaveHover(); }
+
   surface.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'touch') return touchDown(e);
-    if (!isDraw(e) || penDown) return;
+    if (!isDraw(e)) return;
     e.preventDefault();
+    if (penDown) endStroke(last);   // a new pointer while one is down: the old stroke ends first
     penDown = true; penId = e.pointerId;
     try { surface.setPointerCapture(e.pointerId); } catch (x) { /* none */ }
     last = e;
@@ -237,28 +257,33 @@
     if (e.pointerType === 'touch') return touchMove(e);
     if (!isDraw(e)) return;
     e.preventDefault();
+    // coalesced events need a secure context; on plain http every move the page gets is sent, at full rate
     var list = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
     if (!list.length) list = [e];
     if (penDown && e.pointerId === penId) {
       for (var i = 0; i < list.length; i++) { drawInk(last, list[i]); last = list[i]; }
       emit(list, 0);
     } else if (!penDown && e.pointerType === 'pen') {
+      lastHover = list[list.length - 1];
       if (!hovering) { hovering = true; emit([list[0]], F_HOVER | F_ENTER); if (list.length > 1) emit(list.slice(1), F_HOVER); }
       else emit(list, F_HOVER);
     }
   });
-  function end(e, cancel) {
+  function end(e) {
     if (e.pointerType === 'touch') return touchUp(e);
     if (!penDown || e.pointerId !== penId) return;
-    penDown = false; last = null;
-    emit([e], F_UP | (cancel ? F_LEAVE : 0));
-    inkClearAt = performance.now() + 450;
+    endStroke(e);
   }
-  surface.addEventListener('pointerup', function (e) { end(e, false); });
-  surface.addEventListener('pointercancel', function (e) { end(e, true); });
+  surface.addEventListener('pointerup', end);
+  surface.addEventListener('pointercancel', end);   // a plain lift, never a discard
+  surface.addEventListener('lostpointercapture', function (e) { if (penDown && e.pointerId === penId) endStroke(last); });
   surface.addEventListener('pointerleave', function (e) {
-    if (e.pointerType === 'pen' && hovering && !penDown) { hovering = false; emit([e], F_HOVER | F_LEAVE); }
+    if (e.pointerType === 'pen' && hovering && !penDown) { hovering = false; lastHover = null; emit([e], F_HOVER | F_LEAVE); }
   });
+  window.addEventListener('pagehide', stop);
+  window.addEventListener('blur', stop);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); });
+  penStop = stop;
 
   // ------------------------------------------------------------------ fingers: two-finger tap undo, three-finger tap redo
   var touches = {}, tcount = 0, tmax = 0, tstart = 0, tmoved = false;
