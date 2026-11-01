@@ -75,6 +75,23 @@ class MissingDialog extends Dialog {
   }
 }
 
+let promptNow: (() => Promise<void>) | null = null;
+export const askMissingFonts = (): Promise<void> => (promptNow ? promptNow() : Promise.resolve());
+
+/** Families used by Text that overlaps frames [from, to) and cannot be found: they are drawn in a fallback face. */
+export function substitutedFonts(m: Movie, from: number, to: number): string[] {
+  const out = new Set<string>();
+  const walk = (tracks: Movie['tracks']): void => {
+    for (const tr of tracks) for (const c of tr.content as Content[]) {
+      if (c.kind === 'group') { walk(c.tracks); continue; }
+      if (c.kind !== 'text' || !c.text || c.start >= to || c.start + c.duration <= from) continue;
+      for (const f of [c.text.font, ...(c.text.runs ?? []).map((r) => r.font)]) if (f && !fontAvailable(m, f)) out.add(f);
+    }
+  };
+  walk(m.tracks);
+  return Array.from(out);
+}
+
 /** Looks at each newly opened movie once and asks about every font it cannot find. */
 export function watchMissingFonts(engine: Engine): void {
   let dialog: MissingDialog | null = null;
@@ -83,7 +100,7 @@ export function watchMissingFonts(engine: Engine): void {
   const kept = (): string[] => { try { return JSON.parse(localStorage.getItem(KEEP) ?? '[]') as string[]; } catch { return []; } };
   const remember = (k: string): void => { try { localStorage.setItem(KEEP, JSON.stringify([...kept(), k].slice(-400))); } catch { /* not kept */ } };
 
-  const check = async (id: string): Promise<void> => {
+  const check = async (id: string, force = false): Promise<void> => {
     // the Fonts library loads beside the movie: wait for it, so an installed font is not called missing
     for (let i = 0; i < 25 && !libraryReady(); i++) await new Promise((r) => window.setTimeout(r, 100));
     const m = engine.movie;
@@ -92,7 +109,7 @@ export function watchMissingFonts(engine: Engine): void {
       const cur = engine.movie;
       if (!cur || cur.id !== id) return;
       const key = `${id}|${font}`;
-      if (fontAvailable(cur, font) || kept().includes(key)) continue;
+      if (fontAvailable(cur, font) || (!force && kept().includes(key))) continue;
       dialog ??= new MissingDialog();
       const cat = fontCatalog(cur);
       const answer = await dialog.ask(font, new Set(ids).size, [...cat.bundled, ...cat.library, ...cat.movie]);
@@ -112,6 +129,8 @@ export function watchMissingFonts(engine: Engine): void {
     }
   };
 
+  // the Export window's note opens the same prompt, even for fonts the person chose to Keep
+  promptNow = async () => { const m = engine.movie; if (m) await check(m.id, true); };
   engine.on('projects', () => {
     const m = engine.movie;
     if (!m) { lastId = ''; return; }

@@ -16,7 +16,19 @@
 .fm-help-item.is-current { background: var(--accent-tint-strong); color: var(--accent-color); font-weight: 600; }
 .fm-help-item:focus-visible { outline: 1px solid var(--accent-color); outline-offset: -1px; }
 
-.fm-help-page { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-7) var(--space-8); color: var(--text-secondary); font-size: var(--fs-13); line-height: 1.6; user-select: text; outline: none; }
+.fm-help-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.fm-help-tabs { display: flex; flex: 0 0 auto; gap: 2px; padding: var(--space-2) var(--space-5) 0; overflow-x: auto; border-bottom: 1px solid var(--border-color); scrollbar-width: thin; }
+.fm-help-tab { flex: 0 0 auto; padding: 6px var(--space-3); border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); font-variant-numeric: tabular-nums; cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
+.fm-help-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.fm-help-tab.is-current { border-bottom-color: var(--accent-color); color: var(--accent-color); font-weight: 600; }
+.fm-help-tab:focus-visible { outline: 1px solid var(--accent-color); outline-offset: -1px; }
+.fm-help-count { min-height: 1.2em; color: var(--text-muted); font-size: var(--fs-11, 11px); }
+.fm-help-vnote { margin: 0; color: var(--text-muted); font-size: var(--fs-12); }
+.fm-help-vnote[hidden], .fm-help-nav[hidden] { display: none; }
+::highlight(fm-help-hit) { background-color: var(--accent-tint-strong); color: var(--text-primary); }
+::highlight(fm-help-cur) { background-color: var(--accent-color); color: var(--bg-primary, #000); }
+
+.fm-help-page { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--space-5) var(--space-7) var(--space-8); color: var(--text-secondary); font-size: var(--fs-13); line-height: 1.6; user-select: text; outline: none; }
 .fm-help-sec[hidden], .fm-help-empty[hidden] { display: none; }
 .fm-help-sec:not([hidden]) ~ .fm-help-sec:not([hidden]) { margin-top: var(--space-7); padding-top: var(--space-5); border-top: 1px solid var(--border-color); }
 .fm-help-h { margin: var(--space-5) 0 var(--space-2); color: var(--text-primary); font-weight: 600; line-height: 1.3; }

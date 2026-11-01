@@ -75,7 +75,7 @@ Add a **Drawing** and open it (double-click it, or use the Edit pill that appear
 
 ### Brushes
 
-The library has 18 brushes in 7 sets: Sketch, Ink, Paint, Chalk, Airbrush, Texture and Wash. Three tools use them:
+The brush library holds several hundred brushes in libraries of sets (sketching, inking, painting, airbrushing, charcoals, textures, water and more), plus Recent and any libraries you import. Three tools use them:
 
 - **Paint** (B), **Smudge** (S) and **Erase** (E). Click an active tool again to open the brush panel.
 - The side bar has two sliders, brush **size** and **opacity**. `[` and `]` change the size.
@@ -261,6 +261,14 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 ## Brush files
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
+
+## New in 0.17.1
+
+**Brushes.** Chrome reads as polished metal, Rough hatch lays real diagonal hatching that keeps its angle on any stroke, and Sumi ends cleanly. Charcoal, chalk and pastel sticks shade wide whichever way the pen leans, and Grain airbrush starts as a soft cloud. Bristle brushes fray at the end of a tilted stroke, knives end in a rounded point, and the opaque paints widen with pressure and break up at a dry edge. Watercolor leaves no tint on bare paper and beads only where the pen really stops.
+
+**Editing.** Copy blocks from one movie and paste them into another, with their pictures and sounds. Trimming several selected blocks trims them all at once. Ungroup waits until one group is selected.
+
+**Help and export.** The manual in Help can show what each version added, and its search highlights matches and steps through them with Enter. The Export window names any font that is missing and offers to fix it.
 
 ## New in 0.17.0
 

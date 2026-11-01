@@ -13,6 +13,7 @@ import { downloadBlob } from '../io/api';
 import { canPickFolder, pickDestination, saveFileTo, saveFramesTo, type Dest } from './export-where';
 import { Dialog } from './dialogs';
 import { ExportExtras } from './export-extra';
+import { askMissingFonts, substitutedFonts } from './fonts-missing';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
 import { t } from './i18n';
 import { toast } from './toast';
@@ -173,6 +174,7 @@ export class ExportDialog {
   private readonly intensity = el<HTMLInputElement>('<input type="range" min="0" max="100" step="1" aria-label="Intensity">');
   private readonly intensityValue = el<HTMLElement>('<span class="fm-ex-val"></span>');
   private readonly colorStep = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Number of colors">${COLOR_STEPS.map((n) => `<option value="${n}">${n}</option>`).join('')}<option value="custom">Custom</option></select>`);
+  private readonly fontNote = el<HTMLElement>('<div class="fm-ex-fontnote" hidden><p></p><button class="cv-btn" type="button">Fix fonts</button></div>');
   private readonly alphaNote = el<HTMLElement>('<span class="cv-note fm-ex-alpha-note" hidden></span>');
   private readonly framesTo = el<HTMLSelectElement>('<select class="cv-input" aria-label="Save frames as"><option value="folder">A folder of images</option><option value="zip">One zip file</option></select>');
   private readonly askWhere = el<HTMLInputElement>('<input type="checkbox" aria-label="Choose where to save">');
@@ -249,7 +251,8 @@ export class ExportDialog {
     });
     this.buildAdvanced();
     this.advBox.append(this.preview.root, this.formBox);
-    body.append(seg, this.shareBox, this.advBox, this.runBox, this.notes);
+    q(this.fontNote, 'button').addEventListener('click', () => { void askMissingFonts().then(() => this.sync()); });
+    body.append(seg, this.fontNote, this.shareBox, this.advBox, this.runBox, this.notes);
     this.cancel = this.dlg.button('Close', 'ghost', () => this.onCancel());
     this.run = this.dlg.button('Export', 'primary', () => {
       if (this.rangeBad()) { this.note([this.range().error], 'error'); return; }
@@ -678,6 +681,10 @@ export class ExportDialog {
     setText(this.rangeNote, r.error || `${steps} ${steps === 1 ? 'frame' : 'frames'} · ${(steps / m.fps).toFixed(steps / m.fps < 10 ? 2 : 1)} s`);
     setClass(this.rangeNote, 'is-bad', this.rangeBad());
     setDisabled(this.run, this.busy);
+    // Text in a font that cannot be found is drawn in Inter: say so before the file is made
+    const lost = substitutedFonts(m, r.from, r.to);
+    setHidden(this.fontNote, lost.length === 0);
+    if (lost.length) setText(q(this.fontNote, 'p'), t('Text in {fonts} will be drawn in Inter, because that font is not available here.').replace('{fonts}', lost.join(', ')));
     this.updatePreviewSpec();
   }
 
