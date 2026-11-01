@@ -7,6 +7,10 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.17.1 · fonts
+
+- L-IO-064: the Export dialog shows a note when Text in the export range uses a font that is not available (not bundled, in the library, in the movie or installed): "Text in {fonts} will be drawn in Inter, because that font is not available here." with a "Fix fonts" button. The check is `substitutedFonts(movie, from, to)` in `ui/fonts-missing.ts`, run from `sync()`, so it follows the range and edits. The button calls `askMissingFonts()`, the same Replace / Keep prompt, forced even for fonts the person chose to Keep. The note has its own `fm-ex-fontnote` class: reusing `fm-ex-notes` would hide the run box through its `:has` rule. Verified in Chromium with a movie using "Zorblax Display": note shows after Keep, the button opens the prompt, Replace clears the note.
+
 ## v0.17.0 · Fonts, Text and Export
 
 - **Fonts library (L-IO-061/062/063/030/065).** `io/fonts-library.ts` talks to the engine's `/api/fonts` (new `backend/app/routers/fonts.py`, files in `<data>/Fonts`, family names in `.fonts.json`). `media/import.ts` `importFont` also installs every imported font in the library (fire and forget); `app.ts` loads the library once the engine answers and registers each file under the key `lib:<file>`, which `evictFonts` never drops. The Text card lists library fonts under "Fonts library"; picking one (Fonts tab or Spans font) calls `embedLibraryFamily`, which copies the file into the movie as a font asset in one "Embed fonts" undo step, so a shared `.fmo` still carries what it uses. Not done: fonts set by any other route (a paste, a preset) are not embedded until a Text card pick; the library list is re-read only at start and after an import or removal.
@@ -1141,6 +1145,13 @@ Found by painting through the real app (new movie, brush library, Color panel, C
 - Graphic set (L-BR-044): Cut paper, Sticker and Halftone are spaced close so a stroke is a band. Highlighter multiplies (L-BR-052), so it never covers ink under it.
 - Brush Studio pad (L-BR-122): Pressure minimum / scale, Tilt direction, Wet mix, 8 preview colors and Create reset point were driven in the browser and work.
 - Tilt re-check: `tiltShape` keeps scattered brushes (Toothbrush: shape count or scatter above 0.3) at their size on a lean, and gives paint-like brushes (bundle, wet, render, bristle, comb, speckle, sponge tips) a modest oval (1.6x, 0.6x) apart from the dry side law. `swathGrid` now gets the stamp's thinness (roundness) so a flat tip (Pastel side) has no hollow rails; Animation Conte uses the swath and canvas grain (its moving grain and bump drew rails). The boxy square ends of Flat bristle, Oil bristle, Impasto and Knife at tilt come from the bundle stamper (bristle.ts), not the swath hook (it returns before it): not changed here.
+
+## v0.17.1 · brushes · dry media
+
+- Tilt regression found: the v0.17.0 "scattered" guard in `tiltShape` counted `scatter` (stamp rotation, 1 for every charcoal and chalk) as a scatter, so stick media did not widen at all. It now counts only shape count above 1 and position scatter above 0.3 (Toothbrush still keeps its size).
+- Side shade at any azimuth: the short axis of the swath is 0.68 of the long one, so a pen leaning along the stroke (tiltX) lays almost as broad a swath as one leaning across it (tiltY). Checked at tilt 30 and 60 on both axes: Charcoal stick, Pastel, Compressed, Stick chalk, Soft pastel, Chalk block (given tilt 0.8) and Crayon.
+- Classic Chalk had `tilt` 0.5, under the 0.6 side-shade threshold, so it only got the plain lean; raised to 0.85. Verified at tiltX and tiltY 30 and 60.
+- Animation Stick chalk and Soft pastel use the stamp swath (`tiltCompress`). Grain airbrush: the default-size rule no longer skips grained brushes, so it starts as a cloud.
 - Reference brush names (L-BR-004): left as they are, an owner decision (originals; a reference alias tag would make a search for a reference name find ours).
 
 ## v0.17.0 · brushes · oil and bristle
@@ -1178,6 +1189,11 @@ Found by painting through the real app (new movie, brush library, Color panel, C
 - Mask label pill driven: Clipping, Alpha and Luminance Mask each show at the block's lower right (w17_tl/e_mask_*.png).
 - CAF, AC3 and MP2 import driven: each opens the sound preview, Import adds a 2 s block with no console errors (w17_tl/a2_tone.*.png).
 
+## v0.17.1 · Timeline
+- L-TL-127: Copy now keeps, in memory beside the localStorage copy, the pictures and sounds (Asset record plus blob) of every copied block, layers and group contents included (`clipAssets`, engine/engine.ts). Paste into another movie of the same session adds the missing assets to that movie and to the blob store. Only when they are truly gone (after a reload, the localStorage clipboard has blocks only) are such blocks left out, with an error notice naming how many ("One block was left out..." / "N blocks were left out..."). The old filter checked `c.asset` only; it now checks every asset the block uses (usedAssetIds). Checked: video block copied, new movie, Ctrl+V gives the clip with thumbnails (w18_tl/p1_pasted.png); after a page reload the notice shows (w18_tl/p2_reload.png).
+- L-TL-074: a trim drag with several blocks selected applies the same step to the same edge of every selected block inside one `run` with the drag's tag, so it is one undo step; a block on a locked track or without room stays put (ui/timeline.ts, trim branch). Checked with two Solids: both shortened together, one Undo Trim restored both (w18_tl/t1_trim.png, t2_undo1.png).
+- L-TL-111: the Ungroup command (and its Content menu item) is enabled only with exactly one group selected (app/app.ts); the block menu row was already hidden in Multi-select. Checked in the Content menu: disabled with two blocks, enabled with one group.
+
 ## v0.17.0 · brushes · paint re-check fixes
 - Default size: paint/fam-paint-size.ts (called from ui/paint-size.ts defaultSlider) opens opaque paints, cloth textures, Halftone and Rough hatch at a painterly size (up to 56 px) instead of the 14 px pen size, and keeps sprays small (Fade spray no longer inherits the 90 px airbrush rule). Halftone drew nothing at force 0.9 and 1.0 only at the 14 px default: its 7-dot screen was sub-pixel; at its new size it draws at every force.
 - Weaves: tex-weave now 48 threads a tile with ridged threads; new tex-burlap (coarse open weave with gaps) maps to Burlap. Canvas, Fabric weave and Burlap read as cloth, not a ladder.
@@ -1186,3 +1202,40 @@ Found by painting through the real app (new movie, brush library, Color panel, C
 - Rough hatch: flow 0.95, spacing 0.08, grain 0.3, jitter opacity 0.1.
 - Fade spray: scatter 0.8 to 0.25, softness 0.6, flow 0.35, max size 120: a mist, not a page-wide cloud.
 - Real app path (pen events, brush library) before/after: w17_paint/before_a.png, after_a.png, before_c.png, after_c.png, after_c2.png.
+
+## v0.17.1 · brushes · paints
+- Opaque paints (Round, Flat, Gouache, Acrylic, Filbert; Classic and Animation) had floors of 0.45 to 0.6 on pressure size, so force 0.2 to 0.9 changed the width by about a quarter and the edge was clean. Size floor is now 0.25 to 0.3 (about 0.45 of max at force 0.2, full at 1.0), flow floor 0.2 (Gouache 0.4), grain 0.4 to 0.45 with depth min 0.05 and position scatter 0.04 to 0.05, burnout 0.2 to 0.35: the rim is ragged and breaks into the tooth at light pressure and as the load runs down.
+- Real app path crops: w17_paint/p18_before.png, p18_after.png (Classic Painting set). The Animation Paint rows use the same recipe and were not captured separately.
+- Edges (final pass): paint/fam-paint-tips.ts gains a `taper` (outer hairs run shorter) so Flat paint and Filbert end in a ragged, tapered edge instead of a ruler cut (hair length variation 0.85 and 0.7). Round and Gouache bodies use 9 to 11 coarse hairs with many missing outer ones, and their position scatter dropped to 0.012 so the hair streaks survive stamping: the rim shows a combed, streaky halo. It is still close to a capsule at the default size; a harder grain cut of the rim would need an engine edge mask and was left. Crops: w17_paint/p19_after.png, p19_after3.png.
+- Edge mask (opt-in `edgeBreak` on Brush, absent or 0 is today's behaviour exactly): paint/fam-edge.ts, called once per dab from stroke.ts after the dab's coverage is formed. The outer band of each dab (about 35 percent of the radius at 1.0, because dense stamping piles each rim pixel up to solid) is cut by the canvas-anchored paper grain plus 3 px flake noise, stretched so the edge breaks instead of landing on one crisp radius; deeper at light pressure (dab flow) and as burnout lowers the load. The mask is canvas anchored, so every dab agrees on a pixel and the break survives stamping. Set on Round paint (1) and Gouache (1.2), Classic and Animation. Per-stroke cost measured in the lab (160 dabs of 70 px, 6 strokes, 4 runs): 0 vs 1 are within run noise (about 480 vs 450 ms); the pass skips the body, uses no square root and a lookup table for the noise. First tries cut only the halo (a crisp edge): the noise had to be stretched for a ragged one.
+- Real app crops: w17_paint/p20_after.png (Gouache, Round paint, Acrylic as the unchanged control, Animation Gouache and Round paint); before is p19_after3.png.
+
+## v0.17.1 · brushes · Chrome, Rough hatch, Sumi
+- Chrome: paint/shine.ts shades the dark side of a metal at only a quarter strength and floors the factor at 0.55 + 0.3 metal, so a tube has a bright band and a soft body, no dark offset line (non-metal shiny brushes unchanged). paint/fam-paint-size.ts opens Chrome at up to 30 px.
+- Rough hatch: new stamp hatch-rough (fam-paint-tips.ts: four rows of uneven ragged dashes with gaps and tooth), mapped in brush-materials.ts; brush spacing 0.45, roundness 0.9, grain 0.5, jitter opacity 0.2, size jitter 0.15, small rotation jitter. Reads as broken hatch marks with grain.
+- Rough hatch, second pass: the tick-rows tip read as a tyre track. Now hatch-rough is three long uneven rough lines (length, offset, width, darkness vary), the brush is locked to the canvas (followStroke false, baseRot 0.785), spacing 0.28 w/ spacing jitter 0.6, size and opacity jitter, pressure size 0.7 to 1 and pressure flow: parallel diagonal hatching that fills the band, darker w/ pressure. Crop: w18_br/b2_hatch.png.
+- Sumi: taperSize 0.5, taperTip 0, taperEnd 0.3: no hairline tail or start speck at force 0.2, 0.5 or 0.9.
+- Crops (2x): scratchpad w18_br/before_*.png and a1_*.png, a2_*.png (final).
+
+## v0.17.1 · help
+- L-SH-011: the Manual (ui/help-view.ts, shown in the Help Center) gets version tabs: All plus one tab per release in ui/whats-new-data.ts, newest first. A version tab shows that release's highlights and the manual's "New in x.y.z" notes; All shows the whole manual with its section list. Each version page is built once with the section pages; a tab click only toggles hidden and classes. Tabs are a roving tablist (Left, Right, Home, End).
+- Search keeps filtering sections as you type (inside the chosen tab) and now marks matches with the CSS Custom Highlight API (::highlight(fm-help-hit) and fm-help-cur in styles/help.css), so no DOM node is touched. The first match scrolls into view; Enter goes to the next, Shift+Enter to the previous, with a "Match i of n" status line. A browser without the API still filters, without marks.
+- Placeholder, tab bar label and All tab follow the language (onLanguage); the manual text stays English. Checked in Chromium: w18_help/02_v015.png (tab), 03_search_brush.png, 04_enter_next.png (63 matches, third one current), 05_v013_search.png.
+
+## v0.17.1 · brushes · wet
+
+- Cream tint on bare paper: the bleed pass now gives clear paper outside a wash a stain only where it is deep in a wet neighbour's reach (gain under 0.12 is dropped, not drawn), so the faint pale discs at joins are gone; colour still runs inside and between the washes. Checked 12 x amplified (w17_wet/w2_cols3_amp.png): no tint.
+- Rest beads: a gap in the events counts as a rest only if the pen was already slow (smoothed speed under 0.07 before the gap) and moved under 3 px; a stall in steady motion leaves no bead. A held pen that keeps reporting counts after 320 ms inside a 1.5 px spot (stroke.ts restX/restY/restT, one bead per rest).
+- Wet-in-wet driven again: red through a wet blue band runs into the blue, and the blue pulls down into the red below the crossing (w17_wet/w2_wiw2.png).
+
+## v0.17.1 · brushes · oil
+- Hard vertical end of bristle strokes (upright and under tilt): all hairs left together. `BristleStep.lift` (0..1 along the run-out in `bristleLift`, stroke.ts) now lets each hair lift at its own place (bristle.ts `liftK`): random per hair, outer hairs of a leaning bundle first, so the end frays; a blade lifts from its corners in, so Knife and Palette knife end in a rounded point. The run-out is longer under lean (x1.8 at full lean) and the pressure now falls to 0.4 of its value instead of 0, so the per-hair lift, not the pressure, shapes the end.
+- Flat bristle (bundle since v0.17.0) frays the same way. Tested with tiltX 30 / 60 and tiltY 45 (pen release carries the tilt). Shots w18_oil/tilt_a.png (before), tilt_b.png and tilt_k.png (after).
+
+## v0.17.1 · review
+- Engine notices with a count: the paste notice "{count} blocks were left out: ..." was built in English with the number joined in, so the UI could not translate it. `Notice` now carries optional `vars`; `app.ts` toast and `ui/status.ts` flash run `tf(text, vars)` (whole sentence translated, values filled after). Other engine notices are unchanged.
+- Help: closing the manual now removes its two highlight registrations (`onClose` in help-view.ts), so no ranges stay registered on detached text. Export dialog: a stray spacing typo on the alphaNote line.
+- Checked, no change: stroke timing on a 3840 px canvas, 2000 px stroke, ms (old tree via git archive in a second server vs now): oil 100 to 119 vs 91 to 118, watercolor 1050 to 1300 vs 840 to 1080, pencil 27 to 30 vs 30 to 41 (noise level), palette knife 96 to 121 vs 100 to 160, round paint 104 to 146 vs 92 to 177. Clipboard assets are cleared on every Copy; paste into a locked track throws in `pasteContent` before any asset is added to the movie (the blob store may keep an unused blob until reload). tsc and build clean; text lint clean (only build_app.log, not source).
+- Known and left: the "dry media" entry above sits mid-way inside the earlier Tilt re-check list (log order only).
+- Final pass (silent pen): a gap in events with the pen down and the next sample within 4 px is a rest for the gap's duration (the speed-before test is dropped; a stall in steady motion resumes farther away, so it still leaves no bead). A 0.9 s stop mid-stroke leaves a soft pool (w17_wet/w2_touch3.png).
+- Wet-in-wet at a touching edge: a wash stays wet 10 + 14 x dilution seconds (was 4 + 8 x), and the bleed colour blur is now 1.6 x the rim radius (about 0.3 of the brush width) instead of 7 x, so the two colours feather into each other across the contact and keep their own body, instead of the earlier overlap-only darkening or a full merge (w2_touch2.png was the too-strong intermediate).
