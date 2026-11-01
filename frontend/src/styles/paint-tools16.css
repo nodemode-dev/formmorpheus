@@ -18,6 +18,7 @@
 .fm-paint-slider.is-fine .fm-paint-slider-thumb { background: var(--accent-color); }
 .fm-paint-slot { bottom: calc(var(--m) * (100% - 16px)); height: 16px; left: -16px; opacity: 0; transition: opacity 0.12s var(--ease-glass); }
 .fm-paint-slot::after { top: 6px; }
+.fm-paint-slot.is-empty { display: none; }
 .fm-paint-side:hover .fm-paint-slot, .fm-paint-side:focus-within .fm-paint-slot, .fm-paint-side.is-active .fm-paint-slot { opacity: 1; }
 .fm-paint.is-side-right .fm-paint-slot { left: auto; right: -16px; }
 .fm-paint-side { width: 52px; }

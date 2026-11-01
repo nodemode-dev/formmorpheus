@@ -3,7 +3,7 @@
 import type { Engine } from '../engine/engine';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
-import { evalLane, laneChannels, laneOf, warpSize } from '../engine/keys';
+import { evalLane, laneChannels, laneOf, warpRows, warpSize } from '../engine/keys';
 import { DISTORT_IDS, WARP_MAX, WARP_MIN, warpId } from '../engine/warp-draw';
 import type { Content, KeyLane } from '../engine/types';
 import { el, setClass, setText, setValue } from './dom';
@@ -21,6 +21,7 @@ const HINT: Record<WarpKind, string> = {
 export class WarpCard {
   readonly root = el('<div class="fm-wc"></div>');
   private readonly sizes = new Map<number, HTMLButtonElement>();
+  private readonly adders = new Map<'col' | 'row', HTMLButtonElement>();
   private readonly pick = document.createElement('select');
   private readonly fx = document.createElement('input');
   private readonly fy = document.createElement('input');
@@ -44,6 +45,17 @@ export class WarpCard {
         seg.appendChild(b);
       }
       this.root.append(label, seg);
+      // finer control on one axis: one more node column or row, the bend so far kept
+      const add = el('<div class="fm-kc-seg" role="group" aria-label="Add nodes"></div>');
+      for (const [axis, label2, tip] of [['col', 'Add column', 'One more column of nodes'], ['row', 'Add row', 'One more row of nodes']] as const) {
+        const b = el<HTMLButtonElement>('<button class="fm-kc-segbtn" type="button"></button>');
+        setText(b, label2);
+        b.title = tip;
+        b.addEventListener('click', () => this.grow(axis));
+        this.adders.set(axis, b);
+        add.appendChild(b);
+      }
+      this.root.appendChild(add);
     }
     // numeric entry: pick a node (or corner), then type its offset from rest in px
     const nl = el('<div class="fm-wc-label"></div>');
@@ -95,8 +107,10 @@ export class WarpCard {
   sync(c: Content, lane: KeyLane | null): void {
     this.last = { c, lane };
     if (this.kind === 'warp') {
-      const cur = warpSize(lane);
-      for (const [n, b] of this.sizes) setClass(b, 'is-active', n === cur);
+      const cur = warpSize(lane), rows = warpRows(lane);
+      for (const [n, b] of this.sizes) setClass(b, 'is-active', n === cur && n === rows);
+      this.adders.get('col')!.disabled = !lane || cur >= WARP_MAX;
+      this.adders.get('row')!.disabled = !lane || rows >= WARP_MAX;
     }
     setClass(this.bilinear, 'is-active', lane?.options.bilinear === true);
     this.bilinear.setAttribute('aria-pressed', String(lane?.options.bilinear === true));
@@ -113,7 +127,16 @@ export class WarpCard {
     this.engine.run('Resample quality', (m) => ops.updateContent(m, t.c.id, (cc) => (id === 'smooth' ? keyOps.clearLaneOption(cc, this.kind, 'resample') : keyOps.setLaneOption(cc, this.kind, 'resample', id))));
   }
 
-  private count(): number { return this.kind === 'distort' ? 4 : warpSize(this.last?.lane ?? null) ** 2; }
+  private count(): number { return this.kind === 'distort' ? 4 : warpSize(this.last?.lane ?? null) * warpRows(this.last?.lane ?? null); }
+
+  private grow(axis: 'col' | 'row'): void {
+    const t = this.target();
+    if (!t) return;
+    const lane = laneOf(t.c, 'warp');
+    if (!lane) return;
+    const cols = warpSize(lane) + (axis === 'col' ? 1 : 0), rows = warpRows(lane) + (axis === 'row' ? 1 : 0);
+    this.engine.run(axis === 'col' ? 'Add warp column' : 'Add warp row', (m) => ops.updateContent(m, t.c.id, (cc) => keyOps.setWarpGrid(cc, cols, rows)));
+  }
 
   private ids(i: number): [string, string] {
     if (this.kind === 'distort') return [DISTORT_IDS[i * 2], DISTORT_IDS[i * 2 + 1]];

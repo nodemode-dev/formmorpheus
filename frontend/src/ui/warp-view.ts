@@ -5,7 +5,7 @@ import type { Engine } from '../engine/engine';
 import type { View } from '../engine/render';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
-import { animate, evalLane, laneOf, warpSize, type Animated } from '../engine/keys';
+import { animate, evalLane, laneOf, warpRows, warpSize, type Animated } from '../engine/keys';
 import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { DISTORT_IDS, contentRect, localToStage, setStagePost, stageToLocal, warpId, warpPoint, type Rect } from '../engine/warp-draw';
 import { postMatrix } from '../engine/transform';
@@ -61,22 +61,22 @@ const CORNER_AT: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
 interface Handle { row: number; col: number; ids: [string, string]; base: [number, number] }
 
 /** Handles of a lane: Warp has a node per mesh point, Distort has its 4 corners (top left, top right, bottom right, bottom left). */
-function handlesOf(kind: WarpKind, n: number, r0: Rect): Handle[] {
+function handlesOf(kind: WarpKind, n: number, rows: number, r0: Rect): Handle[] {
   if (kind === 'distort') {
     return CORNER_AT.map(([u, v], i) => ({ row: v, col: u, ids: [DISTORT_IDS[i * 2], DISTORT_IDS[i * 2 + 1]] as [string, string], base: [r0.x + u * r0.w, r0.y + v * r0.h] as [number, number] }));
   }
   const out: Handle[] = [];
-  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) out.push({ row: r, col: c, ids: [warpId(r, c, 'x'), warpId(r, c, 'y')], base: [r0.x + (c / (n - 1)) * r0.w, r0.y + (r / (n - 1)) * r0.h] });
+  for (let r = 0; r < rows; r++) for (let c = 0; c < n; c++) out.push({ row: r, col: c, ids: [warpId(r, c, 'x'), warpId(r, c, 'y')], base: [r0.x + (c / (n - 1)) * r0.w, r0.y + (r / (rows - 1)) * r0.h] });
   return out;
 }
 
 /** The content's values with the lane's raw offsets (zero offsets included), so handles show even at rest. */
-function rawAnimated(c: Content, kind: WarpKind, local: number, vals: Record<string, number>, n: number): Animated {
+function rawAnimated(c: Content, kind: WarpKind, local: number, vals: Record<string, number>, n: number, rows = n): Animated {
   const a = animate(c, local);
   if (kind === 'distort') return { ...a, warp: null, distort: DISTORT_IDS.map((id) => vals[id] ?? 0) };
   const dx: number[] = [], dy: number[] = [];
-  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) { dx.push(vals[warpId(r, k, 'x')] ?? 0); dy.push(vals[warpId(r, k, 'y')] ?? 0); }
-  return { ...a, warp: { n, dx, dy }, distort: null };
+  for (let r = 0; r < rows; r++) for (let k = 0; k < n; k++) { dx.push(vals[warpId(r, k, 'x')] ?? 0); dy.push(vals[warpId(r, k, 'y')] ?? 0); }
+  return { ...a, warp: rows === n ? { n, dx, dy } : { n, rows, dx, dy }, distort: null };
 }
 
 interface Drag {
@@ -141,7 +141,8 @@ export class WarpOverlay {
     const local = this.engine.frame - c.start;
     const vals = evalLane(c, lane, local);
     const n = kind === 'warp' ? warpSize(lane) : 2;
-    const a = rawAnimated(c, kind, local, vals, n);
+    const rows = kind === 'warp' ? warpRows(lane) : 2;
+    const a = rawAnimated(c, kind, local, vals, n, rows);
     const rect = contentRect(c, m);
     const o = this.pt;
     // the handles follow the parents and the camera, like the drawing does
@@ -154,9 +155,9 @@ export class WarpOverlay {
     for (let i = 0; i < this.lines.length; i++) {
       const line = this.lines[i];
       const row = i < MAX_NODES, k = row ? i : i - MAX_NODES;
-      if (k >= n) { setHidden(line, true); continue; }
+      if (k >= (row ? rows : n)) { setHidden(line, true); continue; }
       setHidden(line, false);
-      const t = k / (n - 1);
+      const t = k / ((row ? rows : n) - 1);
       let pts = '';
       for (let s = 0; s <= SAMPLES; s++) {
         const [x, y] = row ? place(s / SAMPLES, t) : place(t, s / SAMPLES);
@@ -164,12 +165,12 @@ export class WarpOverlay {
       }
       line.setAttribute('points', pts);
     }
-    const hs = handlesOf(kind, n, rect);
+    const hs = handlesOf(kind, n, rows, rect);
     for (let i = 0; i < this.dots.length; i++) {
       const dot = this.dots[i];
       if (i >= hs.length) { setHidden(dot, true); continue; }
       setHidden(dot, false);
-      const [x, y] = place(hs[i].col / (n > 1 && kind === 'warp' ? n - 1 : 1), hs[i].row / (n > 1 && kind === 'warp' ? n - 1 : 1));
+      const [x, y] = place(hs[i].col / (n > 1 && kind === 'warp' ? n - 1 : 1), hs[i].row / (rows > 1 && kind === 'warp' ? rows - 1 : 1));
       dot.setAttribute('cx', x.toFixed(1));
       dot.setAttribute('cy', y.toFixed(1));
       dot.classList.toggle('is-picked', i === warpMode.handle);
@@ -191,7 +192,7 @@ export class WarpOverlay {
     const lane = laneOf(t.c, t.kind);
     if (!lane) return;
     const n = t.kind === 'warp' ? warpSize(lane) : 2;
-    const handle = handlesOf(t.kind, n, contentRect(t.c, m))[Number(dot.getAttribute('data-i'))];
+    const handle = handlesOf(t.kind, n, t.kind === 'warp' ? warpRows(lane) : 2, contentRect(t.c, m))[Number(dot.getAttribute('data-i'))];
     if (!handle) return;
     const vals = evalLane(t.c, lane, this.engine.frame - t.c.start);
     warpMode.pick(Number(dot.getAttribute('data-i')));

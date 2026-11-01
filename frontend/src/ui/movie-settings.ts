@@ -5,7 +5,8 @@ import type { PlaybackMode } from '../engine/types';
 import { el, q, setChecked, setClass, setHidden, setText } from './dom';
 import { followLanguage, fpsText } from './fps-label';
 import { toggleOf } from './panels/controls';
-import { confirmAction } from './dialogs';
+import { askFpsChange } from './fps-change-dialog';
+import { pickAuthorPicture } from './author-picture';
 import { loadPrefs, updatePrefs } from './prefs';
 import { openPaintOnCreate, setOpenPaintOnCreate } from './create-pref';
 import { loadPaintPrefs, savePaintPrefs } from './paint-settings';
@@ -101,6 +102,8 @@ export class MovieSettings {
   private body!: HTMLElement;
   private readonly author = input('text', 'fm-ms-wide');
   private art!: HTMLImageElement;
+  private artBtn!: HTMLButtonElement;
+  private artClear!: HTMLButtonElement;
   private artUrl = '';
   private readonly hh = input('number', 'fm-ms-hms');
   private readonly mm = input('number', 'fm-ms-hms');
@@ -176,8 +179,15 @@ export class MovieSettings {
     enter(this.author);
     this.author.addEventListener('change', () => this.run('Author', { author: this.author.value }));
     // the picture shown in the Theater is a small thumbnail inside the About row, not a large preview
-    const art = el<HTMLElement>('<span class="fm-ms-art"><img alt="Theater picture" draggable="false"></span>');
+    const art = el<HTMLElement>('<span class="fm-ms-artwrap"><button class="fm-ms-art" type="button"><img alt="Theater picture" draggable="false"></button><button class="fm-ms-artclear" type="button" hidden></button></span>');
     this.art = q<HTMLImageElement>(art, 'img');
+    this.artBtn = q<HTMLButtonElement>(art, '.fm-ms-art');
+    this.artClear = q<HTMLButtonElement>(art, '.fm-ms-artclear');
+    this.artBtn.title = t('Choose your own picture for this movie');
+    this.artBtn.setAttribute('aria-label', t('Choose your own picture for this movie'));
+    setText(this.artClear, t('Remove picture'));
+    this.artBtn.addEventListener('click', () => { void pickAuthorPicture().then((url) => { if (url) { this.run('Picture in the Theater', { authorPicture: url }); void this.refreshArt(); } }); });
+    this.artClear.addEventListener('click', () => { this.run('Picture in the Theater', { authorPicture: '' }); void this.refreshArt(); });
     this.panes[0].append(
       el<HTMLElement>('<div class="fm-ms-head">About this artwork</div>'), row('Picture in the Theater', art), row('Author', this.author),
       el<HTMLElement>('<div class="fm-ms-head">History</div>'),
@@ -268,6 +278,11 @@ export class MovieSettings {
 
   /** The artwork picture is the current Stage frame, swapped in when it is ready. */
   private async refreshArt(): Promise<void> {
+    const raw = this.engine.movie?.authorPicture;
+    // a shared movie is outside input: only an embedded picture is shown, never an address that would be fetched
+    const own = raw && /^data:image\/(png|jpeg|webp|gif|avif);base64,/i.test(raw) && raw.length < 400000 ? raw : undefined;
+    setHidden(this.artClear, !raw);
+    if (own) { if (this.art.src !== own) this.art.src = own; return; }
     const blob = await this.poster();
     if (!blob || !this.pop.isOpen) return;
     const url = URL.createObjectURL(blob);
@@ -355,11 +370,14 @@ export class MovieSettings {
   /** A new frame rate retimes every block and key to keep its length in seconds, so a movie with content asks first. */
   private async setFps(fps: number): Promise<void> {
     const m = this.engine.movie;
+    let keepFrames = false;   // an empty movie only keeps its length in seconds
     if (m && m.tracks.some((t) => t.content.length > 0) && fps !== m.fps) {
-      const ok = await confirmAction('Change frame rate', 'Blocks, keyframes and Flipbook frames are retimed to keep their length in seconds. This can shift cuts by a frame. Undo restores them.', 'Change');
-      if (!ok) { this.forceCustom = false; this.patch(true); return; }
+      keepFrames = true;   // the reference keeps the frames and the speed changes
+      const ans = await askFpsChange(m.fps, fps, m.duration);
+      if (ans === 'cancel') { this.forceCustom = false; this.patch(true); return; }
+      keepFrames = ans === 'keep-frames';
     }
-    this.run('Frame Rate', { fps });
+    this.run('Frame Rate', { fps, keepFrames });
   }
 
   private put(node: HTMLInputElement | HTMLSelectElement, value: string, force: boolean): void {

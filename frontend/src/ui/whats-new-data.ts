@@ -5,6 +5,18 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.17.0', name: 'Open groups, truer brushes and artwork import',
+    additions: [
+      { title: 'Groups you can open', text: 'Open a Group to see its own tracks, drag blocks in and out, and add content inside it.', command: 'home' },
+      { title: 'Brushes that read right', text: 'Oil without seams, knives that smear, watercolor that bleeds, gouache and texture brushes with real grain, and pencils that shade with tilt.', command: 'new-flipbook' },
+      { title: 'Artwork files', text: 'Open layered .procreate artwork as a Drawing with its layers, blend modes and groups.', command: 'import-file' },
+      { title: 'Fonts library', text: 'Install a font once and use it in every movie; a missing font asks to be replaced or kept.', command: 'add-text' },
+      { title: 'Share more ways', text: 'Share a movie from the Theater as a video, frames or the movie file, and save frames into a folder.', command: 'export' },
+      { title: 'Frame rate and timing', text: 'Changing the frame rate keeps every frame by default, and durations take hours, minutes and seconds.', command: 'settings' },
+      { title: 'Resize by holding', text: 'Hold the toolbar between the Stage and the Timeline and drag to resize them.', command: 'home' },
+    ],
+  },
+  {
     version: '0.16.0', name: 'Every gap closed, deeper effects and a calmer export',
     additions: [
       { title: 'Export progress', text: 'Frames done, time elapsed and time left, with Cancel, and a chip that stays while you work.', command: 'export' },

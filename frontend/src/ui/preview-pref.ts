@@ -1,8 +1,8 @@
-// "Preview sounds before import": off by default, so a sound goes straight onto the Timeline. The one rule is by duration
-// (ui/import-preview.ts): a sound of a minute or more still asks first; turning this on asks for every sound.
+// "Preview sounds before import": on by default, as the reference opens Preview Sound for every sound. Turned off, the
+// duration rule of ui/import-preview.ts is what is left: only a sound of a minute or more still asks first.
 const KEY = 'fm.previewSounds';
-let on = false;
-try { on = localStorage.getItem(KEY) === '1'; } catch { /* storage blocked: off */ }
+let on = true;
+try { on = localStorage.getItem(KEY) !== '0'; } catch { /* storage blocked: stays on */ }
 
 export const previewSounds = {
   get on(): boolean { return on; },

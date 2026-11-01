@@ -120,8 +120,10 @@ export class ContentMenu {
 
     this.highlight = popRow('highlight', 'Highlight', { sub: true });
     const hlPanel = Popover.panel('fm-pop fm-cm-sub fm-pop-sub');
+    // the seven colors of the reference (red shows as Coral, orange as Amber); an older movie's teal still draws, it is only not offered
     for (const h of HIGHLIGHTS) {
-      const r = popRow(null, cap(h), { check: true });
+      if (h === 'teal') continue;
+      const r = popRow(null, h === 'red' ? 'Coral' : h === 'orange' ? 'Amber' : cap(h), { check: true });
       r.ico.appendChild(el<HTMLElement>(`<span class="fm-cm-dot" data-hl="${h}"></span>`));
       r.el.addEventListener('click', () => { this.patch({ highlight: h }, 'Highlight'); this.pop.hide(); });
       this.hlRows.set(h, r);
@@ -162,7 +164,7 @@ export class ContentMenu {
     this.reverse = popRow(null, 'Reverse keyframes');
     this.reverse.el.addEventListener('click', () => {
       const ids = this.ids;
-      this.engine.run('Reverse Keyframes', (m) => ids.reduce((acc, id) => ops.updateContent(acc, id, (c) => keyOps.reverseKeys(c)), m));
+      this.engine.run('Reverse Keyframes', (m) => ids.reduce((acc, id) => ops.updateContent(acc, id, (c) => keyOps.reverseKeys(c, undefined, true)), m));
       this.pop.hide();
     });
     this.toFlip = popRow('flipbook', 'Convert to Flipbook');
@@ -364,7 +366,6 @@ export class ContentMenu {
     const over = sel.filter((c) => this.engine.isOver(c));
     this.split.setDisabled(over.length !== 1 || this.engine.frame <= over[0].start);
     this.after.setDisabled(none);
-    setClass(this.reverse.el, 'is-gone', this.engine.mode !== 'keyframe');
     this.reverse.setDisabled(!sel.some((c) => c.keys.length > 0));
     this.fill.setDisabled(none);
     setClass(this.toFlip.el, 'is-gone', none || !sel.every((c) => canConvert(c)));

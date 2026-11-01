@@ -370,6 +370,7 @@ export class Run {
 
     const writer = new GifWriter(o.width, o.height, o.gif.loop);
     writer.setOrdered(o.gif.smoothness ?? 2, o.gif.intensity ?? 50);
+    writer.keepAll = o.gif.exactFrames === true;
     const ideal = 100 / outFps(o, movie.fps);
     let emitted = 0;
     for (let i = 0; i < total; i++) {

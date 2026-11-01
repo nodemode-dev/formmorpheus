@@ -4,7 +4,8 @@ import * as trackOps from '../engine/track-ops';
 import * as lockOps from '../engine/lock-ops';
 import { setTrackScreen } from '../engine/camera';
 import { setMute, setSolo } from '../media/audio-edit';
-import { el } from './dom';
+import { el, q, setClass, setText } from './dom';
+import { icon } from './icons';
 import { soundFxCard } from './sound-fx-card';
 import { Popover, popField, popRow, popSep } from './popover';
 
@@ -15,7 +16,7 @@ export class TrackMenu {
   private trackId: string | null = null;
   private readonly name;
   private readonly paste = popRow('paste', 'Paste');
-  private readonly pasteT = popRow('paste', 'Paste track');
+  private pasteT!: HTMLButtonElement;
   private readonly clearGap = popRow('removeGap', 'Remove empty section');
   private readonly up = popRow('chevronUp', 'Move up');
   private readonly down = popRow('chevronDown', 'Move down');
@@ -28,7 +29,7 @@ export class TrackMenu {
   onRecord: (() => void) | null = null;
 
   constructor(private readonly engine: Engine) {
-    this.pop = new Popover('fm-tm', 232);
+    this.pop = new Popover('fm-tm', 264);
     this.close = () => this.pop.hide();
     this.list = el<HTMLElement>('<div class="fm-tm-list"></div>');
     this.name = popField('rename', 'Track name', (v) => this.act('Rename Track', (m, id) => ops.renameTrack(m, id, v)));
@@ -56,14 +57,20 @@ export class TrackMenu {
     this.solo.el.addEventListener('click', () => { const on = !this.solo.el.classList.contains('is-checked'); this.act(on ? 'Solo Track' : 'Unsolo Track', (m, id) => setSolo(m, id, on)); });
     this.rec.el.addEventListener('click', () => { this.close(); this.onRecord?.(); });
     this.fxRow.el.addEventListener('click', () => { const id = this.trackId; this.close(); if (id) soundFxCard(this.engine).show({ kind: 'track', id }); });
-    const cutT = popRow('cut', 'Cut track');
-    const copyT = popRow('copy', 'Copy track');
-    const dupT = popRow('duplicate', 'Duplicate track');
-    cutT.el.addEventListener('click', () => this.trackOp('Cut Track', (m, id) => { const t = m.tracks.find((x) => x.id === id); if (t) trackOps.copyTrack(t); return ops.deleteTrack(m, id); }));
-    copyT.el.addEventListener('click', () => { const t = this.engine.movie?.tracks.find((x) => x.id === this.trackId); if (t) trackOps.copyTrack(t); this.close(); });
-    dupT.el.addEventListener('click', () => this.trackOp('Duplicate Track', (m, id) => trackOps.duplicateTrack(m, id).movie));
-    this.pasteT.el.addEventListener('click', () => this.trackOp('Paste Track', (m, id) => trackOps.pasteTrack(m, id).movie));
-    this.list.append(this.name.el, cutT.el, copyT.el, dupT.el, this.pasteT.el, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), this.screen.el, this.lock.el, this.mute.el, this.solo.el, this.rec.el, this.fxRow.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
+    // the whole-track clipboard as the icon row on top, as the block menu has
+    const tileRow = el<HTMLElement>('<div class="fm-cm-tiles"></div>');
+    const tile = (name: 'cut' | 'copy' | 'duplicate' | 'paste', label: string, run: () => void): HTMLButtonElement => {
+      const b = el<HTMLButtonElement>(`<button class="fm-cm-tile" type="button" title="${label}">${icon(name, 16)}<span></span></button>`);
+      setText(q(b, 'span:last-child'), label);
+      b.addEventListener('click', run);
+      tileRow.appendChild(b);
+      return b;
+    };
+    tile('cut', 'Cut', () => this.trackOp('Cut Track', (m, id) => { const t = m.tracks.find((x) => x.id === id); if (t) trackOps.copyTrack(t); return ops.deleteTrack(m, id); }));
+    tile('copy', 'Copy', () => { const t = this.engine.movie?.tracks.find((x) => x.id === this.trackId); if (t) trackOps.copyTrack(t); this.close(); });
+    tile('duplicate', 'Duplicate', () => this.trackOp('Duplicate Track', (m, id) => trackOps.duplicateTrack(m, id).movie));
+    this.pasteT = tile('paste', 'Paste', () => this.trackOp('Paste Track', (m, id) => trackOps.pasteTrack(m, id).movie));
+    this.list.append(this.name.el, tileRow, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), this.screen.el, this.lock.el, this.mute.el, this.solo.el, this.rec.el, this.fxRow.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
     this.pop.body.appendChild(this.list);
   }
 
@@ -74,7 +81,7 @@ export class TrackMenu {
 
   embed(host: Popover, row: HTMLElement, track: () => string | null): void {
     const panel = Popover.panel('fm-pop fm-tm fm-pop-sub');
-    panel.style.width = '232px';
+    panel.style.width = '264px';
     panel.appendChild(this.list);
     this.close = () => host.hide();
     host.attachSub(row, panel, () => this.patch(track()));
@@ -87,7 +94,8 @@ export class TrackMenu {
     this.name.set(at >= 0 && m ? m.tracks[at].name : '');
     this.name.setDisabled(at < 0);
     this.paste.setDisabled(at < 0 || !this.engine.hasClipboard);
-    this.pasteT.setDisabled(at < 0 || !trackOps.hasTrackClip());
+    setClass(this.pasteT, 'is-disabled', at < 0 || !trackOps.hasTrackClip());
+    for (const b of Array.from(this.list.querySelectorAll<HTMLElement>('.fm-cm-tile'))) if (b !== this.pasteT) setClass(b, 'is-disabled', at < 0);
     this.clearGap.setDisabled(at < 0 || !m || m.tracks[at].content.some((c) => this.engine.isOver(c)));
     this.screen.setChecked(at >= 0 && !!m?.tracks[at].screen);
     this.screen.setDisabled(at < 0);

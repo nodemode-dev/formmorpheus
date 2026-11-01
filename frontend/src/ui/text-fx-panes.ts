@@ -8,6 +8,7 @@ import { TITLE_PRESETS } from '../engine/text-presets';
 import { DEFAULT_SIDE, paintRun, runValue, type AnimDir, type AnimOrder, type AnimUnit, type TextAnimSide, type TextRun } from '../engine/text-rich';
 import { EASES, type Content, type Ease, type TextStyle } from '../engine/types';
 import { ensureTextFont, fontCatalog } from '../media/fonts';
+import { embedLibraryFamily, inLibrary } from '../io/fonts-library';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { textSel } from './text-sel';
 
@@ -155,7 +156,7 @@ export class TextFxPanes {
       },
     });
     const val = <K extends keyof Omit<TextRun, 'from' | 'to'>>(s: TextStyle, k: K): TextRun[K] | undefined => { const r = this.rangeOf(s); return r.to > r.from ? runValue(s, r.from, r.to, k) : undefined; };
-    const fonts = (): Array<[string, string]> => { const c = fontCatalog(this.engine.movie); return [...c.bundled, ...c.movie].map((f) => [f, f] as [string, string]); };
+    const fonts = (): Array<[string, string]> => { const c = fontCatalog(this.engine.movie); return [...c.bundled, ...c.library, ...c.movie].map((f) => [f, f] as [string, string]); };
     const fontSel = this.select(host, 'Font', [], (s) => val(s, 'font'), null, 'font', true);
     const sel = q<HTMLSelectElement>(fontSel, 'select');
     const fillFonts = (): void => {
@@ -169,7 +170,7 @@ export class TextFxPanes {
     sel.addEventListener('change', () => {
       const font = sel.value, t = this.content()?.text;
       if (!font || !t) return;
-      void ensureTextFont({ ...t, font }).then(() => { this.run({ font }, 'font'); this.end(); });
+      void ensureTextFont({ ...t, font }).then(async () => { if (inLibrary(font)) await embedLibraryFamily(this.engine, font); this.run({ font }, 'font'); this.end(); });
     });
     const wt = this.select(host, 'Weight', WEIGHTS.map(([w, n]) => [String(w), n] as [string, string]), (s) => { const v = val(s, 'weight'); return v === undefined ? undefined : String(v); }, null, 'weight', true);
     q<HTMLSelectElement>(wt, 'select').addEventListener('change', (e) => {

@@ -203,6 +203,7 @@ export class VoicePanel {
       const me = micError(e);
       setText(this.errText, me.message);
       setHidden(this.err, false);
+      if (!this.dev.options.length) this.dev.appendChild(new Option(t('No microphone found'), ''));
       this.patch();
       return;
     }

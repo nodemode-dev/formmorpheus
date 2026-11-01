@@ -77,6 +77,7 @@ export class StageOptionsBody {
     this.clear = toggleRow(t('Transparent background'), (v) => this.engine.run('Transparent Background', (m) => ops.patchMovie(m, { transparent: v })));
     this.back = sliderRow(t('Backstage visibility'), 0, 100, 1, (v) => this.engine.run('Backstage Visibility', (m) => ops.patchMovie(m, { backstage: v / 100 }), 'movie-backstage'), { def: BACKSTAGE_DEFAULT * 100 });
     q(this.back.el, 'input[type="range"]').addEventListener('change', () => this.engine.endGesture());
+    q(this.back.el, '.cv-slider-ctl').append(el('<span class="fm-so-pct" aria-hidden="true">%</span>'));
     this.tc = toggleRow(t('Timecode'), (v) => this.engine.run('Timecode', (m) => ops.patchMovie(m, { timecode: v })));
     q(this.el, '[data-sec="stage"]').append(this.bgRow, this.clear.el, this.back.el, this.tc.el);
 
@@ -95,13 +96,26 @@ export class StageOptionsBody {
       blend: toggleRow(t('Blend primary frame'), (v) => set({ blendPrimary: v })),
     };
     const sec = q(this.el, '[data-sec="onion"]');
-    const head = el('<div class="fm-so-head"></div>');
-    setText(head, t('Onion skins'));
+    // Onions is its own interface: a row on the Stage page opens it, a back row returns (as the reference's Onions page)
+    const chev = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M%P%"/></svg>';
+    const back = el<HTMLButtonElement>(`<button class="fm-ms-row fm-ms-link fm-ms-back" type="button"><span class="fm-ms-go" aria-hidden="true">${chev.replace('%P%', 'M10 3L5 8l5 5')}</span><span class="fm-ms-label"></span></button>`);
+    setText(q(back, '.fm-ms-label'), t('Onions'));
+    const link = el<HTMLButtonElement>(`<button class="fm-ms-row fm-ms-link" type="button"><span class="fm-ms-label"></span><span class="fm-ms-go" aria-hidden="true">${chev.replace('%P%', 'M6 3l5 5-5 5')}</span></button>`);
+    setText(q(link, '.fm-ms-label'), t('Onions'));
     const o = this.onion;
-    sec.append(head, o.enabled.el, o.backward.el, o.forward.el, o.opacity.el, o.tint.el, o.blend.el);
+    sec.append(back, o.enabled.el, o.backward.el, o.forward.el, o.opacity.el, o.tint.el, o.blend.el);
     this.guides = new GuidesSection(engine);
     this.el.appendChild(this.guides.el);
+    q(this.el, '[data-sec="stage"]').insertBefore(link, this.tc.el);
+    const stageSec = q(this.el, '[data-sec="stage"]');
+    const page = (onions: boolean): void => { stageSec.hidden = onions; this.guides.el.hidden = onions; sec.hidden = !onions; };
+    sec.hidden = true;
+    link.addEventListener('click', () => page(true));
+    back.addEventListener('click', () => page(false));
+    this.showStagePage = () => page(false);
   }
+  /** Back to the Stage page (the Onions page is pushed over it). */
+  showStagePage: () => void = () => undefined;
   private readonly guides: GuidesSection;
 
   sync(): void {
@@ -142,6 +156,7 @@ export class StageOptions {
     if (!this.engine.movie) return;
     if (this.pop.isOpen) { this.pop.hide(); return; }
     this.body.sync();
+    this.body.showStagePage();
     if (at instanceof HTMLElement) this.pop.showFor(at, 'below'); else this.pop.showAt(at.x, at.y);
   }
 

@@ -7,6 +7,27 @@ import type { TimelineView } from '../ui/timeline';
 import { rulerDrag, snapSeconds } from '../ui/timeline-nav';
 import { previewSounds } from '../ui/preview-pref';
 
+/** Holding a zoom key zooms smoothly, a little each frame, instead of in repeated steps. The first press is the command's one step. */
+export function installHeldZoom(idOf: (e: KeyboardEvent) => string | undefined, zoom: (factor: number) => void): void {
+  let dir = 0, raf = 0;
+  const loop = (): void => {
+    if (!dir) { raf = 0; return; }
+    zoom(dir > 0 ? 1.035 : 1 / 1.035);
+    raf = requestAnimationFrame(loop);
+  };
+  window.addEventListener('keydown', (e) => {
+    if (!e.repeat) return;
+    const id = idOf(e);
+    if (id !== 'timeline-in' && id !== 'timeline-out') return;
+    e.preventDefault();
+    dir = id === 'timeline-in' ? 1 : -1;
+    if (!raf) raf = requestAnimationFrame(loop);
+  }, true);
+  const stop = (): void => { dir = 0; };
+  window.addEventListener('keyup', stop, true);
+  window.addEventListener('blur', stop);
+}
+
 export function timelineViewCommands(engine: Engine, timeline: () => TimelineView | null): Command[] {
   const has = (): boolean => !!engine.movie;
   const trackIds = (): string[] => {

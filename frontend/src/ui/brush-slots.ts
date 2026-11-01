@@ -5,18 +5,19 @@
 import { setClass, setStyleVar, setTitle } from './dom';
 import { t } from './i18n';
 
-const KEY = 'formmorpheus.paint.slots';
+// v0.17.0: markers start empty and the person adds them; the key changed so the old pre-seeded values are not read back.
+const KEY = 'formmorpheus.paint.slots2';
 const HOLD_MS = 520;
 
 export type SlotKind = 'size' | 'opacity';
-type Slot = { size: number; opacity: number };
+type Slot = { size: number | null; opacity: number | null };
 
 export interface SlotHost {
   /** `tool:brush`, the identity the slots belong to. */
   key(): string;
   /** The brush's own presets (the slots until the person stores one). */
   defaults(): Slot[];
-  current(): Slot;
+  current(): { size: number; opacity: number };
   recall(kind: SlotKind, value: number): void;
   say(text: string): void;
 }
@@ -57,26 +58,28 @@ export class BrushSlots {
   /** The four slots for the current tool and brush. */
   slots(): Slot[] {
     const have = this.saved[this.host.key()];
-    const base = this.host.defaults();
-    return Array.from({ length: 4 }, (_, i) => have?.[i] ?? base[i] ?? { size: 0.3, opacity: 1 });
+    return Array.from({ length: 4 }, (_, i) => ({ size: have?.[i]?.size ?? null, opacity: have?.[i]?.opacity ?? null }));
   }
 
   store(kind: SlotKind, i: number): void {
     const key = this.host.key();
     const next = this.slots();
-    next[i] = { ...next[i], [kind]: this.host.current()[kind] };
+    const v = this.host.current()[kind];
+    next[i] = { ...next[i], [kind]: v };
     this.saved[key] = next;
     write(this.saved);
     this.sync();
-    this.host.say(t(kind === 'size' ? 'Size {p}% stored in slot {n}' : 'Opacity {p}% stored in slot {n}').replace('{p}', String(Math.round(next[i][kind] * 100))).replace('{n}', String(i + 1)));
+    this.host.say(t(kind === 'size' ? 'Size {p}% stored in slot {n}' : 'Opacity {p}% stored in slot {n}').replace('{p}', String(Math.round(v * 100))).replace('{n}', String(i + 1)));
   }
 
   /** The preview bubble's "+": stores the current value in the next marker, round and round (a marker that already holds it is kept). */
   storeNext(kind: SlotKind): void {
     const slots = this.slots();
     const cur = this.host.current()[kind];
-    const same = slots.findIndex((s) => Math.abs(s[kind] - cur) < 0.012);
+    const same = slots.findIndex((s) => s[kind] !== null && Math.abs((s[kind] as number) - cur) < 0.012);
     if (same >= 0) { this.host.say(t('Already stored in slot {n}').replace('{n}', String(same + 1))); return; }
+    const free = slots.findIndex((s) => s[kind] === null);
+    if (free >= 0) { this.store(kind, free); return; }
     const key = `${this.host.key()}:${kind}`;
     const i = (this.cursor.get(key) ?? -1) + 1;
     this.cursor.set(key, i % 4);
@@ -87,11 +90,10 @@ export class BrushSlots {
   clearAt(kind: SlotKind): void {
     const slots = this.slots();
     const cur = this.host.current()[kind];
-    const at = slots.findIndex((s) => Math.abs(s[kind] - cur) < 0.012);
+    const at = slots.findIndex((s) => s[kind] !== null && Math.abs((s[kind] as number) - cur) < 0.012);
     if (at < 0) { this.host.say(t('No marker at this value')); return; }
-    const base = this.host.defaults()[at] ?? { size: 0.3, opacity: 1 };
     const next = slots.map((s) => ({ ...s }));
-    next[at] = { ...next[at], [kind]: base[kind] };
+    next[at] = { ...next[at], [kind]: null };
     this.saved[this.host.key()] = next;
     write(this.saved);
     this.sync();
@@ -101,7 +103,8 @@ export class BrushSlots {
   /** Jump to the next (dir 1) or previous (dir -1) remembered value, wrapping round the ends. */
   step(kind: SlotKind, dir: 1 | -1): void {
     const cur = this.host.current()[kind];
-    const vals = [...new Set(this.slots().map((s) => s[kind]))].sort((a, b) => a - b);
+    const vals = [...new Set(this.slots().map((s) => s[kind]).filter((v): v is number => v !== null))].sort((a, b) => a - b);
+    if (!vals.length) { this.host.say(t('No marker at this value')); return; }
     const pick = dir > 0 ? vals.find((v) => v > cur + 0.005) ?? vals[0] : [...vals].reverse().find((v) => v < cur - 0.005) ?? vals[vals.length - 1];
     this.host.recall(kind, pick);
     this.host.say(`${kind === 'size' ? t('Size') : t('Opacity')} ${Math.round(pick * 100)}%`);
@@ -114,6 +117,8 @@ export class BrushSlots {
     for (const kind of ['size', 'opacity'] as SlotKind[]) {
       this.markers[kind].forEach((m, i) => {
         const v = slots[i][kind];
+        setClass(m, 'is-empty', v === null);
+        if (v === null) return;
         setStyleVar(m, '--m', String(Math.max(0, Math.min(1, v))));
         setClass(m, 'is-at', Math.abs(v - cur[kind]) < 0.012);
         setTitle(m, t(kind === 'size' ? 'Slot {n}: {p}%. Click to recall, hold to store the current size.' : 'Slot {n}: {p}%. Click to recall, hold to store the current opacity.').replace('{n}', String(i + 1)).replace('{p}', String(Math.round(v * 100))));
@@ -143,6 +148,7 @@ export class BrushSlots {
       if (held) return;
       if (e.shiftKey || e.altKey) { this.store(kind, i); return; }
       const v = this.slots()[i][kind];
+      if (v === null) return;
       this.host.recall(kind, v);
       this.host.say(`${kind === 'size' ? t('Size') : t('Opacity')} ${Math.round(v * 100)}%`);
     });

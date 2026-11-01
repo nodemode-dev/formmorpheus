@@ -4,6 +4,7 @@ import { LibraryFolderDialog } from './library-folder';
 import { t } from './i18n';
 import { tf } from './i18n-fill';
 import { toast } from './toast';
+import { flipHome, flipToCloud, inCloudTheater } from './theater-flip';
 
 /** Storage choices of the Theater: the side panel button that opens the library folder choice (its tooltip shows the
  *  folder in use) and Copy to Folder for movies (a second storage). Desktop picks the folder with the system dialog;
@@ -19,11 +20,14 @@ export function mountStorageButton(btn: HTMLElement): void {
     btn.title = caps?.libraryDir ? `${label}: ${caps.libraryDir}` : label;
     // the button names the storage location in use, like the reference's location picker
     const info = await locations();
-    const name = !info ? label : info.source === 'default' ? t('On This Computer') : info.icloud && info.dir === info.icloud ? t('iCloud Drive') : (info.dir.split(/[\\/]/).filter(Boolean).pop() ?? label);
+    const cloud = await inCloudTheater();
+    const name = cloud ? t('On This Computer') : !info ? label : info.source === 'default' ? t('On This Computer') : info.icloud && info.dir === info.icloud ? t('iCloud Drive') : (info.dir.split(/[\\/]/).filter(Boolean).pop() ?? label);
     const span = btn.lastElementChild;
     if (span && span.textContent !== name) span.textContent = name;
+    btn.classList.toggle('is-here', !cloud);
   };
-  btn.addEventListener('click', () => { dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void tip(); }); });
+  // in the cloud Theater a click flips back to this computer's; otherwise it opens the folder choice
+  btn.addEventListener('click', () => { void inCloudTheater().then((cloud) => { if (cloud) { void flipHome(); return; } dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void tip(); }); }); });
   document.addEventListener('fm:library-changed', () => { void tip(); });
   void tip();
 }
@@ -36,8 +40,10 @@ export function mountCloudButton(btn: HTMLElement): void {
     const span = btn.lastElementChild;
     if (span && span.textContent !== name) span.textContent = name;
     btn.title = to ? `${t('Cloud folder')}: ${to.dir}` : t('Cloud folder: not set');
+    btn.classList.toggle('is-here', await inCloudTheater());
   };
-  btn.addEventListener('click', () => { dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void paint(); }); });
+  // a set cloud folder is a second Theater to flip to; with none set (or already there) the click opens the folder choice
+  btn.addEventListener('click', () => { void inCloudTheater().then(async (cloud) => { if (!cloud && (await flipToCloud())) return; dialog ??= new LibraryFolderDialog(); void dialog.show(() => { void paint(); }); }); });
   document.addEventListener('fm:cloud-folder', () => { void paint(); });
   document.addEventListener('fm:library-changed', () => { void paint(); });
   void paint();

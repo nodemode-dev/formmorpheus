@@ -2,7 +2,7 @@
 // Built once, then patched in place; the card on the pill stays for the collapsed lanes.
 import type { Engine } from '../engine/engine';
 import { fitBase, isScaleChannel } from '../engine/fit-base';
-import { channelSpec, laneOf } from '../engine/keys';
+import { channelSpec, laneOf, shownOf, storedOf } from '../engine/keys';
 import * as keyOps from '../engine/key-ops';
 import * as ops from '../engine/ops';
 import type { KeyKind } from '../engine/types';
@@ -66,10 +66,10 @@ export function openKeyField(engine: Engine, id: string, kind: KeyKind, channel:
   const key = lane?.channels[channel]?.find((k) => k.frame === frame);
   if (!lane || !ch || !key) return false;
   const base = isScaleChannel(channel) ? fitBase(m, c) : 1;
-  const shown = Math.round(((key.value * ch.display) / base) * 100) / 100;
+  const shown = Math.round(shownOf(ch, key.value, base) * 100) / 100;
   const u = ch.unit === 'deg' ? '°' : ch.unit === 'px' ? 'px' : ch.unit === '%' ? '%' : ch.unit === 'x' ? 'x' : '';
   field.open(x, y, tt(ch.label), u, String(shown), (n) => {
-    const v = Math.min(ch.max, Math.max(ch.min, (n / ch.display) * base));
+    const v = Math.min(ch.max, Math.max(ch.min, storedOf(ch, n, base)));
     if (v === key.value) return;
     engine.run('Edit Keyframe', (mv) => ops.updateContent(mv, id, (cc) => keyOps.setKeys(cc, kind, frame, { [channel]: v })));
   });

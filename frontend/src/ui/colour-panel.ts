@@ -18,7 +18,7 @@ const KEY = 'formmorpheus.colour';
 /** Slots in a palette: nine to a row; the panel's footer shows the first three rows (a 3 by 9 grid). */
 const SLOTS = 36;
 const FOOT_SLOTS = 27;
-const HIST_MAX = 8;
+const HIST_MAX = 10;
 const DISC = 224, RING = 22, ROUT = DISC / 2, DISC_IN = ROUT - RING - 6;
 const HW = 188, HWR = HW / 2;
 const MODES: Mode[] = ['disc', 'classic', 'harmony', 'value', 'palettes'];
@@ -227,11 +227,15 @@ const TEMPLATE = `
       </div>
       <div class="fm-col-palio">
         <button type="button" class="fm-col-iob" data-io="import" title="Import a palette file (.swatches, .ase, .gpl, .fmpal)">Import</button>
-        <select class="fm-col-fmt" aria-label="Export format"><option value="swatches">.swatches</option><option value="ase">.ase</option><option value="gpl">.gpl</option><option value="fmpal">.fmpal</option></select>
         <button type="button" class="fm-col-iob" data-io="export" title="Export the default palette">Export</button>
+        <select class="fm-col-fmt" aria-label="Export format"><option value="swatches">swatches</option><option value="ase">ase</option><option value="gpl">gpl</option><option value="fmpal">fmpal</option></select>
         <button type="button" class="fm-col-iob" data-io="image" title="New palette from the colors of a picture">Image</button>
         <input class="fm-col-kn" type="number" min="5" max="30" step="1" value="16" aria-label="Number of colors from the image" title="Colors">
         <input class="fm-col-file" type="file" hidden>
+      </div>
+      <div class="fm-col-phist">
+        <div class="fm-col-lab"><span>History</span><button type="button" class="fm-col-pclear">Clear</button></div>
+        <div class="fm-col-hstrip fm-col-pstrip"></div>
       </div>
       <div class="fm-col-pl"></div>
     </section>
@@ -509,7 +513,7 @@ export class ColourPanel {
       sq: q(r, '.fm-col-sq'), sqRet: q(r, '.fm-col-sq .is-sb'), hw: q(r, '.fm-col-hw'), hdim: q(r, '.fm-col-hdim'), hp: q(r, '.is-hp'),
       hx: Array.from(r.querySelectorAll<HTMLElement>('.is-hx')),
       hex: q<HTMLInputElement>(r, '.fm-col-hex'), tabs: [] as HTMLButtonElement[], menu: q(r, '.fm-col-menu:not(.fm-col-hmenu)'),
-      hstrip: q(r, '.fm-col-hstrip'), grid: q(r, '.fm-col-grid'), palname: q(r, '.fm-col-palname'), pl: q(r, '.fm-col-pl'),
+      hstrip: q(r, '.fm-col-foot .fm-col-hstrip'), grid: q(r, '.fm-col-grid'), palname: q(r, '.fm-col-palname'), pl: q(r, '.fm-col-pl'),
       segs: Array.from(r.querySelectorAll<HTMLButtonElement>('.fm-col-seg button')), hsw: [] as HTMLElement[], gsw: [] as HTMLElement[], x: q<HTMLButtonElement>(r, '.fm-col-x'),
     };
 
@@ -648,6 +652,9 @@ export class ColourPanel {
 
     // history and default palette: fixed slot counts, so built once
     for (let i = 0; i < HIST_MAX; i++) { const b = el(`<button type="button" class="fm-col-sw" data-h="${i}" aria-label="History ${i + 1}"></button>`); n.hstrip.append(b); n.hsw.push(b); }
+    const pstrip = q(r, '.fm-col-pstrip');
+    for (let i = 0; i < HIST_MAX; i++) { const b = el(`<button type="button" class="fm-col-sw" data-h="${i}" aria-label="History ${i + 1}"></button>`); pstrip.append(b); n.hsw.push(b); }
+    q(r, '.fm-col-pclear').addEventListener('click', () => { this.hist = []; this.renderHistory(); this.save(); });
     for (let i = 0; i < FOOT_SLOTS; i++) { const b = el(`<button type="button" class="fm-col-sw" data-i="${i}"></button>`); n.grid.append(b); n.gsw.push(b); }
     q(r, '.fm-col-clear').addEventListener('click', () => { this.hist = []; this.renderHistory(); this.save(); });
     n.palname.addEventListener('click', () => { this.active = (this.active + 1) % this.pals.length; this.renderPalettes(); this.save(); });
@@ -876,12 +883,13 @@ export class ColourPanel {
 
   private markSelected(): void {
     const sel = (node: HTMLElement): void => setClass(node, 'is-sel', !!node.dataset.c && node.dataset.c === toHex(this.cur));
-    if (this.mode === 'palettes') for (const node of Array.from(this.n.pl.querySelectorAll<HTMLElement>('.fm-col-sw'))) sel(node);
+    if (this.mode === 'palettes') { for (const node of Array.from(this.n.pl.querySelectorAll<HTMLElement>('.fm-col-sw'))) sel(node); this.n.hsw.forEach(sel); }
     else { this.n.hsw.forEach(sel); this.n.gsw.forEach(sel); }
   }
 
   private renderHistory(): void {
-    this.n.hsw.forEach((node, i) => this.paint(node, this.hist[i] ?? null));
+    // two strips (the footer's and the Palettes tab's) show the same ten colors
+    this.n.hsw.forEach((node, i) => this.paint(node, this.hist[i % HIST_MAX] ?? null));
     this.markSelected();
   }
 

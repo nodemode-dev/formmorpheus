@@ -33,7 +33,11 @@
 .fm-ms-back .fm-ms-go { margin-left: 0; }
 .fm-ms-back > :last-child { margin-left: 0; }
 
-.fm-ms-art { display: inline-flex; width: 56px; height: 32px; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-field); }
+.fm-ms-artwrap { display: inline-flex; align-items: center; gap: var(--space-2); }
+.fm-ms-art { display: inline-flex; width: 56px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-field); cursor: pointer; }
+.fm-ms-art:hover { box-shadow: 0 0 0 2px var(--accent-color); }
+.fm-ms-artclear { border: 0; background: transparent; color: var(--text-muted, inherit); font-size: var(--fs-11); cursor: pointer; text-decoration: underline; }
+.fm-ms-artclear[hidden] { display: none; }
 .fm-ms-art img { width: 100%; height: 100%; object-fit: cover; }
 .fm-ms-art img:not([src]) { visibility: hidden; }
 

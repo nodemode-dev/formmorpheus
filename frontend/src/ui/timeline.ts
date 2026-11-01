@@ -2,6 +2,7 @@ import type { Engine } from '../engine/engine';
 import { end, fits, kindName, locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import * as groupInner from '../engine/group-inner-ops';
+import { groupCtx } from '../engine/group-ctx';
 import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import type { VideoPool } from '../media/video';
@@ -11,6 +12,7 @@ import * as keyOps from '../engine/key-ops';
 import { kindSpec, laneFrames } from '../engine/keys';
 import { contentName, redrawOnLanguage, secondsLabel } from './canvas-words';
 import { t } from './i18n';
+import { t as tr } from './i18n';
 import { ActionMenu, CLAPPER, LaneMenu, newKeyState } from './action-menu';
 import { keyHome, keyTip, snapKeyFrame } from './key-snap';
 import { openKeyField } from './key-inline';
@@ -35,6 +37,8 @@ import * as hideOps from '../engine/hide-ops';
 import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
 import { chipFill, drawFlipCells, drawGroupPreview } from './timeline-look';
 import { TrackHeads } from './timeline-heads';
+import { InnerMenu } from './timeline-inner';
+import { laneFocus } from './lane-focus';
 import { loadView, saveView, type SavedView } from './timeline-view';
 type SavedViewArgs = SavedView & { id: string };
 import { rulerDrag, SpacePan } from './timeline-nav';
@@ -48,7 +52,6 @@ let STRIDE = BLOCK_H + LANE_GAP;
 const MIN_BLOCK_H = 26;
 const MAX_BLOCK_H = 110;
 const FREE_RED = '#e5484d';
-const MINI_H = 14;
 const LEFT_BASE = 14;
 /** Frame zero's x: the base gutter plus the width of the track header column when it shows. */
 let LEFT = LEFT_BASE;
@@ -57,6 +60,17 @@ const TOP_PAD = 26;
 const EDGE = 7;
 const MIN_PPF = 0.05;
 const MAX_PPF = 64;
+
+/** True for a pale #rgb / #rrggbb color (white-ish text); anything it cannot read counts as dark. */
+function lightInk(css: string): boolean {
+  const h = /^#([0-9a-f]{3}|[0-9a-f]{6})/i.exec(css.trim())?.[1];
+  if (!h) return false;
+  const f = h.length === 3 ? h.split('').map((x) => x + x).join('') : h;
+  const r = parseInt(f.slice(0, 2), 16), g = parseInt(f.slice(2, 4), 16), b = parseInt(f.slice(4, 6), 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 170;
+}
+
+interface InnerHit { group: Content; item: Content; edge: 'start' | 'end' | null; lane: number; rowTop: number; x0: number; x1: number; track: Track }
 
 export interface TimelineHooks {
   contentMenu(x: number, y: number): void;
@@ -76,12 +90,13 @@ type Drag =
   | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean; id: string; lane0: number; s0: number; gx: number; gy: number; px: number; py: number; insert: number | null; blocked: boolean; want: number; wantLane: number }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
   | { kind: 'fade'; id: string; which: 'in' | 'out'; tag: string }
-  | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; applied: number; moved: boolean; tag: string }
+  | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; y0: number; applied: number; appliedRow: number; moved: boolean; tag: string; lane0: number; gx: number; itemStart: number; w: number; out: { lane: number; insert: number | null } | null }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'lasso'; pts: Pt[]; base: string[] }
   | { kind: 'keylasso'; pts: Pt[]; base: Map<string, KeyRef[]> }
   | { kind: 'duration'; x0: number; d0: number; tag: string; moved?: boolean }
-  | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number }
+  | { kind: 'lane'; id: string; tag: string; moved: boolean }
+  | { kind: 'pan'; x0: number; start0: number; y0: number; scroll0: number; tap?: number }
   | { kind: 'key'; id: string; lk: KeyKind; channel: string | null; from0: number; cur: number; base: Content; x0: number; tag: string }
   | { kind: 'keygroup'; g: KeyGroupDrag; id: string; lk: KeyKind; key: number };
 
@@ -191,7 +206,12 @@ export class TimelineView {
   /** Group blocks opened in place (their tracks show under the block in Compose mode). */
   private readonly opened = new Set<string>();
   /** The content picked inside an opened group (the group itself stays the engine's selection). */
-  private innerSel: string | null = null;
+  /** Inner blocks shifted to the movie's frames, kept so their thumbnails stay cached between draws. */
+  private readonly proxies = new WeakMap<Content, Content>();
+  private get innerSel(): string | null { return groupCtx.picked; }
+  private set innerSel(v: string | null) { groupCtx.picked = v; }
+  /** A ghost and insertion line while something is carried toward the lanes: an inner block leaving its group, or files from the desktop. */
+  private cue: { x: number; y: number; w: number; insertY: number | null; label: string } | null = null;
   private pal: Palette | null = null;
   private thumbs = new WeakMap<Content, HTMLCanvasElement>();
   private thumbGen = 0;
@@ -224,6 +244,16 @@ export class TimelineView {
   constructor(host: HTMLElement, private readonly engine: Engine, private readonly renderer: Renderer, private readonly hooks: TimelineHooks) {
     host.appendChild(this.root);
     this.space = new SpacePan(engine, q(this.root, '.fm-tl-body'), this.root);
+    laneFocus.onChange = () => this.schedule();
+    // new tracks and content go inside the open group being worked in: the one holding the picked block, else the selected group
+    groupCtx.target = () => {
+      const m = engine.movie;
+      if (!m || engine.mode !== 'compose' || !this.opened.size) return null;
+      const own = groupCtx.picked ? groupInner.ownerGroup(m.tracks, groupCtx.picked) : null;
+      if (own && this.opened.has(own.id)) return own.id;
+      const g = engine.selected.length === 1 && engine.selected[0].kind === 'group' ? engine.selected[0] : null;
+      return g && this.opened.has(g.id) ? g.id : null;
+    };
     this.heads = new TrackHeads(this.lanes, engine, {
       laneTop: (i) => this.laneTop(i), blockH: () => BLOCK_H, laneAt: (y) => this.laneAt(y),
       menu: (x, y, id) => { this.engine.select([], id); this.hooks.trackMenu(x, y, id); },
@@ -460,12 +490,25 @@ export class TimelineView {
     for (const t of m.tracks) {
       let extra = 0;
       if (lanes) for (const c of t.content) extra = Math.max(extra, lanesHeight(c));
-      else for (const c of t.content) if (c.kind === 'group' && this.opened.has(c.id)) extra = Math.max(extra, c.tracks.length * (MINI_H + 2) + 6);
+      else extra = this.rowExtra(t);
       this.tops.push(y);
       this.rowH.push(STRIDE + extra);
       y += STRIDE + extra;
     }
     this.totalH = y;
+  }
+
+  /** Height an opened group adds under its block: its tracks as full tracks, nested open groups included. */
+  private groupH(g: Content): number {
+    let h = 8;
+    for (const t of g.tracks) h += STRIDE + this.rowExtra(t);
+    return h;
+  }
+
+  private rowExtra(t: Track): number {
+    let x = 0;
+    for (const c of t.content) if (c.kind === 'group' && this.opened.has(c.id)) x = Math.max(x, this.groupH(c));
+    return x;
   }
 
   private laneTop(i: number): number {
@@ -693,6 +736,24 @@ export class TimelineView {
     return { frame: Math.max(0, Math.floor(this.xf(clientX - r.left))), index: Math.min(index, m.tracks.length), track: m.tracks[index] ?? null };
   }
 
+  /** Files carried over the Timeline from the desktop: a ghost where they would land (the track under the pointer when they fit there), a line where a new track would be made. */
+  fileDragOver(clientX: number, clientY: number): void {
+    const m = this.engine.movie, tgt = m ? this.dropTarget(clientX, clientY) : null;
+    if (!m || !tgt) { this.fileDragEnd(); return; }
+    const len = Math.max(1, Math.round(m.fps * 2));
+    const row = Math.min(tgt.index, m.tracks.length);
+    const room = !!tgt.track && fits(tgt.track, tgt.frame, len) && !tgt.track.locked;
+    const y = room ? this.laneTop(row) : this.insertLineY(m, row);
+    this.cue = { x: this.fx(tgt.frame), y: (room ? y : (y ?? 0) - BLOCK_H / 2) as number, w: len * this.ppf, insertY: room ? null : y, label: t('New track') };
+    this.schedule();
+  }
+
+  fileDragEnd(): void {
+    if (!this.cue) return;
+    this.cue = null;
+    this.schedule();
+  }
+
   private clear(): void {
     setHidden(this.keyPill, true);
     for (const c of [this.ruler, this.tracksCanvas]) (c.getContext('2d') as CanvasRenderingContext2D).clearRect(0, 0, c.width, c.height);
@@ -844,8 +905,20 @@ export class TimelineView {
       this.round(c, LEFT - 6, y - 2, Math.max(0, Math.min(endX, this.width) - LEFT + 12), BLOCK_H + 4, 8);
       c.fill();
       if (i === this.hoverLane && !this.drag) { c.fillStyle = 'rgba(255,255,255,.045)'; c.fill(); }
+      if (this.drag?.kind === 'lane' && this.drag.id === t.id) { c.fillStyle = p.accent; c.globalAlpha = 0.22; c.fill(); c.globalAlpha = 1; c.strokeStyle = p.accent; c.lineWidth = 1.5; c.stroke(); c.lineWidth = 1; }
       for (const item of t.content) this.drawBlock(c, m, t, item, y, sel.has(item.id), p);
       if (this.audio && this.engine.playing) drawTrackMeter(c, this.audio.meter(t.id), 1, y, 4, BLOCK_H, p.accent);
+      if (lanes && laneFocus.id) {
+        // the ring on the lane Up and Down have reached
+        const f = t.content.find((it) => it.id === laneFocus.id), slot = f ? laneSlots(f).find((s) => s.lane.kind === laneFocus.kind) : undefined;
+        if (f && slot) {
+          c.strokeStyle = p.accent;
+          c.lineWidth = 1.5;
+          this.round(c, this.fx(f.start) - 2, y + BLOCK_H + LANES_GAP + slot.y - 1.5, Math.max(8, this.fx(end(f)) - this.fx(f.start)) + 4, slot.h + 3, 5);
+          c.stroke();
+          c.lineWidth = 1;
+        }
+      }
       if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined, (it, lf) => this.laneThumb(m, it, lf));
     }
     this.drawLinks(c, m, p.accent);
@@ -895,6 +968,7 @@ export class TimelineView {
       c.restore();
     }
     if (this.drag?.kind === 'move' && this.drag.moved) this.drawMoveCues(c, m, this.drag, p);
+    if (this.cue) drawLift(c, { origin: null, ghost: { x: this.cue.x, y: this.cue.y, w: this.cue.w, h: BLOCK_H }, blocked: null, insertY: this.cue.insertY }, this.width, p.accent, FREE_RED, p.block, this.cue.label);
     const px = Math.round(this.fx(this.engine.frame)) + 0.5;
     c.strokeStyle = this.engine.mode === 'perform' ? p.accent : p.playhead;
     c.lineWidth = 1.5;
@@ -926,12 +1000,15 @@ export class TimelineView {
     const origin = { x: this.fx(d.s0), y: this.laneTop(d.lane0), w, h: BLOCK_H };
     const ghost = { x: d.px - d.gx, y: d.py - d.gy, w, h: BLOCK_H };
     const blocked = d.blocked ? { x: this.fx(d.s0 + d.want), y: this.laneTop(Math.max(0, Math.min(m.tracks.length - 1, d.wantLane))), w, h: BLOCK_H } : null;
-    let insertY: number | null = null;
-    if (d.insert !== null) {
-      const n = m.tracks.length;
-      insertY = d.insert >= n ? this.laneTop(n - 1) + BLOCK_H + LANE_GAP / 2 + 3 : d.insert <= 0 ? this.laneTop(0) - LANE_GAP / 2 - 3 : this.laneTop(d.insert) - LANE_GAP / 2;
-    }
+    const insertY = this.insertLineY(m, d.insert);
     drawLift(c, { origin, ghost, blocked, insertY }, this.width, p.accent, FREE_RED, item.highlight === 'none' ? p.block : p.hl[item.highlight], t('New track'));
+  }
+
+  /** The y of the line that marks a new track made at lane `insert` (null for no insert). */
+  private insertLineY(m: Movie, insert: number | null): number | null {
+    if (insert === null) return null;
+    const n = m.tracks.length;
+    return insert >= n ? this.laneTop(n - 1) + (this.rowH[n - 1] ?? STRIDE) - LANE_GAP + LANE_GAP / 2 + 3 : insert <= 0 ? this.laneTop(0) - LANE_GAP / 2 - 3 : this.laneTop(insert) - LANE_GAP / 2;
   }
 
   /** A dashed link from each block that follows a parent to the parent's block, at the child's first visible frame. */
@@ -1076,6 +1153,24 @@ export class TimelineView {
         c.lineWidth = 1;
       }
     }
+    if (item.mask !== 'none' && w > 60) {
+      // a masked block says so at its lower right
+      const word = tr(item.mask === 'clipping' ? 'Clipping Mask' : item.mask === 'alpha' ? 'Alpha Mask' : 'Luminance Mask');
+      c.font = '600 9px Inter, system-ui, sans-serif';
+      const lw = Math.min(w - 12, c.measureText(word).width + 10);
+      c.fillStyle = p.chip;
+      this.round(c, x1 - lw - 5, y + BLOCK_H - 19, lw, 14, 7);
+      c.fill();
+      c.fillStyle = p.text;
+      c.textBaseline = 'middle';
+      c.textAlign = 'left';
+      c.save();
+      c.beginPath();
+      c.rect(x1 - lw - 5, y + BLOCK_H - 19, lw, 14);
+      c.clip();
+      c.fillText(word, x1 - lw, y + BLOCK_H - 11.5);
+      c.restore();
+    }
     if (sounds && w > 30) {
       const mx = Math.min(x1, this.width - 8);
       if (t.mute) drawSoundMark(c, mx, y, 'mute', p.chip, p.text, p.accent);
@@ -1120,36 +1215,31 @@ export class TimelineView {
         c.fill();
       }
     }
-    if (item.kind === 'group' && this.opened.has(item.id)) this.drawInner(c, item, x0, w, y + BLOCK_H + 4, p);
+    if (item.kind === 'group' && this.opened.has(item.id) && this.engine.mode === 'compose') this.drawInner(c, m, item, x0, w, y + BLOCK_H + 4, p);
   }
 
   /** The tracks inside an opened group, as thin bars in the group's own frames, under its block. */
-  private drawInner(c: CanvasRenderingContext2D, g: Content, x0: number, w: number, top: number, p: Palette): void {
+  private drawInner(c: CanvasRenderingContext2D, m: Movie, g: Content, x0: number, w: number, top: number, p: Palette): void {
+    const hh = this.groupH(g) - 4;
     c.save();
     c.beginPath();
-    c.rect(x0, top - 4, w, g.tracks.length * (MINI_H + 2) + 8);
+    c.rect(x0, top - 4, w, hh);
     c.clip();
     c.fillStyle = p.laneAlt;
-    c.fillRect(x0, top - 4, w, g.tracks.length * (MINI_H + 2) + 8);
-    c.font = '600 9px Inter, system-ui, sans-serif';
-    c.textBaseline = 'middle';
-    c.textAlign = 'left';
-    g.tracks.forEach((t, i) => {
-      const y = top + i * (MINI_H + 2);
-      for (const it of t.content) {
+    c.fillRect(x0, top - 4, w, hh);
+    let y = top;
+    for (const tr of g.tracks) {
+      for (const it of tr.content) {
         const a = x0 + (it.start - g.offset) * this.ppf, b = x0 + (end(it) - g.offset) * this.ppf;
         if (b < x0 || a > x0 + w) continue;
-        this.round(c, a, y, Math.max(3, b - a), MINI_H, 4);
-        c.fillStyle = it.highlight === 'none' ? p.block : p.hl[it.highlight];
-        c.fill();
-        const picked = this.innerSel === it.id;
-        c.strokeStyle = picked ? p.accent : p.blockLine;
-        c.lineWidth = picked ? 2 : 1;
-        c.stroke();
-        c.lineWidth = 1;
-        if (b - a > 34) { c.fillStyle = p.text; c.fillText(it.name, a + 5, y + MINI_H / 2 + 0.5, b - a - 8); }
+        // the same block drawing as the top level: shifted so its start lands on the group's frames
+        const want = g.start + it.start - g.offset;
+        let shown = this.proxies.get(it);
+        if (!shown || shown.start !== want) { shown = { ...it, start: want }; this.proxies.set(it, shown); }
+        this.drawBlock(c, m, tr, shown, y, groupCtx.picked === it.id, p);
       }
-    });
+      y += STRIDE + this.rowExtra(tr);
+    }
     c.restore();
   }
 
@@ -1172,7 +1262,12 @@ export class TimelineView {
     }
     if (item.kind === 'group') { drawGroupPreview(c, item, x0, y, w, BLOCK_H, this.ppf, this.palette().text); return; }
     // a Drawing, Text or Shape sits on the paper it will be seen on
-    if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape') { c.fillStyle = m.transparent ? '#d9d9de' : m.background; c.fillRect(x0, y, w, BLOCK_H); }
+    if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape') {
+      c.fillStyle = m.transparent ? '#d9d9de' : m.background;
+      // pale letters on pale paper read as an empty block: a text block takes the dark lane ground instead
+      if (item.kind === 'text' && item.text && lightInk(item.text.color) && lightInk(m.transparent ? '#d9d9de' : m.background)) c.fillStyle = '#26262c';
+      c.fillRect(x0, y, w, BLOCK_H);
+    }
     const thumb = this.thumbFor(m, item, tileW);
     if (!thumb) return;
     const from = Math.max(x0, x0 + Math.floor((0 - x0) / tileW) * tileW);
@@ -1294,6 +1389,21 @@ export class TimelineView {
     cv.dataset.gen = String(this.thumbGen);
     const ctx = cv.getContext('2d') as CanvasRenderingContext2D;
     ctx.clearRect(0, 0, cv.width, cv.height);
+    if (item.kind === 'text' && item.text && item.text.size > 0) {
+      // the letters at the tile's own scale, so the words read: render large, keep the band around the text
+      const k = Math.max(1, Math.min(14, (0.6 * m.height) / (item.text.size * Math.max(0.05, item.transform.scale))));
+      const W = Math.min(4096, Math.round(cv.width * k)), H = Math.round(W * (cv.height / cv.width));
+      if (k > 1.2 && H <= 4096) {
+        const big = document.createElement('canvas');
+        big.width = W;
+        big.height = H;
+        this.renderer.thumb(big.getContext('2d') as CanvasRenderingContext2D, m, item, 0, W, H);
+        const sx = W / 2 + (item.transform.x * W) / m.width - cv.width / 2, sy = H / 2 + (item.transform.y * H) / m.height - cv.height / 2;
+        ctx.drawImage(big, Math.round(sx), Math.round(sy), cv.width, cv.height, 0, 0, cv.width, cv.height);
+        this.thumbs.set(item, cv);
+        return cv;
+      }
+    }
     this.renderer.thumb(ctx, m, item, 0, cv.width, cv.height);
     this.thumbs.set(item, cv);
     return cv;
@@ -1356,28 +1466,42 @@ export class TimelineView {
   }
 
   /** A bar of an opened group under the pointer (its edges count when the bar is wide enough). */
-  private innerHit(e: { clientX: number; clientY: number }): { group: Content; item: Content; edge: 'start' | 'end' | null } | null {
+  private innerHit(e: { clientX: number; clientY: number }): InnerHit | null {
     const m = this.engine.movie;
     if (!m) return null;
     const r = this.tracksCanvas.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
-    const t = m.tracks[this.laneAt(y)];
+    const lane = this.laneAt(y);
+    const t = m.tracks[lane];
     if (!t) return null;
-    const top = this.laneTop(this.laneAt(y)) + BLOCK_H + 4;
     for (const g of t.content) {
       if (g.kind !== 'group' || !this.opened.has(g.id)) continue;
-      const gx0 = this.fx(g.start), gx1 = this.fx(end(g));
-      if (x < gx0 || x > gx1) continue;
-      const row = Math.floor((y - top) / (MINI_H + 2));
-      const tr = g.tracks[row];
-      if (!tr || y - top - row * (MINI_H + 2) > MINI_H) continue;
+      const found = this.innerFind(g, g.start, this.laneTop(lane) + BLOCK_H + 4, x, y);
+      if (found) return { ...found, lane };
+    }
+    return null;
+  }
+
+  /** The inner block under (x, y) in group `g` whose first frame sits at movie frame `gStart`; `top` is where its first inner track begins. */
+  private innerFind(g: Content, gStart: number, top: number, x: number, y: number): Omit<InnerHit, 'lane'> | null {
+    const gx0 = this.fx(gStart), gx1 = this.fx(gStart + g.duration);
+    if (x < gx0 || x > gx1) return null;
+    for (const tr of g.tracks) {
+      const ex = this.rowExtra(tr);
       for (const it of tr.content) {
-        const a = gx0 + (it.start - g.offset) * this.ppf, b = gx0 + (end(it) - g.offset) * this.ppf;
+        const a = this.fx(gStart + it.start - g.offset), b = this.fx(gStart + end(it) - g.offset);
         if (x < a - 2 || x > b + 2) continue;
-        const wide = b - a > 20;
-        const edge = wide && x - a <= 5 ? 'start' : wide && b - x <= 5 ? 'end' : null;
-        return { group: g, item: it, edge };
+        if (y >= top && y <= top + BLOCK_H) {
+          const wide = b - a > 24;
+          const edge = wide && x - a <= 7 ? 'start' : wide && b - x <= 7 ? 'end' : null;
+          return { group: g, item: it, edge, rowTop: top, x0: a, x1: b, track: tr };
+        }
+        if (it.kind === 'group' && this.opened.has(it.id) && y > top + BLOCK_H && y <= top + STRIDE + ex) {
+          const deeper = this.innerFind(it, gStart + it.start - g.offset, top + BLOCK_H + 4, x, y);
+          if (deeper) return deeper;
+        }
       }
+      top += STRIDE + ex;
     }
     return null;
   }
@@ -1488,11 +1612,27 @@ export class TimelineView {
     if (lh) { this.keyDown(e, lh, x, e.clientY - r.top); return; }
     const inner = this.engine.mode === 'compose' ? this.innerHit(e) : null;
     if (inner) {
+      const it = inner.item, ly = e.clientY - r.top - inner.rowTop, lx = x - inner.x0;
+      // the chip: its checkbox hides or shows this block alone, a nested group's chevron opens it
+      if (ly >= 2 && ly <= 23 && lx >= 3 && lx <= 24 && inner.x1 - inner.x0 > 46) {
+        this.engine.run(it.hidden ? 'Show Content' : 'Hide Content', (mv) => groupInner.updateInner(mv, it.id, (c) => { const n: Content = { ...c }; if (c.hidden) delete n.hidden; else n.hidden = true; return n; }));
+        return;
+      }
+      if (it.kind === 'group' && ly <= 24 && inner.x1 - inner.x0 > 70 && x >= inner.x1 - 22 && x <= inner.x1 - 1) {
+        if (this.opened.has(it.id)) this.opened.delete(it.id); else this.opened.add(it.id);
+        this.layoutFor = null;
+        this.schedule();
+        return;
+      }
       this.tracksCanvas.setPointerCapture(e.pointerId);
-      this.innerSel = inner.item.id;
+      this.innerSel = it.id;
       this.engine.select([inner.group.id]);
       this.engine.seek(Math.max(inner.group.start, Math.min(end(inner.group) - 1, Math.floor(this.xf(x)))));
-      this.drag = { kind: 'inner', id: inner.item.id, mode: inner.edge ?? 'move', x0: e.clientX, applied: 0, moved: false, tag: `inner-${Date.now()}` };
+      const d: Drag = { kind: 'inner', id: it.id, mode: inner.edge ?? 'move', x0: e.clientX, y0: e.clientY, applied: 0, appliedRow: 0, moved: false, tag: `inner-${Date.now()}`, lane0: inner.lane, gx: x - inner.x0, itemStart: it.start, w: inner.x1 - inner.x0, out: null };
+      this.drag = d;
+      // held still: the block's own options
+      const px = e.clientX, py = e.clientY;
+      this.holdFor(d, px, py, () => this.innerMenu(px, py, it, inner.group));
       this.schedule();
       return;
     }
@@ -1546,14 +1686,26 @@ export class TimelineView {
     }
     this.keySel.clear();
     this.engine.select([], h?.track.id ?? this.engine.selection.track);
+    // held still on empty track area: the track lifts; letting go in place opens the track's menu (as a right-click), sliding up or down reorders it
+    const lane = h?.track.id ?? null;
+    const lift = (px: number, py: number): void => {
+      if (!lane) { this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true })); return; }
+      this.laneHold = [px, py];
+      this.drag = { kind: 'lane', id: lane, tag: `lane-${Date.now()}`, moved: false };
+      this.schedule();
+    };
+    const px = e.clientX, py = e.clientY;
+    if (e.pointerType === 'touch') {
+      // a finger on empty lane pans the Timeline; only a tap without a slide moves the Playhead there
+      const pd: Drag = { kind: 'pan', x0: e.clientX, start0: this.start, y0: e.clientY, scroll0: this.scrollY, tap: Math.floor(this.xf(x)) };
+      this.drag = pd;
+      this.holdFor(pd, px, py, () => lift(px, py));
+      return;
+    }
     const sd: Drag = { kind: 'scrub' };
     this.drag = sd;
     this.engine.seek(Math.floor(this.xf(x)));
-    if (e.pointerType !== 'touch') {
-      // a mouse or pen held still on empty track area opens the same menu as a right-click
-      const px = e.clientX, py = e.clientY;
-      this.holdFor(sd, px, py, () => this.contextMenu(new MouseEvent('contextmenu', { clientX: px, clientY: py, cancelable: true })));
-    }
+    this.holdFor(sd, px, py, () => lift(px, py));
   }
 
   /** Arms the press-and-hold menu. It opens only if the press has not moved: the Playhead is where the press put it
@@ -1713,6 +1865,13 @@ export class TimelineView {
       }
     } else if (d.kind === 'keygroup') {
       d.g.move(e.clientX, e.clientY, e.altKey, this.ppf);
+    } else if (d.kind === 'lane') {
+      const cr = this.tracksCanvas.getBoundingClientRect();
+      const to = Math.max(0, Math.min(m.tracks.length - 1, this.laneAt(e.clientY - cr.top)));
+      const from = m.tracks.findIndex((x) => x.id === d.id);
+      if (Math.hypot(e.clientX - this.laneHold[0], e.clientY - this.laneHold[1]) > 5) d.moved = true;
+      if (from >= 0 && to !== from) this.engine.run('Move Track', (mv) => ops.moveTrack(mv, d.id, to), d.tag);
+      this.schedule();
     } else if (d.kind === 'scrub') {
       if (this.flick) { this.flick.push([e.timeStamp, e.clientX]); if (this.flick.length > 12) this.flick.shift(); }
       const r = this.ruler.getBoundingClientRect();
@@ -1752,14 +1911,33 @@ export class TimelineView {
       this.schedule();
     } else if (d.kind === 'inner') {
       const total = Math.round(((e.clientX - d.x0) / this.ppf) * speed);
-      if (!d.moved && Math.abs(e.clientX - d.x0) < 3) return;
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 3 && Math.abs(e.clientY - d.y0) < 3) return;
       d.moved = true;
+      if (d.mode === 'move') {
+        const cr = this.tracksCanvas.getBoundingClientRect();
+        const px = e.clientX - cr.left, py = e.clientY - cr.top;
+        // pointer past the top level lane that holds the group: the block is on its way out; a ghost and a line say where it lands
+        const laneY = this.laneTop(d.lane0);
+        const outside = py < laneY - 6 || py > laneY + (this.rowH[d.lane0] ?? STRIDE) + 2;
+        if (outside) {
+          const tgt = this.moveTarget(m, py);
+          d.out = { lane: tgt.lane, insert: tgt.insert };
+          this.cue = { x: px - d.gx, y: py - BLOCK_H / 2, w: d.w, insertY: this.insertLineY(m, tgt.insert), label: t('New track') };
+          this.schedule();
+          return;
+        }
+        d.out = null;
+        this.cue = null;
+        const rows = Math.round((e.clientY - d.y0) / STRIDE);
+        const step = total - d.applied, rowStep = rows - d.appliedRow;
+        if (!step && !rowStep) { this.schedule(); return; }
+        if (this.tryRun('Move Content', (mv) => groupInner.moveInner(mv, [d.id], step, rowStep), d.tag)) { d.applied = total; d.appliedRow = rows; }
+        this.schedule();
+        return;
+      }
       const step = total - d.applied;
       if (!step) return;
-      const ok = d.mode === 'move'
-        ? this.tryRun('Move Content', (mv) => groupInner.moveInner(mv, [d.id], step), d.tag)
-        : this.tryRun('Trim', (mv) => groupInner.trimInner(mv, d.id, d.mode as 'start' | 'end', step), d.tag);
-      if (ok) d.applied = total;
+      if (this.tryRun('Trim', (mv) => groupInner.trimInner(mv, d.id, d.mode as 'start' | 'end', step), d.tag)) d.applied = total;
     } else if (d.kind === 'fade') {
       const item = this.engine.selected.find((it) => it.id === d.id);
       if (!item) return;
@@ -1847,9 +2025,29 @@ export class TimelineView {
     return { lane, insert: null };
   }
 
+  /** The open group (and its inner row) a dragged block is over, in the area under its block. */
+  private groupDropAt(m: Movie, px: number, py: number, skip: Set<string>): { gid: string; row: number } | null {
+    const lane = this.laneAt(py), t = m.tracks[lane];
+    if (!t) return null;
+    const top = this.laneTop(lane) + BLOCK_H + 4;
+    if (py < top - 2) return null;
+    for (const g of t.content) {
+      if (g.kind !== 'group' || !this.opened.has(g.id) || skip.has(g.id) || px < this.fx(g.start) || px > this.fx(end(g))) continue;
+      let y = top;
+      for (let i = 0; i < g.tracks.length; i++) {
+        const ex = this.rowExtra(g.tracks[i]);
+        if (py < y + STRIDE + ex) return { gid: g.id, row: i };
+        y += STRIDE + ex;
+      }
+      return { gid: g.id, row: g.tracks.length };
+    }
+    return null;
+  }
+
   private pointerUp(e: PointerEvent): void {
     const d = this.drag;
     this.drag = null;
+    this.cue = null;
     this.ed.clear();
     if (this.thumbStale) { this.thumbStale = false; this.thumbGen++; }
     this.cancelLongPress();
@@ -1864,11 +2062,27 @@ export class TimelineView {
       const dt = last[0] - from[0];      if (dt > 0 && (last[1] - from[1]) / dt < -0.9 && last[1] - from[1] < -40 && last[0] - e.timeStamp > -80) this.engine.play();
     }
     if (d.kind === 'trim') { window.clearTimeout(d.hold); this.syncFreeTrim(); }
+    if (d.kind === 'lane') {
+      this.engine.endGesture();
+      if (!d.moved && e.type === 'pointerup') { this.engine.select([], d.id); this.hooks.trackMenu(e.clientX, e.clientY, d.id); }
+    }
+    if (d.kind === 'pan' && d.tap !== undefined && e.type === 'pointerup' && Math.abs(e.clientX - d.x0) < 6 && Math.abs(e.clientY - d.y0) < 6) this.engine.seek(d.tap);
     // a tap on a key (no drag) opens its values
     // (a key in an expanded row opens a numeric field right at the key; a collapsed lane opens the card)
     if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform' && !(d.channel && openKeyField(this.engine, d.id, d.lk, d.channel, d.from0, e.clientX, e.clientY))) this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
-    if (d.kind === 'move' && d.moved && e.type === 'pointerup') {
+    if (d.kind === 'inner' && d.out && e.type === 'pointerup') {
+      const o = d.out, mv0 = this.engine.movie;
+      const frame = Math.round(this.xf(e.clientX - this.tracksCanvas.getBoundingClientRect().left - d.gx));
+      if (mv0 && this.tryRun('Move out of group', (mv) => groupInner.moveOutOfGroup(mv, d.id, o.insert !== null ? o.insert : o.lane, o.insert !== null, frame), d.tag)) this.innerSel = null;
+    }
+    const into = d.kind === 'move' && d.moved && e.type === 'pointerup' && this.engine.movie ? this.groupDropAt(this.engine.movie, d.px, d.py, new Set(this.engine.selection.content)) : null;
+    if (into && d.kind === 'move') {
+      const g = locate(this.engine.movie as Movie, into.gid)?.content ?? null;
+      const local = g ? g.offset + Math.round(this.xf(d.px - d.gx)) - g.start : 0;
+      const id = d.id;
+      if (this.tryRun('Move into group', (mv) => groupInner.moveIntoGroup(mv, id, into.gid, into.row, local), d.tag)) { this.engine.select([into.gid]); this.innerSel = id; }
+    } else if (d.kind === 'move' && d.moved && e.type === 'pointerup') {
       const ids = this.engine.selection.content, at = d.insert, extra = d.want - d.applied;
       if (at !== null) {
         // dropped between lanes or past the last: the block goes onto a new track made there
@@ -1890,6 +2104,13 @@ export class TimelineView {
     this.schedule();
   }
 
+  private laneHold: [number, number] = [0, 0];
+  private innerMenuUi: InnerMenu | null = null;
+  private innerMenu(x: number, y: number, item: Content, group: Content): void {
+    if (!this.innerMenuUi) this.innerMenuUi = new InnerMenu(this.engine);
+    this.innerMenuUi.open(x, y, item, group);
+  }
+
   private contextMenu(e: MouseEvent): void {
     e.preventDefault();
     const m = this.engine.movie;
@@ -1897,6 +2118,8 @@ export class TimelineView {
     const lh = this.laneHit(e);
     if (lh && this.keySel.size && (lh.hit.key === null ? this.multi : this.keySel.has(lh.c.id, lh.hit.slot.lane.kind, lh.hit.key))) { this.keyMenu.open(e.clientX, e.clientY); return; }
     if (lh) { this.openLaneMenu(lh, e.clientX, e.clientY); return; }
+    const inner = this.engine.mode === 'compose' ? this.innerHit(e) : null;
+    if (inner) { this.engine.select([inner.group.id]); this.innerSel = inner.item.id; this.innerMenu(e.clientX, e.clientY, inner.item, inner.group); return; }
     const h = this.hit(e);
     if (!h) return;
     if (h.item) {

@@ -10,7 +10,7 @@ import { movieFrameAt, outFps, stepsFor } from './delivery';
 type Deps = { movie: Movie; renderer: Renderer; audio: AudioEngine | null };
 export type EngineTarget = 'prores' | 'prores4444' | 'hevc' | 'h264';
 
-export interface TargetInfo { available: boolean; encoder: string; reason: string; encoders?: string[] }
+export interface TargetInfo { available: boolean; encoder: string; reason: string; encoders?: string[]; alpha?: boolean; alpha_reason?: string }
 export interface JobCapabilities { ffmpeg: boolean; path: string; version: string; gpl: boolean; aac: boolean; mp3?: boolean; targets: Record<EngineTarget, TargetInfo> }
 
 const BASE = '/api/jobs';
@@ -122,9 +122,10 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     const total = stepsFor({ from, to, pingpong: o.pingpong, fps: o.fps }, movie.fps);
     const warnings: string[] = [];
     const profile = o.proresProfile ?? (o.target === 'prores4444' ? '4444' : 'hq');
-    const carries = (o.target === 'prores' || o.target === 'prores4444') && (profile === '4444' || profile === '4444xq');
+    // HEVC carries it only where the engine's ffmpeg has the platform encoder (the dialog offers the choice only then)
+    const carries = ((o.target === 'prores' || o.target === 'prores4444') && (profile === '4444' || profile === '4444xq')) || o.target === 'hevc';
     const keepAlpha = o.alpha && carries && movie.transparent;
-    if (o.alpha && !carries && movie.transparent) warnings.push('Only ProRes 4444 carries transparency here, so the background is filled.');
+    if (o.alpha && !carries && movie.transparent) warnings.push('Only ProRes 4444 and HEVC with transparency carry it here, so the background is filled.');
 
     check();
     // sound first: the mixdown decides whether the job has an audio track

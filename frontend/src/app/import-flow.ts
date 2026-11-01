@@ -4,6 +4,8 @@
 // follow each other in order. A sound picked with Import is previewed first.
 import type { Engine } from '../engine/engine';
 import * as ops from '../engine/ops';
+import * as groupInner from '../engine/group-inner-ops';
+import { groupCtx } from '../engine/group-ctx';
 import type { Renderer } from '../engine/render';
 import type { Content, Movie } from '../engine/types';
 import { registerFonts } from '../media/fonts';
@@ -46,7 +48,12 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
     const movie = files.find((f) => /\.fmo$/i.test(f.name));
     if (movie) { await d.openMovie(movie); return; }
     let list = files;
-    if (opts.preview && list.length === 1 && isSoundFile(list[0]) && !(await previewSound(list[0], previewSounds.on))) return;
+    if (opts.preview) {
+      // every sound among the picked files is heard first; Cancel leaves that one out
+      const kept: File[] = [];
+      for (const f of list) if (!isSoundFile(f) || (await previewSound(f, previewSounds.on))) kept.push(f);
+      list = kept;
+    }
     if (!list.length) return;
     list = [...list];
     const job = engine.startJob(list.length === 1 ? `Import ${list[0].name}` : `Import ${list.length} files`, 1000);
@@ -94,19 +101,33 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
 
     const drop = opts.drop;
     const selected = engine.selection.track ? Math.max(0, m.tracks.findIndex((tr) => tr.id === engine.selection.track)) : 0;
+    const hl = engine.selection.track;
+    const roomOn = (mv: Movie, id: string, c: Content): boolean => {
+      const t = mv.tracks.find((x) => x.id === id);
+      return !!t && !t.locked && t.content.every((o) => o.start + o.duration <= c.start || c.start + c.duration <= o.start);
+    };
+    const gid = groupCtx.target();
+    const grp = gid ? groupInner.findGroup(m.tracks, gid) : null;
     const label = done.length === 1 ? `Add ${done[0].file.name.replace(/\.[^.]+$/, '')}` : `Add ${done.length} files`;
     engine.run(label, (mv) => {
       let next: Movie = { ...mv, assets: { ...mv.assets, ...table } };
       const ids: string[] = [];
       for (const x of done) {
         x.r.contents.forEach((c, i) => {
-          if (drop?.where === 'timeline') {
+          if (grp && !drop) {
+            // an open group being worked in takes the file on its own tracks, in the group's frames
+            const local = Math.max(grp.offset, c.start - grp.start + grp.offset);
+            next = groupInner.placeInGroup(next, grp.id, { ...c, start: local }, 0);
+          } else if (drop?.where === 'timeline') {
             // at the track under the pointer when it has room there, else a new track at that row
             const row = Math.min(drop.index ?? 0, next.tracks.length);
             next = ops.placeContent(next, next.tracks[row]?.id ?? null, c, row).movie;
           } else if (drop?.where === 'stage') {
             // at the Playhead on the top track when it has room, else a new top track
             next = ops.placeContent(next, next.tracks[0]?.id ?? null, c, 0).movie;
+          } else if (hl && roomOn(next, hl, c)) {
+            // the highlighted track has empty space at the Playhead: the file goes there
+            next = ops.placeContent(next, hl, c, selected).movie;
           } else if (x.r.ownTrack[i]) {
             const added = ops.addTrack(next, Math.min(next.tracks.length, selected + 1), c.name);
             next = ops.placeContent(added.movie, added.track.id, c).movie;
@@ -114,6 +135,7 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
           ids.push(c.id);
         });
       }
+      if (grp) { groupCtx.picked = ids[ids.length - 1] ?? null; return { movie: next, select: [grp.id] }; }
       return { movie: next, select: ids };
     });
     const notes = done.map((x) => x.r.notice).filter((s): s is string => !!s);

@@ -6,7 +6,7 @@ import { locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import * as keyOps from '../engine/key-ops';
 import * as gOps from '../engine/graph-ops';
-import { evalChannel, kindSpec, laneChannels, laneOf } from '../engine/keys';
+import { evalChannel, kindSpec, laneChannels, laneOf, shownOf } from '../engine/keys';
 import type { ChannelSpec } from '../engine/keys';
 import type { Content, Ease, Key, KeyKind } from '../engine/types';
 import { el, q, setClass, setHidden, setText } from './dom';
@@ -33,8 +33,8 @@ interface HandlePt { side: 'out' | 'in'; owner: number; x: number; y: number; ax
 
 const PRESETS: { id: Ease; label: string }[] = [
   { id: 'linear', label: 'Linear' },
-  { id: 'in', label: 'Ease in' },
-  { id: 'out', label: 'Ease out' },
+  { id: 'out', label: 'Ease in' },
+  { id: 'in', label: 'Ease out' },
   { id: 'inout', label: 'Ease in & out' },
   { id: 'hold', label: 'Hold' },
   { id: 'bounce', label: 'Bounce' },
@@ -578,7 +578,7 @@ export class GraphEditor {
       b.setAttribute('aria-pressed', String(hasSpan && key.ease === id));
       b.disabled = !hasSpan;
     }
-    const shown = (v: number): string => `${Math.round(v * (spec?.display ?? 1) * 100) / 100}${spec?.unit === 'deg' ? '°' : spec?.unit ?? ''}`;
+    const shown = (v: number): string => `${Math.round((spec ? shownOf(spec, v) : v) * 100) / 100}${spec?.unit === 'deg' ? '°' : spec?.unit ?? ''}`;
     setText(this.read, key ? `${t('Frame')} ${key.frame} · ${shown(key.value)}` : '');
 
     const ctx = this.canvas.getContext('2d');
@@ -724,7 +724,10 @@ export class GraphEditor {
     const vstep = niceStep(34 / (sc * disp)) / disp;
     ctx.textAlign = 'right';
     const vTop = this.yv(PT), vBot = this.yv(PT + this.ph);
-    for (let v = Math.ceil(vBot / vstep) * vstep; v <= vTop; v += vstep) {
+    // the grid walks the shown numbers (a shifted channel like HSB gets round labels), then maps each back to the stored value
+    const sh = spec?.shift ?? 0, sstep = vstep * disp;
+    for (let s = Math.ceil((vBot * disp + sh) / sstep - 1e-9) * sstep; (s - sh) / disp <= vTop; s += sstep) {
+      const v = (s - sh) / disp;
       const y = Math.round(this.vy(v)) + 0.5;
       ctx.strokeStyle = P.grid;
       ctx.globalAlpha = Math.abs(v) < vstep * 1e-6 ? 1 : 0.55;
@@ -734,7 +737,7 @@ export class GraphEditor {
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = P.text;
-      ctx.fillText(String(Math.round(v * disp * 100) / 100), PL - 8, y);
+      ctx.fillText(String(Math.round((v * disp + (spec?.shift ?? 0)) * 100) / 100), PL - 8, y);
     }
   }
 }

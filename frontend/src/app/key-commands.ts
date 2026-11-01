@@ -14,7 +14,7 @@ import { perform } from '../ui/perform-ui';
 import { t } from '../ui/i18n';
 import { toast } from '../ui/toast';
 
-const NUMBERED: ReadonlyArray<readonly [Ease, string]> = [['linear', 'Linear'], ['in', 'Ease in'], ['out', 'Ease out'], ['inout', 'Ease in & out']];
+const NUMBERED: ReadonlyArray<readonly [Ease, string]> = [['linear', 'Linear'], ['out', 'Ease in'], ['in', 'Ease out'], ['inout', 'Ease in & out']];
 
 /** Delete the chosen keyframes; false when none is chosen (so the plain Delete falls through to deleting content). */
 export function deleteChosenKeys(engine: Engine): boolean {
@@ -106,7 +106,7 @@ export function keyCommands(engine: Engine): Command[] {
           return;
         }
         const picked = targets().filter((c) => c.keys.length);
-        engine.run('Reverse Keyframes', (m) => picked.reduce((acc, c) => ops.updateContent(acc, c.id, (cc) => keyOps.reverseKeys(cc)), m));
+        engine.run('Reverse Keyframes', (m) => picked.reduce((acc, c) => ops.updateContent(acc, c.id, (cc) => keyOps.reverseKeys(cc, undefined, true)), m));
       },
     },
     {

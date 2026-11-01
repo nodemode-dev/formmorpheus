@@ -1,6 +1,6 @@
 // Keyframe mode menus: the Action menu on the Playhead pill, the parameter cards, and the lane context menu.
 import type { Engine } from '../engine/engine';
-import { baseValues, easeAt, easeCurve, evalLane, kindSpec, KEY_KINDS, laneFrames, laneOf, type ChannelSpec } from '../engine/keys';
+import { baseValues, easeAt, easeCurve, evalLane, kindSpec, KEY_KINDS, laneFrames, laneOf, shownOf, storedOf, type ChannelSpec } from '../engine/keys';
 import { locate } from '../engine/model';
 import { fitBase, isScaleChannel } from '../engine/fit-base';
 import { setEasePreview, setLaneBase, setLaneShown } from './key-lanes';
@@ -85,7 +85,7 @@ const ADVANCED = new Set(['offsetX', 'offsetY', 'travel']);
 type View = 'action' | 'motion' | 'filter' | 'card';
 
 function fmt(ch: ChannelSpec, v: number, base = 1): string {
-  const n = v * ch.display / (isScaleChannel(ch.id) ? base : 1);
+  const n = shownOf(ch, v, isScaleChannel(ch.id) ? base : 1);
   const r = Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10;
   const s = String(r);
   return ch.unit === '%' ? `${s}%` : ch.unit === 'deg' ? `${s}°` : ch.unit === 'x' ? `${s}x` : ch.unit === 'px' ? `${s} px` : s;
@@ -260,6 +260,40 @@ export class ActionMenu {
       this.paintKeyed();
     });
     wrap.append(r.el, clear);
+    // swipe left on a red row (touch, pen, or a mouse drag) slides it aside and clears its lane; the Clear button stays for a plain click
+    let sw: { id: number; x: number; y: number; dx: number; live: boolean } | null = null;
+    r.el.addEventListener('pointerdown', (e) => {
+      if (!wrap.classList.contains('is-keyed') || e.button !== 0) return;
+      sw = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, live: false };
+    });
+    r.el.addEventListener('pointermove', (e) => {
+      if (!sw || e.pointerId !== sw.id) return;
+      const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+      if (!sw.live) {
+        if (dx > -8 || Math.abs(dy) > Math.abs(dx)) { if (Math.abs(dy) > 12) sw = null; return; }
+        sw.live = true;
+        try { r.el.setPointerCapture(e.pointerId); } catch { /* gone */ }
+      }
+      sw.dx = Math.min(0, dx);
+      r.el.style.transform = `translateX(${sw.dx}px)`;
+      r.el.style.opacity = String(Math.max(0.35, 1 + sw.dx / 220));
+    });
+    const endSwipe = (e: PointerEvent): void => {
+      if (!sw || e.pointerId !== sw.id) return;
+      const done = sw.live && sw.dx <= -56;
+      const live = sw.live;
+      sw = null;
+      r.el.style.transform = '';
+      r.el.style.opacity = '';
+      if (live) {
+        const eat = (ev: Event): void => ev.stopPropagation();
+        r.el.addEventListener('click', eat, { capture: true, once: true });
+        window.setTimeout(() => r.el.removeEventListener('click', eat, true), 0);
+      }
+      if (done) clear.click();
+    };
+    r.el.addEventListener('pointerup', endSwipe);
+    r.el.addEventListener('pointercancel', endSwipe);
     this.keyRows.set(kind, { wrap, clear, row: r });
     return wrap;
   }
@@ -434,7 +468,7 @@ export class ActionMenu {
     range.addEventListener('change', () => { this.engine.endGesture(); this.tag = null; });
 
     const begin = (): void => {
-      edit.value = String(Math.round((range.valueAsNumber * ch.display / (isScaleChannel(ch.id) ? this.baseNow() : 1)) * 100) / 100);
+      edit.value = String(Math.round(shownOf(ch, range.valueAsNumber, isScaleChannel(ch.id) ? this.baseNow() : 1) * 100) / 100);
       setHidden(pill, true);
       setHidden(edit, false);
       edit.focus();
@@ -446,7 +480,7 @@ export class ActionMenu {
       setHidden(edit, true);
       setHidden(pill, false);
       if (commit && Number.isFinite(n)) {
-        const v = Math.min(ch.max, Math.max(ch.min, n / ch.display * (isScaleChannel(ch.id) ? this.baseNow() : 1)));
+        const v = Math.min(ch.max, Math.max(ch.min, storedOf(ch, n, isScaleChannel(ch.id) ? this.baseNow() : 1)));
         this.write(card.kind, { [ch.id]: v });
         this.engine.endGesture();
       }

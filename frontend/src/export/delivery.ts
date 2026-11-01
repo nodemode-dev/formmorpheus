@@ -64,7 +64,7 @@ export function estimateBytes(e: EstimateIn): number {
     case 'apng': return px * e.steps * (e.alpha ? 1.4 : 1.1);
     case 'psd': return px * 4 * Math.max(1, e.layers ?? 3) * 0.35 + px * 4 * 0.35;
     case 'still': return px * (e.picture === 'jpg' ? 0.25 : 1.2);
-    default: return px * e.steps * (e.picture === 'jpg' ? 0.25 : e.picture === 'webp' ? 0.2 : e.picture === 'bmp' || e.picture === 'tga' ? 3 : 1.2);
+    default: return px * e.steps * (e.picture === 'jpg' ? 0.25 : e.picture === 'webp' ? 0.2 : e.picture === 'bmp' || e.picture === 'tga' ? 3 : e.picture === 'tiff' ? 1.2 : 0.45);
   }
 }
 

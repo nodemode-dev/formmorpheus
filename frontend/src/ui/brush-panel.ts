@@ -55,6 +55,7 @@ export class BrushPanel {
   private readonly emptyEl: HTMLElement;
   private readonly noteEl: HTMLElement;
   private readonly searchEl: HTMLInputElement;
+  private readonly searchBox: HTMLElement;
   private readonly clearEl: HTMLElement;
   private readonly fileEl: HTMLInputElement;
   private readonly libNameEl: HTMLElement;
@@ -117,6 +118,7 @@ export class BrushPanel {
     this.root = el<HTMLElement>(`<div class="fm-bp fm-pp-glass" hidden>
       <div class="fm-bp-head fm-bp-lib">
         <button type="button" class="fm-bp-libname fm-bp-title" data-lib="menu" title="Libraries" aria-label="Libraries"><span></span>${ICON_CHEV}</button>
+        <button type="button" class="fm-bp-tool fm-bp-find" title="Search brushes" aria-label="Search brushes">${ICON_SEARCH}</button>
         <button type="button" class="fm-bp-tool" data-act="add" title="${t('Add')}" aria-label="${t('Add')}">${ICON_ADD}</button>
         <button type="button" class="fm-bp-tool" data-act="more" title="More" aria-label="More">${ICON_MORE}</button>
       </div>
@@ -200,8 +202,12 @@ export class BrushPanel {
     this.setsEl.addEventListener('click', (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>('.fm-bp-set');
       if (!row) return;
+      const hit = row.dataset.set ?? RECENT;
+      const was = this.searching();
       this.searchEl.value = '';
-      this.activeSet = row.dataset.set ?? RECENT;
+      if (hit.startsWith('lib:')) { brushStore.setActiveLib(hit.slice(4)); this.pickFirstSet(); return; }
+      if (was && hit !== RECENT) brushStore.setActiveLib(brushStore.libOf(hit));
+      this.activeSet = hit;
       this.freezeRecent = false;
       this.sync();
       this.listEl.scrollTop = 0;
@@ -220,15 +226,35 @@ export class BrushPanel {
       const t = e.target as HTMLElement;
       const row = t.closest<HTMLElement>('.fm-bp-row'), set = t.closest<HTMLElement>('.fm-bp-set');
       if (row?.dataset.key) this.openMenu(e.clientX, e.clientY, { kind: 'brush', id: row.dataset.key });
-      else if (set && set.dataset.set && set.dataset.set !== RECENT) this.openMenu(e.clientX, e.clientY, { kind: 'set', id: set.dataset.set });
+      else if (set && set.dataset.set && set.dataset.set !== RECENT && !set.dataset.set.startsWith('lib:')) this.openMenu(e.clientX, e.clientY, { kind: 'set', id: set.dataset.set });
       else if (t.closest('.fm-bp-libname')) this.openMenu(e.clientX, e.clientY, { kind: 'panel', id: '' });
     });
+    // press and hold (pen, touch or mouse) opens the same menu as a right click; the click that ends the hold is swallowed
+    let hold = 0, holdAt: { x: number; y: number } | null = null, held = false;
+    const endHold = (): void => { if (hold) window.clearTimeout(hold); hold = 0; holdAt = null; };
+    this.root.addEventListener('pointerdown', (e) => {
+      endHold();
+      held = false;
+      if (e.button !== 0) return;
+      const t = e.target as HTMLElement;
+      const row = t.closest<HTMLElement>('.fm-bp-row'), set = t.closest<HTMLElement>('.fm-bp-set');
+      const kind = row?.dataset.key ? { kind: 'brush' as const, id: row.dataset.key }
+        : set?.dataset.set && set.dataset.set !== RECENT && !set.dataset.set.startsWith('lib:') ? { kind: 'set' as const, id: set.dataset.set } : null;
+      if (!kind) return;
+      holdAt = { x: e.clientX, y: e.clientY };
+      hold = window.setTimeout(() => { hold = 0; held = true; this.openMenu(holdAt?.x ?? e.clientX, holdAt?.y ?? e.clientY, kind); }, 520);
+    });
+    this.root.addEventListener('pointermove', (e) => { if (holdAt && Math.hypot(e.clientX - holdAt.x, e.clientY - holdAt.y) > 7) endHold(); });
+    this.root.addEventListener('pointerup', endHold);
+    this.root.addEventListener('pointercancel', endHold);
+    this.root.addEventListener('dragstart', endHold);
+    this.root.addEventListener('click', (e) => { if (held) { held = false; e.stopPropagation(); e.preventDefault(); } }, true);
     this.menuEl.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('.fm-bp-mi');
       if (b?.dataset.act) this.runAct(b.dataset.act as Act);
     });
     for (const btn of Array.from(this.root.querySelectorAll<HTMLElement>('.fm-bp-tool'))) {
-      if (btn.dataset.lib) continue;
+      if (btn.dataset.lib || btn.classList.contains('fm-bp-find')) continue;
       btn.addEventListener('click', (e) => {
         const act = btn.dataset.act;
         const r = btn.getBoundingClientRect();
@@ -237,6 +263,33 @@ export class BrushPanel {
         e.stopPropagation();
       });
     }
+    // v0.17.0: the Search field waits above the list; a swipe or a wheel turn down from the top of the list, a key typed on
+    // the panel, Ctrl+F or Tab reveals it (it stays reachable by keyboard)
+    const reveal = (focus: boolean): void => { setClass(this.searchBox, 'is-away', false); if (focus) this.searchEl.focus({ preventScroll: true }); };
+    this.searchBox = q(this.root, '.fm-bp-search');
+    setClass(this.searchBox, 'is-away', true);
+    q(this.root, '.fm-bp-find').addEventListener('click', (e) => { e.stopPropagation(); reveal(true); });
+    this.searchEl.addEventListener('focus', () => reveal(false));
+    this.searchEl.addEventListener('blur', () => { if (!this.searchEl.value) setClass(this.searchBox, 'is-away', true); });
+    this.listEl.addEventListener('wheel', (e) => { if (e.deltaY < 0 && this.listEl.scrollTop <= 0) reveal(true); }, { passive: true });
+    let pull: { id: number; y: number } | null = null;
+    this.listEl.addEventListener('pointerdown', (e) => { if (this.listEl.scrollTop <= 0) pull = { id: e.pointerId, y: e.clientY }; });
+    this.listEl.addEventListener('pointermove', (e) => { if (pull && e.pointerId === pull.id && e.clientY - pull.y > 22 && this.listEl.scrollTop <= 0) { pull = null; reveal(true); } });
+    const endPull = (): void => { pull = null; };
+    this.listEl.addEventListener('pointerup', endPull);
+    this.listEl.addEventListener('pointercancel', endPull);
+    // with the panel open, Ctrl+F or "/" brings the field from anywhere on the page
+    document.addEventListener('keydown', (e) => {
+      if (this.root.hidden || e.altKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') || (e.key === '/' && !e.ctrlKey && !e.metaKey)) { e.preventDefault(); e.stopPropagation(); reveal(true); }
+    }, true);
+    this.root.addEventListener('keydown', (e) => {
+      const tg = e.target as HTMLElement;
+      if (tg instanceof HTMLInputElement || e.altKey) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); reveal(true); return; }
+      if (e.ctrlKey || e.metaKey || e.key.length !== 1 || e.key === ' ') return;
+      reveal(true);
+    });
     this.searchEl.addEventListener('input', () => this.onSearch());
     this.searchEl.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -278,6 +331,7 @@ export class BrushPanel {
     this.currentId = currentId;
     this.root.dataset.tool = tool;
     this.searchEl.value = '';
+    setClass(this.searchBox, 'is-away', true);
     const home = brushStore.setOf(currentId);
     if (home) brushStore.setActiveLib(brushStore.libOf(home.id));
     this.activeSet = home ? home.id : (this.recent.length ? RECENT : (brushStore.setsOf(brushStore.activeLib())[0]?.id ?? RECENT));
@@ -355,8 +409,16 @@ export class BrushPanel {
     const inLib = brushStore.setsOf(lib);
     if (!searching && this.activeSet !== RECENT && !inLib.some((s) => s.id === this.activeSet)) this.activeSet = inLib[0]?.id ?? RECENT;
     setHidden(this.clearEl, !searching);
-    setClass(this.setsEl, 'is-dim', searching);
-    const sets: { id: string; name: string; recent: boolean }[] = [{ id: RECENT, name: 'Recent', recent: true }, ...inLib.map((s: BrushSet) => ({ id: s.id, name: s.id === IMPORTED_ID ? 'Imported' : s.name, recent: false }))];
+    setClass(this.setsEl, 'is-dim', false);
+    let sets: { id: string; name: string; recent: boolean }[] = [{ id: RECENT, name: 'Recent', recent: true }, ...inLib.map((s: BrushSet) => ({ id: s.id, name: s.id === IMPORTED_ID ? 'Imported' : s.name, recent: false }))];
+    if (searching) {
+      // a search also finds sets and libraries by name: they list in the left column and open on a click
+      const s = this.searchEl.value.trim().toLowerCase();
+      sets = [
+        ...brushStore.libs().filter((l) => l.name.toLowerCase().includes(s)).map((l) => ({ id: 'lib:' + l.id, name: l.name, recent: false })),
+        ...brushStore.sets().filter((x: BrushSet) => x.name.toLowerCase().includes(s)).map((x: BrushSet) => ({ id: x.id, name: x.name, recent: false })),
+      ];
+    }
     patchList(this.setsEl, sets, {
       key: (s) => s.id,
       create: (s) => {

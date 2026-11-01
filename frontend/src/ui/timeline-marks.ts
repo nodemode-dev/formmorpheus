@@ -80,7 +80,7 @@ export function drawChevron(c: Ctx, cx: number, cy: number, open: boolean, color
 
 export interface LiftGeom {
   /** Where the block began (dashed placeholder). */
-  origin: { x: number; y: number; w: number; h: number };
+  origin: { x: number; y: number; w: number; h: number } | null;
   /** The ghost under the pointer. */
   ghost: { x: number; y: number; w: number; h: number };
   /** A drop outline for the wanted span when it is blocked (red). */
@@ -95,7 +95,7 @@ export function drawLift(c: Ctx, g: LiftGeom, width: number, accent: string, red
   c.lineWidth = 1.5;
   c.strokeStyle = accent;
   c.globalAlpha = 0.7;
-  c.beginPath(); c.roundRect(g.origin.x + 0.5, g.origin.y + 0.5, Math.max(4, g.origin.w - 1), g.origin.h - 1, 6); c.stroke();
+  if (g.origin) { c.beginPath(); c.roundRect(g.origin.x + 0.5, g.origin.y + 0.5, Math.max(4, g.origin.w - 1), g.origin.h - 1, 6); c.stroke(); }
   c.globalAlpha = 1;
   if (g.blocked) {
     c.strokeStyle = red;

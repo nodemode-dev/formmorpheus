@@ -5,20 +5,23 @@ import type { KeyKind } from '../engine/types';
 import { el, q, setHidden, setText } from './dom';
 import '../styles/fx-stack.css';
 
-export interface ActionGroup { title: string; kinds: string[] }
+/** `rest`: the group kinds no group names land in (the first one when none says so). */
+export interface ActionGroup { title: string; kinds: string[]; rest?: boolean }
 
 export const MOTION_GROUPS: ActionGroup[] = [
   { title: 'Transform', kinds: ['move', 'warp', 'distort', 'bones'] },
   { title: 'Time', kinds: ['time', 'textanim'] },
 ];
 
-/** Filters is also where a kind with no entry lands. */
+/** The reference's six in its order, then everything this app adds under More (which is also where a kind with no entry lands). */
 export const FILTER_GROUPS: ActionGroup[] = [
-  { title: 'Filters', kinds: ['opacity', 'noise', 'boil'] },
-  { title: 'Color', kinds: ['hsb', 'colorcorrect', 'vignette', 'gradmap', 'hueshift'] },
-  { title: 'Blur', kinds: ['blur', 'sharpen', 'lensblur', 'dirblur', 'radblur', 'motionblur', 'gblur', 'unsharp'] },
-  { title: 'Stylize', kinds: ['glow', 'shadow', 'pixelate', 'chromatic', 'mirror', 'ripple', 'halftone', 'outline', 'glitch', 'kaleido'] },
-  { title: 'Keying', kinds: ['chromakey', 'lumakey'] },
+  { title: 'Filters', kinds: ['opacity', 'blur', 'sharpen', 'noise', 'hsb', 'lensblur'] },
+  {
+    title: 'More',
+    rest: true,
+    kinds: ['boil', 'colorcorrect', 'vignette', 'gradmap', 'hueshift', 'dirblur', 'radblur', 'motionblur', 'gblur', 'unsharp',
+      'glow', 'shadow', 'pixelate', 'chromatic', 'mirror', 'ripple', 'halftone', 'outline', 'glitch', 'kaleido', 'chromakey', 'lumakey'],
+  },
 ];
 
 interface Sub { head: HTMLElement; rows: Array<{ kind: KeyKind; wrap: HTMLElement }> }
@@ -48,9 +51,10 @@ export class ActionGroups {
     // registry effects are lane kinds `fx:<id>`; the groups name the bare id
     const byId = new Map<string, string>(kinds.map((k) => [k.replace(/^fx:/, ''), k]));
     const named = new Set(groups.flatMap((g) => g.kinds));
+    const home = Math.max(0, groups.findIndex((g) => g.rest));
     groups.forEach((g, gi) => {
       const mine = g.kinds.filter((k) => byId.has(k)).map((k) => byId.get(k)!);
-      if (gi === 0) for (const [id, k] of byId) if (!named.has(id)) mine.push(k);
+      if (gi === home) for (const [id, k] of byId) if (!named.has(id)) mine.push(k);
       if (!mine.length) return;
       const head = el('<div class="fm-ka-shead"></div>');
       setText(head, g.title);

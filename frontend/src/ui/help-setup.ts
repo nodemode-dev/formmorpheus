@@ -1,6 +1,7 @@
 import type { Engine } from '../engine/engine';
 import type { Commands } from './commands';
 import { HelpCenter } from './help-center';
+import { HELP_LINKS, openExternal } from './external-link';
 import { TutorialCoach } from './tutorials';
 
 export interface HelpSetupDeps {
@@ -22,6 +23,9 @@ export function setupHelpCenter(d: HelpSetupDeps): { coach: TutorialCoach } {
     { id: 'help-center', label: 'Help Center...', run: () => open() },
     { id: 'help-tutorials', label: 'Tutorials...', run: () => open('tutorials') },
     { id: 'help-idea', label: 'Send an Idea...', run: () => open('idea') },
+    { id: 'help-web-handbook', label: 'Handbook on the Web', run: () => openExternal(HELP_LINKS.handbook) },
+    { id: 'help-web-community', label: 'Community', run: () => openExternal(HELP_LINKS.community) },
+    { id: 'help-web-tutorials', label: 'Video Tutorials', run: () => openExternal(HELP_LINKS.tutorials) },
   );
   return { coach };
 }

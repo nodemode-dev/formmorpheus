@@ -7,6 +7,8 @@ import * as selOps from '../engine/key-sel-ops';
 import type { KeyClip } from '../engine/key-ops';
 import type { KeyKind } from '../engine/types';
 import { promptName } from './dialogs';
+import { formatHms, parseHms } from './duration-hms';
+import { t } from './i18n';
 import { Popover, popRow, popSep } from './popover';
 import '../styles/timeline-extras.css';
 
@@ -166,8 +168,8 @@ export class EndBarMenu {
   private async enter(): Promise<void> {
     const m = this.engine.movie;
     if (!m) return;
-    const v = await promptName('Movie duration in frames', String(m.duration), 'Set');
-    const n = v === null ? NaN : Math.round(Number(v.replace(/[^0-9.]/g, '')));
+    const v = await promptName(t('Movie duration (hours:minutes:seconds, like 0:00:10 or 1m 30s)'), formatHms(m.duration, m.fps), t('Set'));
+    const n = v === null ? NaN : parseHms(v, m.fps) ?? NaN;
     if (Number.isFinite(n) && n >= 1 && n <= 200000) this.engine.run('Movie Duration', (mv) => ops.patchMovie(mv, { duration: n }));
   }
 }

@@ -40,10 +40,11 @@
   align-items: center;
   gap: var(--space-4);
   padding: 0 var(--space-3);
-  background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--glass-border);
+  /* v0.17.0: the canvas runs full bleed under the bar (glass, no strip edge), as the reference does */
+  background: linear-gradient(color-mix(in srgb, var(--bg-secondary) 88%, transparent), color-mix(in srgb, var(--bg-secondary) 62%, transparent));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 0;
   z-index: var(--z-chrome);
 }
 .fm-paint-mode {

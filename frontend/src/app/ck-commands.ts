@@ -3,10 +3,12 @@
 import type { Engine } from '../engine/engine';
 import { end, locate } from '../engine/model';
 import * as ops from '../engine/ops';
+import * as hideOps from '../engine/hide-ops';
 import * as tops from '../engine/transform-ops';
 import type { Content } from '../engine/types';
 import type { Command } from '../ui/commands';
 import { promptName } from '../ui/dialogs';
+import { stepLaneFocus } from '../ui/lane-focus';
 
 export interface CkHooks {
   engine: Engine;
@@ -55,6 +57,11 @@ export function ckCommands(h: CkHooks): Command[] {
     engine.select(c ? [c.id] : [], t.id);
   };
   const seek = (f: number): void => { engine.stop(); engine.seek(f); };
+  /** In Keyframe and Perform modes Up and Down walk the key lanes of the one selected block before they leave it. */
+  const stepLanes = (dir: -1 | 1): boolean => {
+    if (engine.mode === 'compose' || engine.selected.length !== 1) return false;
+    return stepLaneFocus(engine.selected[0], dir);
+  };
 
   const out: Command[] = [];
   for (const [id, label, dx, dy] of DIRS) {
@@ -83,7 +90,7 @@ export function ckCommands(h: CkHooks): Command[] {
     { id: 'nudge-content-right', label: 'Nudge Content One Frame Later', keys: ['Shift+Mod+Right'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Nudge Content', (m) => ops.moveContent(m, ids, 1, 0)); } },
     { id: 'extend-content', label: 'Extend Content One Frame', keys: ['Mod+]'], enabled: () => has() && targets().length > 0, run: () => { const ids = targets().map((c) => c.id); engine.run('Extend Content', (m) => ids.reduce((a, id) => ops.trimContent(a, id, 'end', 1), m)); } },
     { id: 'contract-content', label: 'Contract Content One Frame', keys: ['Mod+['], enabled: () => has() && targets().length > 0, run: () => { const ids = targets().map((c) => c.id); engine.run('Contract Content', (m) => ids.reduce((a, id) => ops.trimContent(a, id, 'end', -1), m)); } },
-    { id: 'shorten-to-first', label: 'Shorten to First Frame', enabled: () => has() && targets().length > 0, run: () => { const t = targets().map((c) => [c.id, c.duration] as const); engine.run('Shorten to First Frame', (m) => t.reduce((a, [id, d]) => ops.trimContent(a, id, 'end', 1 - d), m)); } },
+    { id: 'shorten-to-first', label: 'Shorten to First Frame', keys: ['Alt+Mod+['], enabled: () => has() && targets().length > 0, run: () => { const t = targets().map((c) => [c.id, c.duration] as const); engine.run('Shorten to First Frame', (m) => t.reduce((a, [id, d]) => ops.trimContent(a, id, 'end', 1 - d), m)); } },
     {
       id: 'trim-start-to-playhead', label: 'Trim Start to Playhead', keys: ['Alt+Q'], enabled: () => has() && over().length > 0,
       run: () => { const f = engine.frame, t = over().filter((c) => f > c.start).map((c) => [c.id, f - c.start] as const); if (t.length) engine.run('Trim Start to Playhead', (m) => t.reduce((a, [id, d]) => ops.trimContent(a, id, 'start', d), m)); },
@@ -93,8 +100,8 @@ export function ckCommands(h: CkHooks): Command[] {
       run: () => { const f = engine.frame, t = over().filter((c) => f > c.start && f < end(c)).map((c) => [c.id, f - end(c)] as const); if (t.length) engine.run('Trim End to Playhead', (m) => t.reduce((a, [id, d]) => ops.trimContent(a, id, 'end', d), m)); },
     },
 
-    { id: 'track-above', label: 'Move to Track Above', keys: ['Up'], enabled: has, run: () => focusTrack((i) => i - 1) },
-    { id: 'track-below', label: 'Move to Track Below', keys: ['Down'], enabled: has, run: () => focusTrack((i) => i + 1) },
+    { id: 'track-above', label: 'Move to Track Above', keys: ['Up'], enabled: has, run: () => { if (!stepLanes(-1)) focusTrack((i) => i - 1); } },
+    { id: 'track-below', label: 'Move to Track Below', keys: ['Down'], enabled: has, run: () => { if (!stepLanes(1)) focusTrack((i) => i + 1); } },
     { id: 'track-top', label: 'Move to Top Track', keys: ['Mod+Up'], enabled: has, run: () => focusTrack(() => 0) },
     { id: 'track-bottom', label: 'Move to Bottom Track', keys: ['Mod+Down'], enabled: has, run: () => focusTrack((_, n) => n - 1) },
     {
@@ -102,8 +109,15 @@ export function ckCommands(h: CkHooks): Command[] {
       run: () => { const c = engine.selected[0]; if (c) void promptName('Rename', c.name, 'Rename').then((v) => { if (v) engine.run('Rename', (m) => ops.patchContent(m, [c.id], { name: v })); }); },
     },
     {
-      id: 'toggle-visibility', label: 'Hide or Show Track', keys: ['H'], enabled: () => has() && trackIndex() >= 0,
-      run: () => { const m = engine.movie, t = m?.tracks[trackIndex()]; if (t) engine.run(t.hidden ? 'Show Track' : 'Hide Track', (mv) => ops.setTrackHidden(mv, t.id, !t.hidden)); },
+      id: 'toggle-visibility', label: 'Hide or Show Content', keys: ['H'], enabled: () => has() && (sel() || trackIndex() >= 0),
+      run: () => {
+        // content first (the reference hides the selected content); an empty-lane selection hides the track
+        if (sel()) {
+          const ids = engine.selection.content.slice(), hide = !engine.selected.every((c) => c.hidden);
+          engine.run(hide ? 'Hide Content' : 'Show Content', (mv) => ids.reduce((a, id) => hideOps.setContentHidden(a, id, hide), mv));
+          return;
+        }
+        const m = engine.movie, t = m?.tracks[trackIndex()]; if (t) engine.run(t.hidden ? 'Show Track' : 'Hide Track', (mv) => ops.setTrackHidden(mv, t.id, !t.hidden)); },
     },
     { id: 'open-options', label: 'Content Options', keys: ['O'], enabled: () => has() && sel(), run: () => h.openOptions() },
     { id: 'open-create', label: 'Create Menu', keys: ['A'], enabled: has, run: () => h.openCreate() },

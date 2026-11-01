@@ -2,6 +2,19 @@
 
 /* Settings: section headings and the fade that says the list goes on (no scrollbars in this app) */
 .fm-ps-sect { padding: var(--space-2) var(--space-3) 0; color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+/* the second sheet of Prefs: Advanced cursor settings, beside the popover */
+.fm-ps-sheet {
+  position: absolute; left: calc(100% + 8px); top: 0; width: 260px; box-sizing: border-box; padding: var(--space-3) var(--space-2) var(--space-2);
+  background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 18px;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+}
+.fm-ps-sheet[hidden] { display: none; }
+.fm-ps-sheet.is-left { left: auto; right: calc(100% + 8px); }
+.fm-ps-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-2) var(--space-2); }
+.fm-ps-sheet-title { font-weight: 600; font-size: var(--fs-13); }
+.fm-ps-sheet-back { order: 2; height: 24px; padding: 0 10px; border: 0; border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--text-primary); font-size: var(--fs-11); }
+.fm-ps-sheet-back:hover { background: var(--accent-color); color: var(--text-on-accent); }
+.fm-lp-blends.is-more { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
 .fm-ps-pane[data-pane="prefs"].is-more { -webkit-mask-image: linear-gradient(#000 calc(100% - 34px), transparent); mask-image: linear-gradient(#000 calc(100% - 34px), transparent); }
 .fm-ps-folder-note { padding: 0 var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); line-height: 1.3; word-break: break-all; user-select: text; }
 .fm-ps-folder-note[hidden] { display: none; }

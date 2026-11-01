@@ -120,6 +120,7 @@ body { font-size: var(--fs-12); line-height: 1.35; }
 .cv-home-nav-item:hover { background: var(--surface-1); color: var(--text-primary); }
 .cv-home-nav-item.is-active { border-color: var(--line-2); background: var(--surface-2); color: var(--text-primary); }
 .cv-home-nav-item.is-active .icon { color: var(--accent-color); }
+.cv-home-storage.is-here { color: var(--text-primary); box-shadow: inset 2px 0 0 var(--accent-color); }
 .cv-home-nav-item > .icon, .cv-home-size-box > span, .cv-home-hero-icon > .icon { flex: none; }
 .cv-home-nav-item:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
 .cv-home-nav-item > span:not(.cv-home-count):not(.icon) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

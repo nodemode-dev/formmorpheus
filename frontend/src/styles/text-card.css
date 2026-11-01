@@ -38,6 +38,8 @@
 .fm-tc-num { width: 64px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
 .fm-tc-range { --fm-pct: 20%; min-width: 0; }
 .fm-tc-swatch { position: relative; display: block; width: 40px; height: 24px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-light); }
+button.fm-tc-swatch { padding: 0; cursor: pointer; background: none; }
+.fm-tc-chip { position: absolute; inset: 0; background: var(--c, #111111); }
 .fm-tc-swatch input { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); padding: 0; border: 0; background: none; cursor: pointer; }
 .fm-tc-hex { grid-column: 3; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .fm-tc-row:has(.fm-tc-swatch) { grid-template-columns: 56px 40px minmax(0, 1fr); }

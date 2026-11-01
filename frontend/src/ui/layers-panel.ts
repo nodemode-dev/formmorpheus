@@ -118,6 +118,7 @@ export class LayersPanel {
     this.range = q<HTMLInputElement>(this.root, '.fm-lp-range');
     this.pct = q(this.root, '.fm-lp-pct');
     this.blendList = q(this.root, '.fm-lp-blends');
+    this.blendList.addEventListener('scroll', () => this.blendFade(), { passive: true });
 
     q(this.root, '.fm-lp-addlayer').addEventListener('click', (e) => {
       const d = this.doc(); if (!d) return;
@@ -508,6 +509,13 @@ export class LayersPanel {
     setHidden(this.maskCard, kind !== 'mask');
     this.syncSide();
     this.placeSide(row);
+    this.blendFade();
+  }
+
+  /** A fade at the foot of the blend list says there is more below it (no scrollbar by house rule). */
+  private blendFade(): void {
+    const l = this.blendList;
+    setClass(l, 'is-more', l.scrollTop + l.clientHeight < l.scrollHeight - 6);
   }
 
   private blendPreview: { id: string; blend: BlendMode } | null = null;

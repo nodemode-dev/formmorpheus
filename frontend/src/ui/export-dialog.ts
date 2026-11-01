@@ -10,6 +10,7 @@ import type { AudioKind, ExportFormat, ExportJob, ExportOptions, ExportProgress,
 import { ExportPreview, type PreviewSpec } from './export-preview';
 import { parseTime, timecode } from '../engine/time';
 import { downloadBlob } from '../io/api';
+import { canPickFolder, pickDestination, saveFileTo, saveFramesTo, type Dest } from './export-where';
 import { Dialog } from './dialogs';
 import { ExportExtras } from './export-extra';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
@@ -45,6 +46,12 @@ interface Saved {
   preset: Preset; customW: number; customH: number; pingpong: boolean; audio: boolean; alpha: boolean;
   quality: Quality; colors: number; dither: Gif['dither']; loop: boolean; timing: Gif['timing']; alphaThreshold: number; palette: string; palOn: boolean;
   frameMs: number; smoothness: number; intensity: number; tab: Tab;
+  /** Frames as images: a folder of pictures (where the platform has a folder dialog) or one zip. */
+  framesTo: 'folder' | 'zip';
+  /** Other exports: ask for the folder to save to. */
+  askWhere: boolean;
+  /** GIF: one GIF frame per movie frame. */
+  exactFrames: boolean;
 }
 
 const KINDS: { id: Kind; label: string }[] = [{ id: 'video', label: 'Video' }, { id: 'gif', label: 'Animated GIF' }, { id: 'webp-anim', label: 'Animated WebP' }, { id: 'apng', label: 'Animated PNG' }, { id: 'still', label: 'Current frame' }, { id: 'psd', label: 'Layered PSD (current frame)' }, { id: 'frames', label: 'Frames as images' }];
@@ -73,7 +80,7 @@ const DEFAULTS: Saved = {
   kind: 'video', codec: 'h264', container: 'mp4', profile: 'hq', audioKind: 'aac', picture: 'png', tiffDeflate: true,
   preset: 'movie', customW: 1920, customH: 1080, pingpong: false, audio: true, alpha: false,
   quality: 'high', colors: 256, dither: 'floyd-steinberg', loop: true, timing: 'exact', alphaThreshold: 128, palette: '', palOn: false,
-  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share',
+  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share', framesTo: 'folder', askWhere: false, exactFrames: false,
 };
 
 const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (typeof v === 'string' && (all as readonly string[]).includes(v) ? (v as T) : fallback);
@@ -98,6 +105,7 @@ function load(): Saved {
       alphaThreshold: num(r.alphaThreshold, 0, 255, 128), palette: typeof r.palette === 'string' ? r.palette.slice(0, 2000) : '', palOn: r.palOn === true,
       frameMs: pick(String(r.frameMs ?? 0), DURATIONS.map((x) => String(x.ms)), '0') === '0' ? 0 : Number(r.frameMs), smoothness: num(r.smoothness, 0, 3, 2), intensity: num(r.intensity, 0, 100, 50),
       tab: pick(r.tab, ['share', 'advanced'] as const, 'share'),
+      framesTo: pick(r.framesTo, ['folder', 'zip'] as const, 'folder'), askWhere: r.askWhere === true, exactFrames: r.exactFrames === true,
     };
   } catch { return { ...DEFAULTS }; }
 }
@@ -127,6 +135,9 @@ const TILES: Tile[] = [
   { id: 'audio', label: 'Sound only', sub: 'WAV, M4A, Opus, or one file per track', icon: svg('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>') },
   { id: 'fmo-history', label: 'Movie file with full history', sub: 'Every undo step (.fmo)', icon: TILE_ICONS.fmo },
 ];
+
+/** The folder a sequence is saved in carries the movie's name (the same cleaning the zip's inner folder gets). */
+const safeFolder = (name: string): string => name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().replace(/^\.+|\.+$/g, '').trim() || 'movie';
 
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 
@@ -162,6 +173,10 @@ export class ExportDialog {
   private readonly intensity = el<HTMLInputElement>('<input type="range" min="0" max="100" step="1" aria-label="Intensity">');
   private readonly intensityValue = el<HTMLElement>('<span class="fm-ex-val"></span>');
   private readonly colorStep = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Number of colors">${COLOR_STEPS.map((n) => `<option value="${n}">${n}</option>`).join('')}<option value="custom">Custom</option></select>`);
+  private readonly alphaNote = el<HTMLElement>('<span class="cv-note fm-ex-alpha-note" hidden></span>');
+  private readonly framesTo = el<HTMLSelectElement>('<select class="cv-input" aria-label="Save frames as"><option value="folder">A folder of images</option><option value="zip">One zip file</option></select>');
+  private readonly askWhere = el<HTMLInputElement>('<input type="checkbox" aria-label="Choose where to save">');
+  private readonly exactFrames = el<HTMLInputElement>('<input type="checkbox" aria-label="One GIF frame for every movie frame">');
   private readonly palOn = el<HTMLInputElement>('<input type="checkbox" aria-label="Custom palette">');
   private readonly palPick = el<HTMLInputElement>('<input type="color" class="fm-ex-pick" value="#ff6a00" aria-label="Add a palette color">');
   private readonly palAdd = el<HTMLButtonElement>('<button class="cv-btn" type="button">Add color</button>');
@@ -197,6 +212,8 @@ export class ExportDialog {
   }
   private engineJob: ReturnType<Engine['startJob']> | null = null;
   private busy = false;
+  /** A short notice for the next result: the folder dialog was refused, so the file came as a download. */
+  private fallback = '';
   // the running export's readout: shown in the window, and in a chip when the window is closed
   private meter: ProgressMeter | null = null;
   private tick = 0;
@@ -239,7 +256,13 @@ export class ExportDialog {
       this.start(this.fromForm());
     });
     this.dlg.onClose = () => { save(this.state); this.preview.stop(); if (!this.busy) this.preview.release(); this.syncChip(); };
-    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && this.state.tab === 'advanced') { e.preventDefault(); this.run.click(); } });
+    body.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement) || e.target.type === 'checkbox' || this.state.tab !== 'advanced') return;
+      e.preventDefault();
+      // Enter in the In or Out field commits the typed time (shown as a timecode); it does not start the export
+      if (e.target === this.inField || e.target === this.outField) { this.commitRange(); return; }
+      this.run.click();
+    });
   }
 
   open(tab?: Tab): void {
@@ -370,7 +393,9 @@ export class ExportDialog {
         this.row('range', 'Range', this.rangeSel),
         this.row('inout', 'In and out', range, this.rangeNote),
         this.row('mode', 'Playback', this.mode),
-        this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background')),
+        this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background'), this.alphaNote),
+        this.row('framesto', 'Save frames as', this.framesTo),
+        this.row('askwhere', 'Save to', this.check(this.askWhere, 'Choose a folder to save to')),
         ...ex.slice(5, 8),
       ),
       exportCard('Audio',
@@ -398,11 +423,12 @@ export class ExportDialog {
         chipsRow,
         this.row('threshold', 'Alpha threshold', thr),
         this.row('loop', 'Loop', this.check(this.loop, 'Loop forever')),
+        this.row('exact', 'Frames', this.check(this.exactFrames, 'One GIF frame for every movie frame')),
       ),
     );
     const change = (): void => { this.readForm(); this.sync(); };
     for (const c of [this.kind, this.codec, this.profile, this.container, this.audioKind, this.picture, this.tiffMode, this.duration, this.smooth, this.intensity, this.colorStep, this.palOn, this.gmode,
-      this.preset, this.rangeSel, this.mode, this.audio, this.alpha, this.quality, this.colors, this.dither, this.loop, this.threshold, this.palette, this.inField, this.outField]) {
+      this.preset, this.rangeSel, this.mode, this.audio, this.alpha, this.quality, this.colors, this.dither, this.loop, this.threshold, this.palette, this.inField, this.outField, this.framesTo, this.askWhere, this.exactFrames]) {
       c.addEventListener('input', change);
       c.addEventListener('change', change);
     }
@@ -483,6 +509,9 @@ export class ExportDialog {
     this.colors.value = String(s.colors);
     this.dither.value = s.dither;
     this.loop.checked = s.loop;
+    this.framesTo.value = s.framesTo;
+    this.askWhere.checked = s.askWhere;
+    this.exactFrames.checked = s.exactFrames;
     this.threshold.value = String(s.alphaThreshold);
     this.palette.value = s.palette;
     this.width.value = String(s.customW);
@@ -523,6 +552,9 @@ export class ExportDialog {
     if (this.colorStep.value !== 'custom') this.colors.value = String(s.colors);
     s.dither = this.dither.value as Gif['dither'];
     s.loop = this.loop.checked;
+    s.framesTo = this.framesTo.value === 'zip' ? 'zip' : 'folder';
+    s.askWhere = this.askWhere.checked;
+    s.exactFrames = this.exactFrames.checked;
     s.alphaThreshold = num(this.threshold.valueAsNumber, 0, 255, s.alphaThreshold);
     s.palette = this.palette.value;
     if (s.preset === 'custom' && document.activeElement !== this.width && document.activeElement !== this.height) { this.width.value = String(s.customW); this.dimsFromAspect(); }
@@ -578,6 +610,17 @@ export class ExportDialog {
     return { from, to: last + 1, error: last < b || from > a ? 'The range was kept inside the movie.' : '' };
   }
 
+  /** The typed In and Out are read, kept inside the movie and written back as timecodes. */
+  private commitRange(): void {
+    const m = this.deps.engine.movie;
+    if (!m) return;
+    const a = parseTime(this.inField.value, m.fps), b = parseTime(this.outField.value, m.fps);
+    if (a !== null) this.inField.value = timecode(Math.min(Math.max(0, a), m.duration - 1), m.fps);
+    if (b !== null) this.outField.value = timecode(Math.min(Math.max(0, b), m.duration - 1), m.fps);
+    this.readForm();
+    this.sync();
+  }
+
   private rangeBad(): boolean { return /timecodes/.test(this.range().error); }
 
   /** Shows only the rows that apply to the chosen format, and the sums under them. */
@@ -598,10 +641,18 @@ export class ExportDialog {
     show('gmode', gif);
     show('audio', video);
     show('audiokind', video && this.audio.checked);
-    show('alpha', m.transparent && this.alphaOk());
+    // HEVC cannot carry transparency without the platform encoder: say so instead of hiding the choice
+    const noHevcAlpha = video && s.codec === 'hevc' && this.caps?.targets.hevc?.alpha !== true;
+    show('alpha', m.transparent && (this.alphaOk() || noHevcAlpha));
+    setDisabled(this.alpha, noHevcAlpha);
+    setHidden(this.alphaNote, !noHevcAlpha);
+    if (noHevcAlpha) setText(this.alphaNote, t(this.caps ? (this.caps.targets.hevc?.alpha_reason ?? 'HEVC with transparency is not available here.') : 'The engine is not running, so HEVC with transparency is not available.'));
     show('quality', (video && s.codec !== 'prores') || (pic && (s.picture === 'jpg' || s.picture === 'webp')) || s.kind === 'webp-anim');
     const isGif = s.kind === 'gif';
-    for (const id of ['gifhead', 'duration', 'dither', 'colorstep', 'palon', 'loop']) show(id, isGif);
+    for (const id of ['gifhead', 'duration', 'dither', 'colorstep', 'palon', 'loop', 'exact']) show(id, isGif);
+    // a folder to save to, where the platform has a folder dialog: frames get a folder of pictures (or a zip), other exports may ask
+    show('framesto', frames && canPickFolder());
+    show('askwhere', !frames && canPickFolder());
     show('smooth', isGif && s.dither === 'ordered');
     show('intensity', isGif && s.dither === 'ordered');
     show('palette', isGif && s.palOn);
@@ -654,7 +705,7 @@ export class ExportDialog {
   private alphaOk(): boolean {
     const s = this.state;
     if (s.kind === 'gif' || s.kind === 'webp-anim' || s.kind === 'apng' || s.kind === 'psd') return true;
-    if (s.kind === 'video') return s.codec === 'vp9' || (s.codec === 'prores' && (s.profile === '4444' || s.profile === '4444xq'));
+    if (s.kind === 'video') return s.codec === 'vp9' || (s.codec === 'prores' && (s.profile === '4444' || s.profile === '4444xq')) || (s.codec === 'hevc' && this.caps?.targets.hevc?.alpha === true);
     return pictureHasAlpha(s.picture);
   }
 
@@ -670,7 +721,7 @@ export class ExportDialog {
       alpha: s.alpha && m.transparent && this.alphaOk(), quality: s.quality,
       gif: {
         colors: s.colors, dither: s.dither, palette: pal && pal.length ? pal : null, alphaThreshold: s.alphaThreshold, loop: s.loop, timing: s.timing,
-        frameMs: s.frameMs, smoothness: s.smoothness, intensity: s.intensity,
+        frameMs: s.frameMs, smoothness: s.smoothness, intensity: s.intensity, exactFrames: s.exactFrames,
       },
       picture: s.kind === 'still' || s.kind === 'frames' ? s.picture : undefined, tiffDeflate: s.tiffDeflate,
       audioCodec: s.audioKind, proresProfile: s.codec === 'prores' ? s.profile : undefined,
@@ -768,7 +819,20 @@ export class ExportDialog {
     });
   }
 
+  /** Asks for the folder first where the person chose one (frames as a folder of images, or Choose a folder to save to), then runs. */
   private begin(opts: ExportOptions): void {
+    if (this.busy || !this.deps.engine.movie) return;
+    const frames = opts.format.endsWith('-frames');
+    const ask = canPickFolder() && (frames ? this.state.framesTo === 'folder' : this.state.askWhere);
+    if (!ask) { this.launch(opts, null); return; }
+    void pickDestination().then((dest) => {
+      if (dest === 'unavailable') { this.fallback = t('The folder could not be chosen here, so the file was downloaded instead.'); this.launch(opts, null); return; }
+      if (!dest) { this.note(['Export cancelled.'], 'warn'); toast(t('Export cancelled.')); return; }
+      this.launch(opts, dest);
+    });
+  }
+
+  private launch(opts: ExportOptions, dest: Dest | null): void {
     const movie = this.deps.engine.movie;
     if (!movie || this.busy) return;
     save(this.state);
@@ -797,15 +861,31 @@ export class ExportDialog {
       this.showReading(meter.update(p));
     });
     void job.result.then(async (res) => {
-      downloadBlob(res.blob, res.name);
-      let kept = true;
-      if (!res.kept) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
       const lines = [...res.warnings];
-      if (!kept) lines.push('The file was downloaded, but it could not be kept in Exports.');
+      if (this.fallback) { lines.push(this.fallback); this.fallback = ''; }
+      let kept = true;
+      let shown = res.name;
+      let landed = false;
+      if (dest) {
+        // the folder the person chose: a sequence becomes a folder of pictures named after the movie, anything else one file
+        try {
+          if (opts.format.endsWith('-frames') && res.mime === 'application/zip') {
+            const r = await saveFramesTo(dest, res.blob, safeFolder(movie.name));
+            shown = t('{n} frames in {where}').replace('{n}', String(r.files)).replace('{where}', r.where);
+          } else shown = await saveFileTo(dest, res.blob, res.name);
+          landed = true;
+        } catch (e) {
+          lines.push(`${e instanceof Error && e.message ? e.message : t('The file could not be saved there.')} ${t('It was downloaded instead.')}`);
+        }
+      }
+      // a zip that became a folder is not kept again as a zip in Exports
+      if (!landed) downloadBlob(res.blob, res.name);
+      if (!res.kept && !(landed && opts.format.endsWith('-frames'))) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
+      if (!kept) lines.push(landed ? 'The file could not be kept in Exports.' : 'The file was downloaded, but it could not be kept in Exports.');
       const took = clock(meter.read().elapsedMs);
       this.finish(off, ej);
-      if (this.dlg.isOpen) this.note([t('Saved {name}').replace('{name}', res.name) + ` · ${took}`, ...lines], lines.length ? 'warn' : 'ok');
-      else toast(t('Exported {name} in {time}.').replace('{name}', res.name).replace('{time}', took) + (lines.length ? ` ${lines.join(' ')}` : ''), kept ? 'info' : 'error', kept ? { actions: [{ label: t('Show in Exports'), run: () => document.dispatchEvent(new CustomEvent('fm:show-exports')) }] } : undefined);
+      if (this.dlg.isOpen) this.note([t('Saved {name}').replace('{name}', shown) + ` · ${took}`, ...lines], lines.length ? 'warn' : 'ok');
+      else toast(t('Exported {name} in {time}.').replace('{name}', shown).replace('{time}', took) + (lines.length ? ` ${lines.join(' ')}` : ''), kept ? 'info' : 'error', kept ? { actions: [{ label: t('Show in Exports'), run: () => document.dispatchEvent(new CustomEvent('fm:show-exports')) }] } : undefined);
     }, (e: unknown) => {
       this.finish(off, ej);
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -882,11 +962,9 @@ export class ExportDialog {
     setHidden(this.shareBox, tab !== 'share');
     setHidden(this.advBox, tab !== 'advanced');
     setHidden(this.run, tab !== 'advanced');
-    // on Advanced, Close / Cancel and Export sit at the top right of the option column; on Quick share they return to the footer
+    // Cancel and Export sit together on the one bar at the foot of the window on both tabs; Preview stays under the preview picture
     this.footerHost ??= this.cancel.parentElement;
-    if (!this.actions.isConnected) this.formBox.prepend(this.actions);
-    const host = tab === 'advanced' ? this.actions : this.footerHost;
-    if (host && this.run.parentElement !== host) host.append(this.cancel, this.run);
+    if (this.footerHost && this.run.parentElement !== this.footerHost) this.footerHost.append(this.cancel, this.run);
     if (tab === 'advanced') { this.sync(); if (this.lastTab !== 'advanced' && this.dlg.isOpen) this.autoPreview(); }
     this.lastTab = tab;
   }

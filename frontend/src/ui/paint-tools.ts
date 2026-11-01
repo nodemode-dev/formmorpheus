@@ -49,13 +49,13 @@ export interface ToolHost {
 export type ToolMode = 'paint' | 'select' | 'transform' | 'filters';
 type FilterId = 'hsb' | 'blur' | 'sharpen' | 'noise' | 'lens';
 
-interface Param { id: string; label: string; min: number; max: number; step: number; def: number; unit: string; scale: number }
+interface Param { id: string; label: string; min: number; max: number; step: number; def: number; unit: string; scale: number; /** Display only: HSB reads 0 to 100 with 50 neutral. */ shift?: number }
 
 const FILTERS: { id: FilterId; label: string; params: Param[] }[] = [
   { id: 'hsb', label: 'Hue, Saturation, Brightness', params: [
-    { id: 'hue', label: 'Hue', min: -180, max: 180, step: 1, def: 0, unit: '°', scale: 1 },
-    { id: 'saturation', label: 'Saturation', min: -1, max: 1, step: 0.01, def: 0, unit: '%', scale: 100 },
-    { id: 'brightness', label: 'Brightness', min: -1, max: 1, step: 0.01, def: 0, unit: '%', scale: 100 },
+    { id: 'hue', label: 'Hue', min: -180, max: 180, step: 1, def: 0, unit: '', scale: 100 / 360, shift: 50 },
+    { id: 'saturation', label: 'Saturation', min: -1, max: 1, step: 0.01, def: 0, unit: '%', scale: 50, shift: 50 },
+    { id: 'brightness', label: 'Brightness', min: -1, max: 1, step: 0.01, def: 0, unit: '%', scale: 50, shift: 50 },
   ] },
   { id: 'blur', label: 'Gaussian Blur', params: [{ id: 'radius', label: 'Amount', min: 0, max: 1, step: 0.005, def: 0, unit: '%', scale: 100 }] },
   { id: 'sharpen', label: 'Sharpen', params: [{ id: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01, def: 0, unit: '%', scale: 100 }] },
@@ -432,7 +432,7 @@ export class PaintTools {
     this.fthr.style.setProperty('--v', String(Math.max(0, Math.min(1, (v0 - p0.min) / (p0.max - p0.min || 1)))));
     for (const p of f.params) {
       const v = this.values[p.id] ?? p.def;
-      setText(scope.querySelector(`[data-o="${p.id}"]`), `${Math.round(v * p.scale)}${p.unit}`);
+      setText(scope.querySelector(`[data-o="${p.id}"]`), `${Math.round(v * p.scale + (p.shift ?? 0))}${p.unit}`);
       const input = scope.querySelector<HTMLInputElement>(`input[data-p="${p.id}"]`);
       if (input && Number(input.value) !== v) input.value = String(v);
     }
@@ -527,6 +527,23 @@ export class PaintTools {
 
   // ------------------------------------------------------------ interactions
 
+  /** A second finger is held while a Rectangle or Ellipse selection is dragged: a perfect square or circle (the Shift key on a desktop). */
+  private snapHeld = false;
+
+  /** True while a Rectangle or Ellipse selection drag is under way, so a second finger means "snap" rather than a pinch. */
+  snapTarget(): boolean {
+    const d = this.drag;
+    return this.current === 'select' && !!d && (d.kind === 'rectangle' || d.kind === 'ellipse');
+  }
+
+  setSnap(on: boolean): void {
+    if (this.snapHeld === on) return;
+    this.snapHeld = on;
+    const d = this.drag;
+    if (d && on && this.snapTarget()) d.last = squareTo(d.start, d.last);
+    this.host.redraw();
+  }
+
   private interaction(): Interaction {
     return {
       down: (e) => this.down(e),
@@ -562,7 +579,7 @@ export class PaintTools {
     const d = this.drag;
     if (!d) return;
     let p = this.host.toCanvas(e.clientX, e.clientY);
-    if (this.current === 'select' && e.shiftKey && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
+    if (this.current === 'select' && (e.shiftKey || this.snapHeld) && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
     d.last = p;
     if (this.current === 'select') {
       if (d.kind === 'freehand') d.pts.push(p);
@@ -594,7 +611,8 @@ export class PaintTools {
       if (d.i < 0 && Math.abs(e.clientX - d.cx) <= 3) this.openFilterMenu(e.clientX, e.clientY);
       return;
     }
-    if (this.current === 'select' && e.shiftKey && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
+    if (this.current === 'select' && (e.shiftKey || this.snapHeld) && (d.kind === 'rectangle' || d.kind === 'ellipse')) p = squareTo(d.start, p);
+    this.snapHeld = false;
     if (this.current === 'select' && d.kind === 'freehand' && this.tapPoly(d, p)) return;
     if (this.current === 'select') {
       let m: Mask | null = null;
@@ -611,11 +629,11 @@ export class PaintTools {
       this.host.setSelection(isEmpty(next) ? null : next);
       return;
     }
-    if (this.current === 'transform' && d.kind === 'move' && e.pointerType === 'touch' && this.edgeTap(d, p)) return;
+    if (this.current === 'transform' && d.kind === 'move' && this.edgeTap(d, p)) return;
     if (this.current === 'transform' && (this.transformMode === 'distort' || this.transformMode === 'warp')) this.refreshPreview();
   }
 
-  /** Touch: a tap just outside an outer edge nudges the content 1 px toward it, outside a corner diagonally. */
+  /** Touch, mouse and pen: a tap just outside an outer edge nudges the content 1 px toward it, outside a corner diagonally. */
   private edgeTap(d: NonNullable<PaintTools['drag']>, p: Point): boolean {
     const s = this.host.view().scale;
     if (!d.quad0.length || Math.hypot(p.x - d.start.x, p.y - d.start.y) * s > 5) return false;

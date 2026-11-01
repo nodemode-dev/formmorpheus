@@ -2,7 +2,12 @@ import type { Engine } from '../engine/engine';
 import { locate } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Content, TextStyle } from '../engine/types';
-import { ensureTextFont, familyFaces, fontCatalog, previewFont } from '../media/fonts';
+import { ensureTextFont, familyFaces, fontCatalog, previewFont, unregisterFont } from '../media/fonts';
+import { embedLibraryFamily, inLibrary, removeFamily } from '../io/fonts-library';
+import { ColourPanel } from './colour-panel';
+import { confirmAction } from './dialogs';
+import { t } from './i18n';
+import { popRow } from './popover';
 import { el, q, setClass, setText } from './dom';
 import { icon } from './icons';
 import { Popover } from './popover';
@@ -40,8 +45,11 @@ export class TextCard {
   private readonly groups = new Map<string, HTMLElement>();
   private readonly faces = new Map<string, HTMLButtonElement>();
   private readonly weight: HTMLSelectElement;
-  private readonly color: HTMLInputElement;
+  private readonly color: HTMLButtonElement;
+  private colorPanel: ColourPanel | null = null;
   private readonly hex: HTMLElement;
+  private readonly fontMenu = new Popover('fm-tc-fmenu', 180);
+  private menuFamily = '';
   private readonly sliders = new Map<string, Slider>();
   private readonly aligns = new Map<string, HTMLButtonElement>();
   private readonly caps = new Map<string, HTMLButtonElement>();
@@ -63,9 +71,9 @@ export class TextCard {
       <div class="fm-tc-panes">
       <div class="fm-tc-pane" data-pane="fonts">
         <div class="fm-tc-fonts" role="listbox" aria-label="Typeface"></div>
-        <div class="fm-tc-row"><span>Add</span><button class="fm-tc-mini" type="button" data-f="importFont" title="Bring in a font file: otf, ttf, woff or woff2">Import font...</button></div>
+        <div class="fm-tc-row"><span>Add</span><button class="fm-tc-mini" type="button" data-f="importFont" title="Bring in a font file: otf, ttf, ttc, woff or woff2">Import font...</button></div>
         <label class="fm-tc-row"><span>Font</span><select class="fm-tc-select" data-f="weight" aria-label="Font variant"></select></label>
-        <div class="fm-tc-row"><span>Color</span><label class="fm-tc-swatch"><input type="color" data-f="color" aria-label="Color"></label><span class="fm-tc-hex"></span></div>
+        <div class="fm-tc-row"><span>Color</span><button class="fm-tc-swatch" type="button" data-f="color" aria-label="Color"><i class="fm-tc-chip"></i></button><span class="fm-tc-hex"></span></div>
         <div class="fm-tc-row"><span>Style</span><div class="fm-tc-seg" data-g="flags"></div></div>
       </div>
       <div class="fm-tc-pane" data-pane="format" hidden>
@@ -83,7 +91,10 @@ export class TextCard {
     this.area = q<HTMLTextAreaElement>(root, 'textarea');
     this.list = q(root, '.fm-tc-fonts');
     this.weight = q<HTMLSelectElement>(root, '[data-f="weight"]');
-    this.color = q<HTMLInputElement>(root, '[data-f="color"]');
+    this.color = q<HTMLButtonElement>(root, '[data-f="color"]');
+    const remove = popRow('delete', t('Remove font'), { danger: true });
+    remove.el.addEventListener('click', () => { const f = this.menuFamily; this.fontMenu.hide(); if (f) void this.removeFont(f); });
+    this.fontMenu.body.appendChild(remove.el);
     this.hex = q(root, '.fm-tc-hex');
     this.strokeColor = q<HTMLInputElement>(root, '[data-f="strokeColor"]');
     this.strokeW = q<HTMLInputElement>(root, '[data-f="strokeW"]');
@@ -104,8 +115,8 @@ export class TextCard {
       this.panes.set(id, q(root, `[data-pane="${id}"]`));
       tabBar.appendChild(b);
     }
-    for (const g of ['bundled', 'movie', 'system'] as const) {
-      const head = el(`<div class="fm-tc-group" hidden>${g === 'bundled' ? 'Built in' : g === 'movie' ? 'In this movie' : 'On this computer'}</div>`);
+    for (const g of ['bundled', 'library', 'movie', 'system'] as const) {
+      const head = el(`<div class="fm-tc-group" hidden>${g === 'bundled' ? 'Built in' : g === 'library' ? 'Fonts library' : g === 'movie' ? 'In this movie' : 'On this computer'}</div>`);
       const box = el('<div class="fm-tc-group-list"></div>');
       this.list.append(head, box);
       this.groups.set(g, box);
@@ -164,8 +175,33 @@ export class TextCard {
     for (const ev of ['select', 'keyup', 'mouseup', 'input']) this.area.addEventListener(ev, mark);
     this.area.addEventListener('change', () => this.endGesture());
     this.weight.addEventListener('change', () => { void this.setFace(Number(this.weight.value)); this.endGesture(); });
-    this.color.addEventListener('input', () => { this.commit({ color: this.color.value }, 'color'); setText(this.hex, this.color.value.toUpperCase()); });
-    this.color.addEventListener('change', () => this.endGesture());
+    // the shared Color disc (the same panel the Stage background uses), not the browser's own picker
+    this.color.addEventListener('click', () => {
+      const t0 = this.cur();
+      if (!t0) return;
+      if (!this.colorPanel) {
+        this.colorPanel = new ColourPanel({
+          keepColours: true,
+          onPick: (rgb, final) => {
+            const hexv = `#${[rgb.r, rgb.g, rgb.b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+            this.commit({ color: hexv }, 'color');
+            this.paintColor(hexv);
+            if (final) { this.endGesture(); this.colorPanel?.commit(rgb); }
+          },
+        });
+        (document.getElementById('overlay-root') ?? document.body).appendChild(this.colorPanel.root);
+      }
+      if (this.colorPanel.isOpen()) { this.colorPanel.close(); return; }
+      const n = parseInt(t0.color.replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
+      this.colorPanel.set({ r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 });
+      this.colorPanel.open(this.color);
+      // beside the card, not over it (the same placing the Stage background picker uses)
+      const r = this.pop.el.getBoundingClientRect(), w = this.colorPanel.root.offsetWidth || 280;
+      const left = r.left - w - 8 >= 8 ? r.left - w - 8 : Math.min(window.innerWidth - w - 8, r.right + 8);
+      this.colorPanel.root.style.left = `${Math.round(left)}px`;
+      this.colorPanel.root.style.top = `${Math.max(8, Math.round(r.top))}px`;
+    });
+    this.pop.onHide(() => this.colorPanel?.close());
     const stroke = (): void => {
       const w = Math.max(0, Math.round(this.strokeW.valueAsNumber || 0));
       this.commit({ stroke: w > 0 ? { color: this.strokeColor.value, width: w } : undefined }, 'stroke');
@@ -180,6 +216,7 @@ export class TextCard {
 
     this.pop.onHide(() => { this.endGesture(); this.id = ''; });
     engine.on('movie', () => { if (this.pop.isOpen) this.sync(); });
+    window.addEventListener('fm:fonts', () => { if (this.pop.isOpen) this.syncFonts(this.cur() ?? { font: 'Inter' } as TextStyle); });
     engine.on('selection', () => { if (this.pop.isOpen && !this.engine.selection.content.includes(this.id)) this.close(); });
     this.showTab('fonts');
   }
@@ -299,10 +336,34 @@ export class TextCard {
     if (!t) return;
     const faces = familyFaces(family);
     const weight = faces.weights.includes(t.weight) ? t.weight : faces.weights.reduce((a, b) => (Math.abs(b - t.weight) < Math.abs(a - t.weight) ? b : a), faces.weights[0] ?? 400);
-    void ensureTextFont({ ...t, font: family, weight }).then(() => {
+    void ensureTextFont({ ...t, font: family, weight }).then(async () => {
+      // a Fonts library font travels with the movie that uses it
+      if (inLibrary(family)) await embedLibraryFamily(this.engine, family);
       this.commit({ font: family, weight }, 'font');
       this.endGesture();
     });
+  }
+
+  private paintColor(color: string): void {
+    this.color.style.setProperty('--c', color);
+    setText(this.hex, color.toUpperCase());
+  }
+
+  /** Remove font: a Fonts library font leaves the library (a movie keeps its own embedded copy); a movie font leaves the movie. */
+  private async removeFont(family: string): Promise<void> {
+    const m = this.engine.movie;
+    if (!m) return;
+    const inUse = this.cur()?.font === family;
+    const lib = inLibrary(family);
+    const ok = await confirmAction('Remove font',
+      t(lib ? 'Remove "{font}" from the Fonts library? Movies that already carry it keep their own copy.' : 'Remove "{font}" from this movie? Text that uses it falls back to another font.').replace('{font}', family) + (inUse && !lib ? ` ${t('The Text you are editing uses it.')}` : ''),
+      'Remove', true);
+    if (!ok) return;
+    if (lib) await removeFamily(family, unregisterFont);
+    else {
+      this.engine.run('Remove font', (mv) => ({ ...mv, assets: Object.fromEntries(Object.entries(mv.assets).filter(([, a]) => !(a.kind === 'font' && a.family === family))) }));
+    }
+    if (this.pop.isOpen) this.sync();
   }
 
   private paintSlider(f: NumField, v: number, range: HTMLInputElement, num: HTMLInputElement, fromInput = false): void {
@@ -315,19 +376,26 @@ export class TextCard {
   /** Builds the typeface buttons once per family set and patches them after that. */
   private syncFonts(t: TextStyle): void {
     const cat = fontCatalog(this.engine.movie);
-    const all: Record<string, string[]> = { bundled: cat.bundled, movie: cat.movie, system: cat.system };
+    const all: Record<string, string[]> = { bundled: cat.bundled, library: cat.library, movie: cat.movie, system: cat.system };
     if (!Object.values(all).some((l) => l.includes(t.font))) all.movie = [...all.movie, t.font];
     const wanted = new Set<string>();
     for (const [g, fams] of Object.entries(all)) {
       const box = this.groups.get(g) as HTMLElement;
       for (const fam of fams) {
         wanted.add(fam);
-        if (this.faces.has(fam)) continue;
+        const had = this.faces.get(fam);
+        // a font that moved between lists (removed from the library, say) is moved, not rebuilt
+        if (had) { if (had.dataset.g !== g) { had.dataset.g = g; box.appendChild(had); } continue; }
         const b = el<HTMLButtonElement>('<button class="fm-tc-face" type="button" role="option"></button>');
         b.textContent = fam;
+        b.dataset.g = g;
         b.style.fontFamily = `"${fam}", Inter, sans-serif`;
         previewFont(fam);
         b.addEventListener('click', () => this.pickFont(fam));
+        // an installed or embedded font can be removed: right click, or Delete with the row focused
+        const menu = (x: number, y: number): void => { if (b.dataset.g === 'library' || b.dataset.g === 'movie') { this.menuFamily = fam; this.fontMenu.showAt(x, y); } };
+        b.addEventListener('contextmenu', (e) => { if (b.dataset.g !== 'library' && b.dataset.g !== 'movie') return; e.preventDefault(); menu(e.clientX, e.clientY); });
+        b.addEventListener('keydown', (e) => { if (e.key === 'Delete' && (b.dataset.g === 'library' || b.dataset.g === 'movie')) { e.preventDefault(); void this.removeFont(fam); } });
         this.faces.set(fam, b);
         box.appendChild(b);
       }
@@ -361,8 +429,7 @@ export class TextCard {
       }
     }
     if (this.weight.value !== String(t.weight)) this.weight.value = String(t.weight);
-    if (/^#[0-9a-f]{6}$/i.test(t.color) && this.color.value !== t.color.toLowerCase()) this.color.value = t.color.toLowerCase();
-    setText(this.hex, t.color.toUpperCase());
+    this.paintColor(t.color);
     for (const f of NUMS) {
       const s = this.sliders.get(f.key) as Slider;
       const v = (t[f.key] as number | undefined) ?? f.def ?? t.size;

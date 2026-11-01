@@ -417,9 +417,13 @@ function transformBitmap(src: ImageBitmap, from: CanvasRect, to: CanvasRect, r: 
 }
 
 /** Re-bakes every layer (and layer mask) of the Drawing or Flipbook into the new canvas; returns the content with the canvas set and the new assets. */
-export async function bakeCanvas(engine: Engine, c: Content, r: CropResult): Promise<{ content: Content; assets: { asset: Asset; blob: Blob }[] }> {
+export async function bakeCanvas(engine: Engine, c: Content, r: CropResult, onStep?: (done: number, total: number) => void): Promise<{ content: Content; assets: { asset: Asset; blob: Blob }[] }> {
   const m = engine.movie;
   if (!m) throw new Error('no movie');
+  const ids = new Set<string>();
+  const count = (list: DrawingLayer[]): void => { for (const l of list) { if (l.pixels) ids.add(l.pixels); if (l.mask) ids.add(l.mask); } };
+  if (c.kind !== 'flipbook') count(c.layers); else for (const t of c.flip) for (const f of t.frames) count(f.layers);
+  const total = ids.size;
   const from = canvasOf(c, m);
   const to = r.rect;
   const made = new Map<string, string>();
@@ -437,6 +441,9 @@ export async function bakeCanvas(engine: Engine, c: Content, r: CropResult): Pro
     const asset: Asset = { id: uid('p'), kind: 'pixels', name: 'Crop', mime: 'image/png', width: to.w, height: to.h, frames: 1, size: out.size };
     assets.push({ asset, blob: out });
     made.set(id, asset.id);
+    onStep?.(made.size, total);
+    // let the browser paint the progress chip between pictures
+    await new Promise<void>((res) => setTimeout(res, 0));
     return asset.id;
   };
   const layers = async (list: DrawingLayer[]): Promise<DrawingLayer[]> => {

@@ -47,6 +47,8 @@ export interface ExportOptions {
     /** Stable (ordered) dithering: matrix doubles per step from 2x2 (0), and the strength 0 to 100. */
     smoothness?: number;
     intensity?: number;
+    /** One GIF frame per movie frame (unchanged frames are not merged into holds). */
+    exactFrames?: boolean;
   };
   /** Picture type of a still or a sequence; absent means what the format says. */
   picture?: PictureExt;

@@ -1,9 +1,9 @@
-/** Creating a Drawing or a Flipbook leaves the person on the Timeline with the new block selected and its Edit pill
- *  showing (FV-202). This per-viewer choice brings back the earlier behaviour: go straight into Draw & Paint. */
+/** Creating a Drawing or a Flipbook goes straight into Draw & Paint, as the Handbook says (v0.17.0 reverses FV-202).
+ *  This per-viewer choice turns it off; a stored choice is kept, a missing one means on. */
 const KEY = 'formmorpheus.openPaintOnCreate';
 
 export function openPaintOnCreate(): boolean {
-  try { return localStorage.getItem(KEY) === '1'; } catch { return false; }
+  try { return localStorage.getItem(KEY) !== '0'; } catch { return true; }
 }
 
 export function setOpenPaintOnCreate(on: boolean): void {

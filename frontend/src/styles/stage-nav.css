@@ -51,5 +51,8 @@
 .fm-so-bg.is-off .fm-so-swatch { opacity: 0.4; }
 .fm-so-swatch { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 var(--space-2) 0 4px; border: 1px solid var(--line-2); border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); font-variant-numeric: tabular-nums; cursor: default; }
 .fm-so-swatch:hover { background: var(--surface-field); }
+.fm-so [hidden] { display: none !important; }
+.fm-so .cv-slider-ctl { position: relative; }
+.fm-so-pct { position: absolute; right: 26px; top: 50%; transform: translateY(-50%); color: var(--text-muted, inherit); font-size: var(--fs-11); pointer-events: none; }
 .fm-so-chip { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--fm-so-bg, #fff); }
 .fm-so .cv-field { padding-inline: var(--space-3); border-radius: var(--radius-lg); background: var(--surface-raised); }

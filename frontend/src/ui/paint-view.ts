@@ -31,6 +31,8 @@ import { BrushPanel } from './brush-panel';
 import { ColourPanel } from './colour-panel';
 import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { t as tr } from './i18n';
+import { tf } from './i18n-fill';
+import { ProgressChip } from './paint-progress';
 import { historyLabel } from './history-label';
 import { FlipStrip, type StripHost } from './flip-strip';
 import { underlayView } from './flip-underlay';
@@ -176,6 +178,11 @@ export class PaintView {
   private strokeId = '';
   /** Markers for the four remembered size and opacity values of the brush. */
   private slots: BrushSlots | null = null;
+  /** The finger held for the square/circle snap of a selection drag, -1 when none. */
+  private snapPointer = -1;
+  /** Settles when the last stroke's pixels have landed and been committed (tools that read the layer wait on it). */
+  private landing: Promise<void> | null = null;
+  private readonly progress = new ProgressChip();
   private strokePointer = -1;
   /** Painting while the strip's scrub wheel is held: the pen that was painting when the frame changed, and its last move. */
   private resumePointer = -1;
@@ -379,6 +386,7 @@ export class PaintView {
     this.dropper = new ColourDrop({ doc: () => this.doc, selection: () => this.selection, toCanvas: (x, y) => this.toCanvas(x, y), root: this.root });
     this.root.appendChild(this.loupe.root);
     this.root.appendChild(this.dropper.bubble);
+    this.root.appendChild(this.progress.root);
     this.dropper.onContinue = () => this.syncChrome();
     this.clip = new PaintClip({
       doc: () => this.doc,
@@ -502,6 +510,9 @@ export class PaintView {
   /** The paint Worker has the last pixels of a stroke still to send: commit its undo step when they land. Until then the view is busy, so nothing reads or changes the layer. */
   private landStroke(done: Promise<PixelPatch | null>, doc: PaintDoc, tool: PaintTool, col: RGB): void {
     this.busy = true;
+    const landed = done.then(() => undefined, () => undefined);
+    this.landing = landed;
+    void landed.then(() => { if (this.landing === landed) this.landing = null; });
     void done.then((patch) => {
       this.remote = null;
       this.clearTail();
@@ -974,7 +985,8 @@ export class PaintView {
   private fit(bare = false): void {
     const m = this.engine.movie;
     if (!m || !this.cssW) return;
-    const padX = bare ? 16 : 72, padTop = bare ? 16 : 64, padBottom = bare ? 16 : this.content()?.kind === 'flipbook' ? 200 : 32;
+    // v0.17.0: full bleed, the picture runs under the glass bar and the floating sidebar (L-DP-028)
+    const padX = bare ? 16 : 14, padTop = bare ? 16 : 40, padBottom = bare ? 16 : this.content()?.kind === 'flipbook' ? 190 : 14;
     // fit the canvas and the Stage together (view pixels are canvas pixels; the Stage sits at -canvas.x, -canvas.y)
     const kv = canvasOf(this.content(), m);
     this.fitKey = `${kv.x},${kv.y},${kv.w},${kv.h}`;
@@ -1452,7 +1464,13 @@ export class PaintView {
     await this.commitDoc();
     const now = this.content();
     if (!now) { this.busy = false; return; }
-    const baked = await bakeCanvas(this.engine, now, p);
+    const rs = p.mode === 'resample';
+    this.progress.show(tr(rs ? 'Resampling the canvas...' : 'Cropping the canvas...'), 0);
+    let baked: Awaited<ReturnType<typeof bakeCanvas>>;
+    try {
+      baked = await bakeCanvas(this.engine, now, p, (done, total) => this.progress.show(
+        tf(rs ? 'Resampling picture {done} of {total}' : 'Cropping picture {done} of {total}', { done: String(done), total: String(total) }), done / Math.max(1, total)));
+    } finally { this.progress.hide(); }
     const blobs = new Map<string, Blob>();
     for (const { asset, blob } of baked.assets) { this.engine.assets.set(asset.id, blob); blobs.set(asset.id, blob); }
     await this.renderer.preload(blobs);
@@ -1638,7 +1656,10 @@ export class PaintView {
           this.tools.openFilters(b);
         } else if (w === 'select' || w === 'transform') {
           this.closePanels();
-          this.tools.setMode(this.tools.mode() === w ? 'paint' : w);
+          const go = (): void => { this.tools.setMode(this.tools.mode() === w ? 'paint' : w); this.syncChrome(); };
+          // a stroke's last pixels may still be landing from the paint worker: wait for its commit, then read the layer
+          if (this.landing) { void this.landing.then(go); return; }
+          go();
         }
         this.syncChrome();
       });
@@ -2011,6 +2032,14 @@ export class PaintView {
     const cv = this.canvas;
     if (e.pointerType === 'touch') {
       if (this.input.rejected(e)) return;
+      // a second finger held during a Rectangle or Ellipse selection drag snaps it to a square or a circle (not a pinch)
+      if (this.touches.size === 1 && this.interaction && this.snapPointer < 0 && !this.gesture && this.tools.snapTarget()) {
+        this.snapPointer = e.pointerId;
+        this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
+        this.tools.setSnap(true);
+        cv.setPointerCapture(e.pointerId);
+        return;
+      }
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), moved: false });
       if (this.touches.size >= 2) {
         this.clearPickHold();
@@ -2216,6 +2245,7 @@ export class PaintView {
       const t = this.touches.get(e.pointerId)!;
       if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) t.moved = true;
       t.x = e.clientX; t.y = e.clientY;
+      if (e.pointerId === this.snapPointer) return;
       if (this.gesture) { this.updateGesture(); return; }
     }
     if (this.spin.active && this.spin.pointer === e.pointerId) {
@@ -2318,6 +2348,7 @@ export class PaintView {
     if (e.pointerType === 'touch' && this.input.runtime.arbiter.isDropped(e.pointerId)) { this.input.runtime.arbiter.release(e.pointerId); return; }
     if (this.queuedDown && this.queuedDown.e.pointerId === e.pointerId) { if (cancelled) { this.queuedDown = null; setClass(this.root, 'is-waiting', false); } else this.queuedDown.released = true; return; }
     if (e.pointerType === 'touch') {
+      if (e.pointerId === this.snapPointer) { this.snapPointer = -1; this.touches.delete(e.pointerId); this.tools.setSnap(false); return; }
       const info = this.touches.get(e.pointerId);
       this.touches.delete(e.pointerId);
       this.clearPickHold(e.pointerId);
@@ -2362,6 +2393,8 @@ export class PaintView {
       this.qs.finish(false);
       if (patch instanceof Promise) this.landStroke(patch, doc, this.tool, this.colour.get());
       else if (patch) {
+        // a wash dries when the pen lifts (rim, settling, bleed): that rework reaches beyond what the last drain marked
+        doc.markDirty(this.strokeId || doc.active, patch.rect);
         doc.commitPatch(patch, this.tool === 'erase' ? 'Erase' : this.tool === 'smudge' ? 'Smudge' : 'Paint');
         if (this.tool === 'paint') this.colour.commit(this.colour.get());
         this.syncUndo();

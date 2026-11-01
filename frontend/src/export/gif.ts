@@ -371,6 +371,8 @@ export class GifWriter {
   private srcPrev: Uint32Array;
   private srcPrevValid = false;
   private lastDelayPos = -1;
+  /** One GIF frame for every movie frame: an unchanged frame is written as a one pixel frame instead of lengthening the last. */
+  keepAll = false;
   private firstHasT = false;
   private frames = 0;
   private cache = new Int16Array(BIN_COUNT);
@@ -572,7 +574,7 @@ export class GifWriter {
       }
       if (maxX < 0) {
         // Identical to what is on screen: lengthen the previous frame instead.
-        if (this.lastDelayPos >= 0) {
+        if (this.lastDelayPos >= 0 && !this.keepAll) {
           const b = this.body.buf, pos = this.lastDelayPos;
           const d = Math.min(65535, (b[pos] | (b[pos + 1] << 8)) + p.delay);
           b[pos] = d & 255; b[pos + 1] = d >> 8;

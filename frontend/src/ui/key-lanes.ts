@@ -1,5 +1,5 @@
 // Keyframe lane layout, drawing and hit-testing for the Timeline canvas. No DOM besides the glyph images.
-import { channelSpec, easeAt, easeCurve, evalLane, kindSpec, laneChannels, laneFrames } from '../engine/keys';
+import { channelSpec, easeAt, easeCurve, evalLane, kindSpec, laneChannels, laneFrames, shownOf, warpChannelIds, warpRows, warpSize } from '../engine/keys';
 import { EASES, type Content, type KeyKind, type KeyLane } from '../engine/types';
 import { t as tt } from './i18n';
 
@@ -303,10 +303,18 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
         // a collapsed lane reads out its values at the Playhead (and the easing of the stretch it is in) at the right end
         const spec = kindSpec(kind), parts: string[] = [];
         const vals = evalLane(item, slot.lane, local);
-        for (const ch of spec.channels) {
+        // a Warp lane has dozens of node channels: read its mesh size and how many nodes are off rest instead
+        if (kind === 'warp') {
+          const cols = warpSize(slot.lane), rows = warpRows(slot.lane);
+          let off = 0;
+          for (const id of warpChannelIds(cols, rows)) if (Math.abs(vals[id] ?? 0) > 0.05) off++;
+          parts.push(tt('Warp {cols}x{rows} mesh').replace('{cols}', String(cols)).replace('{rows}', String(rows)));
+          if (off) parts.push(tt('{n} offsets').replace('{n}', String(off)));
+        }
+        for (const ch of kind === 'warp' ? [] : spec.channels) {
           if (parts.length >= 2) break;
           if (!slot.lane.channels[ch.id]?.length || ch.id === 'px' || ch.id === 'py' || !Number.isFinite(vals[ch.id])) continue;
-          const shown = Math.round(vals[ch.id] * ch.display / (ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
+          const shown = Math.round(shownOf(ch, vals[ch.id], ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
           parts.push(`${tt(ch.short)} ${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ''}`);
         }
         const before = keyBefore(slot.lane, Math.floor(local)), after = before === null ? undefined : frames.find((f) => f > (before as number));
@@ -359,7 +367,7 @@ export function drawLanes(c: CanvasRenderingContext2D, item: Content, top: numbe
           const ch = channelSpec(kind, row.channel);
           const v = evalLane(item, slot.lane, local)[row.channel];
           if (ch && Number.isFinite(v)) {
-            const shown = Math.round(v * ch.display / (ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
+            const shown = Math.round(shownOf(ch, v, ch.id === 'scaleX' || ch.id === 'scaleY' ? laneBase(item) : 1) * 10) / 10;
             const text = `${shown}${ch.unit === 'deg' ? '°' : ch.unit === '%' ? '%' : ch.unit === 'x' ? 'x' : ''}`;
             const rx = Math.min(g.x1, g.width) - 10 - (hasGraphPill(slot, row, g) ? GRAPH_PILL_W + 6 : 0);
             const lastX = frames.length ? g.x(frames[frames.length - 1]) : g.x0;

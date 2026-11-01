@@ -153,7 +153,10 @@
 .fm-cm-dot[data-hl="pink"] { --fm-hl: var(--fm-hl-pink); }
 .fm-cm-dot[data-hl="none"] { box-shadow: inset 0 0 0 1.5px var(--text-muted); }
 
-.fm-tm-list { display: grid; }
+.fm-tm-list { display: grid; grid-template-columns: minmax(0, 1fr); }
+.fm-tm.fm-pop, .fm-tm.fm-pop-sub { max-width: calc(100vw - var(--space-4)); overflow-x: hidden; }
+.fm-tm .fm-pop-row { min-width: 0; }
+.fm-tm .fm-pop-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Movie settings: one fixed-size panel; the scrolling body and the bottom tab bar are in movie-settings.css */
 .fm-ms-head { padding: var(--space-3) var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }

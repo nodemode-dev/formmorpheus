@@ -44,7 +44,8 @@ export const DEFAULT_PAINT_PREFS: PaintPrefs = {
   cursor: true,
   dynamicScaling: false,
   cursorMode: 'both',
-  outline: 'contrast',
+  // the hover cursor shows the brush's own tip (shape, lean, roll) unless the person picks a plain outline
+  outline: 'brush',
   scaling: 'off',
   motionFilter: false,
   expression: 0.5,
@@ -242,6 +243,13 @@ export class PaintSettings {
   private readonly cursor: Seg;
   private readonly outline: Seg;
   private readonly dyn: Seg;
+  private readonly cursor2: Seg;
+  private readonly outline2: Seg;
+  private readonly cursorSheet: HTMLElement;
+  private readonly advRow: HTMLElement;
+  private readonly dynTog: ToggleRow;
+  private readonly dynRow: HTMLElement;
+  private lastScl: ScalingMode = 'screen';
   private readonly motion: ToggleRow;
   private readonly expr: SliderRow;
   private readonly penBtn: Seg;
@@ -380,10 +388,35 @@ export class PaintSettings {
     this.cursor = cur.seg;
     const out = seg('Cursor outline', ['High contrast', 'Color', 'Brush'], (i) => o.setPrefs({ outline: OUT[i] }));
     this.outline = out.seg;
+    // v0.17.0: "Advanced cursor settings" opens a second sheet beside the popover that repeats the two cursor options
+    const cur2 = seg('Brush cursor', ['Hover', 'Painting', 'Both', 'Off'], (i) => o.setPrefs({ cursorMode: CUR[i], cursor: CUR[i] !== 'off' }));
+    const out2 = seg('Cursor outline', ['High contrast', 'Color', 'Brush'], (i) => o.setPrefs({ outline: OUT[i] }));
+    this.cursor2 = cur2.seg;
+    this.outline2 = out2.seg;
+    this.cursorSheet = el('<div class="fm-ps-sheet" hidden><div class="fm-ps-sheet-head"><button type="button" class="fm-ps-sheet-back" aria-label="Back"></button><span class="fm-ps-sheet-title"></span></div></div>');
+    setText(q(this.cursorSheet, '.fm-ps-sheet-title'), 'Advanced cursor settings');
+    setText(q(this.cursorSheet, '.fm-ps-sheet-back'), 'Done');
+    this.cursorSheet.append(cur2.row, out2.row);
+    this.root.appendChild(this.cursorSheet);
+    q(this.cursorSheet, '.fm-ps-sheet-back').addEventListener('click', () => setHidden(this.cursorSheet, true));
+    const adv = actionRow('', 'Advanced cursor settings', () => { setHidden(this.cursorSheet, !this.cursorSheet.hidden); }, true);
+    q(adv.el, '.fm-ps-ico').remove();
+    this.advRow = adv.el;
     // 'off' keeps one size in canvas pixels; canvas and screen follow the picture's size or the zoom
-    const scl = seg('Dynamic brush scaling', ['Pixel', 'Canvas', 'Screen'], (i) => o.setPrefs({ scaling: SCL[i], dynamicScaling: SCL[i] !== 'off' }));
-    scl.row.title = 'Pixel: one size in canvas pixels. Canvas: relative to the canvas size. Screen: the same size on the screen at any zoom.';
+    // v0.17.0: a toggle plus a "Brush scaling" submenu row that shows while it is on
+    this.dynTog = toggleRow('Dynamic brush scaling', (v) => {
+      const m: ScalingMode = v ? (this.lastScl === 'off' ? 'screen' : this.lastScl) : 'off';
+      o.setPrefs({ scaling: m, dynamicScaling: v });
+      this.refresh();
+    });
+    this.dynTog.el.title = 'Off: one size in canvas pixels. On: the brush follows the zoom or the canvas size, see Brush scaling.';
+    const scl = seg('Brush scaling', ['Canvas', 'Screen'], (i) => {
+      this.lastScl = SCL[i + 1];
+      o.setPrefs({ scaling: SCL[i + 1], dynamicScaling: true });
+    });
+    scl.row.title = 'Canvas: relative to the canvas size. Screen: the same size on the screen at any zoom.';
     this.dyn = scl.seg;
+    this.dynRow = scl.row;
     this.motion = toggleRow('Motion filtering', (v) => o.setPrefs({ motionFilter: v }));
     this.expr = sliderRow('Expression', 0, 1, 0.01, (v) => o.setPrefs({ expression: v }));
     const pen = seg('Pen button', ['Cycle tool', 'Eyedropper', 'Off'], (i) => o.setPrefs({ penButton: PEN[i] }));
@@ -425,7 +458,7 @@ export class PaintSettings {
     const sect = (text: string): HTMLElement => { const h = el('<div class="fm-ps-sect"></div>'); setText(h, text); return h; };
     // the reference's order first (cursor, outline, Pressure, smoothing, scaling, sidebar, finger, scrub speed),
     // then the desktop pen and input rows under their own headings
-    pr.append(cur.row, out.row, this.curveRow, this.curveWrap, this.smooth.el, scl.row, sideRow, this.finger.el, spd.row,
+    pr.append(cur.row, out.row, this.advRow, this.curveRow, this.curveWrap, this.smooth.el, this.dynTog.el, scl.row, sideRow, this.finger.el, spd.row,
       sect('Pen and input'), this.eraser.el, pen.row, qs.row, hp.row, this.motion.el, this.expr.el, this.undoDelay.el, this.hideUndo.el, this.hideExtras.el,
       sect('Files'), folder.el, this.folderNote);
     // the panel has no scrollbar (a house rule): a fade at the foot says there is more below
@@ -451,6 +484,7 @@ export class PaintSettings {
     const left = Math.max(8, Math.min(a.left - pr.left, pr.width - w - 8));
     this.root.style.left = `${Math.round(left)}px`;
     this.root.style.top = `${Math.round(a.bottom - pr.top + 6)}px`;
+    setClass(this.cursorSheet, 'is-left', left + w * 2 + 16 > pr.width);
     if (!this.opened) {
       this.opened = true;
       document.addEventListener('pointerdown', this.down, true);
@@ -464,6 +498,7 @@ export class PaintSettings {
     if (!this.opened) return;
     this.opened = false;
     this.root.hidden = true;
+    setHidden(this.cursorSheet, true);
     this.anchor = null;
     this.tintPanel?.close(true);
     document.removeEventListener('pointerdown', this.down, true);
@@ -479,7 +514,12 @@ export class PaintSettings {
     this.scrubSpeed.set(['precise', 'medium', 'fast'].indexOf(loadPrefs().scrubSpeed));
     this.cursor.set(['hover', 'painting', 'both', 'off'].indexOf(p.cursorMode));
     this.outline.set(['contrast', 'colour', 'brush'].indexOf(p.outline));
-    this.dyn.set(['off', 'canvas', 'screen'].indexOf(p.scaling));
+    this.cursor2.set(['hover', 'painting', 'both', 'off'].indexOf(p.cursorMode));
+    this.outline2.set(['contrast', 'colour', 'brush'].indexOf(p.outline));
+    if (p.scaling !== 'off') this.lastScl = p.scaling;
+    this.dynTog.set(p.scaling !== 'off');
+    setHidden(this.dynRow, p.scaling === 'off');
+    this.dyn.set(p.scaling === 'canvas' ? 0 : 1);
     this.motion.set(p.motionFilter);
     this.expr.set(p.expression, pct(p.expression));
     this.expr.el.classList.toggle('is-disabled', !p.motionFilter);

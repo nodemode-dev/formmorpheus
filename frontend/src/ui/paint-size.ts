@@ -3,6 +3,7 @@
 // top still reaches the brush's largest size. The paint engine keeps its own linear range: only the host converts.
 
 import type { Brush } from '../paint/types';
+import { paintWant } from '../paint/fam-paint-size';
 
 /** Exponent of the curve: 1 is linear, higher is finer at small sizes. */
 export const SIZE_EXP = 2;
@@ -24,7 +25,12 @@ export function defaultSlider(b: Brush): number {
   let want = Math.max(b.minSize * 1.2, Math.min(14, b.maxSize * 0.85));
   // a wash is laid broad: at a pen's size its rim, pool and bleed are a few pixels and read as a marker
   if ((b.wetEdges ?? 0) > 0 || b.wet || (b.render && /glaze|blending/.test(b.render))) want = Math.max(want, Math.min(b.maxSize * 0.6, 64));
-  return Math.round(sliderOf((want - b.minSize) / range) * 100) / 100;
+  // an imported brush's picture is a stamp: at pen size it is a smudge a few pixels wide, so it starts at a readable size
+  if (b.custom && (b.tip === 'sampled' || b.set === 'Imported')) want = Math.max(want, Math.min(b.maxSize * 0.7, 56));
+  // an airbrush or mist is a cloud: at pen size its soft falloff is a few pixels and reads as a hairline
+  if (b.softness >= 0.3 && b.flow <= 0.45 && !b.grain && /air|mist|fade|haze/i.test(b.set + ' ' + b.name)) want = Math.max(want, Math.min(b.maxSize * 0.55, 90));
+  want = paintWant(b, want);
+  return Math.round(sliderOf(Math.min(1, Math.max(0, (want - b.minSize) / range))) * 100) / 100;
 }
 
 /** One keyboard step of 5 percent; multiplicative below 20 percent so the small end keeps fine steps. */

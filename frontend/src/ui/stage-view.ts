@@ -13,6 +13,7 @@ import type { Content, Movie } from '../engine/types';
 import { ensureLane, newKeyState } from './action-menu';
 import { el, q, setClass, setText } from './dom';
 import { PerformBanner, perform } from './perform-ui';
+import { followLead, makeFollowers, sampleFollowers, type Follower } from './perform-multi';
 import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { WarpOverlay, warpMode } from './warp-view';
 import { BonesOverlay, bonesMode } from './bones-view';
@@ -84,6 +85,9 @@ interface Rec {
   held: { r: boolean; s: boolean };
   /** History depth when the take began, for Retake. */
   before: number;
+  /** The other selected blocks that follow the lead, and the lead's pose when the take began. */
+  followers?: Follower[];
+  leadBase?: Pose;
 }
 
 type Grab =
@@ -584,6 +588,11 @@ export class StageView {
       e.preventDefault();
       return;
     }
+    // Edit anchor: only the pivot ring drags (path-view takes that press first); any other drag does nothing, so the content never moves or gets a key
+    if (anchorMode.on && sel.length === 1 && sel[0].id === anchorMode.id) {
+      e.preventDefault();
+      return;
+    }
     if (sel.length === 1 && target.classList.contains('fm-box-s') && TextStage.wrapSide(sel[0], Number((target as SVGElement).dataset.s), this.keyed())) {
       this.textStage.beginWrap(e, sel[0].id, Number((target as SVGElement).dataset.s), target);
       e.preventDefault();
@@ -657,7 +666,8 @@ export class StageView {
   private beginRec(e: PointerEvent): void {
     const g = this.grab, m = this.engine.movie;
     if (!g || !m || this.engine.mode !== 'perform' || g.kind === 'stretch') return;
-    const id = g.kind === 'move' ? (g.ids.length === 1 ? g.ids[0] : null) : g.id;
+    // several selected blocks: the first is the lead the pen drives, the rest follow it (ui/perform-multi.ts)
+    const id = g.kind === 'move' ? (g.ids[0] ?? null) : g.id;
     const at = id ? locate(m, id) : null;
     if (!id || !at) return;
     let armedAt = this.engine.frame, punchTo: number | null = null;
@@ -667,6 +677,11 @@ export class StageView {
       punchTo = Math.floor(m.loopTo);
     }
     g.rec = { id, rec: new Recorder('move', MOVE_CHANNELS), start: at.content.start, last: null, twist: e.pointerType === 'pen' && loadPrefs().penRoll ? e.twist : null, twistSum: 0, twisted: false, armedAt, punchTo, prev: null, frozen: [0, 0], turn: 0, zoom: 0, held: { r: this.modsHeld.r, s: this.modsHeld.s }, before: this.engine.history.past.length };
+    if (g.kind === 'move' && g.ids.length > 1) {
+      const others = g.ids.slice(1).map((oid) => locate(m, oid)).filter((x): x is NonNullable<ReturnType<typeof locate>> => !!x).map((x) => ({ c: x.content, pose: this.pose(x.content) }));
+      g.rec.followers = makeFollowers(others, MOVE_CHANNELS);
+      g.rec.leadBase = this.pose(at.content);
+    }
     perform.setRecording(true);
     // a take ends at the movie's end (or the punch-out): playback stops there instead of looping under the pen
     this.offWrap?.();
@@ -742,6 +757,7 @@ export class StageView {
     }
     if (hud) this.hud.show(e.clientX, e.clientY, hud);
     r.last = vals;
+    if (r.followers && r.leadBase) followLead(r.followers, r.leadBase, vals);
     this.sampleRec(g, r);
   }
 
@@ -755,6 +771,7 @@ export class StageView {
     if (r.punchTo !== null && this.engine.frame > r.punchTo) { if (this.engine.playing) this.engine.stop(); return; }
     if (mv && this.engine.frame - r.start >= roomFor(mv, r.id)) { if (this.engine.playing) this.engine.stop(); return; }
     r.rec.add(this.engine.frame - r.start, r.last);
+    if (r.followers) sampleFollowers(r.followers, this.engine.frame);
     this.commitRec(g, r, 0);
   }
 
@@ -764,6 +781,12 @@ export class StageView {
     const ease = newKeyState().lastEase;
     const at = Math.max(0, Math.round(take.from));
     this.engine.run('Perform Move and Scale', (mv) => ops.updateContent(mv, r.id, (c) => applyTake(laneOf(c, 'move') ? c : ensureLane(c, 'move', at, mv.addKeyAtStart, ease), take, 'linear', roomFor(mv, r.id))), g.tag);
+    for (const f of r.followers ?? []) {
+      const t2 = f.rec.finish(filtering);
+      if (!t2) continue;
+      const at2 = Math.max(0, Math.round(t2.from));
+      this.engine.run('Perform Move and Scale', (mv) => ops.updateContent(mv, f.id, (c) => applyTake(laneOf(c, 'move') ? c : ensureLane(c, 'move', at2, mv.addKeyAtStart, ease), t2, 'linear', roomFor(mv, f.id))), g.tag);
+    }
   }
 
   /** A held pen still records: every Playhead step repeats the last position. */
@@ -779,7 +802,7 @@ export class StageView {
     g.rec = undefined;
     this.offWrap?.();
     this.offWrap = null;
-    if (r.last && this.engine.frame >= r.armedAt && (r.punchTo === null || this.engine.frame <= r.punchTo)) r.rec.add(this.engine.frame - r.start, r.last);
+    if (r.last && this.engine.frame >= r.armedAt && (r.punchTo === null || this.engine.frame <= r.punchTo)) { r.rec.add(this.engine.frame - r.start, r.last); if (r.followers) sampleFollowers(r.followers, this.engine.frame); }
     this.engine.stop();
     this.commitRec(g, r, perform.filtering);
     perform.setRecording(false);
@@ -1064,5 +1087,6 @@ export function stamp(frame: number, fps: number): string {
   const f = Math.round(frame - sec * fps);
   const h = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
   const p = (n: number, w = 2): string => String(n).padStart(w, '0');
-  return `${p(h)}:${p(mm)}:${p(ss)}.${p(f, 3)}`;
+  // hours:minutes:seconds:frame, the frame as wide as the last frame of a second
+  return `${p(h)}:${p(mm)}:${p(ss)}:${p(f, String(Math.max(1, Math.ceil(fps) - 1)).length)}`;
 }
