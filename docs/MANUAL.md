@@ -262,6 +262,22 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
 
+## New in 0.16.0
+
+**Theater.** Choose Gallery or Library layout in Preferences. Right-click a movie for Info... (size, length, frame rate, tracks, file size, dates) and Tags...; filter the Theater by tag. A cloud folder you keep in sync can receive copies (Copy to Cloud). A movie reopens at the frame where you left it, and its poster is that frame. View can hide the menu bar and the status bar.
+
+**Timeline.** Alt-click a block's checkbox to hide just that block. Right-click a track's header or empty lane for the track menu. J, K and L shuttle back, stop and forward. Hold Space and drag to pan. The ruler shows bold seconds and frame numbers together, and dragging it scrubs (hold Alt to scale time). Flipbook blocks show their drawings on paper cells with a color chip. Movie settings · Timeline has an Editing group for snapping and sound previews.
+
+**Keyframes, Stage and camera.** Click a key in an expanded lane to type its value; drag several keys together; K adds a key, Shift+K and Alt+K step between keys, 1 to 4 set the easing. Pictures read 100 percent at their fit. Several selected blocks share one box in Compose. Moving the anchor keeps the picture still. The camera has shake, follow and a parallax depth per track, and Perform shows a count-in before a take.
+
+**Effects and titles.** New effects: Ripple, Halftone, Outline, Gradient Map, Glitch, Kaleidoscope, Hue Range Shift, Sharpen Radius and Gaussian Blur X Y; each effect in a stack has its own on and off switch, and Color Correction's curve points can be keyed. Adjustment blocks work inside groups. Titles have presets, a gradient fill, glow, text on an arc, wave or circle, and animators that act on a range of letters, words or lines. Motion blur covers opacity, time remap and text.
+
+**Drawing.** Watercolor pools where the pen rests, darkens at its rim and bleeds into a wet neighbour; oil frays at stroke ends and widens with tilt; chalk is grainier. Brush Studio has pressure and tilt popovers per setting, Position scatter beside rotation Scatter, a reset point and a Pressure and Smoothing card (double-click a brush). The canvas shows the brush outline as you hover. The Layers panel has swipe, two-finger and pinch gestures, the color disc cycles white, black and grey on a double-click, the Flipbook strip tears off into a Mini Flipbook, and a Libraries screen shows every brush library. Long painting sessions stall less.
+
+**Export and sound.** Every export shows frames done, time elapsed and time left, with Cancel, and a chip keeps showing it when the dialog is closed. New: MP3 through your ffmpeg, size targets for HEVC and ProRes, chapters from markers, a sprite sheet, copy the current frame, and 480p. Safe areas are clearly drawn, with 1:1 and 4:5 frames. Meters read loudness and true peak, a ducked track shows its gain reduction, and View · Add Markers on Beats marks a sound's beats. The media bin can make proxies of large videos for smooth editing; exports always use the originals.
+
+**Pens and Pen Link.** Pen Link shows a QR code of its address, limits pairing tries per device, and tells the tablet to open Draw and Paint when it is closed; its page follows the tablet's language. Brush files can keep their own pixel sizes, and a dual tip, zip-compressed patterns and 32-bit tips are read.
+
 ## New in 0.15.0
 
 **Your movies save themselves.** A new movie is in the Theater the moment you make it, and every change is saved as you work. Leaving a movie never asks; its poster is the frame under the Playhead. Ctrl+S saves at once, and Duplicate as... makes a copy.

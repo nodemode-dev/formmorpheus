@@ -119,3 +119,12 @@ Recording a voice-over needs the microphone: macOS asks w/ the `NSMicrophoneUsag
 - logged: v0.15.0 · 2026-10-31
 
 Windows press-and-hold right click and pen flicks: no WebView2 browser argument is known to turn them off, and `WebviewWindowBuilder::additional_browser_args` replaces Tauri's default arguments, which could not be checked on Windows here. Left alone. The interface handles it in the page: `touch-action: none` and no text selection on the paint canvas, the same plus no touch callout on the Pen and Tablet test pad, and `contextmenu` is cancelled on both. If a held pen tap still opens a menu on a real Windows machine, try the browser argument then.
+
+## v0.16.0 · Pen Link and .abr
+
+### tauri.conf.json · WebView2 press-and-hold and flicks · researched again, no change
+- refers-to: tauri.conf.json; src/main.rs :: build_main
+- kind: explainer
+- logged: v0.16.0 · 2026-10-31
+
+Checked again, and `additionalBrowserArgs` stays unset. Facts found: the window option (`WindowConfig.additional_browser_args` in tauri-utils 2.8) hands wry the extra WebView2 arguments, and wry's own default is `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`; the docs say that using the option means those must be disabled again by hand, so a value would have to begin with that default to keep it. What was NOT found: any Chromium or WebView2 switch that turns off the pen's press-and-hold right click or the flick gestures. WebView2's own settings list (`CoreWebView2Settings`) and its environment option `AdditionalBrowserArguments` have no such entry, and the behaviour belongs to Windows (Pen and Windows Ink settings, "Press and hold for right-clicking", and the `WM_TABLET_QUERYSYSTEMGESTURESTATUS` reply of the window, which is native code, not a config string). With no verified flag, adding an argument could only risk a started-with-wrong-flags window, so the page-level guards from v0.15.0 stay the whole answer (`touch-action: none`, no callout, `contextmenu` cancelled on the canvas and test pad). If a Windows pen test still shows the menu, the next step is a native hook on the main window (answer `TABLET_DISABLE_PRESSANDHOLD | TABLET_DISABLE_FLICKS` to `WM_TABLET_QUERYSYSTEMGESTURESTATUS` through a window subclass), not a browser argument.

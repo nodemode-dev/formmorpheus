@@ -7,7 +7,7 @@
 <p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.15.0-f97316" alt="version v0.15.0" />
+  <img src="https://img.shields.io/badge/version-v0.16.0-f97316" alt="version v0.16.0" />
   <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
@@ -17,7 +17,7 @@
 
 formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.15.0, phases 1 to 43 of 43 (functional specs of how the reference behaves now drive the gap lists; pen tablets, the iPad as a drawing tablet and brush presets from brush files landed; parity awaiting the owner's pass)
+**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.16.0, phases 1 to 46 of 46 (every gap in the functional specs and depth notes built, re-checked against the running app, or marked not applicable; parity awaiting the owner's pass)
 
 ## Highlights
 
