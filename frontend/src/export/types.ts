@@ -90,6 +90,8 @@ export interface ExportResult {
   warnings: string[];
   /** The engine already keeps the file in Exports (engine jobs), so the window must not save it again. */
   kept?: boolean;
+  /** The graphics context was lost during the run, so part of the frames came from the CPU path; the window says so (the text is its own). */
+  gpuReset?: boolean;
 }
 
 export interface ExportJob {

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HEVC_ORDER = ["hevc_videotoolbox", "hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
-WANTED = ["prores_ks", "aac", "libmp3lame", "libx264", *HEVC_ORDER]
+WANTED = ["prores_ks", "aac", "libmp3lame", "libopus", "libx264", *HEVC_ORDER]
 
 
 @dataclass

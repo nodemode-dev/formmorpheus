@@ -223,7 +223,7 @@ def capabilities() -> dict:
     hevc = info.hevc_candidates()
     return {
         "ffmpeg": True, "path": info.path, "version": info.version, "gpl": info.gpl, "aac": info.has("aac"),
-        "mp3": info.has("libmp3lame"),
+        "mp3": info.has("libmp3lame"), "opus": info.has("libopus"),
         "targets": {
             "h264": {"available": h264_ok, "encoder": "libx264", "reason": "" if h264_ok else "This ffmpeg has no libx264 encoder."},
             "prores": {"available": prores_ok, "encoder": "prores_ks", "reason": reason_pr},

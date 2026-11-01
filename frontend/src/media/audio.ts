@@ -14,6 +14,7 @@ import { timeKeys } from '../engine/retime';
 import type { Movie, Track } from '../engine/types';
 import type { AudioClip, ClockSource } from './types';
 import { duckProbe, reductionAt } from './duck-meter';
+import { loadPeaks, savePeaks } from './peaks-cache';
 
 export interface Peaks { min: Float32Array; max: Float32Array; perSecond: number }
 
@@ -253,11 +254,19 @@ export class AudioEngine implements ClockSource {
     if (this.buffers.has(assetId)) return Promise.resolve(this.buffers.get(assetId) ?? null);
     const inflight = this.pending.get(assetId);
     if (inflight) return inflight;
+    // peaks saved by an earlier session draw the waveform now, before the decode lands
+    const size = this.blobOf(assetId)?.size;
+    const pkKey = size !== undefined ? `${assetId}|${size}` : '';
+    if (pkKey && !this.peakCache.has(assetId)) {
+      void loadPeaks(pkKey).then((pk) => { if (pk && !this.peakCache.has(assetId)) { this.peakCache.set(assetId, pk); this.onPeaks(assetId); } });
+    }
     const p = this.decodeNow(assetId).then((buf) => {
       this.pending.delete(assetId);
       this.buffers.set(assetId, buf);
       if (buf) {
-        this.peakCache.set(assetId, computePeaks(buf));
+        const pk = computePeaks(buf);
+        this.peakCache.set(assetId, pk);
+        if (pkKey) void savePeaks(pkKey, pk);
         this.onPeaks(assetId);
         this.late(assetId);
       }

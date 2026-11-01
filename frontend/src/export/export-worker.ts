@@ -81,7 +81,7 @@ async function runFile(m: StartMsg, renderer: Renderer, video: WorkerVideo): Pro
     const names = [...video.failed].map((id) => m.movie.assets[id]?.name ?? 'a video').join(', ');
     warnings.push(`This browser could not decode ${names}, so those pictures are missing from the file.`);
   }
-  post({ t: 'done', blob: r.blob, name: r.name, mime: r.mime, warnings });
+  post({ t: 'done', blob: r.blob, name: r.name, mime: r.mime, warnings, gpuReset: r.gpuReset });
 }
 
 async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {

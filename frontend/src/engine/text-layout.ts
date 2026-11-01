@@ -61,8 +61,40 @@ export const lineHeight = (s: TextStyle): number => s.size * (s.leading ?? 1.2);
 
 function setSpacing(c: Ctx, s: TextStyle): void {
   const x = c as unknown as { letterSpacing?: string; fontKerning?: string };
-  if ('letterSpacing' in x) x.letterSpacing = `${trackPx(s)}px`;
+  setLs(c, trackPx(s));
   if ('fontKerning' in x) x.fontKerning = s.kerning ? 'none' : 'auto';
+}
+
+/** False where the canvas ignores fontKerning (WebKit before 18.4): the Text card disables "None" there, with a reason. */
+export const canvasFontKerning = (): boolean =>
+  (typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'fontKerning' in OffscreenCanvasRenderingContext2D.prototype)
+  || (typeof CanvasRenderingContext2D !== 'undefined' && 'fontKerning' in CanvasRenderingContext2D.prototype);
+
+// Tracking without ctx.letterSpacing (WebKit before 18.4): the spacing is kept on the context and added by hand, so the
+// render matches the editor, which uses CSS. With the property present every helper below is the plain native call.
+type SpCtx = Ctx & { __sp?: number };
+function setLs(c: Ctx, px: number): void {
+  if ('letterSpacing' in c) (c as unknown as { letterSpacing: string }).letterSpacing = `${px}px`;
+  else (c as SpCtx).__sp = px;
+}
+/** Pixels to add after each letter by hand; 0 when the canvas applies letterSpacing itself. */
+const manualSp = (c: Ctx): number => ('letterSpacing' in c ? 0 : (c as SpCtx).__sp ?? 0);
+/** Width of `t` as drawn, tracking included (the native property counts it after every letter, the last too). */
+function measureW(c: Ctx, t: string): number {
+  const w = c.measureText(t).width, sp = manualSp(c);
+  return sp ? w + sp * Array.from(t).length : w;
+}
+/** fillText / strokeText with the tracking added letter by letter where the canvas cannot do it: each letter sits at the
+ *  measured width of what precedes it (pair kerning kept) plus the spacing. */
+function drawTxt(c: Ctx, kind: 'fillText' | 'strokeText', t: string, x: number, y: number): void {
+  const sp = manualSp(c);
+  if (!sp) { c[kind](t, x, y); return; }
+  let prefix = '', i = 0;
+  for (const ch of Array.from(t)) {
+    c[kind](ch, x + (prefix ? c.measureText(prefix).width : 0) + sp * i, y);
+    prefix += ch;
+    i++;
+  }
 }
 
 // ---- optical kerning (measured from the letter shapes, cached per pair) ----
@@ -143,7 +175,7 @@ function tokens(c: Ctx, s: TextStyle, L: Looks, line: string, off: number, split
   }
   for (const sg of segs) {
     const look = L.list[sg.e], f48 = optical ? effFont(look, S48) : '';
-    (c as unknown as { letterSpacing?: string }).letterSpacing = `${trackOf(look)}px`;
+    setLs(c, trackOf(look));
     let pos = sg.from;
     for (const p of pieces(s, line.slice(sg.from, sg.to), look.size)) {
       c.font = effFont(look, p.size);
@@ -151,7 +183,7 @@ function tokens(c: Ctx, s: TextStyle, L: Looks, line: string, off: number, split
       for (const t of parts) {
         const prev = out[out.length - 1];
         if (prev && f48) prev.kern = opticalKern(f48, Array.from(prev.t).pop() as string, t, p.size);
-        out.push({ t, size: p.size, w: c.measureText(t).width, kern: 0, e: sg.e, i: off + pos });
+        out.push({ t, size: p.size, w: measureW(c, t), kern: 0, e: sg.e, i: off + pos });
         pos += t.length;
       }
     }
@@ -269,7 +301,7 @@ function layoutNow(s: TextStyle, movie: Movie): TextLayout {
       const top = s.align === 'right' ? inner.y + ih - len : s.align === 'center' ? inner.y + (ih - len) / 2 : inner.y;
       const parts = chars.map((ch, j) => {
         c.font = fontCss(s);
-        const w = c.measureText(ch).width;
+        const w = measureW(c, ch);
         return { text: ch, x: cx - w / 2, y: top + (j + 0.5) * step, size: s.size, w, e: 0, i: pOffs[i] + j };
       });
       lines.push({ y: cx, x0: cx, x1: cx, parts });
@@ -420,10 +452,10 @@ export function glyphsOf(s: TextStyle, lay: TextLayout): TextGlyph[] {
     let word = -1, prevSpace = true;
     for (const p of ln.parts) {
       const look = lay.looks.list[p.e];
-      if (c) { c.font = effFont(look, p.size); (c as unknown as { letterSpacing?: string }).letterSpacing = `${trackOf(look)}px`; }
+      if (c) { c.font = effFont(look, p.size); setLs(c, trackOf(look)); }
       let prefix = '', px = 0, idx = p.i;
       for (const ch of Array.from(p.text)) {
-        const pw = c ? c.measureText(prefix + ch).width : px + p.size * 0.6, space = /\s/.test(ch);
+        const pw = c ? measureW(c, prefix + ch) : px + p.size * 0.6, space = /\s/.test(ch);
         if (!space) {
           if (prevSpace) word++;
           const g = { t: ch, x: p.x + px, y: p.y, w: pw - px, size: p.size, line: li, word, e: p.e, i: idx };
@@ -510,17 +542,17 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
         const e = L.list[p.e];
         ctx.font = effFont(e, p.size);
         setSpacingPx(ctx, trackOf(e));
-        if (pass === 2) { glowFill(ctx, s, () => ctx.fillText(p.text, p.x, p.y)); continue; }
+        if (pass === 2) { glowFill(ctx, s, () => drawTxt(ctx, 'fillText', p.text, p.x, p.y)); continue; }
         if (pass === 0) {
           if (!e.stroke) continue;
           ctx.strokeStyle = e.stroke.color;
           ctx.lineWidth = e.stroke.width * 2;
           useShadow(ctx, sv, true);
-          ctx.strokeText(p.text, p.x, p.y);
+          drawTxt(ctx, 'strokeText', p.text, p.x, p.y);
         } else {
           ctx.fillStyle = fillOf(ctx, s, lay, e.color);
           useShadow(ctx, sv, !e.stroke);
-          ctx.fillText(p.text, p.x, p.y);
+          drawTxt(ctx, 'fillText', p.text, p.x, p.y);
         }
       }
     }
@@ -591,6 +623,5 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
 }
 
 function setSpacingPx(ctx: Ctx, px: number): void {
-  const x = ctx as unknown as { letterSpacing?: string };
-  if ('letterSpacing' in x) x.letterSpacing = `${px}px`;
+  setLs(ctx, px);
 }

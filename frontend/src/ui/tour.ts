@@ -1,7 +1,7 @@
 import '../styles/onboarding.css';
 import { el, q, setClass, setHidden, setStyleVar, setText } from './dom';
 import { t } from './i18n';
-import { updatePrefs } from './prefs';
+import { loadPrefs, updatePrefs } from './prefs';
 
 /** The first-run tour: a few coach marks over the working screen, each pointing at one part (a ring around it and a
  *  card beside it). Skippable at any step (the button or Esc), and shown again from Help. Built once; moving between
@@ -22,8 +22,9 @@ const STEPS: readonly Step[] = [
 ];
 
 const SEEN = 'formmorpheus.tour';
-export const tourSeen = (): boolean => { try { return localStorage.getItem(SEEN) === '1'; } catch { return true; } };
-const markSeen = (): void => { try { localStorage.setItem(SEEN, '1'); } catch { /* shown again next start */ } };
+// Kept in the settings; the older browser-storage flag still counts so a person who finished it is not shown it again.
+export const tourSeen = (): boolean => { try { return loadPrefs().tourDone || localStorage.getItem(SEEN) === '1'; } catch { return true; } };
+const markSeen = (): void => { updatePrefs({ tourDone: true }); try { localStorage.setItem(SEEN, '1'); } catch { /* the setting holds it */ } };
 
 export class Tour {
   private readonly root = el(`<div class="fm-tour" hidden>

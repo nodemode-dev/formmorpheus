@@ -200,6 +200,7 @@ export class Run {
     const unpinGpu = this.deps.renderer.pinGpu();
     const unpinOriginals = this.deps.renderer.pinOriginals();
     const unpin = (): void => { unpinOriginals(); unpinGpu(); };
+    const resets0 = this.deps.renderer.gpuResets;
     try {
       this.check();
       let r: Omit<ExportResult, 'warnings'>;
@@ -210,7 +211,7 @@ export class Run {
       else if (fmt === 'psd') r = await this.psd();
       else if (fmt === 'prores-mov' || fmt === 'prores4444-mov' || fmt === 'hevc-mp4' || fmt === 'hevc-mov' || fmt === 'h264-mov' || fmt === 'h264-mp4') throw new Error('This format is encoded by the engine, not in the window.');
       else r = await this.sequence(fmt);
-      return { ...r, warnings: this.warnings };
+      return this.deps.renderer.gpuResets > resets0 ? { ...r, warnings: this.warnings, gpuReset: true } : { ...r, warnings: this.warnings };
     } catch (e) {
       if (this.isCancelled() && !(e instanceof DOMException && e.name === 'AbortError')) throw abortError();
       throw e;

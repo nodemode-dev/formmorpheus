@@ -12,9 +12,10 @@ const FLAT_SIDE = 8192;
 const FLAT_AREA = 48 * 1024 * 1024;
 
 /** Pixels per movie pixel of the flat surface for a view scale (lowered only when the surface would pass the caps). */
-export function flatScaleOf(movieW: number, movieH: number, scale: number): number {
+export function flatScaleOf(movieW: number, movieH: number, scale: number, maxSide = FLAT_SIDE): number {
   const w = Math.max(1, movieW * scale), h = Math.max(1, movieH * scale);
-  const k = Math.min(1, FLAT_SIDE / Math.max(w, h), Math.sqrt(FLAT_AREA / (w * h)));
+  // the surface also has to fit the driver's own texture limit
+  const k = Math.min(1, Math.min(FLAT_SIDE, maxSide) / Math.max(w, h), Math.sqrt(FLAT_AREA / (w * h)));
   return scale * k;
 }
 

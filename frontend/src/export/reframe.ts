@@ -24,14 +24,28 @@ export function placeView(o: { width: number; height: number; fit?: 'contain' | 
   return { scale: k, ox, oy, width: o.width, height: o.height };
 }
 
-interface Scratch { a: OffscreenCanvas; b: OffscreenCanvas; s: OffscreenCanvas }
+interface Scratch { a: OffscreenCanvas; b: OffscreenCanvas; s: OffscreenCanvas; q: OffscreenCanvas }
 let scratch: Scratch | null = null;
 
 function scratchFor(w: number, h: number): Scratch {
   if (scratch && scratch.a.width === w && scratch.a.height === h) return scratch;
   const sw = Math.max(2, Math.round(w / 8)), sh = Math.max(2, Math.round(h / 8));
-  scratch = { a: new OffscreenCanvas(w, h), b: new OffscreenCanvas(w, h), s: new OffscreenCanvas(sw, sh) };
+  scratch = { a: new OffscreenCanvas(w, h), b: new OffscreenCanvas(w, h), s: new OffscreenCanvas(sw, sh), q: new OffscreenCanvas(Math.max(2, Math.round(sw / 4)), Math.max(2, Math.round(sh / 4))) };
   return scratch;
+}
+
+let filterWorks: boolean | undefined;
+/** Whether this canvas really applies ctx.filter: the property is there AND a value written reads back (a context that
+ *  ignores it accepts the assignment without error, so a try/catch cannot tell). */
+function canFilter(ctx: Ctx): boolean {
+  if (filterWorks !== undefined) return filterWorks;
+  const f = ctx as unknown as { filter?: string };
+  if (!('filter' in ctx)) return (filterWorks = false);
+  const keep = f.filter;
+  f.filter = 'blur(2px)';
+  filterWorks = f.filter === 'blur(2px)';
+  f.filter = keep ?? 'none';
+  return filterWorks;
 }
 
 type DrawOpts = { backstage: boolean; background: string; transparentChecker: null; keepAlpha: boolean; exact: boolean };
@@ -52,9 +66,23 @@ export function drawDelivery(renderer: Renderer, ctx: Ctx, movie: Movie, f: numb
     ca.imageSmoothingEnabled = true;
     ca.imageSmoothingQuality = 'high';
     const px = Math.max(2, Math.round(Math.max(w, h) / 90));
-    try { ca.filter = `blur(${px}px)`; } catch { /* no filter support: the plain shrink is still soft */ }
-    ca.drawImage(sc.s, -px * 2, -px * 2, w + px * 4, h + px * 4);
-    ca.filter = 'none';
+    if (canFilter(ca)) {
+      ca.filter = `blur(${px}px)`;
+      ca.drawImage(sc.s, -px * 2, -px * 2, w + px * 4, h + px * 4);
+      ca.filter = 'none';
+    } else {
+      // no filter: shrink again and spread back up through the middle size, so the result is soft without the property
+      const cq = sc.q.getContext('2d') as Ctx;
+      cq.imageSmoothingEnabled = true;
+      cq.imageSmoothingQuality = 'high';
+      cq.clearRect(0, 0, sc.q.width, sc.q.height);
+      cq.drawImage(sc.s, 0, 0, sc.q.width, sc.q.height);
+      cs.clearRect(0, 0, sc.s.width, sc.s.height);
+      cs.imageSmoothingEnabled = true;
+      cs.imageSmoothingQuality = 'high';
+      cs.drawImage(sc.q, 0, 0, sc.s.width, sc.s.height);
+      ca.drawImage(sc.s, -px * 2, -px * 2, w + px * 4, h + px * 4);
+    }
     ca.fillStyle = 'rgba(0,0,0,0.3)';
     ca.fillRect(0, 0, w, h);
     // the bars stay transparent so the blurred copy shows through (the renderer only keeps alpha outside the frame for a transparent movie)

@@ -1047,7 +1047,7 @@ dependencies = [
 
 [[package]]
 name = "formmorpheus"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "gtk",
  "objc2",
@@ -1061,6 +1061,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
+ "webkit2gtk",
  "windows-sys 0.61.2",
 ]
 

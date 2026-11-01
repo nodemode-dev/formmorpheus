@@ -8,6 +8,8 @@ import { zipSync } from 'fflate';
 import type { Movie } from '../engine/types';
 import type { AudioEngine } from '../media/audio';
 import type { ExportResult } from './types';
+import { tf } from '../ui/i18n-fill';
+import { t } from '../ui/i18n';
 
 export type AudioFormat = 'wav16' | 'wav24' | 'm4a' | 'webm-opus' | 'ogg-opus' | 'mp3';
 
@@ -40,6 +42,24 @@ async function encodeMp3(buf: AudioBuffer, kbps: number): Promise<{ bytes: Uint8
     throw new Error(detail || `The engine could not make the MP3 (${res.status}).`);
   }
   return { bytes: new Uint8Array(await res.arrayBuffer()), mime: 'audio/mpeg', ext: 'mp3' };
+}
+
+/** Opus (WebM or OGG) and AAC (M4A) where the web component has no AudioEncoder: the engine's ffmpeg encodes the WAV mixdown. */
+async function encodeLossyViaEngine(buf: AudioBuffer, kind: 'opus-webm' | 'opus-ogg' | 'aac-m4a', kbps: number): Promise<{ bytes: Uint8Array; mime: string; ext: string }> {
+  const chs = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+  const wav = wavBytes(chs, buf.sampleRate, 16);
+  const what = kind === 'aac-m4a' ? 'AAC' : 'Opus';
+  let res: Response;
+  try {
+    res = await fetch(`/api/audio-encode/lossy?kind=${kind}&kbps=${kbps}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: new Blob([wav.slice()], { type: 'audio/wav' }) });
+  } catch (e) { throw new Error(tf('This system cannot encode {what} sound itself, and the formmorpheus engine, whose ffmpeg could, is not answering. Start it with ./formmorpheus, or export WAV.', { what }), { cause: e }); }
+  if (!res.ok) {
+    let detail = '';
+    try { const b = (await res.json()) as { detail?: unknown }; if (typeof b?.detail === 'string') detail = b.detail; } catch { /* not JSON */ }
+    throw new Error(detail ? tf('This system cannot encode {what} sound itself, and the engine could not either: {why}', { what, why: detail }) : tf('The engine could not make the {what} sound ({status}).', { what, status: res.status }));
+  }
+  const ext = kind === 'opus-webm' ? 'webm' : kind === 'opus-ogg' ? 'ogg' : 'm4a';
+  return { bytes: new Uint8Array(await res.arrayBuffer()), mime: res.headers.get('content-type') || 'audio/mpeg', ext };
 }
 
 function normNote(audio: AudioEngine, lufs: number | undefined, warnings: string[]): void {
@@ -87,13 +107,23 @@ async function encodeLossy(buf: AudioBuffer, format: AudioFormat, warnings: stri
   let codec: AudioCodec = 'opus';
   let container: Mp4OutputFormat | WebMOutputFormat | OggOutputFormat;
   let mime: string, ext: string;
+  const probe = { numberOfChannels: channels, sampleRate: rate, bitrate: 192000 };
+  const can = async (c: AudioCodec): Promise<boolean> => { try { return typeof AudioEncoder !== 'undefined' && await canEncodeAudio(c, probe); } catch { return false; } };
   if (format === 'm4a') {
     container = new Mp4OutputFormat();
     ext = 'm4a'; mime = 'audio/mp4';
-    if (await canEncodeAudio('aac', { numberOfChannels: channels, sampleRate: rate, bitrate: 192000 })) codec = 'aac';
-    else warnings.push('This browser has no AAC encoder, so the M4A holds Opus sound. Use WAV or Opus in WebM for a plain file.');
+    if (await can('aac')) codec = 'aac';
+    else {
+      // no AAC here: the engine's ffmpeg makes it; without the engine the file holds Opus, as before
+      try { return await encodeLossyViaEngine(buf, 'aac-m4a', 192); } catch { /* fall through to Opus in M4A */ }
+      warnings.push('This browser has no AAC encoder, so the M4A holds Opus sound. Use WAV or Opus in WebM for a plain file.');
+    }
   } else if (format === 'webm-opus') { container = new WebMOutputFormat(); ext = 'webm'; mime = 'audio/webm'; } else { container = new OggOutputFormat(); ext = 'ogg'; mime = 'audio/ogg'; }
-  if (!(await canEncodeAudio(codec, { numberOfChannels: channels, sampleRate: rate, bitrate: 192000 }))) throw new Error('This browser cannot encode that sound format.');
+  if (!(await can(codec))) {
+    // no AudioEncoder for it: Opus in WebM or OGG goes to the engine's ffmpeg like MP3 (an M4A that fell back to Opus has no other route)
+    if (codec === 'opus' && format !== 'm4a') return encodeLossyViaEngine(buf, format === 'webm-opus' ? 'opus-webm' : 'opus-ogg', 192);
+    throw new Error(t('This browser cannot encode that sound format.'));
+  }
   const target = new BufferTarget();
   const output = new Output({ format: container, target });
   const source = new AudioSampleSource({ codec, bitrate: QUALITY_HIGH });

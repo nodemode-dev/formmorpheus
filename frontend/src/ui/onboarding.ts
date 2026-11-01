@@ -74,9 +74,11 @@ export function setupOnboarding(d: OnboardingDeps): { whatsNew: WhatsNewDialog; 
       const paintOpen = (): boolean => { const p = document.querySelector<HTMLElement>('.fm-paint'); return !!p && !p.hidden && p.offsetParent !== null; };
       let tries = 0;
       const attempt = (): void => {
-        if (!d.engine.movie || tour.isActive) return;
-        if ((paintOpen() || anyDialogOpen()) && tries++ < 600) { window.setTimeout(attempt, 1000); return; }
-        if (!paintOpen()) tour.start();
+        if (!d.engine.movie || tour.isActive || tourSeen()) return;
+        // a movie that opens straight into Draw and Paint gets no tour when Finish brings the Timeline back
+        if (paintOpen()) return;
+        if (anyDialogOpen() && tries++ < 600) { window.setTimeout(attempt, 1000); return; }
+        tour.start();
       };
       window.setTimeout(attempt, 900);
     }

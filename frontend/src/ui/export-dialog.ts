@@ -3,6 +3,7 @@ import type { Renderer } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
 import { browserHasAac } from '../export/run';
 import { startExportAuto as startExport } from '../export/worker-host';
+import { startExportRouted } from '../export/route';
 import { AUDIO_BPS, movieFrameAt, outFps, stepsFor } from '../export/delivery';
 import { jobCapabilities, startEngineExport, type EngineTarget, type JobCapabilities } from '../export/engine-jobs';
 import { pictureHasAlpha } from '../export/still-formats';
@@ -32,6 +33,8 @@ export interface ExportDeps {
   saveOutput: (blob: Blob, name: string) => Promise<void>;
   /** The Movie file tile: save the .fmo (with its undo history or without). */
   exportFmo?: (withHistory: boolean) => void;
+  /** Writes the open Drawing or Flipbook frame to the movie (the editor stays open), so an export and its preview include work not yet finished. */
+  commitOpen?: () => Promise<void>;
 }
 
 type Tab = 'share' | 'advanced';
@@ -81,7 +84,7 @@ const DEFAULTS: Saved = {
   kind: 'video', codec: 'h264', container: 'mp4', profile: 'hq', audioKind: 'aac', picture: 'png', tiffDeflate: true,
   preset: 'movie', customW: 1920, customH: 1080, pingpong: false, audio: true, alpha: false,
   quality: 'high', colors: 256, dither: 'floyd-steinberg', loop: true, timing: 'exact', alphaThreshold: 128, palette: '', palOn: false,
-  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share', framesTo: 'folder', askWhere: false, exactFrames: false,
+  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share', framesTo: 'folder', askWhere: false, exactFrames: true,
 };
 
 const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (typeof v === 'string' && (all as readonly string[]).includes(v) ? (v as T) : fallback);
@@ -106,7 +109,7 @@ function load(): Saved {
       alphaThreshold: num(r.alphaThreshold, 0, 255, 128), palette: typeof r.palette === 'string' ? r.palette.slice(0, 2000) : '', palOn: r.palOn === true,
       frameMs: pick(String(r.frameMs ?? 0), DURATIONS.map((x) => String(x.ms)), '0') === '0' ? 0 : Number(r.frameMs), smoothness: num(r.smoothness, 0, 3, 2), intensity: num(r.intensity, 0, 100, 50),
       tab: pick(r.tab, ['share', 'advanced'] as const, 'share'),
-      framesTo: pick(r.framesTo, ['folder', 'zip'] as const, 'folder'), askWhere: r.askWhere === true, exactFrames: r.exactFrames === true,
+      framesTo: pick(r.framesTo, ['folder', 'zip'] as const, 'folder'), askWhere: r.askWhere === true, exactFrames: r.exactFrames !== false,
     };
   } catch { return { ...DEFAULTS }; }
 }
@@ -275,7 +278,8 @@ export class ExportDialog {
     void this.refreshEngine();
     this.dlg.open(this.state.tab === 'share' ? this.shareBox.querySelector<HTMLElement>('button') : this.kind);
     this.syncChip();
-    if (this.state.tab === 'advanced') this.autoPreview();
+    // the preview waits for the open frame to reach the movie, or it would show the movie without it
+    void (this.deps.commitOpen?.() ?? Promise.resolve()).catch(() => undefined).then(() => { if (this.dlg.isOpen && this.state.tab === 'advanced') this.autoPreview(); });
   }
 
   close(): void { this.sampleJob?.cancel(); this.dlg.close(); }
@@ -806,7 +810,7 @@ export class ExportDialog {
     const m = this.deps.engine.movie as NonNullable<Engine['movie']>;
     return {
       format: 'mp4', width: even(m.width), height: even(m.height), from: 0, to: Math.max(1, m.duration), pingpong: false, includeAudio: false, alpha: false, quality: 'high',
-      gif: { colors: 256, dither: 'floyd-steinberg', palette: null, alphaThreshold: 128, loop: true, timing: 'exact' },
+      gif: { colors: 256, dither: 'floyd-steinberg', palette: null, alphaThreshold: 128, loop: true, timing: 'exact', exactFrames: true },
     };
   }
 
@@ -827,8 +831,14 @@ export class ExportDialog {
   }
 
   /** Asks for the folder first where the person chose one (frames as a folder of images, or Choose a folder to save to), then runs. */
-  private begin(opts: ExportOptions): void {
+  private begin(opts: ExportOptions, committed = false): void {
     if (this.busy || !this.deps.engine.movie) return;
+    if (!committed && this.deps.commitOpen) {
+      // work in an open Drawing or Flipbook is not in the movie until written: write it first
+      this.busy = true;
+      void this.deps.commitOpen().catch(() => undefined).then(() => { this.busy = false; this.begin(opts, true); });
+      return;
+    }
     const frames = opts.format.endsWith('-frames');
     const ask = canPickFolder() && (frames ? this.state.framesTo === 'folder' : this.state.askWhere);
     if (!ask) { this.launch(opts, null); return; }
@@ -852,7 +862,7 @@ export class ExportDialog {
     const off = this.deps.engine.on('progress', () => { if (ej.cancelled) job.cancel(); });
     const target = ENGINE[opts.format];
     const deps = { movie, renderer: this.deps.renderer, audio: this.deps.audio() };
-    const job = target ? startEngineExport(deps, { ...opts, target }) : startExport(deps, opts);
+    const job = target ? startEngineExport(deps, { ...opts, target }) : startExportRouted(deps, opts);
     this.job = job;
     const meter = new ProgressMeter(planFor(opts.format, { engine: !!target, audio: opts.includeAudio && VIDEO.includes(opts.format) }));
     this.meter = meter;
@@ -869,6 +879,7 @@ export class ExportDialog {
     });
     void job.result.then(async (res) => {
       const lines = [...res.warnings];
+      if (res.gpuReset) lines.push(t('The graphics card reset during the export, so part of it was drawn without it and may differ slightly.'));
       if (this.fallback) { lines.push(this.fallback); this.fallback = ''; }
       let kept = true;
       let shown = res.name;

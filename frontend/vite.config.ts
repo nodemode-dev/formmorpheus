@@ -26,6 +26,8 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     target: 'es2022',
+    // CSS is lowered for Safari 16 (macOS 13 webviews), which makes the minifier write the -webkit-backdrop-filter twins
+    cssTarget: ['chrome105', 'safari16', 'firefox110'],
     chunkSizeWarningLimit: 1200,
   },
 });

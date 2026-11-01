@@ -122,7 +122,14 @@ function permTable(seed: number): Uint8Array {
 }
 
 const NOISE_SEED = 7;
-const TEXTURE_CAP = 1024 * 1024 * 1024;
+const TEXTURE_CAP = 512 * 1024 * 1024;
+/** Idle pooled surfaces kept per size, in bytes (a 3840 px surface is 33 to 118 MB, a 1080p one 8 MB). */
+const POOL_IDLE_BYTES = 64 * 1024 * 1024;
+/** Below this the driver cannot hold even a small movie; the GL minimum is 2048. */
+const MIN_SIDE = 2048;
+
+/** A surface or source the driver cannot hold: the frame is drawn by the CPU, the GPU stays on. */
+class GpuLimit extends Error {}
 
 export class GpuCompositor {
   readonly canvas: OffscreenCanvas;
@@ -136,6 +143,11 @@ export class GpuCompositor {
   private perm: WebGLTexture | null = null;
   private floatOk = false;
   private lost = false;
+  /** Smallest of the driver's texture, renderbuffer and viewport limits: no view or source above it is drawn here. */
+  maxSide = 0;
+  /** How many times the context has been lost or switched off after an error; an export compares it before and after. */
+  resets = 0;
+  private errStrikes = 0;
   private w = 0;
   private h = 0;
   private tick = 0;
@@ -163,8 +175,15 @@ export class GpuCompositor {
     }) as WebGL2RenderingContext | null;
     if (!gl) return false;
     this.gl = gl;
-    this.floatOk = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
-    this.cache = new TextureCache(gl, TEXTURE_CAP);
+    const vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as ArrayLike<number> | null;
+    this.maxSide = Math.min(
+      Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 0, Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) || 0,
+      vp ? Number(vp[0]) || 0 : 0, vp ? Number(vp[1]) || 0 : 0,
+    );
+    if (this.maxSide < MIN_SIDE) return false;
+    while (gl.getError() !== gl.NO_ERROR) { /* drain what the context start left */ }
+    this.cache = new TextureCache(gl, TEXTURE_CAP, this.maxSide);
+    this.checkFloat();
     this.tree = new GpuTree({
       gl,
       view: () => ({ w: this.w, h: this.h }),
@@ -185,15 +204,29 @@ export class GpuCompositor {
     });
     this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.dropAll(true); });
     this.canvas.addEventListener('webglcontextrestored', () => {
-      this.floatOk = !!(this.gl.getExtension('EXT_color_buffer_float') || this.gl.getExtension('EXT_color_buffer_half_float'));
       this.lost = false;
+      this.errStrikes = 0;
+      this.checkFloat();
       this.onRestore?.();
     });
     return true;
   }
 
+  /** Half-float targets are used only when a surface of that format is really complete (the extension alone does not prove it). */
+  private checkFloat(): void {
+    const gl = this.gl;
+    this.floatOk = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
+    if (!this.floatOk) return;
+    try {
+      const s = this.makeSurf(4, 4, 'f16');
+      if (s.fmt !== 'f16') this.floatOk = false;
+      this.free(s);
+    } catch { this.floatOk = false; }
+  }
+
   /** True while drawing is possible. */
   get ready(): boolean {
+    if (!this.lost && !this.failed && this.gl.isContextLost()) this.dropAll(true);
     return !this.failed && !this.lost && !this.gl.isContextLost();
   }
 
@@ -201,6 +234,7 @@ export class GpuCompositor {
   private failed = false;
 
   private dropAll(lost: boolean): void {
+    if (lost && !this.lost) this.resets++;
     this.lost = lost;
     this.progs.clear();
     this.pool.clear();
@@ -290,6 +324,7 @@ export class GpuCompositor {
   }
 
   private makeSurf(w: number, h: number, fmt: 'u8' | 'f16'): Surf {
+    if (w > this.maxSide || h > this.maxSide) throw new GpuLimit(`surface ${w}x${h} is over the limit ${this.maxSide}`);
     const gl = this.gl;
     const tex = gl.createTexture() as WebGLTexture;
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -301,6 +336,14 @@ export class GpuCompositor {
     const fbo = gl.createFramebuffer() as WebGLFramebuffer;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteFramebuffer(fbo);
+      gl.deleteTexture(tex);
+      if (this.gl.isContextLost()) throw new Error('context lost');
+      // half float did not work as a target: 8-bit surfaces from now on, and float effects go to the CPU
+      if (fmt === 'f16') { this.floatOk = false; return this.makeSurf(w, h, 'u8'); }
+      throw new Error(`incomplete framebuffer ${w}x${h}`);
+    }
     return { tex, fbo, w, h, fmt, idle: this.tick };
   }
 
@@ -316,7 +359,9 @@ export class GpuCompositor {
     const key = `${s.w}x${s.h}${s.fmt}`;
     let list = this.pool.get(key);
     if (!list) { list = []; this.pool.set(key, list); }
-    if (list.length < 10) list.push(s);
+    // about 64 MB idle per size: ten at 1080p, two at 3840 px
+    const room = Math.min(10, Math.max(2, Math.floor(POOL_IDLE_BYTES / (s.w * s.h * (s.fmt === 'f16' ? 8 : 4)))));
+    if (list.length < room) list.push(s);
     else this.free(s);
   }
 
@@ -336,7 +381,9 @@ export class GpuCompositor {
   private trim(): void {
     for (const [key, list] of this.pool) {
       for (let i = list.length - 1; i >= 0; i--) {
-        if (this.tick - list[i].idle > 90) { this.free(list[i]); list.splice(i, 1); }
+        // big surfaces go sooner: they are the ones that run a small card out of memory
+        const idleMax = Math.max(list[i].w, list[i].h) > 2560 ? 30 : 90;
+        if (this.tick - list[i].idle > idleMax) { this.free(list[i]); list.splice(i, 1); }
       }
       if (!list.length) this.pool.delete(key);
     }
@@ -372,23 +419,43 @@ export class GpuCompositor {
   compose(host: GpuHost, tracks: Track[], frame: number, view: ViewLike, movie: Movie): OffscreenCanvas | null {
     if (!this.ready) return null;
     const w = Math.max(1, Math.round(view.width)), h = Math.max(1, Math.round(view.height));
+    // a view the driver cannot hold: this frame is drawn by the CPU
+    if (w > this.maxSide || h > this.maxSide) return null;
     if (!this.floatOk && this.needsFloat(tracks, frame)) return null;
     try {
       if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
       this.w = w; this.h = h;
       this.tick++;
       this.cache.beginFrame();
+      this.cache.takeRefused();
       this.rasterUsed = 0;
       const gl = this.gl;
       gl.disable(gl.SCISSOR_TEST);
       const out = this.acquire(w, h, 'u8', true);
       this.walk(host, out, tracks, frame, view, movie);
-      this.present(out);
+      // a layer's picture the driver would not hold would draw as nothing: give the whole frame to the CPU
+      const refused = this.cache.takeRefused();
+      if (!refused) this.present(out);
       this.release(out);
       this.cache.endFrame();
       if ((this.tick & 31) === 0) this.trim();
-      return this.canvas;
+      // GL errors raise no exception: read them on the first frame and every 32nd; two in a row are persistent
+      if ((this.tick & 31) === 1) {
+        const err = gl.getError();
+        if (err === gl.OUT_OF_MEMORY || (err !== gl.NO_ERROR && ++this.errStrikes >= 2)) throw new Error(`GL error ${err}`);
+        if (err === gl.NO_ERROR) this.errStrikes = 0;
+      }
+      return refused ? null : this.canvas;
     } catch (e) {
+      if (e instanceof GpuLimit) {
+        // one surface too big for the driver: this frame is the CPU's, the GPU stays on; what was in flight is left to the collector
+        for (const list of this.pool.values()) list.forEach((s) => { this.free(s); });
+        this.pool.clear();
+        this.gl.disable(this.gl.BLEND);
+        if (this.scratch) { this.free(this.scratch); this.scratch = null; }
+        if (this.scratchTree) { this.free(this.scratchTree); this.scratchTree = null; }
+        return null;
+      }
       console.warn('GPU compositor failed, using the CPU path', e);
       if (!this.gl.isContextLost()) {
         // a failure that is not a lost context (a shader that will not compile, say) repeats every frame: give the
@@ -602,7 +669,7 @@ export class GpuCompositor {
     const nested = parent !== IDENT;
     const P: Mat = nested ? parent : [view.scale, 0, 0, view.scale, view.ox, view.oy];
     const mw = movie.width, mh = movie.height;
-    const fs = flatScaleOf(mw, mh, view.scale);
+    const fs = flatScaleOf(mw, mh, view.scale, this.maxSide);
     const fw = Math.max(1, Math.ceil(mw * fs)), fh = Math.max(1, Math.ceil(mh * fs));
     const rect = contentRect(c, movie);
     const md = this.meshDrawer ?? (this.meshDrawer = new MeshDrawer(this.gl));

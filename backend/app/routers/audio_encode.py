@@ -46,3 +46,46 @@ async def encode_mp3(request: Request, kbps: int = 192) -> FileResponse:
         shutil.rmtree(folder, ignore_errors=True)
         raise
     return FileResponse(dst, media_type="audio/mpeg", background=BackgroundTask(shutil.rmtree, folder, True))
+
+
+# Opus (WebM or OGG) and AAC (M4A) for a window whose web component has no AudioEncoder.
+LOSSY = {
+    "opus-webm": ("libopus", "webm", "audio/webm", ["-f", "webm"]),
+    "opus-ogg": ("libopus", "ogg", "audio/ogg", ["-f", "ogg"]),
+    "aac-m4a": ("aac", "m4a", "audio/mp4", ["-f", "mp4", "-movflags", "+faststart"]),
+}
+
+
+@router.post("/lossy")
+async def encode_lossy(request: Request, kind: str, kbps: int = 192) -> FileResponse:
+    if kind not in LOSSY:
+        raise HTTPException(400, "The sound format must be opus-webm, opus-ogg or aac-m4a.")
+    if not 32 <= kbps <= 512:
+        raise HTTPException(400, "The rate must be between 32 and 512 kbps.")
+    codec, ext, media, extra = LOSSY[kind]
+    info = ff.probe()
+    if info is None:
+        raise HTTPException(503, "ffmpeg was not found. Install ffmpeg, or set FORMMORPHEUS_FFMPEG to its path.")
+    if not info.has(codec):
+        raise HTTPException(503, f"This ffmpeg has no {'Opus' if codec == 'libopus' else 'AAC'} encoder ({codec}). Install an ffmpeg build that includes it.")
+    folder = config.jobs_dir() / f"lossy-{uuid.uuid4().hex[:12]}"
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        src, dst = folder / "in.wav", folder / f"out.{ext}"
+        await _stream_to(request, src, config.MAX_JOB_AUDIO_BYTES)
+        with open(src, "rb") as f:
+            head = f.read(12)
+        if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+            raise HTTPException(400, "The sound must be a WAV file.")
+        proc = await asyncio.create_subprocess_exec(
+            info.path, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-protocol_whitelist", "file", "-i", str(src),
+            "-vn", "-c:a", codec, "-b:a", f"{kbps}k", *extra, str(dst),
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        )
+        _, err = await proc.communicate()
+        if proc.returncode != 0 or not dst.is_file() or dst.stat().st_size == 0:
+            raise HTTPException(500, (err.decode("utf-8", "replace").strip()[-300:]) or "ffmpeg could not encode the sound.")
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    return FileResponse(dst, media_type=media, background=BackgroundTask(shutil.rmtree, folder, True))

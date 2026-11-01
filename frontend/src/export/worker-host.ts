@@ -135,7 +135,7 @@ export function startExportAuto(deps: Deps, opts: ExportOptions): ExportJob {
         const m = e.data;
         if (m.t === 'ready') started = true;
         else if (m.t === 'progress') { if (m.p.stage !== 'audio') emit(m.p); }
-        else if (m.t === 'done') end(() => resolve({ blob: m.blob, name: m.name, mime: m.mime, warnings: m.warnings }));
+        else if (m.t === 'done') end(() => resolve({ blob: m.blob, name: m.name, mime: m.mime, warnings: m.warnings, gpuReset: m.gpuReset }));
         else if (m.t === 'error') {
           if (m.fallback && !cancelled) fallBack();
           else end(() => reject(m.abort || cancelled ? abortError() : new Error(m.message)));

@@ -32,6 +32,6 @@ export type ToWorker = StartMsg | { t: 'cancel' } | { t: 'consumed'; count: numb
 export type FromWorker =
   | { t: 'ready' }
   | { t: 'progress'; p: ExportProgress }
-  | { t: 'done'; blob: Blob; name: string; mime: string; warnings: string[] }
+  | { t: 'done'; blob: Blob; name: string; mime: string; warnings: string[]; gpuReset?: boolean }
   | { t: 'frame'; index: number; blob: Blob }
   | { t: 'error'; message: string; abort: boolean; fallback: boolean };

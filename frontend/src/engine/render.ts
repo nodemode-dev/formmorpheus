@@ -119,6 +119,11 @@ export class Renderer {
   /** The stored file of an asset (the export worker is handed these). */
   assetBlob(id: string): Blob | undefined { return this.blobOf(id); }
 
+  /** How many times the compositor's context has been lost or switched off; an export reads it before and after to tell the person. */
+  get gpuResets(): number {
+    return this.gpu?.resets ?? 0;
+  }
+
   /** Whether frames are composed on the GPU right now. */
   get gpuActive(): boolean {
     return this.gpuOn && !!this.gpu && this.gpu.ready;
@@ -288,7 +293,8 @@ export class Renderer {
       for (let it = todo.shift(); it && (!ahead || bytes < PRELOAD_BYTES); it = todo.shift()) {
         const [id, blob] = it;
         try {
-          const bmp = await createImageBitmap(blob);
+          // premultiplied on purpose: the GPU path ignores the unpack flag for a bitmap and assumes this
+          const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'premultiply' });
           bytes += bmp.width * bmp.height * 4;
           this.settle(id, bmp, gen, 1, !ahead);
         } catch { this.settle(id, null, gen, 1, !ahead); }
@@ -342,11 +348,15 @@ export class Renderer {
       const a = this.assets?.[id];
       const small = !a || a.width * a.height < DECODE_MIN_AREA;
       const kk = small || k >= 0.999 ? 1 : k;
-      const opts: ImageBitmapOptions | undefined = kk < 1 && a
-        ? { resizeWidth: Math.max(1, Math.round(a.width * kk)), resizeHeight: Math.max(1, Math.round(a.height * kk)), resizeQuality: 'high' }
-        : undefined;
+      const opts: ImageBitmapOptions = kk < 1 && a
+        ? { premultiplyAlpha: 'premultiply', resizeWidth: Math.max(1, Math.round(a.width * kk)), resizeHeight: Math.max(1, Math.round(a.height * kk)), resizeQuality: 'high' }
+        : { premultiplyAlpha: 'premultiply' };
       this.lanes++;
-      createImageBitmap(blob, opts).then((bmp) => { this.settle(id, bmp, gen, kk); }, () => { this.settle(id, null, gen, kk); })
+      // the scale kept is the one the bitmap really has: a webview that ignores the resize options hands back the whole picture
+      createImageBitmap(blob, opts).then((bmp) => {
+        const real = kk < 1 && a && a.width > 0 ? Math.min(1, bmp.width / a.width) : kk;
+        this.settle(id, bmp, gen, real);
+      }, () => { this.settle(id, null, gen, kk); })
         .finally(() => { this.lanes--; if (gen === this.forgetGen) this.pending.delete(id); this.onReady(); this.pump(); });
     }
   }

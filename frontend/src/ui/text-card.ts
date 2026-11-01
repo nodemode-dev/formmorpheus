@@ -14,6 +14,7 @@ import { Popover } from './popover';
 import { TextFxPanes } from './text-fx-panes';
 import { textSel } from './text-sel';
 import { diffText, shiftRuns } from '../engine/text-rich';
+import { canvasFontKerning } from '../engine/text-layout';
 
 const ALIGNS: Array<[TextStyle['align'], string, string]> = [['left', 'alignLeftEdge', 'Align left'], ['center', 'alignHcenterEdge', 'Align centre'], ['right', 'alignRightEdge', 'Align right'], ['justify', 'alignJustify', 'Justify']];
 const CAPS: Array<[TextStyle['caps'] | '', string, string]> = [['', 'Aa', 'Normal case'], ['upper', 'AA', 'All caps'], ['lower', 'aa', 'Lower case'], ['small', 'Aa', 'Small caps']];
@@ -156,6 +157,11 @@ export class TextCard {
       nums.appendChild(row);
     }
     for (const [k, label, title] of KERNS) mkToggle(q(root, '[data-g="kern"]'), this.kerns, k ?? '', label, title, () => this.commit({ kerning: k || undefined }, 'kerning'));
+    // "None" needs ctx.fontKerning on the canvas; where it is missing the render would still kern, so the choice is off with the reason
+    if (!canvasFontKerning()) {
+      const none = this.kerns.get('none');
+      if (none) { const why = t('Turning pair kerning off needs a newer system web component than this one has, so only Font and Optical are available.'); none.disabled = true; none.title = why; none.setAttribute('aria-label', why); }
+    }
     for (const [a, ic, label] of ALIGNS) mkToggle(q(root, '[data-g="align"]'), this.aligns, a, icon(ic, 16), label, () => this.commit({ align: a }, 'align'));
     for (const [k, label, title] of CAPS) mkToggle(q(root, '[data-g="caps"]'), this.caps, k ?? '', k === 'small' ? '<span class="fm-tc-sc">Aa</span>' : label, title, () => this.commit({ caps: k || undefined }, 'caps'));
     mkToggle(q(root, '[data-g="lines"]'), this.flags, 'underline2', '<span class="fm-tc-u">U</span>', 'Underline', () => this.commit({ underline: this.cur()?.underline ? undefined : true }, 'underline'));

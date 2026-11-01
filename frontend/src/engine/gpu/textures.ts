@@ -16,10 +16,20 @@ export class TextureCache {
   private bytes = 0;
   private gen = 0;
 
-  constructor(private readonly gl: WebGL2RenderingContext, private readonly capBytes: number) {}
+  /** Set when a source could not be held (over the driver's size limit, or the upload raised a GL error): the frame is drawn by the CPU. */
+  private refused = false;
+
+  constructor(private readonly gl: WebGL2RenderingContext, private readonly capBytes: number, private readonly maxSide = 16384) {}
 
   get size(): number {
     return this.bytes;
+  }
+
+  /** Whether a source was refused since the last call; clears the flag. */
+  takeRefused(): boolean {
+    const r = this.refused;
+    this.refused = false;
+    return r;
   }
 
   beginFrame(): void {
@@ -55,6 +65,7 @@ export class TextureCache {
     const gl = this.gl;
     const w = src.width, h = src.height;
     if (w <= 0 || h <= 0) return null;
+    if (w > this.maxSide || h > this.maxSide) { this.refused = true; return null; }
     let e = this.map.get(key);
     const same = !!e && e.w === w && e.h === h;
     if (e && !same) { this.drop(key); e = undefined; }
@@ -74,9 +85,12 @@ export class TextureCache {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // a failed allocation raises no exception: read the error once per new texture (an update of an old one costs no extra call)
+        if (gl.getError() !== gl.NO_ERROR) { gl.deleteTexture(tex); this.refused = true; return null; }
       }
     } catch {
       if (!e) gl.deleteTexture(tex);
+      this.refused = true;
       return null;
     }
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);

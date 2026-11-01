@@ -135,6 +135,61 @@ fn portable_web_view_data() {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn set_unless_set(name: &str, value: &str) {
+    if std::env::var_os(name).is_none() {
+        std::env::set_var(name, value);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_graphics() {
+    let wayland = std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v == "wayland");
+    if wayland && std::path::Path::new("/proc/driver/nvidia").exists() {
+        set_unless_set("__NV_DISABLE_EXPLICIT_SYNC", "1");
+    }
+    match std::env::var("FORMMORPHEUS_SAFE_GRAPHICS").as_deref() {
+        Ok("1") => set_unless_set("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+        Ok("2") => {
+            set_unless_set("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            set_unless_set("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn origin_of(url: &str) -> String {
+    let after = url.find("://").map_or(0, |i| i + 3);
+    let end = url[after..].find('/').map_or(url.len(), |i| after + i);
+    url[..end].to_string()
+}
+
+#[cfg(target_os = "linux")]
+fn allow_own_microphone(window: &tauri::WebviewWindow, origin: String) {
+    use webkit2gtk::glib::Cast;
+    use webkit2gtk::{PermissionRequestExt, SettingsExt, UserMediaPermissionRequest, UserMediaPermissionRequestExt, WebViewExt};
+    let _ = window.with_webview(move |platform| {
+        let view = platform.inner();
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_enable_media_stream(true);
+        }
+        view.connect_permission_request(move |view, request| {
+            let own_page = WebViewExt::uri(view)
+                .is_some_and(|page| page == origin.as_str() || page.starts_with(&format!("{origin}/")));
+            let audio_only = request
+                .downcast_ref::<UserMediaPermissionRequest>()
+                .is_some_and(|media| media.is_for_audio_device() && !media.is_for_video_device());
+            if own_page && audio_only {
+                request.allow();
+            } else {
+                request.deny();
+            }
+            true
+        });
+    });
+}
+
 fn dev_url() -> Option<String> {
     if cfg!(debug_assertions) {
         std::env::var("FORMMORPHEUS_DEV_URL").ok().filter(|url| !url.is_empty())
@@ -182,6 +237,8 @@ fn build_main(handle: &tauri::AppHandle, url: &str) {
             reveal::conceal(&window);
             traffic_lights::place(&window.as_ref().window());
             window_state::restore(&window, &place);
+            #[cfg(target_os = "linux")]
+            allow_own_microphone(&window, origin_of(url));
         }
         Err(_) => close_splash(handle),
     }
@@ -195,6 +252,8 @@ fn engine_failed(handle: &tauri::AppHandle) {
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    linux_graphics();
     reveal::mark_launch();
     #[cfg(windows)]
     portable_web_view_data();

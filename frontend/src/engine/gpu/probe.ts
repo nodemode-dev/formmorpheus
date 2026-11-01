@@ -60,6 +60,34 @@ async function bigPicture(): Promise<Blob> {
   return cv.convertToBlob({ type: 'image/png' });
 }
 
+const HW = 4096, HH = 2304, LW = 2048, LH = 1152;
+
+/** A source wider than 4K: a driver that mishandles large textures or surfaces fails here, before the GPU is switched on. */
+async function hugePicture(): Promise<Blob> {
+  const cv = new OffscreenCanvas(HW, HH);
+  const c = cv.getContext('2d') as OffscreenCanvasRenderingContext2D;
+  const g = c.createLinearGradient(0, 0, HW, HH);
+  g.addColorStop(0, '#c04050'); g.addColorStop(0.5, '#40b070'); g.addColorStop(1, '#4070c0');
+  c.fillStyle = g;
+  c.fillRect(0, 0, HW, HH);
+  c.fillStyle = 'rgba(255,255,255,0.5)';
+  c.fillRect(HW - 900, HH - 600, 700, 400);
+  c.fillStyle = '#ffd020';
+  c.fillRect(300, 200, 500, 300);
+  return cv.convertToBlob({ type: 'image/png' });
+}
+
+function largeScene(): Movie {
+  const m = newMovie({ width: LW, height: LH, seconds: 1 });
+  m.background = '#808080';
+  m.assets.huge = { id: 'huge', kind: 'image', name: 'huge', mime: 'image/png', width: HW, height: HH, frames: 1, size: 0 };
+  m.tracks = [
+    track('T0', [content('image', 0, 24, { asset: 'huge', blend: 'multiply', opacity: 0.7, transform: tr(30, 20, 0.35, 8) })]),
+    track('T1', [content('image', 0, 24, { asset: 'huge', transform: tr(0, 0, 0.5, 0) })]),
+  ];
+  return m;
+}
+
 /** 24 picture-sized layers, a quarter of them blended or translucent: what a busy Stage costs. */
 function heavyScene(): Movie {
   const m = newMovie({ width: BW, height: BH, seconds: 1 });
@@ -146,6 +174,27 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
       if (mean > meanLimit || max > maxLimit) res.ok = false;
     }
     if (res.ok) {
+      await r.preload(new Map([['huge', await hugePicture()]]));
+      const big = largeScene();
+      const lv = { scale: 1, ox: 0, oy: 0, width: LW, height: LH };
+      const lc = new OffscreenCanvas(LW, LH), dl = new OffscreenCanvas(LW, LH);
+      const lcx = lc.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+      const dlx = dl.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+      r.useGpu(false);
+      r.drawFrame(lcx, big, 0, lv, opts);
+      if (!r.useGpu(true, gpu)) res.ok = false;
+      else {
+        r.drawFrame(dlx, big, 0, lv, opts);
+        r.useGpu(false);
+        const a = lcx.getImageData(0, 0, LW, LH).data, b = dlx.getImageData(0, 0, LW, LH).data;
+        let max = 0, sum = 0;
+        for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > max) max = d; sum += d; }
+        const mean = sum / a.length;
+        res.scenes.push({ name: 'large surface', max, mean });
+        if (mean > meanLimit || max > maxLimit) res.ok = false;
+      }
+    }
+    if (res.ok) {
       const bc = new OffscreenCanvas(BW, BH), bx = bc.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
       const bview = { scale: 1, ox: 0, oy: 0, width: BW, height: BH };
       const time = (on: boolean): number => {
@@ -171,8 +220,8 @@ export async function probeGpu(make: () => ProbeRenderer, gpu: GpuCompositor, me
   }
   r.forget();
   // only the probe's own textures go: the compositor may already hold the open movie's
-  const mine: LiveSet = { contents: new Set(), assets: new Set(['probe', 'big']) };
-  for (const m of [...list.map((s) => s.movie), heavy]) {
+  const mine: LiveSet = { contents: new Set(), assets: new Set(['probe', 'big', 'huge']) };
+  for (const m of [...list.map((s) => s.movie), heavy, largeScene()]) {
     const l = liveSet(m);
     l.contents.forEach((id) => mine.contents.add(id));
   }
