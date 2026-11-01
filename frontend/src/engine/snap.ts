@@ -10,10 +10,16 @@ export interface SnapResult {
   line: number | null;
 }
 
+/** Extra snap targets, set by the interface (View > Snap to Seconds). */
+export const snapOptions = { seconds: false };
+
 /** Every frame worth snapping to, skipping the blocks named in `skip`. Sorted, de-duplicated. */
 export function snapTargets(movie: Movie, playhead: number, skip: Set<string>): number[] {
   const out = new Set<number>([0, movie.duration, playhead]);
   for (const k of movie.markers ?? []) out.add(k.frame);
+  if (movie.loopFrom !== undefined && movie.loopTo !== undefined) { out.add(movie.loopFrom); out.add(movie.loopTo + 1); }
+  // optional: every whole second
+  if (snapOptions.seconds) { const s = Math.max(1, Math.round(movie.fps)); for (let f = 0; f <= movie.duration; f += s) out.add(f); }
   const walk = (tracks: Track[], base: number): void => {
     for (const t of tracks) for (const c of t.content) {
       if (skip.has(c.id)) continue;

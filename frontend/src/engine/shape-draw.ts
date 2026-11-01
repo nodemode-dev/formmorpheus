@@ -40,7 +40,9 @@ function fillStyle(ctx: Ctx, d: ShapeDef, v: ShapeVals, box: [number, number, nu
   stops.forEach((s, i) => {
     const o = Math.min(1, Math.max(last, v[`o${i}`] ?? s.o));
     last = o;
-    const [r, gg, b] = rgbOf(s.color);
+    // the stop's color may be keyed (channels g<i>R, G, B); resolved values always carry it
+    const sc = rgbOf(s.color);
+    const r = v[`g${i}R`] ?? sc[0], gg = v[`g${i}G`] ?? sc[1], b = v[`g${i}B`] ?? sc[2];
     g.addColorStop(o, css(r, gg, b, (s.alpha ?? 1) * v.fillA));
   });
   return g;

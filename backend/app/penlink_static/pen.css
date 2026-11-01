@@ -36,3 +36,4 @@ h1 { margin: 0; font-size: 20px; font-weight: 600; }
 #surface { position: relative; flex: 1 1 auto; min-height: 0; background: var(--canvas-bg); touch-action: none; overflow: hidden; }
 #mirror, #ink { position: absolute; touch-action: none; }
 #ink { pointer-events: none; }
+.idle { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--text-secondary); font-size: 17px; background: var(--canvas-bg); pointer-events: none; }

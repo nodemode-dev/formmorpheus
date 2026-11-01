@@ -15,6 +15,9 @@ export interface Guides {
   actionSafe?: boolean;
   /** Short vertical video: keeps clear of the top and bottom bars an app lays over a 9:16 picture. */
   verticalSafe?: boolean;
+  /** Where a 1:1 or a 4:5 crop of the frame would fall (the largest centred rectangle of that shape). */
+  squareFrame?: boolean;
+  portraitFrame?: boolean;
   /** Guide lines in movie pixels from the frame's top left. */
   lines?: GuideLine[];
   /** Moving content snaps its edges and centre to guides (default on). */
@@ -65,6 +68,8 @@ export function guideLines(w: number, h: number, g: Guides | undefined): { xs: n
   if (g.titleSafe) rect(insetRect(w, h, SAFE_TITLE));
   if (g.actionSafe) rect(insetRect(w, h, SAFE_ACTION));
   if (g.verticalSafe) rect(verticalRect(w, h));
+  if (g.squareFrame) rect(aspectRect(w, h, 1));
+  if (g.portraitFrame) rect(aspectRect(w, h, 4 / 5));
   if (g.grid) {
     const gx = gridAxis(w, g.gridSize ?? GRID_DEFAULT, g.gridDiv ?? 1), gy = gridAxis(h, g.gridSize ?? GRID_DEFAULT, g.gridDiv ?? 1);
     xs.push(...gx.major, ...gx.minor);
@@ -94,5 +99,11 @@ export function tidyGuides(g: Guides | null | undefined): Guides | null {
 
 /** Whether anything would be drawn on the Stage. */
 export function anyGuide(g: Guides | undefined): boolean {
-  return !!g && !g.hide && !!(g.grid || g.thirds || g.titleSafe || g.actionSafe || g.verticalSafe || g.lines?.length);
+  return !!g && !g.hide && !!(g.grid || g.thirds || g.titleSafe || g.actionSafe || g.verticalSafe || g.squareFrame || g.portraitFrame || g.lines?.length);
+}
+
+/** The largest centred rectangle of a width : height shape inside a w x h frame. */
+export function aspectRect(w: number, h: number, ratio: number): Inset {
+  const rw = Math.min(w, h * ratio), rh = rw / ratio;
+  return { x0: (w - rw) / 2, y0: (h - rh) / 2, x1: (w + rw) / 2, y1: (h + rh) / 2 };
 }

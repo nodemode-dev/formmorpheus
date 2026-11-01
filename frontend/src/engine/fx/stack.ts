@@ -27,6 +27,19 @@ export function moveFx(c: Content, kind: string, to: number): Content {
   return { ...c, keys: (c.keys ?? []).map((l) => (isFx(l) ? fx[i++] : l)) };
 }
 
+/** Switches one effect off or on without losing its settings or keys; `off` is written only while true. */
+export function setFxOff(c: Content, kind: string, off: boolean): Content {
+  return {
+    ...c,
+    keys: (c.keys ?? []).map((l) => {
+      if (l.kind !== kind || (l.options.off === true) === off) return l;
+      const options = { ...l.options };
+      if (off) options.off = true; else delete options.off;
+      return { ...l, options };
+    }),
+  };
+}
+
 /** Deep copies of the effect lanes, for the clipboard or a preset. Keys are kept relative to the block start. */
 export function copyFx(c: Content): KeyLane[] {
   return fxLanes(c).map(clone);

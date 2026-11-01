@@ -11,7 +11,7 @@ import re
 import shutil
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -36,7 +36,13 @@ ORPHAN_SECONDS = 1800   # an unowned folder is swept only after 30 minutes witho
 SWEEP_EVERY_SECONDS = 60
 
 
+class Chapter(BaseModel):
+    start: float
+    title: str = ""
+
+
 class NewJob(BaseModel):
+    chapters: list[Chapter] = []
     target: str
     fps: float
     width: int
@@ -49,6 +55,14 @@ class NewJob(BaseModel):
     name: str = "movie"
     audio_codec: str = "aac"
     profile: str = ""
+    # rate control: bits per second of the picture, or a file size to reach (two passes where the encoder has them)
+    video_kbps: int = 0
+    target_bytes: int = 0
+
+
+# nominal ProRes rates in megabits per second at 1920x1080, 29.97 fps (the published family sizes)
+PRORES_NOMINAL = (("proxy", 45.0), ("lt", 102.0), ("422", 147.0), ("hq", 220.0))
+PRORES_MB_DEFAULT = {"proxy": 200, "lt": 350, "422": 525, "hq": 850, "4444": 1350, "4444xq": 2350}
 
 
 @dataclass
@@ -67,6 +81,12 @@ class Job:
     folder: Path
     audio_codec: str = "aac"
     profile: str = ""
+    video_kbps: int = 0
+    target_bytes: int = 0
+    chapters: list = field(default_factory=list)
+    note: str = ""
+    passes: int = 1
+    pass_index: int = 0
     state: str = "queued"
     received: set[int] = field(default_factory=set)
     audio_in: bool = False
@@ -88,7 +108,7 @@ class Job:
         if self.state == "done":
             return 1.0
         if self.state == "encoding":
-            return min(0.99, self.done_frames / max(1, self.frames))
+            return min(0.99, (self.pass_index * self.frames + self.done_frames) / max(1, self.frames * self.passes))
         if self.state in ("receiving", "queued"):
             return len(self.received) / max(1, self.frames)
         return 0.0
@@ -185,7 +205,8 @@ def describe(job: Job) -> dict:
     return {
         "id": job.id, "target": job.target, "state": job.state, "progress": round(job.progress(), 4),
         "frames": job.frames, "received": len(job.received), "audio": job.audio_in,
-        "output": job.output, "error": job.error, "encoder": job.encoder,
+        "output": job.output, "error": job.error, "encoder": job.encoder, "note": job.note,
+        "pass": job.pass_index + 1, "passes": job.passes,
     }
 
 
@@ -195,13 +216,14 @@ def capabilities() -> dict:
     if info is None:
         why = "ffmpeg was not found. Install it, or set FORMMORPHEUS_FFMPEG to its path."
         none = {"available": False, "encoder": "", "reason": why}
-        return {"ffmpeg": False, "path": "", "version": "", "gpl": False, "aac": False, "targets": {t: dict(none) for t in TARGETS}}
+        return {"ffmpeg": False, "path": "", "version": "", "gpl": False, "aac": False, "mp3": False, "targets": {t: dict(none) for t in TARGETS}}
     prores_ok = info.has("prores_ks")
     h264_ok = info.has("libx264")
     reason_pr = "" if prores_ok else "This ffmpeg has no prores_ks encoder."
     hevc = info.hevc_candidates()
     return {
         "ffmpeg": True, "path": info.path, "version": info.version, "gpl": info.gpl, "aac": info.has("aac"),
+        "mp3": info.has("libmp3lame"),
         "targets": {
             "h264": {"available": h264_ok, "encoder": "libx264", "reason": "" if h264_ok else "This ffmpeg has no libx264 encoder."},
             "prores": {"available": prores_ok, "encoder": "prores_ks", "reason": reason_pr},
@@ -256,6 +278,8 @@ def create_job(body: NewJob) -> dict:
         has_audio=body.has_audio, alpha=body.alpha and (body.target == "prores4444" or (body.target == "prores" and body.profile in ("4444", "4444xq"))),
         quality=body.quality, container="mov" if body.target in ("prores", "prores4444") else body.container, name=base, folder=folder,
         audio_codec=body.audio_codec, profile=body.profile,
+        video_kbps=max(0, min(body.video_kbps, 2_000_000)), target_bytes=max(0, min(body.target_bytes, 1 << 40)),
+        chapters=_clean_chapters(body.chapters, body.frames / body.fps),
     )
     JOBS[job_id] = job
     _prune()
@@ -333,8 +357,66 @@ async def put_audio(job_id: str, request: Request) -> dict:
     return {"audio": True}
 
 
-def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str]:
+def _clean_chapters(items: list[Chapter], seconds: float) -> list[tuple[float, str]]:
+    """Chapter starts inside the movie, in order, one per start, with a name that is safe in a metadata file."""
+    out: list[tuple[float, str]] = []
+    for c in sorted(items[:500], key=lambda c: c.start):
+        if not (0 <= c.start < seconds) or (out and abs(out[-1][0] - c.start) < 0.001):
+            continue
+        title = re.sub(r"[\x00-\x1f=;#\\]", " ", c.title).strip()[:120] or f"Chapter {len(out) + 1}"
+        out.append((c.start, title))
+    return out
+
+
+def _chapter_file(job: Job) -> Path | None:
+    """An ffmetadata file with a chapter for each marker (the last chapter ends with the movie)."""
+    if not job.chapters:
+        return None
+    end = job.frames / float(Fraction(rate_text(job.fps)))
+    lines = [";FFMETADATA1"]
+    for i, (start, title) in enumerate(job.chapters):
+        stop = job.chapters[i + 1][0] if i + 1 < len(job.chapters) else end
+        lines += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={round(start * 1000)}", f"END={max(round(stop * 1000), round(start * 1000) + 1)}", f"title={title}"]
+    path = job.folder / "chapters.txt"
+    path.write_text("\n".join(lines) + "\n", "utf-8")
+    return path
+
+
+def target_bps(job: Job) -> int:
+    """Picture bits per second the person asked for: a bitrate, or what a file size leaves after the sound. 0 means constant quality."""
+    if job.video_kbps > 0:
+        return job.video_kbps * 1000
+    if job.target_bytes > 0:
+        seconds = max(0.1, job.frames / float(Fraction(rate_text(job.fps))))
+        audio = 0 if not job.has_audio else (1_411_200 if job.audio_codec == "pcm" else 192_000)
+        return max(30_000, int(job.target_bytes * 8 * 0.985 / seconds - audio))
+    return 0
+
+
+def prores_plan(job: Job, bps: int) -> tuple[str, int]:
+    """ProRes has no bitrate switch: the family member nearest below the target is used, and bits per macroblock cap
+    each frame so the size follows the target inside it. Returns (profile name, bits per macroblock or 0)."""
+    name = job.profile or ("hq" if job.target == "prores" else "4444")
+    if bps <= 0 or name in ("4444", "4444xq") and job.alpha:
+        return name, 0
+    scale = (job.width * job.height * job.fps) / (1920 * 1080 * 29.97)
+    mbs = ((job.width + 15) // 16) * ((job.height + 15) // 16)
+    if name in ("4444", "4444xq"):
+        pick = name
+    else:
+        pick = "proxy"
+        for pname, mbps in PRORES_NOMINAL:
+            if mbps * 1e6 * scale <= bps:
+                pick = pname
+    per_mb = int(bps / job.fps / mbs)
+    # prores_ks refuses fewer than about 135 bits per macroblock
+    return pick, max(140, min(PRORES_MB_DEFAULT[pick], per_mb))
+
+
+def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path, pass_no: int = 0) -> list[str]:
     cmd = [info.path, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats"]
+    if pass_no == 1 and job.has_audio:
+        job = replace(job, has_audio=False)  # the statistics pass encodes no sound
     vaapi = encoder == "hevc_vaapi"
     if vaapi:
         cmd += ["-vaapi_device", "/dev/dri/renderD128"]
@@ -342,34 +424,59 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
     cmd += ["-framerate", fps, "-start_number", "0", "-i", str(job.folder / "frames" / "%06d.png")]
     if job.has_audio:
         cmd += ["-i", str(job.folder / "audio.wav")]
+    meta = _chapter_file(job) if pass_no != 1 else None
+    if meta is not None:
+        cmd += ["-i", str(meta)]
+        cmd += ["-map_chapters", str(2 if job.has_audio else 1)]
     cmd += ["-map", "0:v:0"]
     if job.has_audio:
         cmd += ["-map", "1:a:0"]
     bt709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
     matrix = "scale=out_color_matrix=bt709:out_range=tv"
     if job.target in ("prores", "prores4444"):
-        name = job.profile or ("hq" if job.target == "prores" else "4444")
+        name, per_mb = prores_plan(job, target_bps(job))
         num = PRORES_PROFILES[name]
         pix = "yuv422p10le" if num < 4 else ("yuva444p10le" if job.alpha else "yuv444p10le")
         cmd += ["-vf", matrix, "-c:v", "prores_ks", "-profile:v", str(num), "-vendor", "apl0", "-pix_fmt", pix, *bt709]
+        if per_mb:
+            cmd += ["-bits_per_mb", str(per_mb)]
+            job.note = f"ProRes has no bitrate setting, so {name.upper() if name[0].isdigit() else name.capitalize()} was used with a cap of {per_mb} bits per macroblock to follow your target."
         if job.has_audio:
             cmd += ["-c:a", "pcm_s16le"]
     else:
         crf = CRF[job.quality]
+        bps = target_bps(job)
+        k = f"{max(1, bps // 1000)}k"
+        two = pass_no in (1, 2)
+        log = str(job.folder / "pass")
         if encoder == "libx264":
-            cmd += ["-vf", matrix, "-c:v", "libx264", "-crf", str(crf), "-preset", "medium", "-pix_fmt", "yuv420p", *bt709]
+            rate = ["-b:v", k] if bps else ["-crf", str(crf)]
+            cmd += ["-vf", matrix, "-c:v", "libx264", *rate, "-preset", "medium", "-pix_fmt", "yuv420p", *bt709]
+            if two:
+                cmd += ["-pass", str(pass_no), "-passlogfile", log]
             if job.container == "mp4":
                 cmd += ["-movflags", "+faststart"]
         elif encoder == "libx265":
-            cmd += ["-vf", matrix, "-c:v", "libx265", "-crf", str(crf), "-preset", "medium", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p", *bt709]
+            rate = ["-b:v", k] if bps else ["-crf", str(crf)]
+            params = "log-level=error"
+            if two:
+                params += f":pass={pass_no}:stats={log}.x265"
+            cmd += ["-vf", matrix, "-c:v", "libx265", *rate, "-preset", "medium", "-x265-params", params, "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_videotoolbox":
-            cmd += ["-vf", matrix, "-c:v", encoder, "-q:v", str(VT_Q[job.quality]), "-pix_fmt", "yuv420p", *bt709]
+            rate = ["-b:v", k] if bps else ["-q:v", str(VT_Q[job.quality])]
+            cmd += ["-vf", matrix, "-c:v", encoder, *rate, "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_nvenc":
-            cmd += ["-vf", matrix, "-c:v", encoder, "-rc", "vbr", "-cq", str(crf), "-b:v", "0", "-pix_fmt", "yuv420p", *bt709]
+            rate = ["-b:v", k, "-maxrate", f"{max(1, bps * 3 // 2000)}k"] if bps else ["-cq", str(crf), "-b:v", "0"]
+            cmd += ["-vf", matrix, "-c:v", encoder, "-rc", "vbr", *rate, "-pix_fmt", "yuv420p", *bt709]
         elif encoder == "hevc_qsv":
-            cmd += ["-vf", matrix + ",format=nv12", "-c:v", encoder, "-global_quality", str(crf), *bt709]
+            rate = ["-b:v", k] if bps else ["-global_quality", str(crf)]
+            cmd += ["-vf", matrix + ",format=nv12", "-c:v", encoder, *rate, *bt709]
         else:
-            cmd += ["-vf", "format=nv12,hwupload", "-c:v", encoder, "-qp", str(crf)]
+            rate = ["-b:v", k] if bps else ["-qp", str(crf)]
+            cmd += ["-vf", "format=nv12,hwupload", "-c:v", encoder, *rate]
+        if pass_no == 1:
+            # first pass only gathers statistics: no sound, no file
+            cmd = [c for c in cmd if c not in ("-movflags", "+faststart")]
         if job.target == "hevc":
             cmd += ["-tag:v", "hvc1", "-movflags", "+faststart"]
         if job.has_audio:
@@ -378,7 +485,7 @@ def _command(job: Job, info: ff.FfmpegInfo, encoder: str, out: Path) -> list[str
     cmd += ["-frames:v", str(job.frames)]
     if job.has_audio:
         cmd += ["-t", f"{(job.frames + 0.5) / float(Fraction(rate_text(job.fps))):.6f}"]
-    cmd += [str(out)]
+    cmd += ["-f", "null", os.devnull] if pass_no == 1 else [str(out)]
     return cmd
 
 
@@ -439,19 +546,27 @@ async def _encode(job: Job, info: ff.FfmpegInfo) -> None:
             job.done_frames = 0
             out.unlink(missing_ok=True)
             err_path = job.folder / "ffmpeg.err"
-            with open(err_path, "wb") as err:
-                proc = await asyncio.create_subprocess_exec(
-                    *_command(job, info, enc, out), stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE, stderr=err,
-                )
-                job.proc = proc
+            # a software encoder aimed at a bitrate or size runs two passes: statistics first, then the file
+            job.passes = 2 if enc in ("libx264", "libx265") and target_bps(job) > 0 else 1
+            code = 0
+            for pass_index in range(job.passes):
+                job.pass_index = pass_index
+                job.done_frames = 0
+                with open(err_path, "wb") as err:
+                    proc = await asyncio.create_subprocess_exec(
+                        *_command(job, info, enc, out, pass_index + 1 if job.passes == 2 else 0), stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE, stderr=err,
+                    )
+                    job.proc = proc
+                    if job.state == "cancelled":
+                        # cancelled while the process was starting: cancel_job saw no proc to kill
+                        proc.kill()
+                    await _read_progress(job, proc)
+                    code = await proc.wait()
                 if job.state == "cancelled":
-                    # cancelled while the process was starting: cancel_job saw no proc to kill
-                    proc.kill()
-                await _read_progress(job, proc)
-                code = await proc.wait()
-            if job.state == "cancelled":
-                return
+                    return
+                if code != 0:
+                    break
             if code == 0 and out.is_file() and out.stat().st_size > 0:
                 final = _keep(out, f"{job.name}.{ext}")
                 job.output = final.name

@@ -3,6 +3,7 @@
 import type { Movie, TextStyle } from './types';
 import { evalAnim, sideSpan, type GlyphBox, type TextPhase } from './text-anim';
 import { hasRuns, looksOf, type EffStyle, type Looks } from './text-rich';
+import { buildPath, pathAt, pathBounds } from './text-path';
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -236,6 +237,7 @@ function layoutNow(s: TextStyle, movie: Movie): TextLayout {
   if (s.shadow) pad += s.shadow.distance + s.shadow.blur * 2;
   if (s.box) pad += s.box.padding;
   if (s.anim) pad += animReach(s);
+  if (s.glow) pad += s.glow.radius * 2;
   const leading = s.leading ?? 1.2;
   const paras = s.text.split('\n');
   const fallback = (): TextLayout => {
@@ -317,7 +319,13 @@ function layoutNow(s: TextStyle, movie: Movie): TextLayout {
     });
   }
   c.restore();
-  return { inner, box: { x: inner.x - pad, y: inner.y - pad, w: inner.w + pad * 2, h: inner.h + pad * 2 }, lines, base, pad, looks: L, heights };
+  let bx = inner.x - pad, by = inner.y - pad, bx1 = inner.x + inner.w + pad, by1 = inner.y + inner.h + pad;
+  if (s.path) {
+    // letters set along a curve reach wherever the curve goes
+    const b = pathBounds(buildPath(s.path, inner.x + inner.w / 2, inner.y + inner.h / 2, inner.w)), r = pad + maxSize;
+    bx = Math.min(bx, b.x0 - r); by = Math.min(by, b.y0 - r); bx1 = Math.max(bx1, b.x1 + r); by1 = Math.max(by1, b.y1 + r);
+  }
+  return { inner, box: { x: bx, y: by, w: bx1 - bx, h: by1 - by }, lines, base, pad, looks: L, heights };
 }
 
 /** How far the animators move a letter beyond its resting place (room the text picture needs). */
@@ -353,6 +361,22 @@ function useShadow(ctx: Ctx, v: ReturnType<typeof shadowVec>, on: boolean): void
   ctx.shadowBlur = v.blur;
   ctx.shadowOffsetX = v.x;
   ctx.shadowOffsetY = v.y;
+}
+
+/** A halo: the letters in the glow color with a centred blur, once per whole step of intensity (the real fill paints over them). */
+function glowFill(ctx: Ctx, s: TextStyle, draw: () => void): void {
+  const g = s.glow;
+  if (!g || g.radius <= 0) return;
+  const m = ctx.getTransform(), k = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
+  ctx.save();
+  ctx.fillStyle = g.color;
+  ctx.shadowColor = g.color;
+  ctx.shadowBlur = g.radius * k;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  const n = Math.max(1, Math.min(6, Math.ceil(g.intensity)));
+  for (let i = 0; i < n; i++) { ctx.globalAlpha *= i === n - 1 ? Math.min(1, g.intensity - (n - 1) || 1) : 1; draw(); }
+  ctx.restore();
 }
 
 /** The background box behind the text: one path for every line, so overlaps never double the opacity. */
@@ -434,6 +458,18 @@ export function animSpans(s: TextStyle, lay: TextLayout): { in: number; out: num
 }
 
 /** Paints a layout (made by `layoutText` for the same style): box, shadow, outline, fill, lines, then the animators when a phase is given. */
+/** The fill of a look: the block's gradient across its box when set and the look keeps the block's color, else the look's color. */
+function fillOf(ctx: Ctx, s: TextStyle, lay: TextLayout, color: string): string | CanvasGradient {
+  const f = s.fillTo;
+  if (!f || color !== s.color) return color;
+  const { x, y, w, h } = lay.inner, th = (f.angle * Math.PI) / 180, dx = Math.cos(th), dy = Math.sin(th);
+  const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2, cx = x + w / 2, cy = y + h / 2;
+  const g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+  g.addColorStop(0, color);
+  g.addColorStop(1, f.color);
+  return g;
+}
+
 export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhase | null): void {
   ctx.save();
   ctx.textBaseline = 'middle';
@@ -442,15 +478,23 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
   ctx.miterLimit = 2;
   const L = lay.looks, runs = hasRuns(s);
   const sv = shadowVec(ctx, s);
-  const res = s.anim && ph ? evalAnim(s.anim, glyphsOf(s, lay), ph) : null;
-  const animated = !!res && (!res.settled);
+  // text on a path draws letter by letter (the animators' branch), with a resting animator state when there is none
+  const pathOn = !!s.path && !s.vertical && lay.lines.length > 0;
+  let res = s.anim && ph ? evalAnim(s.anim, glyphsOf(s, lay), ph) : null;
+  if (pathOn && !res) {
+    const gs0 = glyphsOf(s, lay);
+    res = { fx: gs0.map((g) => ({ vis: 1, show: 1, alpha: 1, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, cx: g.x + g.w / 2, cy: g.y })), settled: true, cursor: null };
+  }
+  const animated = !!res && (!res.settled || pathOn);
+  const poly = pathOn ? buildPath(s.path as NonNullable<TextStyle['path']>, lay.inner.x + lay.inner.w / 2, lay.inner.y + lay.inner.h / 2, lay.inner.w) : null;
+  const pathS0 = poly ? ((s.path?.start ?? 0) / 100) * poly.total : 0;
   const lineOf = (e: EffStyle, g: { y: number }, x: number, w: number): void => {
     const th = Math.max(1, e.size / 18), baseY = g.y + lay.base * (e.size / s.size);
     ctx.fillStyle = e.color;
     if (e.underline) ctx.fillRect(x, baseY + e.size * 0.12 - th / 2, w, th);
     if (e.strike) ctx.fillRect(x, baseY - e.size * 0.28 - th / 2, w, th);
   };
-  if (s.box) {
+  if (s.box && !pathOn) {
     let la: number[] | null = null;
     if (res && !res.settled) {
       const gl = glyphsOf(s, lay);
@@ -461,11 +505,12 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
     paintBox(ctx, s, lay, la);
   }
   if (!animated) {
-    for (const pass of [0, 1]) {
+    for (const pass of s.glow ? [2, 0, 1] : [0, 1]) {
       for (const l of lay.lines) for (const p of l.parts) {
         const e = L.list[p.e];
         ctx.font = effFont(e, p.size);
         setSpacingPx(ctx, trackOf(e));
+        if (pass === 2) { glowFill(ctx, s, () => ctx.fillText(p.text, p.x, p.y)); continue; }
         if (pass === 0) {
           if (!e.stroke) continue;
           ctx.strokeStyle = e.stroke.color;
@@ -473,7 +518,7 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
           useShadow(ctx, sv, true);
           ctx.strokeText(p.text, p.x, p.y);
         } else {
-          ctx.fillStyle = e.color;
+          ctx.fillStyle = fillOf(ctx, s, lay, e.color);
           useShadow(ctx, sv, !e.stroke);
           ctx.fillText(p.text, p.x, p.y);
         }
@@ -496,6 +541,13 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
       ctx.save();
       ctx.globalAlpha *= Math.min(1, f.alpha);
       if (canBlur && f.blur > 0.05) (ctx as unknown as { filter: string }).filter = `blur(${f.blur * Math.sqrt(Math.abs(ctx.getTransform().a * ctx.getTransform().d)) }px)`;
+      if (poly) {
+        // the letter's middle goes to its place on the curve and turns with it; lines below the first sit off the curve
+        const gx = g.x + g.w / 2, P = pathAt(poly, pathS0 + (gx - lay.inner.x));
+        ctx.translate(P.x, P.y);
+        ctx.rotate(P.ang);
+        ctx.translate(-gx, -lay.lines[0].y);
+      }
       ctx.translate(f.cx + f.dx, f.cy + f.dy);
       ctx.rotate((f.rot * Math.PI) / 180);
       ctx.scale(f.scale, f.scale);
@@ -504,12 +556,13 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
       ctx.restore();
       void g;
     };
-    for (const pass of [0, 1]) {
+    for (const pass of s.glow ? [2, 0, 1] : [0, 1]) {
       gs.forEach((g, i) => {
         const e = L.list[g.e];
         place(i, () => {
           ctx.font = effFont(e, g.size);
           setSpacingPx(ctx, 0);
+          if (pass === 2) { glowFill(ctx, s, () => ctx.fillText(g.t, g.x, g.y)); return; }
           if (pass === 0) {
             if (!e.stroke) return;
             ctx.strokeStyle = e.stroke.color;
@@ -517,7 +570,7 @@ export function paintText(ctx: Ctx, s: TextStyle, lay: TextLayout, ph?: TextPhas
             useShadow(ctx, sv, true);
             ctx.strokeText(g.t, g.x, g.y);
           } else {
-            ctx.fillStyle = e.color;
+            ctx.fillStyle = fillOf(ctx, s, lay, e.color);
             useShadow(ctx, sv, !e.stroke);
             ctx.fillText(g.t, g.x, g.y);
             noShadow(ctx);

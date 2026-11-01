@@ -67,6 +67,27 @@ export interface TextAnimSide {
   ease: Ease;
   /** In: frames after the block starts. Out: frames before the block ends that the last unit finishes. */
   offset: number;
+  /**
+   * Selector: only the units inside this window of the text are animated, the rest stay as they rest. Start and end are
+   * percents of the units in reading order, `shift` slides the window (percent); absent: every unit.
+   */
+  range?: { start: number; end: number; shift: number };
+}
+
+/** Text set along a curve: an arc, a wave, a circle, or a pen path (`nodes`, offsets from the text's centre). */
+export interface TextPath {
+  kind: 'arc' | 'wave' | 'circle' | 'curve';
+  /** Arc: -1..1, how far it bends (1 is a half circle; negative bends the other way). */
+  bend?: number;
+  /** Wave: height and length in movie pixels. */
+  amp?: number;
+  len?: number;
+  /** Circle: radius in movie pixels (default: the text's length fits the circle once round). */
+  radius?: number;
+  /** Curve: pen nodes with handles (the shape of engine/shape-types.ts BezNode). */
+  nodes?: Array<{ x: number; y: number; ix: number; iy: number; ox: number; oy: number }>;
+  /** Where the text starts along the path, percent of its length. */
+  start?: number;
 }
 
 export interface TextType {

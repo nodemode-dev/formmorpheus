@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core import config, partsweep
 from app.core.guard import GuardMiddleware
 from app import penlink
-from app.routers import brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
+from app.routers import audio_encode, proxy, brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=config.window_origins(), allow_methods=["*"], allow_headers=["*"])
@@ -19,6 +19,8 @@ app.include_router(exports.router, prefix="/api/exports")
 app.include_router(brushes.router, prefix="/api/brushes")
 app.include_router(jobs.router, prefix="/api/jobs")
 app.include_router(transcode.router, prefix="/api/transcode")
+app.include_router(audio_encode.router, prefix="/api/audio-encode")
+app.include_router(proxy.router, prefix="/api/proxy")
 app.on_event("startup")(jobs.sweep)
 app.include_router(files.router, prefix="/api/files")
 app.include_router(trash.router, prefix="/api/trash")

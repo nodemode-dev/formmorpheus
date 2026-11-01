@@ -111,7 +111,10 @@ export function evalAnim(anim: TextAnim, glyphs: GlyphBox[], ph: TextPhase): Ani
     const sc = side.scale ?? 1, rot = side.rotate ?? 0, bl = side.blur ?? 0;
     for (let i = 0; i < n; i++) {
       const g = grp.of[i], p = clamp01((tt - grp.rank[g] * side.stagger) / Math.max(0.0001, side.dur));
-      const e = curve(p);
+      // selector: a unit outside the window rests (treated as finished)
+      const rg = side.range, pos = ((g + 0.5) / Math.max(1, grp.count)) * 100;
+      const inWin = !rg || (pos >= rg.start + rg.shift && pos <= rg.end + rg.shift);
+      const e = inWin ? curve(p) : which === 'in' ? 1 : 0;
       // h: how far the unit is from its resting state (1 hidden, 0 settled)
       const h = which === 'in' ? 1 - e : e;
       const f = fx[i];

@@ -4,6 +4,7 @@ import { History, type RecoveryPoint } from './history';
 import { content as makeContent, contentEnd, end, flipTrack, kindName, locate, newMovie, type NewMovieOptions } from './model';
 import * as ops from './ops';
 import type { Asset, Content, ContentKind, Mode, Movie, Selection } from './types';
+import { HIGHLIGHTS } from './types';
 
 export interface Notice { text: string; kind: 'info' | 'error' }
 export interface EngineJob { id: number; name: string; done: number; total: number; cancelled?: boolean }
@@ -142,6 +143,16 @@ export class Engine extends Emitter<EngineEvents> {
     this.apply(next);
     if (select) this.select(select);
     else this.pruneSelection();
+    return true;
+  }
+
+  /** A change of view state only (a lane opened or closed): shown at once, saved with the movie, never an undo step. */
+  view(fn: (m: Movie) => Movie): boolean {
+    const before = this.movie;
+    if (!before) return false;
+    const next = fn(before);
+    if (next === before) return false;
+    this.apply(next);
     return true;
   }
 
@@ -371,9 +382,12 @@ export class Engine extends Emitter<EngineEvents> {
     const m = this.movie;
     if (!m) return null;
     const start = Math.max(0, Math.min(at, m.duration - 1));
-    const length = kind === 'flipbook' ? Math.max(1, Math.round(m.fps)) : Math.max(1, m.duration - start);
+    // a new Flipbook runs two seconds (less where the movie ends) and takes the next of the seven highlight colors, so lanes read at a glance
+    const length = kind === 'flipbook' ? Math.max(1, Math.min(m.duration - start, Math.round(m.fps) * 2)) : Math.max(1, m.duration - start);
     const flip = kind === 'flipbook' && !extra.flip ? [flipTrack('Track 1', length)] : undefined;
-    const item = makeContent(kind, start, extra.duration ?? length, { name: extra.name ?? kindName(kind), ...(flip ? { flip } : {}), ...extra });
+    const palette = HIGHLIGHTS.filter((h) => h !== 'none');
+    const tint = kind === 'flipbook' ? { highlight: palette[m.tracks.reduce((n, t) => n + t.content.filter((c) => c.kind === 'flipbook').length, 0) % palette.length] } : {};
+    const item = makeContent(kind, start, extra.duration ?? length, { name: extra.name ?? kindName(kind), ...(flip ? { flip } : {}), ...tint, ...extra });
     const trackIndex = this.selection.track ? Math.max(0, m.tracks.findIndex((t) => t.id === this.selection.track)) : 0;
     const ok = this.run(`Add ${item.name}`, (mv) => {
       const placed = ops.placeContent(mv, null, item, trackIndex);

@@ -63,7 +63,8 @@ def project_path(name: str) -> Path:
 
 def entry(path: Path) -> dict:
     st = path.stat()
-    out = {"name": path.stem, "file": path.name, "path": str(path), "size": st.st_size, "modified": st.st_mtime}
+    out = {"name": path.stem, "file": path.name, "path": str(path), "size": st.st_size, "modified": st.st_mtime,
+           "created": getattr(st, "st_birthtime", None) or min(st.st_ctime, st.st_mtime)}
     if path.parent != config.library_dir():
         out["stack"] = path.parent.name
     return out
@@ -201,6 +202,48 @@ def _migrate() -> None:
             for p in found:
                 _move_movie(p, d)
         os.replace(legacy, legacy.with_name(legacy.name + ".migrated"))
+
+
+_TAGS = ".tags.json"
+
+
+def _tags_read() -> dict[str, list[str]]:
+    try:
+        raw = json.loads((config.library_dir() / _TAGS).read_text("utf-8"))
+        return {k: [t for t in v if isinstance(t, str)] for k, v in raw.items() if isinstance(v, list)}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+class TagsBody(BaseModel):
+    tags: list[str]
+
+
+@router.get("/_tags")
+def list_tags() -> dict:
+    """Tags on movies, kept by the engine beside the library: {movie name: [tag, ...]}."""
+    return {"tags": _tags_read()}
+
+
+@router.post("/_tags/{name}")
+def set_tags(name: str, body: TagsBody) -> dict:
+    clean: list[str] = []
+    for t in body.tags:
+        t = " ".join(_BAD.sub(" ", t).split())[:32]
+        if t and t.lower() not in [c.lower() for c in clean]:
+            clean.append(t)
+    clean = clean[:12]
+    all_tags = _tags_read()
+    if clean:
+        all_tags[name] = clean
+    else:
+        all_tags.pop(name, None)
+    live = {p.stem for p in config.library_dir().rglob(f"*{config.PROJECT_EXT}")}
+    all_tags = {k: v for k, v in all_tags.items() if k in live}
+    tmp = config.library_dir() / (_TAGS + ".part")
+    tmp.write_text(json.dumps(all_tags), "utf-8")
+    os.replace(tmp, config.library_dir() / _TAGS)
+    return {"tags": clean}
 
 
 class StackBody(BaseModel):
@@ -422,6 +465,12 @@ def rename_project(name: str, body: RenameBody) -> dict:
         os.replace(src, dst)
         if dst != src:
             _order_swap(None if src.parent == config.library_dir() else src.parent, f"lib:{src.stem}", f"lib:{dst.stem}")
+            moved = _tags_read()
+            if src.stem in moved:
+                moved[dst.stem] = moved.pop(src.stem)   # a rename keeps the movie's tags
+                tmp = config.library_dir() / (_TAGS + ".part")
+                tmp.write_text(json.dumps(moved), "utf-8")
+                os.replace(tmp, config.library_dir() / _TAGS)
     return entry(dst)
 
 

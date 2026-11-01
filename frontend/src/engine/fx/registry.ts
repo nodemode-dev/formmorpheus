@@ -57,6 +57,8 @@ export interface FxParam {
   adv?: boolean;
   /** First channel of a colour: the card draws a swatch for the channels `${swatch}R`, `G`, `B`. */
   swatch?: string;
+  /** Keyed on demand by a card extra (the curve editor): no card row, not keyed with the other channels, listed in a lane only once it has keys. */
+  demand?: boolean;
 }
 
 /** `hidden`: stored on the lane but drawn by the card's `custom` control, not as a row. */
@@ -113,7 +115,7 @@ function specOf(e: Effect): KindSpec {
     custom: e.custom,
     channels: e.params.map((q) => ({
       id: q.id, label: q.label, short: q.short ?? q.label, min: q.min, max: q.max, step: q.step, unit: q.unit, display: q.display ?? (q.unit === '%' ? 100 : 1), def: q.def,
-      ...(q.group ? { group: q.group } : {}), ...(q.adv ? { adv: true } : {}), ...(q.swatch ? { swatch: q.swatch } : {}),
+      ...(q.group ? { group: q.group } : {}), ...(q.adv ? { adv: true } : {}), ...(q.swatch ? { swatch: q.swatch } : {}), ...(q.demand ? { demand: true } : {}),
     })),
     options: e.options?.map((q) => ({ id: q.id, label: q.label, ...(q.choices ? { choices: q.choices } : {}), def: q.def, ...(q.hidden ? { hidden: true } : {}) })),
   };

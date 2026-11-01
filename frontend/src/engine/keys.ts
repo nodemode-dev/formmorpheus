@@ -22,6 +22,8 @@ export interface ChannelSpec {
   group?: string;
   adv?: boolean;
   swatch?: string;
+  /** Keyed on demand (curve points): not in the card's rows, not keyed with the rest, in a lane only once it has keys. */
+  demand?: boolean;
 }
 
 export interface KindSpec {
@@ -338,7 +340,7 @@ export function baseValues(c: Content, kind: KeyKind): Record<string, number> {
   }
   const spec = kindSpec(kind);
   const ids = kind === 'warp' ? new Set(warpChannelIds(warpSize(laneOf(c, 'warp')))) : null;
-  for (const ch of spec.channels) if (!ids || ids.has(ch.id)) out[ch.id] = ch.def;
+  for (const ch of spec.channels) if ((!ids || ids.has(ch.id)) && !ch.demand) out[ch.id] = ch.def;
   return out;
 }
 
@@ -359,7 +361,7 @@ export function laneChannels(lane: KeyLane): ChannelSpec[] {
   if (lane.kind === 'bones') return Object.keys(lane.channels).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(boneSpec);
   const spec = kindSpec(lane.kind).channels;
   if (lane.kind === 'shape') return spec.filter((s) => lane.channels[s.id]?.length);
-  if (lane.kind !== 'warp') return spec;
+  if (lane.kind !== 'warp') return spec.some((s) => s.demand) ? spec.filter((s) => !s.demand || lane.channels[s.id]?.length) : spec;
   const ids = new Set(warpChannelIds(warpSize(lane)));
   return spec.filter((s) => ids.has(s.id));
 }
@@ -731,6 +733,7 @@ function animateRaw(c: Content, local: number): Animated {
         // a registry effect: every channel at this frame, the lane options over the defaults
         const spec = SPEC_BY_KIND.get(lane.kind);
         if (!spec || !spec.fx) break;
+        if (lane.options.off === true) break; // switched off in the effect stack: kept, not applied
         const p: Record<string, number> = {};
         for (const s of spec.channels) p[s.id] = chv(lane, s.id, local, s.def);
         const o: Record<string, string | number | boolean> = {};

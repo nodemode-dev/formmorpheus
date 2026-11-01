@@ -6,24 +6,65 @@ import { OpError } from './ops';
 import * as keyOps from './key-ops';
 import { evalLane, laneOf } from './keys';
 import { CAMERA_REST, cameraPose, type CameraPose } from './transform';
-import type { Ease, Movie } from './types';
+import type { CameraShake, Ease, Movie } from './types';
 
 function standIn(movie: Movie) {
   return content('group', 0, Math.max(1, movie.duration), { keys: movie.camera?.keys ?? [] });
 }
 
 function store(movie: Movie, keys: ReturnType<typeof standIn>['keys']): Movie {
-  if (!keys.length) {
+  const shake = movie.camera?.shake, follow = movie.camera?.follow;
+  if (!keys.length && !shake && !follow) {
     if (!movie.camera) return movie;
     const { camera: _drop, ...rest } = movie;
     return rest as Movie;
   }
-  return { ...movie, camera: { keys } };
+  return { ...movie, camera: { ...movie.camera, keys } };
 }
 
-/** The camera at a frame, the rest pose when the movie has none. */
+/** The camera's keyed pose at a frame (the shake left out, so editing never bakes it into keys), the rest pose when the movie has none. */
 export function poseAt(movie: Movie, frame: number): CameraPose {
-  return cameraPose(movie, frame) ?? CAMERA_REST;
+  return cameraPose(movie, frame, false) ?? CAMERA_REST;
+}
+
+/** Camera shake on or off (null): amplitude in movie pixels, frequency per second and a seed. */
+export function setCameraShake(movie: Movie, shake: CameraShake | null): Movie {
+  const keys = movie.camera?.keys ?? [];
+  if (!shake) {
+    if (!movie.camera?.shake) return movie;
+    const { shake: _drop, ...cam } = movie.camera;
+    if (!cam.keys.length && !cam.unknownLanes?.length && !cam.follow) { const { camera: _c, ...rest } = movie; return rest as Movie; }
+    return { ...movie, camera: cam };
+  }
+  return { ...movie, camera: { ...movie.camera, keys, shake: { amp: Math.max(0, shake.amp), freq: Math.max(0, shake.freq), seed: Math.floor(shake.seed) } } };
+}
+
+/** The camera follows a content (`amount` 0 to 1 of its move), or follows nothing (null). */
+export function setCameraFollow(movie: Movie, follow: { id: string; amount: number } | null): Movie {
+  const cam = movie.camera;
+  if (!follow) {
+    if (!cam?.follow) return movie;
+    const { follow: _drop, ...rest } = cam;
+    if (!rest.keys.length && !rest.shake && !rest.unknownLanes?.length) { const { camera: _c, ...m } = movie; return m as Movie; }
+    return { ...movie, camera: rest };
+  }
+  if (!movie.tracks.some((t) => t.content.some((c) => c.id === follow.id))) throw new OpError('That content no longer exists.');
+  return { ...movie, camera: { keys: cam?.keys ?? [], ...cam, follow: { id: follow.id, amount: Math.max(0, Math.min(1, follow.amount)) } } };
+}
+
+/** Parallax depth of a track: 1 moves with the camera, 0 stays still, above 1 moves farther (a near layer). */
+export function setTrackDepth(movie: Movie, trackId: string, depth: number): Movie {
+  if (!movie.tracks.some((t) => t.id === trackId)) throw new OpError('That track no longer exists.');
+  const d = Math.round(Math.max(0, Math.min(4, depth)) * 100) / 100;
+  return {
+    ...movie,
+    tracks: movie.tracks.map((t) => {
+      if (t.id !== trackId) return t;
+      if (d !== 1) return { ...t, depth: d };
+      const { depth: _depth, ...rest } = t;
+      return rest;
+    }),
+  };
 }
 
 /** Writes the camera's values (any subset) as keys at `frame`; the first key may add one at frame 0 so earlier frames stay at rest. */
@@ -67,7 +108,9 @@ export function setTrackScreen(movie: Movie, trackId: string, on: boolean): Movi
 }
 
 export function removeCamera(movie: Movie): Movie {
-  return store(movie, []);
+  if (!movie.camera) return movie;
+  const { camera: _drop, ...rest } = movie;
+  return rest as Movie;
 }
 
 export function setExpanded(movie: Movie, expanded: boolean): Movie {

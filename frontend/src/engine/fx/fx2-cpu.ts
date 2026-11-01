@@ -7,7 +7,7 @@ let pm = new Float32Array(0);
 let matte = new Float32Array(0);
 let matte2 = new Float32Array(0);
 
-function premul(src: Raster): Float32Array {
+export function premul(src: Raster): Float32Array {
   const n = src.width * src.height * 4;
   if (pm.length < n) pm = new Float32Array(n);
   const d = src.data;
@@ -22,7 +22,7 @@ function premul(src: Raster): Float32Array {
 }
 
 /** Bilinear tap at continuous position (px, py) in pixel units, texel centres at +0.5; adds weight w into acc. */
-function tap(p: Float32Array, w: number, h: number, x: number, y: number, acc: Float32Array): void {
+export function tap(p: Float32Array, w: number, h: number, x: number, y: number, acc: Float32Array): void {
   const fx = x - 0.5, fy = y - 0.5;
   const x0 = Math.floor(fx), y0 = Math.floor(fy);
   const tx = fx - x0, ty = fy - y0;
@@ -43,7 +43,7 @@ function tap(p: Float32Array, w: number, h: number, x: number, y: number, acc: F
   }
 }
 
-function store(dst: Raster, o: number, acc: Float32Array, inv: number): void {
+export function store(dst: Raster, o: number, acc: Float32Array, inv: number): void {
   const a = acc[3] * inv;
   const d = dst.data;
   if (a <= 1e-6) { d[o] = d[o + 1] = d[o + 2] = d[o + 3] = 0; return; }

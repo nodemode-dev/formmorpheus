@@ -35,6 +35,8 @@ export const SHAPE_CHANNELS: ChanInfo[] = [
   c('gcx', 'Gradient centre X', 'GX', -1, 1, 0.01, '%', 100, 0),
   c('gcy', 'Gradient centre Y', 'GY', -1, 1, 0.01, '%', 100, 0),
   ...Array.from({ length: MAX_STOPS }, (_, i) => c(`o${i}`, `Gradient stop ${i + 1}`, `G${i + 1}`, 0, 1, 0.01, '%', 100, i / (MAX_STOPS - 1))),
+  // gradient stop colors, keyable per stop (0 to 1 per channel)
+  ...Array.from({ length: MAX_STOPS }, (_, i) => (['R', 'G', 'B'] as const).map((k) => c(`g${i}${k}`, `Gradient stop ${i + 1} ${k === 'R' ? 'red' : k === 'G' ? 'green' : 'blue'}`, `G${i + 1}${k}`, 0, 1, 1 / 255, '', 255, 0.5))).flat(),
   c('trimStart', 'Trim start', 'TS', 0, 1, 0.01, '%', 100, 0),
   c('trimEnd', 'Trim end', 'TE', 0, 1, 0.01, '%', 100, 1),
   c('trimOffset', 'Trim offset', 'TO', -3600, 3600, 1, 'deg', 1, 0),
@@ -96,7 +98,11 @@ export function shapeBase(d: ShapeDef | undefined): ShapeVals {
     trimStart: d?.trimStart ?? 0, trimEnd: d?.trimEnd ?? 1, trimOffset: d?.trimOffset ?? 0, feather: d?.feather ?? 0,
   };
   const stops = f?.stops ?? [];
-  for (let i = 0; i < MAX_STOPS; i++) v[`o${i}`] = stops[i]?.o ?? i / (MAX_STOPS - 1);
+  for (let i = 0; i < MAX_STOPS; i++) {
+    v[`o${i}`] = stops[i]?.o ?? i / (MAX_STOPS - 1);
+    const sc2 = rgbOf(stops[i]?.color ?? (i === 0 ? f?.color ?? '#3a8bff' : '#ff4f7a'));
+    v[`g${i}R`] = sc2[0]; v[`g${i}G`] = sc2[1]; v[`g${i}B`] = sc2[2];
+  }
   return v;
 }
 

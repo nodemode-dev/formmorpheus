@@ -25,6 +25,7 @@ import { SparseIndex } from './sparse';
 import { srcFrame } from './retime';
 import { transitionAt, tracksHaveTransition } from './transitions';
 import { mixTransition } from './transition-draw';
+import { visibleMovie } from './hide-ops';
 import { paintAdjustGlyph, paintShape } from './shape-draw';
 import { resolveShape } from './shape';
 import { adjustWeight, applyAdjustCpu, type AdjustHost } from './shape-adjust';
@@ -55,7 +56,7 @@ const DECODE_LANES = 3;
 const CANVAS_FILTER = typeof OffscreenCanvasRenderingContext2D !== 'undefined' && 'filter' in OffscreenCanvasRenderingContext2D.prototype;
 
 /** Backstage visibility when a movie does not set its own. */
-export const BACKSTAGE_DEFAULT = 0.2;
+export const BACKSTAGE_DEFAULT = 0.3;
 
 export interface View {
   scale: number;
@@ -191,7 +192,11 @@ export class Renderer {
       cpu: (c, a, local) => this.needsCpu(c, a, local),
       textBox: (c, movie, density, into, ph) => this.textBox(c, movie, density, into, ph),
       raster: (c, local, view, movie, a, into) => { this.drawContent(into.getContext('2d') as OffscreenCanvasRenderingContext2D, c, local, view as View, movie, a); },
-      adjust: (c, local, view, movie, a, op, use) => { adjustWeight(this.adjustHost(), c, local, view as View, movie, a, op, use); },
+      adjust: (c, local, view, movie, a, op, use, grp) => {
+        // inside a group the mask outline is drawn in the group's space (its matrix, its frame)
+        if (grp) { this.nest.push(grp.local); this.adjustTx = grp.m; }
+        try { adjustWeight(this.adjustHost(), c, local, view as View, movie, a, op, use); } finally { if (grp) { this.nest.pop(); this.adjustTx = null; } }
+      },
     });
   }
 
@@ -417,6 +422,7 @@ export class Renderer {
       if (this.noCamFor !== movie) { const { camera: _camera, ...rest } = movie; this.noCamFor = movie; this.noCam = rest as Movie; }
       mv = this.noCam as Movie;
     }
+    mv = visibleMovie(mv);
     this.frameNow = frame;
     this.mbMovie = mv;
     this.incomplete = false;
@@ -427,6 +433,7 @@ export class Renderer {
 
   /** The tracks alone, over what `ctx` holds: no background or backstage (the Stage drag cache composes layers itself). CPU only. `_proxy` is kept for callers and ignored. */
   composeLayer(ctx: OffscreenCanvasRenderingContext2D, movie: Movie, frame: number, view: View, _proxy = false): void {
+    movie = visibleMovie(movie);
     this.pw = Math.max(1, Math.round(view.width));
     this.ph = Math.max(1, Math.round(view.height));
     this.gen++;
@@ -467,9 +474,17 @@ export class Renderer {
         travel = Math.max(travel, Math.hypot(dx, dy));
       }
     }
-    if (!moved) return null;
+    // opacity, a video's source time and a text build also move inside the shutter
+    let soft = false;
+    const timed = c.kind === 'video' || (c.kind === 'text' && !!c.text?.anim);
+    for (let i = 1; i < offs.length && !soft; i++) {
+      if (Math.abs(animate(c, local + offs[i]).opacity - a0.opacity) > 1e-3) soft = true;
+      else if (timed && Math.abs(srcFrame(c, local + offs[i]) - srcFrame(c, local + offs[0])) > 1e-3) soft = true;
+      else if (c.kind === 'text' && c.text?.anim) soft = true;
+    }
+    if (!moved && !soft) return null;
     const px = travel * this.mbPxScale;
-    const n = Math.max(2, Math.min(cfg.samples, Math.ceil(px / 2)));
+    const n = Math.max(soft ? Math.min(cfg.samples, 8) : 2, Math.min(cfg.samples, Math.ceil(px / 2)));
     return n === cfg.samples ? offs : subOffsets({ shutter: cfg.shutter, samples: n });
   }
 
@@ -502,14 +517,17 @@ export class Renderer {
         sc.setTransform(base);
         this.frameNow = frame0 + dt;
         if (top >= 0) this.nest[top] = top0 + dt;
-        this.drawContent(sc, c, local, view, movie, animate(c, local + dt));
+        const ta = animate(c, local + dt);
+        // a video's source time and a text build follow the sub-frame; keyed opacity weights the sample
+        this.drawContent(sc, c, c.kind === 'video' || c.kind === 'text' ? local + dt : local, view, movie, ta);
+        const wgt = t.opacity > 0.001 ? Math.min(4, Math.max(0, ta.opacity / t.opacity)) : 1;
         sc.setTransform(1, 0, 0, 1, 0, 0);
         const d = sc.getImageData(0, 0, w, h).data;
         for (let i = 0; i < n4; i += 4) {
           const al = d[i + 3];
           if (al === 0) continue;
-          const k = al / 255;
-          acc[i] += d[i] * k; acc[i + 1] += d[i + 1] * k; acc[i + 2] += d[i + 2] * k; acc[i + 3] += al;
+          const k = (al / 255) * wgt;
+          acc[i] += d[i] * k; acc[i + 1] += d[i + 1] * k; acc[i + 2] += d[i + 2] * k; acc[i + 3] += al * wgt;
         }
       }
     } finally {
@@ -851,6 +869,13 @@ export class Renderer {
     this.video = v;
   }
 
+  /** An export reads the original video files, never the editing proxies; call the returned function when it ends. */
+  pinOriginals(): () => void {
+    const v = this.video;
+    v?.holdOriginals?.(true);
+    return () => { v?.holdOriginals?.(false); };
+  }
+
   /**
    * Makes the next drawFrame of `frame` exact: every visible picture decoded and every visible video
    * frame decoded for its time (export and still frames use it; on-screen drawing does not wait).
@@ -974,6 +999,8 @@ export class Renderer {
   }
 
   private adjustHostObj: AdjustHost | null = null;
+  /** The matrix of the group an Adjustment member sits in, while its mask is drawn (null at the top level). */
+  private adjustTx: Mat | null = null;
 
   /** What an Adjustment block borrows from this renderer (engine/shape-adjust.ts). */
   private adjustHost(): AdjustHost {
@@ -981,7 +1008,11 @@ export class Renderer {
       surface: () => this.surface(),
       release: (s) => { this.release(s); },
       filters: (s, a, view, movie) => { this.applyFilters(s, a, view as View, movie); },
-      draw: (ctx, c, local, view, movie, a) => { this.drawContent(ctx, c, local, view as View, movie, a); },
+      draw: (ctx, c, local, view, movie, a) => {
+        const t = this.adjustTx;
+        if (t) ctx.setTransform(t[0], t[1], t[2], t[3], t[4], t[5]);
+        this.drawContent(ctx, c, local, view as View, movie, a);
+      },
     });
   }
 
@@ -1056,6 +1087,25 @@ export class Renderer {
   }
 
   private drawGroup(ctx: OffscreenCanvasRenderingContext2D, g: Content, local: number, movie: Movie): void {
+    // an Adjustment member filters only what its own group drew: the group is drawn on a surface of its own, then laid on
+    // with the group's alpha and blend (a Passthrough group with an Adjustment inside is isolated for the same reason)
+    const iso = g.tracks.some((t) => !t.hidden && t.content.some((x) => x.kind === 'adjust' && x.opacity > 0 && local >= x.start && local < end(x)));
+    if (!iso) { this.drawGroupMembers(ctx, g, local, movie); return; }
+    const s = this.surface(ctx.canvas.width, ctx.canvas.height);
+    try {
+      const sc = s.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      sc.setTransform(ctx.getTransform());
+      this.drawGroupMembers(sc, g, local, movie);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(s, 0, 0);
+      ctx.restore();
+    } finally {
+      this.release(s);
+    }
+  }
+
+  private drawGroupMembers(ctx: OffscreenCanvasRenderingContext2D, g: Content, local: number, movie: Movie): void {
     const unit: View = { scale: 1, ox: 0, oy: 0, width: movie.width, height: movie.height };
     this.nest.push(local);
     try {
@@ -1066,6 +1116,12 @@ export class Renderer {
         if (!c || c.opacity <= 0) continue;
         const a = animate(c, local - c.start);
         if (a.opacity <= 0) continue;
+        if (c.kind === 'adjust') {
+          const m = ctx.getTransform();
+          this.adjustTx = [m.a, m.b, m.c, m.d, m.e, m.f];
+          try { applyAdjustCpu(this.adjustHost(), ctx, c, a, local - c.start, { scale: Math.hypot(m.a, m.b), ox: m.e, oy: m.f, width: ctx.canvas.width, height: ctx.canvas.height }, movie); } finally { this.adjustTx = null; }
+          continue;
+        }
         // a transition between two touching members: both drawn on surfaces in the group's space and mixed (engine/transition-draw.ts)
         const tx = t.content.length > 1 ? transitionAt(t.content, local) : null;
         if (tx) { this.drawGroupTransition(ctx, tx, unit, movie); continue; }

@@ -14,29 +14,31 @@
 <main id="pair" class="screen">
   <div class="card">
     <h1>Pen Link</h1>
-    <p class="sub">Type the 6-digit code shown in formmorpheus on your computer.</p>
+    <p class="sub" data-i="sub">Type the 6-digit code shown in formmorpheus on your computer.</p>
     <input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="000000" aria-label="Pairing code">
-    <button id="go" type="button" class="btn primary">Connect</button>
+    <button id="go" type="button" class="btn primary" data-i="connect">Connect</button>
     <p id="err" class="err" role="alert"></p>
   </div>
 </main>
 <main id="live" class="screen" hidden>
   <header class="bar">
     <div class="seg" role="group" aria-label="Tool">
-      <button id="brush" type="button" class="btn on">Brush</button>
-      <button id="eraser" type="button" class="btn">Eraser</button>
+      <button id="brush" type="button" class="btn on" data-i="brush">Brush</button>
+      <button id="eraser" type="button" class="btn" data-i="eraser">Eraser</button>
     </div>
-    <button id="undo" type="button" class="btn">Undo</button>
-    <button id="redo" type="button" class="btn">Redo</button>
-    <label class="sl">Size <input id="size" type="range" min="0" max="1000" value="300"></label>
-    <label class="sl">Opacity <input id="opacity" type="range" min="10" max="1000" value="1000"></label>
-    <span id="status" class="status">Connecting</span>
+    <button id="undo" type="button" class="btn" data-i="undo">Undo</button>
+    <button id="redo" type="button" class="btn" data-i="redo">Redo</button>
+    <label class="sl"><span data-i="size">Size</span> <input id="size" type="range" min="0" max="1000" value="300"></label>
+    <label class="sl"><span data-i="opacity">Opacity</span> <input id="opacity" type="range" min="10" max="1000" value="1000"></label>
+    <span id="status" class="status" data-i="ing">Connecting</span>
   </header>
   <div id="surface">
     <canvas id="mirror"></canvas>
     <canvas id="ink"></canvas>
+    <p id="idle" class="idle" data-i="idle" hidden>Open a Drawing or Flipbook in Draw &amp; Paint on your computer to draw here.</p>
   </div>
 </main>
+<script src="i18n.js"></script>
 <script src="pen.js"></script>
 </body>
 </html>

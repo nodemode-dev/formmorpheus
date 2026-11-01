@@ -1,7 +1,7 @@
 // GLSL twins of fx2-cpu.ts, written as registry shader steps: declarations, then `vec4 fx(ivec2 p)`.
 // Surfaces are premultiplied; `uSrc` is the effect input. Integers travel as floats (uniforms are numbers).
 
-const BILINEAR = `
+export const BILINEAR = `
 vec4 bil(vec2 p) {
   ivec2 sz = textureSize(uSrc, 0);
   vec2 f = p - 0.5;

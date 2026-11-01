@@ -179,6 +179,8 @@ export interface KeyLane {
 }
 
 export interface TextStyle {
+  /** The title preset last applied (its id), so the Preset select can name it. Absent: none. */
+  preset?: string;
   text: string;
   font: string;
   size: number;
@@ -209,6 +211,12 @@ export interface TextStyle {
   shadow?: import('./text-rich').TextShadow;
   box?: import('./text-rich').TextBoxFx;
   anim?: import('./text-rich').TextAnim;
+  /** Gradient fill: the letters run from `color` to this color along `angle` (degrees, 0 left to right, 90 top to bottom) across the block. Spans with their own color keep it. */
+  fillTo?: { color: string; angle: number };
+  /** A soft light around the letters (color, reach in movie pixels, strength 0 to 3). Drawn behind the letters and the drop shadow. */
+  glow?: { color: string; radius: number; intensity: number };
+  /** Text set along a curve; written only when used. */
+  path?: import('./text-rich').TextPath;
 }
 
 /** A bone at rest, in content pixels: `x`, `y` is its head, `angle` (degrees) points to its tip at `length`. */
@@ -272,6 +280,8 @@ export interface Content {
   speedPitch?: boolean;
   /** Transition into this block from the block that touches its start on the same track (engine/transitions.ts). */
   transition?: Transition;
+  /** Hidden by itself (Alt-click on its name chip's box): not drawn on the Stage or in an export, its track stays. Absent: shown. */
+  hidden?: true;
   /** Flipbook only: a reference picture or video under the drawing area (never exported). */
   underlay?: FlipUnderlay;
   /** Shape and Solid: the outline, fill and stroke. Adjustment: an optional mask outline (engine/shape.ts). Absent on other kinds. */
@@ -299,6 +309,12 @@ export interface Marker {
   color?: string;
 }
 
+/** Hand-held camera shake: amplitude in movie pixels, frequency in shakes per second, a seed for the pattern. */
+export interface CameraShake { amp: number; freq: number; seed: number }
+
+/** The camera follows a content: it pans by `amount` (0 to 1) of the content's own move, so 1 keeps the content centred on the frame. */
+export interface CameraFollow { id: string; amount: number }
+
 export interface CanvasRect { x: number; y: number; w: number; h: number }
 
 export interface Track {
@@ -309,6 +325,8 @@ export interface Track {
   locked?: true;
   /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
   screen?: true;
+  /** Parallax depth: how far the camera's pan and zoom move this track (1 or absent: normally, 0: not at all, 2: twice as far). */
+  depth?: number;
   /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */
   mute?: true;
   solo?: true;
@@ -380,7 +398,7 @@ export interface Movie {
   /** Who made the movie (Movie settings, About this artwork). Absent: not set. */
   author?: string;
   /** The movie camera: one 'camera' lane (panX, panY, zoom, rotation) keyed in movie frames. Absent: none. */
-  camera?: { keys: KeyLane[]; unknownLanes?: KeyLane[] };
+  camera?: { keys: KeyLane[]; unknownLanes?: KeyLane[]; shake?: CameraShake; follow?: CameraFollow };
   /** Named cue points on the ruler. Absent: none. */
   markers?: Marker[];
   /** Stage guides: grid, thirds, safe areas, guide lines (engine/guides.ts). A drawing aid, never exported. Absent: none. */

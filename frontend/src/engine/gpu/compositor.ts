@@ -58,7 +58,7 @@ export interface GpuHost {
   /** Draws the whole content (transform included) into `into`, which is cleared and identity-transformed. */
   raster(c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, into: OffscreenCanvas): void;
   /** An Adjustment's weight picture (opacity times mask) as alpha on a canvas, or null for the plain opacity; the canvas is valid inside `use`. */
-  adjust(c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, op: number, use: (w: OffscreenCanvas | null) => void): void;
+  adjust(c: Content, local: number, view: ViewLike, movie: Movie, a: Animated, op: number, use: (w: OffscreenCanvas | null) => void, grp?: { local: number; m: Mat }): void;
 }
 
 export type Mat = [number, number, number, number, number, number];
@@ -449,7 +449,7 @@ export class GpuCompositor {
   }
 
   /** Adjustment block: filters a copy of everything drawn so far and mixes it back through the block's weight (shape-adjust.ts). */
-  private adjust(host: GpuHost, out: Surf, c: Content, local: number, a: Animated, view: ViewLike, movie: Movie): void {
+  private adjust(host: GpuHost, out: Surf, c: Content, local: number, a: Animated, view: ViewLike, movie: Movie, grp?: { local: number; m: Mat }): void {
     if (!hasFilters(a)) return;
     const op = Math.min(1, Math.max(0, a.opacity));
     if (op <= 0) return;
@@ -471,7 +471,7 @@ export class GpuCompositor {
       gl.blendFunc(gl.ONE, gl.ONE);
       this.box(p, out, 0, 0, out.w, out.h);
       gl.disable(gl.BLEND);
-    });
+    }, grp);
     this.release(f);
   }
 
@@ -549,15 +549,25 @@ export class GpuCompositor {
       case 'group': {
         const unit: ViewLike = { scale: 1, ox: 0, oy: 0, width: mw, height: mh };
         const g = srcFrame(c, local);
-        for (let i = c.tracks.length - 1; i >= 0; i--) {
-          const t = c.tracks[i];
-          if (t.hidden) continue;
-          const mc = t.content.find((x) => g >= x.start && g < end(x));
-          if (!mc || mc.opacity <= 0) continue;
-          const ma = animate(mc, g - mc.start);
-          // keyed opacity counts, as in the CPU group draw
-          if (ma.opacity <= 0) continue;
-          this.content(host, target, mc, g - mc.start, unit, movie, ma, m, ma.opacity, MODE[mc.blend]);
+        // an Adjustment member filters only what its own group drew: the group gets a surface of its own (as on the CPU path)
+        const iso = c.tracks.some((t) => !t.hidden && t.content.some((x) => x.kind === 'adjust' && x.opacity > 0 && g >= x.start && g < end(x)));
+        const dst = iso ? this.acquire(target.w, target.h, 'u8', true) : target;
+        const gview: ViewLike = { scale: Math.hypot(m[0], m[1]), ox: m[4], oy: m[5], width: dst.w, height: dst.h };
+        try {
+          for (let i = c.tracks.length - 1; i >= 0; i--) {
+            const t = c.tracks[i];
+            if (t.hidden) continue;
+            const mc = t.content.find((x) => g >= x.start && g < end(x));
+            if (!mc || mc.opacity <= 0) continue;
+            const ma = animate(mc, g - mc.start);
+            // keyed opacity counts, as in the CPU group draw
+            if (ma.opacity <= 0) continue;
+            if (mc.kind === 'adjust') { this.adjust(host, dst, mc, g - mc.start, ma, gview, movie, { local: g, m }); continue; }
+            this.content(host, dst, mc, g - mc.start, unit, movie, ma, m, ma.opacity, MODE[mc.blend]);
+          }
+          if (iso) this.quad(target, dst.tex, IDENT, 0, 0, target.w, target.h, alpha, mode);
+        } finally {
+          if (iso) this.release(dst);
         }
         return;
       }

@@ -25,13 +25,14 @@ router = APIRouter()
 
 DEFAULT_PORT = 9495
 CODE_SECONDS = 120
-CODE_TRIES = 5
+CODE_TRIES = 5            # wrong tries per address; one device on the network cannot spend another's
+CODE_CEILING = 25         # wrong tries over all addresses, then the code is spent
 GRACE_SECONDS = 30        # a dropped tablet keeps its token this long
 MAX_TABLET_MESSAGE = 65536
 MAX_PER_SECOND = 1500     # tablet messages; more are dropped
 STATIC = Path(__file__).parent / "penlink_static"
 FILES = {"": ("index.html", "text/html; charset=utf-8"), "index.html": ("index.html", "text/html; charset=utf-8"),
-         "pen.js": ("pen.js", "text/javascript; charset=utf-8"), "pen.css": ("pen.css", "text/css; charset=utf-8")}
+         "pen.js": ("pen.js", "text/javascript; charset=utf-8"), "i18n.js": ("i18n.js", "text/javascript; charset=utf-8"), "pen.css": ("pen.css", "text/css; charset=utf-8")}
 HEADERS = [
     (b"cache-control", b"no-store"), (b"x-content-type-options", b"nosniff"), (b"x-frame-options", b"DENY"),
     (b"referrer-policy", b"no-referrer"),
@@ -55,7 +56,8 @@ class _State:
         self.urls: list[str] = []
         self.code = ""
         self.code_until = 0.0
-        self.tries = 0
+        self.tries = 0                           # wrong tries over all addresses
+        self.tries_by: dict[str, int] = {}       # wrong tries per client address
         self.token = ""
         self.device = ""
         self.tablet: object | None = None       # the tablet's send callable while connected
@@ -93,10 +95,11 @@ def _new_code() -> None:
     S.code = f"{secrets.randbelow(1_000_000):06d}"
     S.code_until = time.time() + CODE_SECONDS
     S.tries = 0
+    S.tries_by = {}
 
 
 def _code_live() -> bool:
-    return bool(S.code) and time.time() < S.code_until and S.tries < CODE_TRIES
+    return bool(S.code) and time.time() < S.code_until and S.tries < CODE_CEILING
 
 
 async def _desk_send(obj: dict | bytes) -> None:
@@ -117,7 +120,7 @@ def _view() -> dict:
     return {
         "on": S.server is not None, "port": S.port, "urls": S.urls,
         "code": S.code if _code_live() and not paired else "", "codeSeconds": max(0, int(S.code_until - time.time())) if _code_live() and not paired else 0,
-        "locked": bool(S.code) and S.tries >= CODE_TRIES and not paired,
+        "locked": bool(S.code) and S.tries >= CODE_CEILING and not paired,
         "paired": paired, "connected": paired and S.tablet is not None, "device": S.device,
     }
 
@@ -200,7 +203,8 @@ async def lan_app(scope, receive, send) -> None:   # noqa: ANN001
             if not _origin_ok(h):
                 await _plain(send, 403, b"Wrong origin.")
                 return
-            await _pair(receive, send)
+            client = scope.get("client")
+            await _pair(receive, send, str(client[0]) if client else "?")
             return
         if path.startswith("/penlink/") and method == "GET":
             hit = FILES.get(path[len("/penlink/"):])
@@ -217,7 +221,7 @@ async def lan_app(scope, receive, send) -> None:   # noqa: ANN001
         return
 
 
-async def _pair(receive, send) -> None:   # noqa: ANN001
+async def _pair(receive, send, addr: str) -> None:   # noqa: ANN001
     raw = await _read_body(receive, 512)
     try:
         code = str(json.loads(raw or b"")["code"])[:12]
@@ -231,10 +235,14 @@ async def _pair(receive, send) -> None:   # noqa: ANN001
     if not _code_live():
         await _plain(send, 410, b"That code has expired. Ask for a new one on the desktop.")
         return
-    S.tries += 1
+    if S.tries_by.get(addr, 0) >= CODE_TRIES:
+        await _plain(send, 429, b"Too many wrong tries from this device. Ask for a new code on the desktop.")
+        return
     if not hmac.compare_digest(code.encode(), S.code.encode()):
+        S.tries += 1
+        S.tries_by[addr] = S.tries_by.get(addr, 0) + 1
         await _plain(send, 401, b"Wrong code.")
-        if S.tries >= CODE_TRIES:
+        if S.tries >= CODE_CEILING:
             await _desk_send({"t": "status", **_view()})
         return
     S.token = secrets.token_urlsafe(16)   # 128 bits, memory only

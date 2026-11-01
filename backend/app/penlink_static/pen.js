@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
+  var L = function (k) { return window.PL ? window.PL.t(k) : k; };   // i18n.js: the tablet's language
   var pairEl = $('pair'), liveEl = $('live'), codeEl = $('code'), errEl = $('err'), statusEl = $('status');
   var surface = $('surface'), mirror = $('mirror'), ink = $('ink');
   var mctx = mirror.getContext('2d'), ictx = ink.getContext('2d');
@@ -18,15 +19,16 @@
   function fail(m) { errEl.textContent = m; }
   function pair() {
     var code = codeEl.value.replace(/\D/g, '');
-    if (code.length !== 6) { fail('Type all 6 digits.'); return; }
+    if (code.length !== 6) { fail(L('digits')); return; }
     fail('');
     fetch('pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: code, device: deviceName() }) })
       .then(function (r) {
         if (r.status === 200) return r.json().then(function (j) { token = j.token; openSocket(); });
-        if (r.status === 401) { fail('That code is wrong.'); return undefined; }
-        return r.text().then(function (t) { fail(t || 'Could not pair.'); });
+        if (r.status === 401) { fail(L('wrong')); return undefined; }
+        fail(L('pairfail'));   // expired, spent, already paired, or too many tries from this device
+        return undefined;
       })
-      .catch(function () { fail('Could not reach the computer.'); });
+      .catch(function () { fail(L('unreach')); });
   }
   function deviceName() {
     // a generic label: the desktop shows it as the paired device
@@ -54,10 +56,10 @@
       if (ws !== s) return;
       ws = null;
       if (closing) return;
-      if (ev.code === 1008 && liveEl.hidden) { toPair('The pairing was refused. Ask for a new code.'); return; }
+      if (ev.code === 1008 && liveEl.hidden) { toPair(L('pairfail')); return; }
       if (!retryUntil) retryUntil = Date.now() + 30000;
-      if (Date.now() > retryUntil) { toPair('The connection was lost. Ask for a new code.'); return; }
-      setStatus('Reconnecting', false);
+      if (Date.now() > retryUntil) { toPair(L('lost')); return; }
+      setStatus(L('re'), false);
       setTimeout(openSocket, 1000);
     };
   }
@@ -70,13 +72,14 @@
     if (m.t === 'ok') {
       retryUntil = 0;
       pairEl.hidden = true; liveEl.hidden = false;
-      setStatus('Connected', true);
+      setStatus(L('ok'), true);
       layout(); sendView(); startPing(); wake();
     } else if (m.t === 'pong') {
       latency = Math.round(performance.now() - m.ts);
-      setStatus('Connected · ' + latency + ' ms', true);
+      setStatus(L('ok') + ' · ' + latency + ' ms', true);
       send({ t: 'lat', ms: latency });
     } else if (m.t === 'state') {
+      $('idle').hidden = m.open !== false;
       if (m.w && m.h && Math.abs(m.w / m.h - aspect) > 0.001) { aspect = m.w / m.h; layout(); sendView(); }
       if (!dragging) {
         erase = !!m.erase; syncTool();
@@ -84,7 +87,7 @@
         if (typeof m.opacity === 'number') $('opacity').value = Math.round(m.opacity * 1000);
       }
     } else if (m.t === 'bye') {
-      toPair('The computer ended the session.');
+      toPair(L('lost'));
     }
   }
   var pingTimer = 0;

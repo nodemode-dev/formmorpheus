@@ -30,6 +30,8 @@ function findTrackOf(movie: Movie, contentId: string): Track {
 
 export function updateContent(movie: Movie, id: string, fn: (c: Content) => Content): Movie {
   const t = findTrackOf(movie, id);
+  // the backstop of the lock: no edit of locked content (its keys, transform or look) gets through, whatever asked
+  if (t.locked) throw new OpError('Track is locked');
   return replaceTrack(movie, t.id, (tr) => ({ ...tr, content: tr.content.map((c) => (c.id === id ? fn(c) : c)) }));
 }
 

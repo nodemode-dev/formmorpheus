@@ -27,7 +27,7 @@ const effect: Effect = {
   id: 'mirror',
   label: 'Mirror',
   icon: ICON,
-  params: [{ id: 'pos', label: 'Line position', min: 0, max: 1, step: 0.005, unit: '%', display: 100, def: 0.5 }],
+  params: [{ id: 'pos', label: 'Line position', min: 0, max: 1, step: 0.005, unit: '%', display: 100, def: 0.4 }],
   options: [{ id: 'mode', label: 'Reflect', choices: MODES, def: 'left to right' }],
   active: () => true,
   pad: () => 0,

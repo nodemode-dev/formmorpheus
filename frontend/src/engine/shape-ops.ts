@@ -114,6 +114,15 @@ export function setBase(d: ShapeDef, id: string, v: number): ShapeDef {
     case 'gap': stroke().gap = v; break;
     case 'dashOffset': stroke().dashOffset = v; break;
     default: {
+      const mc = /^g(\d)([RGB])$/.exec(id);
+      if (mc) {
+        const f = fill();
+        const stops = (f.stops && f.stops.length >= 2 ? f.stops : defaultStops(f.color)).map((s) => ({ ...s }));
+        const i = Number(mc[1]);
+        if (stops[i]) { stops[i].color = part(stops[i].color, mc[2] === 'R' ? 0 : mc[2] === 'G' ? 1 : 2); if (i === 0) f.color = stops[i].color; }
+        f.stops = stops;
+        break;
+      }
       const m = /^o(\d)$/.exec(id);
       if (m) {
         const f = fill();

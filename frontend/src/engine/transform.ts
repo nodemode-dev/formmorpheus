@@ -4,6 +4,7 @@
 // x' = a x + c y + e, y' = b x + d y + f. Stage space is movie pixels. Pure, no DOM.
 import { animate, evalChannel, type Animated } from './keys';
 import { srcFrame } from './retime';
+import { shakeAt } from './camera-shake';
 import type { Content, KeyLane, Movie, Track } from './types';
 
 export type Mat = [number, number, number, number, number, number];
@@ -67,17 +68,36 @@ export function cameraLane(movie: Movie): KeyLane | null {
 }
 
 /** The camera at a movie frame; null when the movie has no camera keys. */
-export function cameraPose(movie: Movie, frame: number): CameraPose | null {
+export function cameraPose(movie: Movie, frame: number, withShake = true): CameraPose | null {
   const lane = cameraLane(movie);
-  if (!lane) return null;
-  const ch = lane.channels;
+  const shake = withShake ? movie.camera?.shake : undefined;
+  // like the shake, the follow is left out when keys are being edited, so it is never baked into them
+  const follow = withShake ? followAt(movie, frame) : null;
+  if (!lane && !shake && !follow) return null;
+  const ch = lane ? lane.channels : {};
+  const sh = shake ? shakeAt(shake, frame, movie.fps) : null;
   const v = (id: string, def: number): number => {
     const k = ch[id];
     const r = k && k.length ? evalChannel(k, frame) : null;
     return r === null || !Number.isFinite(r) ? def : r;
   };
   const zoom = v('zoom', 1);
-  return { panX: v('panX', 0), panY: v('panY', 0), zoom: zoom > 0.01 ? zoom : 0.01, rotation: v('rotation', 0) };
+  return { panX: v('panX', 0) + (sh?.dx ?? 0) + (follow?.x ?? 0), panY: v('panY', 0) + (sh?.dy ?? 0) + (follow?.y ?? 0), zoom: zoom > 0.01 ? zoom : 0.01, rotation: v('rotation', 0) + (sh?.rot ?? 0) };
+}
+
+/** How far the camera pans to follow its target at a movie frame (movie px), null when it follows nothing usable. */
+function followAt(movie: Movie, frame: number): { x: number; y: number } | null {
+  const f = movie.camera?.follow;
+  if (!f || !(f.amount > 0)) return null;
+  const e = indexOf(movie).byId.get(f.id);
+  if (!e) return null;
+  const a = animate(e.c, Math.max(0, Math.min(e.c.duration - 1, frame - e.c.start)));
+  return { x: a.x * f.amount, y: a.y * f.amount };
+}
+
+/** The camera a track with parallax depth sees: pan and zoom change by `depth` times as much (rotation stays). */
+export function depthPose(p: CameraPose, depth: number): CameraPose {
+  return { panX: p.panX * depth, panY: p.panY * depth, zoom: Math.max(0.01, 1 + (p.zoom - 1) * depth), rotation: p.rotation };
 }
 
 /** Stage to Stage: what the camera does to the world (pan, zoom and rotate around the frame centre). */
@@ -105,7 +125,7 @@ function indexOf(movie: Movie): Index {
   const have = indexes.get(movie);
   if (have) return have;
   const byId = new Map<string, Entry>();
-  let fx = !!cameraLane(movie);
+  let fx = !!cameraLane(movie) || !!movie.camera?.shake || !!movie.camera?.follow;
   const walk = (tracks: Track[], container: Entry | null, root: Track | null): void => {
     for (const t of tracks) for (const c of t.content) {
       const e: Entry = { c, container, root: root ?? t };
@@ -172,7 +192,10 @@ function chainRel(movie: Movie, idx: Index, e: Entry, f: number, a: Animated | u
 
 function cameraFor(movie: Movie, e: Entry, frame: number): Mat | null {
   if (e.root.screen) return null;
-  return cameraMatrix(movie, frame);
+  const d = e.root.depth;
+  if (d === undefined || d === 1) return cameraMatrix(movie, frame);
+  const p = cameraPose(movie, frame);
+  return p ? cameraMat(movie, depthPose(p, d)) : null;
 }
 
 /**

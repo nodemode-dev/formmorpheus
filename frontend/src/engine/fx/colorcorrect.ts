@@ -1,8 +1,8 @@
 // Color correction in one effect: exposure, temperature and tint, levels (master and per channel), curves (master and
 // per channel), color balance (shadows, midtones, highlights) and vibrance, in that order. Levels and curves are
 // baked into one table per channel (1024 steps, linear between) that both paths read the same way.
-import { cleanPoints, curveAt, curveLut } from '../../paint/curves';
-import { registerEffect, type Effect, type FxOpts, type FxParams, type GpuStep } from './registry';
+import { cleanPoints, curveAt, curveLut, MAX_NODES } from '../../paint/curves';
+import { registerEffect, type Effect, type FxOpts, type FxParam, type FxParams, type GpuStep } from './registry';
 
 const ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c4-1 5-6 8-8s5-5 8-8"/><path d="M4 20h16V4" opacity=".4"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/></svg>';
 
@@ -36,11 +36,32 @@ export function parseCurve(s: unknown): number[] | null {
   return pts.length === 4 && pts[1] === 0 && pts[3] === 1 ? null : pts;
 }
 
+/** Keyable curve points: channel `cv${id}${i}` moves point i of that curve up or down (from the saved curve; a straight curve has two points). */
+const CURVE_NAMES: Record<string, string> = { L: 'Master', R: 'Red', G: 'Green', B: 'Blue' };
+const POINTS = MAX_NODES + 2;
+export const curvePointId = (id: string, i: number): string => `cv${id}${i}`;
+const curvePointParams = (): FxParam[] => CURVE_IDS.flatMap((id) => Array.from({ length: POINTS }, (_, i): FxParam => ({
+  id: curvePointId(id, i), label: `${CURVE_NAMES[id]} curve point ${i + 1}`, short: `${id} pt ${i + 1}`,
+  min: -1, max: 1, step: 0.005, unit: '%', display: 100, def: 0, group: 'Curve points', adv: true, demand: true,
+})));
+
+/** A curve's points at this frame: the saved ones with their keyed offsets laid on, or null for the straight line. */
+export function curveAtFrame(id: string, p: FxParams, o: FxOpts): number[] | null {
+  const base = parseCurve(o['curve' + id]);
+  let moved = false;
+  for (let i = 0; i < POINTS; i++) if (p[curvePointId(id, i)]) { moved = true; break; }
+  if (!moved) return base;
+  const pts = (base ?? [0, 0, 1, 1]).slice();
+  for (let i = 0; i < pts.length / 2; i++) pts[i * 2 + 1] += p[curvePointId(id, i)] ?? 0;
+  const clean = cleanPoints(pts);
+  return clean.length === 4 && clean[1] === 0 && clean[3] === 1 ? null : clean;
+}
+
 /** Per-channel table: levels then curves, RGBA float (alpha unused), TABLE_N rows. */
 export function buildTable(p: FxParams, o: FxOpts): Float32Array {
   const t = new Float32Array(TABLE_N * 4);
   const mix = clamp01(p.curveMix);
-  const luts = CURVE_IDS.map((id) => { const pts = parseCurve(o['curve' + id]); return pts ? curveLut({ pts }) : null; });
+  const luts = CURVE_IDS.map((id) => { const pts = curveAtFrame(id, p, o); return pts ? curveLut({ pts }) : null; });
   for (let i = 0; i < TABLE_N; i++) {
     const x = i / (TABLE_N - 1);
     for (let c = 0; c < 3; c++) {
@@ -115,13 +136,14 @@ const effect: Effect = {
     bal('sR', 'Shadows red', 'Sh R', 'Color balance'), bal('sG', 'Shadows green', 'Sh G', 'Color balance'), bal('sB', 'Shadows blue', 'Sh B', 'Color balance'),
     bal('mR', 'Midtones red', 'Mid R', 'Color balance'), bal('mG', 'Midtones green', 'Mid G', 'Color balance'), bal('mB', 'Midtones blue', 'Mid B', 'Color balance'),
     bal('hR', 'Highlights red', 'Hi R', 'Color balance'), bal('hG', 'Highlights green', 'Hi G', 'Color balance'), bal('hB', 'Highlights blue', 'Hi B', 'Color balance'),
+    ...curvePointParams(),
   ],
   options: CURVE_IDS.map((id) => ({ id: 'curve' + id, label: `Curve ${id}`, def: '', hidden: true })),
   active(p, o) {
     if (p.exposure || p.temp || p.tint || p.vibrance) return true;
     for (const pre of ['lv', 'r', 'g', 'b']) if (p[pre + 'In0'] || p[pre + 'In1'] !== 1 || p[pre + 'Gamma'] !== 1 || p[pre + 'Out0'] || p[pre + 'Out1'] !== 1) return true;
     if (BALANCE.some((k) => p[k])) return true;
-    return CURVE_IDS.some((id) => parseCurve(o['curve' + id]) !== null) && p.curveMix > 0;
+    return CURVE_IDS.some((id) => curveAtFrame(id, p, o) !== null) && p.curveMix > 0;
   },
   pad: () => 0,
   cpu(src, dst, w, _h, p, o, _c, box) {

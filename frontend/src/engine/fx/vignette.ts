@@ -41,10 +41,10 @@ const effect: Effect = {
   label: 'Vignette',
   icon: ICON,
   params: [
-    { id: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01, unit: '%', display: 100, def: 0.6 },
-    { id: 'size', label: 'Size', min: 0, max: 1.2, step: 0.01, unit: '%', display: 100, def: 0.5 },
+    { id: 'amount', label: 'Amount', min: 0, max: 1, step: 0.01, unit: '%', display: 100, def: 0.85 },
+    { id: 'size', label: 'Size', min: 0, max: 1.2, step: 0.01, unit: '%', display: 100, def: 0.3 },
     { id: 'round', label: 'Roundness', min: 0, max: 1, step: 0.01, unit: '%', display: 100, def: 0.5 },
-    { id: 'feather', label: 'Feather', min: 0, max: 1.5, step: 0.01, unit: '%', display: 100, def: 0.5 },
+    { id: 'feather', label: 'Feather', min: 0, max: 1.5, step: 0.01, unit: '%', display: 100, def: 0.7 },
     ...colorParams('col', 'Color', [0, 0, 0], { adv: true }),
   ],
   active: (p) => p.amount > 0,
