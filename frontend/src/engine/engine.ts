@@ -195,6 +195,7 @@ export class Engine extends Emitter<EngineEvents> {
     if (!this.movie) return;
     const step = this.history.undo(this.movie);
     if (!step) return;
+    this.restoreBlobs(step.movie);
     this.apply(step.movie);
     this.pruneSelection();
     this.notice(`Undo ${step.label}`);
@@ -204,6 +205,7 @@ export class Engine extends Emitter<EngineEvents> {
     if (!this.movie) return;
     const step = this.history.redo(this.movie);
     if (!step) return;
+    this.restoreBlobs(step.movie);
     this.apply(step.movie);
     this.pruneSelection();
     this.notice(`Redo ${step.label}`);
@@ -231,7 +233,17 @@ export class Engine extends Emitter<EngineEvents> {
     const drop = now.filter((id) => this.strays.has(id));
     this.strays = new Set(now);
     for (const id of drop) this.assets.delete(id);
-    return drop.length;
+    let n = drop.length;
+    if (this.pasteBlobs.size) {
+      const recorded = new Set<string>();
+      for (const s of [m, ...all]) for (const id of Object.keys(s.assets)) recorded.add(id);
+      for (const id of [...this.pasteBlobs]) {
+        if (recorded.has(id)) continue;
+        this.pasteBlobs.delete(id);
+        if (this.assets.delete(id)) n++;
+      }
+    }
+    return n;
   }
 
   setUndoDepth(depth: number, recentPercent = this.history.recentPercent): void {
@@ -452,14 +464,30 @@ export class Engine extends Emitter<EngineEvents> {
     if (left > 0) this.notice(left === 1 ? 'One block was left out: its picture or sound is not in this movie.' : '{count} blocks were left out: their pictures or sounds are not in this movie.', 'error', { count: left });
     if (!items.length) return;
     const need = [...usedAssetIds([], items)].filter((id) => !have[id]);
-    for (const id of need) { const e = this.clipAssets.get(id); if (e) this.assets.set(id, e.blob); }
-    this.run('Paste', (m) => {
+    // blobs go in before the run (the views read them as the movie changes) and come out again if the paste is refused
+    const added: string[] = [];
+    for (const id of need) { const e = this.clipAssets.get(id); if (e && !this.assets.has(id)) { this.assets.set(id, e.blob); added.push(id); } }
+    const ok = this.run('Paste', (m) => {
       const add: Record<string, Asset> = {};
       for (const id of need) { const e = this.clipAssets.get(id); if (e) add[id] = e.asset; }
       const base = need.length ? { ...m, assets: { ...m.assets, ...add } } : m;
       const r = ops.pasteContent(base, items, this.frame, this.selection.track);
       return { movie: r.movie, select: r.ids };
     });
+    if (ok) for (const id of added) this.pasteBlobs.add(id);
+    else for (const id of added) this.assets.delete(id);
+  }
+
+  /** Blobs a paste brought over from the clipboard; let go of once no state (movie, undo, redo, recovery) records them. */
+  private readonly pasteBlobs = new Set<string>();
+
+  /** Undo or redo across a paste: a blob let go of earlier comes back from the clipboard so the state shows its picture or sound. */
+  private restoreBlobs(m: Movie): void {
+    for (const id of Object.keys(m.assets)) {
+      if (this.assets.has(id)) continue;
+      const e = this.clipAssets.get(id);
+      if (e) { this.assets.set(id, e.blob); this.pasteBlobs.add(id); }
+    }
   }
 
   get hasClipboard(): boolean {

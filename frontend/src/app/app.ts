@@ -16,6 +16,7 @@ import { evictFonts, loadTextFonts, registerFont, registerFonts } from '../media
 import { loadLibrary } from '../io/fonts-library';
 import { watchMissingFonts } from '../ui/fonts-missing';
 import { createImporter, type ImportOptions } from './import-flow';
+import { filesOfDrop } from '../io/drop-files';
 import { VideoPool } from '../media/video';
 import { firstFrames, planPrefetch } from '../media/plan';
 import { ExportDialog } from '../ui/export-dialog';
@@ -200,6 +201,7 @@ export function startApp(): void {
     engine,
     renderer,
     audio: () => audio,
+    commitOpen: () => (paint.isOpen() ? paint.done(true) : Promise.resolve()),
     saveOutput: async (blob, name) => { try { await api.writeOutput(name, blob); home.sync(); } catch { /* the download already happened; the Exports list is the engine's */ } },
     exportFmo: (withHistory) => { void exportFile(withHistory); },
   });
@@ -553,7 +555,7 @@ export function startApp(): void {
   }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip';
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
@@ -899,7 +901,8 @@ export function startApp(): void {
     // dropped on the Timeline: at the track and time under the pointer; on the Stage: at the Playhead on the top track
     const tl = timeline?.dropTarget(e.clientX, e.clientY);
     const onStage = !tl && !!(e.target instanceof Element && e.target.closest('.fm-stage-wrap'));
-    void importFiles(Array.from(e.dataTransfer?.files ?? []), tl ? { drop: { where: 'timeline', frame: tl.frame, index: tl.index } } : onStage ? { drop: { where: 'stage' } } : {});
+    const dropOpts: ImportOptions = tl ? { drop: { where: 'timeline', frame: tl.frame, index: tl.index } } : onStage ? { drop: { where: 'stage' } } : {};
+    void filesOfDrop(e.dataTransfer).then((fs) => importFiles(fs, dropOpts));
   });
   window.addEventListener('beforeunload', (e) => { if (engine.movie && engine.modified && !('__TAURI_INTERNALS__' in window)) e.preventDefault(); });
 

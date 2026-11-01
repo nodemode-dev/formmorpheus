@@ -14,6 +14,7 @@ import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
 import { decodeTga, isTga } from './tga-decode';
 import { transcodeViaEngine } from './transcode';
+import { tf } from '../ui/i18n-fill';
 import { UndecodableVideo, VideoPool } from './video';
 import { layeredToDrawing } from '../io/layered-import';
 import { isKra, readKra } from '../io/kra-import';
@@ -21,6 +22,8 @@ import { isOra, readOra } from '../io/ora-import';
 import { isPdn, readPdn } from '../io/pdn-import';
 import { isProcreate, readProcreate } from '../io/procreate-import';
 import { isPsd, readPsd } from '../io/psd-import';
+import { sniffProject } from '../io/project-sniff';
+import { tn } from '../ui/i18n';
 
 export interface ImportResult {
   assets: { asset: Asset; blob: Blob }[];
@@ -316,8 +319,39 @@ async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Pr
     const type = file.type || (kind === 'png' ? 'image/png' : `image/${kind}`);
     const src = await viaImageDecoder(file, type);
     if (src) return flipbookFrom(src, baseName(file.name), m, at);
+    // no ImageDecoder for it: the first picture only, and the notice says so (the engine's ffmpeg reads neither animated
+    // WebP nor AVIF, and no picture library is installed with it, so there is no engine route to the pictures)
+    if (await isAnimatedPicture(file, kind)) {
+      const first = await importPicture(file, m, at, kind);
+      return { ...first, notice: tf('Only the first picture of {name} was imported: this system cannot read animated WebP, APNG or AVIF. Convert it to a GIF to bring in every picture.', { name: file.name }) };
+    }
   }
   return null;
+}
+
+/** True when the file's own headers say it holds more than one picture (animated WebP, APNG, AVIF sequence). */
+async function isAnimatedPicture(file: Blob, kind: Sniff): Promise<boolean> {
+  const b = new Uint8Array(await file.slice(0, 1 << 18).arrayBuffer());
+  if (kind === 'webp') {
+    // RIFF....WEBPVP8X: the animation flag is bit 1 of the flags byte, the ANIM chunk follows
+    return ascii(b, 12, 'VP8X') && (b[20] & 0x02) !== 0;
+  }
+  if (kind === 'avif') {
+    // an AVIF image sequence names the 'avis' brand among the first bytes
+    for (let i = 8; i + 4 <= Math.min(b.length, 64); i += 4) if (ascii(b, i, 'avis')) return true;
+    return false;
+  }
+  if (kind === 'png') {
+    // chunks are length, type, data, crc; acTL sits before the first IDAT
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let at = 8;
+    while (at + 8 <= b.length) {
+      if (ascii(b, at + 4, 'acTL')) return at + 16 <= b.length && dv.getUint32(at + 8) > 1;
+      if (ascii(b, at + 4, 'IDAT')) return false;
+      at += 12 + dv.getUint32(at);
+    }
+  }
+  return false;
 }
 
 // ---- video and sound
@@ -338,12 +372,14 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
   try { info = await VideoPool.probe(file); } catch (e) {
     if (!(e instanceof UndecodableVideo)) info = null;
     else {
+      // no video decoder at all: converting would give a file this window cannot play either, so say what fixes it
+      if (typeof VideoDecoder === 'undefined') throw new Error(tf('{name} is a video this system cannot play: its web component has no video decoder. Update the system (macOS 13 or later, or a system web component from version 2.44 on with its media codec packages installed).', { name: source.name }));
       // ProRes, some HEVC and alpha video: the engine converts it to a file the browser decodes
       const out = await transcodeViaEngine(source, 'video', (p) => onProgress?.(p, `Converting ${source.name}`)).catch((er: unknown) => {
         throw new Error(`${source.name}: ${e.message} ${er instanceof Error ? er.message : ''}`.trim());
       });
       file = new File([out.blob], `${name}.${out.mime === 'video/webm' ? 'webm' : 'mp4'}`, { type: out.mime });
-      try { info = await VideoPool.probe(file); } catch { throw new Error(`${source.name} was converted but this browser still cannot play it.`); }
+      try { info = await VideoPool.probe(file); } catch { throw new Error(tf('{name} was converted by the engine, but this system still cannot play it. Update the system web component or its media codec packages.', { name: source.name })); }
     }
   }
   // a risky sound is decoded once; the length it gave is reused below
@@ -453,6 +489,90 @@ async function importFont(file: File): Promise<ImportResult> {
   return { assets: [{ asset, blob: file }], contents: [], ownTrack: [], notice: `${family} is ready for Text.` };
 }
 
+// ---- numbered picture sequences
+
+const SEQ_EXT = /\.(png|jpe?g|webp|bmp|avif)$/i;
+const SEQ_NAME = /^(.*?)(\d+)(\.[^.]+)$/;
+
+/** The largest run of at least three pictures whose names differ only by a number (frame_001.png, frame_002.png ...),
+ *  in numeric order; null when there is none. */
+export function findSequence(files: File[]): File[] | null {
+  const groups = new Map<string, { n: number; f: File }[]>();
+  for (const f of files) {
+    if (!SEQ_EXT.test(f.name)) continue;
+    const m = SEQ_NAME.exec(f.name);
+    if (!m) continue;
+    const key = `${m[1]}\u0000${m[3].toLowerCase()}`;
+    const g = groups.get(key) ?? [];
+    g.push({ n: Number(m[2]), f });
+    groups.set(key, g);
+  }
+  let best: { n: number; f: File }[] | null = null;
+  for (const g of groups.values()) if (g.length >= 3 && new Set(g.map((x) => x.n)).size === g.length && (!best || g.length > best.length)) best = g;
+  return best ? best.sort((a, b) => a.n - b.n).map((x) => x.f) : null;
+}
+
+/** A numbered picture sequence as one Flipbook at `fps` pictures per second (the names carry no rate). */
+export async function importSequence(files: File[], movie: Movie, at: number, fps: number): Promise<ImportResult> {
+  const m = SEQ_NAME.exec(files[0].name);
+  const name = (m ? m[1] : baseName(files[0].name)).replace(/[\s._-]+$/, '') || 'Frames';
+  const rate = Math.min(240, Math.max(1, fps));
+  let first: ImageBitmap;
+  try { first = await createImageBitmap(files[0]); } catch { throw new Error(tf('{name} could not be read as a picture.', { name: files[0].name })); }
+  const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (first.width * first.height * 4)));
+  let at0 = 0;
+  let chain: Promise<unknown> = Promise.resolve();
+  const pull = async (): Promise<RawFrame | null> => {
+    const i = at0++;
+    if (i >= files.length) return null;
+    try {
+      const bmp = i === 0 ? first : await createImageBitmap(files[i]);
+      return { image: bmp, rgba: null, w: bmp.width, h: bmp.height, delayMs: 1000 / rate };
+    } catch { return null; }
+  };
+  const src: FrameSource = {
+    // chained so the lanes in flipbookFrom are answered in file order
+    next: () => { const p = chain.then(pull); chain = p.catch(() => undefined); return p; },
+    total: files.length,
+    limit: Math.min(MAX_ANIMATION_FRAMES, byMemory, files.length),
+    cap: byMemory < MAX_ANIMATION_FRAMES ? 'memory' : 'count',
+  };
+  const r = await flipbookFrom(src, name, movie, at);
+  return { ...r, notice: tf('{n} numbered pictures became one Flipbook at {fps} frames per second.', { n: r.contents[0]?.flip?.[0]?.frames.length ?? files.length, fps: rate }) + (r.notice?.includes('Only the first') ? r.notice.slice(r.notice.indexOf(' Only the first')) : '') };
+}
+
+// ---- project files from other animation apps
+
+/** Reads nothing of the timeline: only plain media found inside the container is lifted out, into the media bin. */
+async function importProjectFile(file: File, movie: Movie, at: number): Promise<ImportResult> {
+  const whole = tf('{name} is a project file from another animation app. Its format is not publicly documented, so the timeline, keyframes and drawings cannot be read here. To bring your work over, open it in that app and export a video of the finished picture, a numbered PNG frame sequence (note its frame rate), or an animated GIF, then import that. Layered artwork saved as .procreate, .psd, .ora or .kra files can be imported as it is. If the project was made with an older version of that app, upgrade it there first.', { name: file.name });
+  const sn = await sniffProject(file);
+  if (sn.container === 'unknown' || sn.container === 'bplist') {
+    throw new Error(sn.container === 'bplist'
+      ? tf('{name} could not be read. It is a property list, not a container that holds media, so nothing from it was imported. In the app that made it, export a video, a numbered PNG frame sequence or an animated GIF, then import those.', { name: file.name })
+      : tf('{name} could not be read. It is not a container this app recognises, so nothing from it was imported. In the app that made it, export a video, a numbered PNG frame sequence or an animated GIF, then import those.', { name: file.name }));
+  }
+  if (!sn.media.length) throw new Error(whole);
+  const out: ImportResult = { assets: [], contents: [], ownTrack: [] };
+  let pictures = 0, videos = 0, sounds = 0;
+  for (const f of sn.media) {
+    try {
+      const r = await importMedia(f.file, movie, at);
+      // the media bin only: the timeline of the project is not rebuilt, so nothing is placed
+      out.assets.push(...r.assets);
+      if (f.kind === 'picture') pictures++; else if (f.kind === 'video') videos++; else sounds++;
+    } catch { /* an entry that does not decode is left out of the count */ }
+  }
+  if (!out.assets.length) throw new Error(whole);
+  const parts: string[] = [];
+  if (pictures) parts.push(tn(pictures, '{n} picture', '{n} pictures'));
+  if (videos) parts.push(tn(videos, '{n} video', '{n} videos'));
+  if (sounds) parts.push(tn(sounds, '{n} sound', '{n} sounds'));
+  out.notice = tf('Part of this project was read. {found} found and added to the media bin. The timeline, keyframes, effects and undo history cannot be read because their format is not documented. To bring over the full picture, export a video, a numbered PNG frame sequence or an animated GIF from the app that made it.', { found: parts.join(', ') })
+    + (sn.extra ? ' ' + tf('{n} more items were left out.', { n: sn.extra }) : '');
+  return out;
+}
+
 export async function importMedia(file: File, movie: Movie, at: number, onProgress?: (p: number, what: string) => void): Promise<ImportResult> {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
   // a TGA 2.0 file is told by the footer at its end, not by anything at the start
@@ -475,7 +595,7 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
       return anim ?? importPicture(file, movie, at, kind);
     }
     default:
-      if (/\.drm$/i.test(file.name)) throw new Error(`${file.name} is a project file whose format is not publicly documented, so it cannot be opened here. Export it as video, frames or layered artwork and import that.`);
+      if (/\.drm$/i.test(file.name)) return importProjectFile(file, movie, at);
       throw new Error(`${file.name} is not a picture, video, sound or font formmorpheus can place.`);
   }
 }

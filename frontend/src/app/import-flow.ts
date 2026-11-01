@@ -9,10 +9,12 @@ import { groupCtx } from '../engine/group-ctx';
 import type { Renderer } from '../engine/render';
 import type { Content, Movie } from '../engine/types';
 import { registerFonts } from '../media/fonts';
-import { importMedia, type ImportResult } from '../media/import';
+import { findSequence, importMedia, importSequence, type ImportResult } from '../media/import';
+import { askSequence } from '../ui/sequence-dialog';
 import { firstPictures } from '../media/plan';
 import type { VideoPool } from '../media/video';
 import { toast } from '../ui/toast';
+import { t } from '../ui/i18n';
 import { isSoundFile, previewSound } from '../ui/import-preview';
 import { previewSounds } from '../ui/preview-pref';
 
@@ -56,10 +58,23 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
     }
     if (!list.length) return;
     list = [...list];
-    const job = engine.startJob(list.length === 1 ? `Import ${list[0].name}` : `Import ${list.length} files`, 1000);
+    // several numbered pictures together: one Flipbook at a rate the person gives, or each on its own
+    const seq = findSequence(list);
+    let asOne: { files: File[]; fps: number } | null = null;
+    if (seq) {
+      const pick = await askSequence(seq.length, seq[0].name, m.fps);
+      if (!pick) return;
+      if (pick.as === 'flipbook') { asOne = { files: seq, fps: pick.fps }; list = list.filter((f) => !seq.includes(f)); }
+    }
+    const job = engine.startJob(asOne ? `Import ${asOne.files.length} numbered pictures` : list.length === 1 ? `Import ${list[0].name}` : `Import ${list.length} files`, 1000);
     const done: Done[] = [];
     try {
       let at = opts.drop?.where === 'timeline' ? opts.drop.frame ?? engine.frame : engine.frame;
+      if (asOne) {
+        try { done.push({ file: asOne.files[0], r: await importSequence(asOne.files, m, at, asOne.fps) }); } catch (e) {
+          toast(e instanceof Error ? e.message : t('The pictures could not be imported.'), 'error');
+        }
+      }
       for (let i = 0; i < list.length; i++) {
         const f = list[i];
         try {
@@ -108,7 +123,8 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
     };
     const gid = groupCtx.target();
     const grp = gid ? groupInner.findGroup(m.tracks, gid) : null;
-    const label = done.length === 1 ? `Add ${done[0].file.name.replace(/\.[^.]+$/, '')}` : `Add ${done.length} files`;
+    // a file that only fills the media bin (a project file) is an import, not an addition to the timeline
+    const label = done.length === 1 && !done[0].r.contents.length ? `Import from ${done[0].file.name}` : done.length === 1 ? `Add ${done[0].file.name.replace(/\.[^.]+$/, '')}` : `Add ${done.length} files`;
     engine.run(label, (mv) => {
       let next: Movie = { ...mv, assets: { ...mv.assets, ...table } };
       const ids: string[] = [];

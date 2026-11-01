@@ -146,8 +146,9 @@ function showPop(f: HTMLInputElement): void {
   const frame = f.closest<HTMLElement>('.cv-dialog')?.getBoundingClientRect();
   let left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)), top = Math.min(r.bottom + 4, window.innerHeight - 30);
   if (frame) {
-    if (frame.right + 8 + w <= window.innerWidth - 4) { left = frame.right + 8; top = r.top + (r.height - 22) / 2; }
-    else if (frame.left - 8 - w >= 4) { left = frame.left - 8 - w; top = r.top + (r.height - 22) / 2; }
+    // inside the frame, under the field: beside the frame it read as a stray control floating over the scrim
+    left = Math.max(frame.left + 4, Math.min(r.right - w, frame.right - w - 4));
+    top = r.bottom + 4;
   }
   box.style.left = `${Math.round(left)}px`;
   box.style.top = `${Math.round(Math.max(4, top))}px`;
