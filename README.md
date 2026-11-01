@@ -7,7 +7,7 @@
 <p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.17.1-f97316" alt="version v0.17.1" />
+  <img src="https://img.shields.io/badge/version-v0.17.2-f97316" alt="version v0.17.2" />
   <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
@@ -17,7 +17,7 @@
 
 formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.17.1, phases 1 to 50 of 50 (six parity ledgers list every reference feature through its 2.1.2 release, about 1,540 rows, each checked in the running app and the shortfalls fixed; parity awaiting the owner's pass)
+**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.17.2, phases 1 to 53 of 53 (six parity ledgers list every reference feature through its 2.1.2 release, about 1,540 rows, each checked in the running app and the shortfalls fixed; the open items closed or stated w/ the hardware they need; parity awaiting the owner's pass)
 
 ## Highlights
 
@@ -89,6 +89,7 @@ formmorpheus.bat
 | `FORMMORPHEUS_LIBRARY_DIR` | a different folder for the movie library |
 | `FORMMORPHEUS_PORT` | the backend port (desktop app: 0, a free port) |
 | `FORMMORPHEUS_DEV_URL` | debug desktop builds only: load this interface URL instead of the engine's |
+| `FORMMORPHEUS_SAFE_GRAPHICS` | Linux desktop app: `1` turns off the web view's DMABUF renderer, `2` also turns off its compositing mode; use it when the window opens blank. A variable you already set is never overwritten |
 | `FORMMORPHEUS_FFMPEG` | the ffmpeg program for ProRes & HEVC export (default: beside the engine, then `PATH`) |
 | `APPLE_SIGNING_IDENTITY`, `WINDOWS_CERT_THUMBPRINT` | optional: sign the desktop build made by `./build_app` |
 

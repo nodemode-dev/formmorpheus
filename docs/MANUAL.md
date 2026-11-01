@@ -262,6 +262,16 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
 
+## New in 0.17.2
+
+**Brushes.** Bristle, oil and knife brushes keep their streaks along the stroke in every direction and around curves, with highlights that follow them. Paints no longer show a repeating pattern in their body, and Round paint and Gouache break up at a dry edge.
+
+**Bringing work in.** Choose several numbered pictures, or drop a folder of them, and import them as one Flipbook at the frame rate you type. A project file from another animation app is explained: its timeline cannot be read, but any pictures and sounds found inside go to the media bin, and the message says how to export your work from that app.
+
+**Pens and tablets.** A stroke is kept when the system interrupts the pen, a pen resting still never opens the color picker mid-stroke, and a palm on the screen gives way to the pen. A tablet that reports pressure as a mouse can turn on Use pressure from the mouse in Pen and Tablet. Pen Link lifts cleanly when the tablet's page is hidden or the connection drops.
+
+**Systems.** On a system that cannot encode a video or sound format itself, export hands it to the engine. Text spacing, animated pictures and previews have fallbacks on older systems, and the graphics card path falls back to drawing without it when a movie is too large for it or the card resets. If the system is too old to run formmorpheus at all, one message says what it needs.
+
 ## New in 0.17.1
 
 **Brushes.** Chrome reads as polished metal, Rough hatch lays real diagonal hatching that keeps its angle on any stroke, and Sumi ends cleanly. Charcoal, chalk and pastel sticks shade wide whichever way the pen leans, and Grain airbrush starts as a soft cloud. Bristle brushes fray at the end of a tilted stroke, knives end in a rounded point, and the opaque paints widen with pressure and break up at a dry edge. Watercolor leaves no tint on bare paper and beads only where the pen really stops.

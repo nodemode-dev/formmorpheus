@@ -9,7 +9,7 @@ The form family's animation studio: a Stage over a Timeline, drawn frame by fram
 - `./formmorpheus desktop dev` and `./formmorpheus desktop build` (or `./build_app`) run and build the Tauri app.
 - `cd frontend && npx tsc --noEmit` is the typecheck; `npm run build` typechecks and builds.
 - Ports: interface http://localhost:5194 (Vite, `server.host` false, proxies `/api` to the engine), engine http://127.0.0.1:9494.
-- `FORMMORPHEUS_DATA_DIR`, `FORMMORPHEUS_LIBRARY_DIR`, `FORMMORPHEUS_PORT` and `FORMMORPHEUS_DEV_URL` are the only configuration. No `.env` is read.
+- `FORMMORPHEUS_DATA_DIR`, `FORMMORPHEUS_LIBRARY_DIR`, `FORMMORPHEUS_PORT`, `FORMMORPHEUS_DEV_URL` and `FORMMORPHEUS_SAFE_GRAPHICS` (Linux desktop: 1 or 2) are the only configuration. No `.env` is read.
 
 ## Where things live
 

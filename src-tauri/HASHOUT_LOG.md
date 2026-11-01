@@ -120,6 +120,29 @@ Recording a voice-over needs the microphone: macOS asks w/ the `NSMicrophoneUsag
 
 Windows press-and-hold right click and pen flicks: no WebView2 browser argument is known to turn them off, and `WebviewWindowBuilder::additional_browser_args` replaces Tauri's default arguments, which could not be checked on Windows here. Left alone. The interface handles it in the page: `touch-action: none` and no text selection on the paint canvas, the same plus no touch callout on the Pen and Tablet test pad, and `contextmenu` is cancelled on both. If a held pen tap still opens a menu on a real Windows machine, try the browser argument then.
 
+## v0.17.2 · platform
+
+### src/main.rs · linux_graphics
+- refers-to: src/main.rs :: linux_graphics, set_unless_set
+- kind: explainer
+- logged: v0.17.2
+
+First thing in `main()`, Linux only. On NVIDIA (`/proc/driver/nvidia`) under Wayland it sets `__NV_DISABLE_EXPLICIT_SYNC=1`. `FORMMORPHEUS_SAFE_GRAPHICS=1` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, `=2` also `WEBKIT_DISABLE_COMPOSITING_MODE=1`. A variable already set is never changed. Listed in README and CLAUDE.md.
+
+### src/main.rs · allow_own_microphone
+- refers-to: src/main.rs :: allow_own_microphone, origin_of; Cargo.toml :: webkit2gtk
+- kind: explainer
+- logged: v0.17.2
+
+WebKitGTK has media stream off and denies unanswered permission requests, so Record sound failed. After the main window is built, `with_webview` turns on `enable-media-stream` and answers each permission request: allowed only when it is an audio-only user-media request and the page is on the origin the shell loaded (the engine address, or the dev URL); everything else is denied. `webkit2gtk = "2.0"` is a direct Linux dependency now, the version already in Cargo.lock through wry (one line added to the formmorpheus entry of the lock by hand; `cargo check --locked --offline` passes). Compiled only: not run against a real microphone here. macOS: `NSMicrophoneUsageDescription` (Info.plist) and `com.apple.security.device.audio-input` (entitlements.plist) are present.
+
+### tauri.conf.json · Linux packages
+- refers-to: tauri.conf.json :: bundle.linux
+- kind: explainer
+- logged: v0.17.2
+
+Keys checked against `LinuxConfig`, `DebConfig`, `RpmConfig` and `AppImageConfig` in tauri-utils 2.10.2. deb depends `libwebkit2gtk-4.1-0 (>= 2.46)`, recommends the GStreamer good, bad and libav packages; rpm depends `webkit2gtk4.1 >= 2.46` and `gtk3` (Fedora names), recommends the matching GStreamer packages; the AppImage sets `bundleMediaFramework` true. `minimumSystemVersion` stays 11.0: the gate message, not the install check, covers an old engine. Recommendation: raise it to 13.0, since macOS 11 and 12 ship a WebKit without WebGL on offscreen surfaces and without audio encoding.
+
 ## v0.16.0 · Pen Link and .abr
 
 ### tauri.conf.json · WebView2 press-and-hold and flicks · researched again, no change

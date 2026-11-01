@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.17.2', name: 'Open items closed',
+    additions: [
+      { title: 'Brushes', text: 'Bristle and knife streaks follow the stroke in every direction, and paints have no repeating pattern.', command: 'new-flipbook' },
+      { title: 'Numbered pictures', text: 'Import numbered pictures or a folder of them as one Flipbook at the frame rate you choose.', command: 'home' },
+      { title: 'Pens and tablets', text: 'Strokes survive system interruptions, and tablets that report pressure as a mouse can use it.', command: 'home' },
+    ],
+  },
+  {
     version: '0.17.1', name: 'Brushes and editing, finished off',
     additions: [
       { title: 'Brushes', text: 'Chrome reads as metal, Rough hatch hatches, chalks and charcoals shade wide when tilted, and bristle strokes fray at the end.', command: 'new-flipbook' },

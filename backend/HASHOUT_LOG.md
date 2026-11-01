@@ -7,6 +7,22 @@ Last updated: 2026-10-30 · brush libraries as files, recovery presence over a W
 
 ---
 
+## v0.17.2 · media fallbacks
+
+- `routers/audio_encode.py`: `POST /api/audio-encode/lossy?kind=opus-webm|opus-ogg|aac-m4a&kbps=` turns the window's WAV mixdown into Opus (WebM or OGG) or AAC (M4A) with the person's ffmpeg, for a web component with no `AudioEncoder`. Same shape and limits as the MP3 route; 503 with the install hint when the encoder is missing.
+- `services/ffmpeg.py`: `libopus` added to WANTED; `routers/jobs.py` capabilities now carry `opus`.
+
+---
+
+## v0.17.2 · pen link
+
+- `penlink_static/pen.js`: a stroke now always ends with a plain lift (`endStroke`). Triggers: pointerup, pointercancel (no longer a discard, the leave flag is dropped on cancel), lostpointercapture, pagehide, window blur, visibilitychange to hidden, socket close, a pointerdown with a new pointerId while one is down (old stroke lifts first, then the new one starts). There is no idle timeout on purpose: Safari sends no pointermove while a pen rests still, so a timer would end real strokes during a held rest (wet media pooling, QuickShape hold). Hover leave is sent on the same page-leaving events.
+- Secure context: not done, by decision. `cryptography` is installed in this environment but is not in `requirements.txt`, and Python's standard library cannot make a certificate; adding a dependency plus a one-time certificate warning on the tablet is more friction than it saves. Instead `pen.js` is confirmed to work without coalesced events: `getCoalescedEvents` is absent on plain http, the code falls back to the event itself, and every pointermove the page gets is sent at full rate with pressure, tilt, twist and altitude/azimuth. `penlink.py` is unchanged.
+- Desktop side (`frontend/src/ui/pen-link.ts`): a socket drop mid-stroke ends the stroke as a lift at the last place seen (was a cancel at 0,0, which discarded the half stroke).
+- Verified in Chromium (tablet context plus desktop page): normal stroke, cancel, pagehide, blur, pointerId switch, socket drop and a stroke after reconnect each give one pointerdown and one pointerup on the desktop canvas, no cancel. A 3 s still hold mid-stroke stays down until the real release.
+
+---
+
 ## v0.17.0 · Fonts and export folders
 
 ### v0.17.0 · review
