@@ -2,6 +2,12 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.18.2 · first Xcode build
+
+- The owner's first build (Xcode 26, iPadOS 26 SDK) failed with 12 errors, all in `UX/MenuBar.swift`: `UIKeyCommand.inputF1` to `inputF12` do not exist. UIKit names them `UIKeyCommand.f1` to `f12` (iPadOS 13.4+; checked in Apple's docs). Fixed.
+- Warning: `UIRequiresFullScreen` is deprecated in iPadOS 26 and ignored later; removed from Info.plist (it was false, the default, so behaviour is unchanged).
+- Left as warnings: "Capture of non-Sendable AVAssetWriter / AVAssetReader ... in a @Sendable closure" in `Export/AVEncoding.swift`. They are warnings in Swift 5 mode; each object is used from one serial queue, so nothing races. Silence later if they get in the way.
+
 ## v0.18.1 · owner decisions
 
 - App Store name `FormMorpheus` (owner, 2026-11-02). `CFBundleDisplayName` is `FormMorpheus` too, so the Home Screen label, the Files folder (On My iPad > FormMorpheus) and the store listing agree. The in-app wordmark stays lowercase like the desktop.

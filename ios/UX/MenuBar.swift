@@ -157,18 +157,19 @@ final class MenuBar {
         case "Escape": return UIKeyCommand.inputEscape
         case "Backspace", "Delete": return UIKeyCommand.inputDelete
         case "Enter": return "\r"
-        case "F1": return UIKeyCommand.inputF1
-        case "F2": return UIKeyCommand.inputF2
-        case "F3": return UIKeyCommand.inputF3
-        case "F4": return UIKeyCommand.inputF4
-        case "F5": return UIKeyCommand.inputF5
-        case "F6": return UIKeyCommand.inputF6
-        case "F7": return UIKeyCommand.inputF7
-        case "F8": return UIKeyCommand.inputF8
-        case "F9": return UIKeyCommand.inputF9
-        case "F10": return UIKeyCommand.inputF10
-        case "F11": return UIKeyCommand.inputF11
-        case "F12": return UIKeyCommand.inputF12
+        // UIKit names the function keys f1 to f12 (no "input" prefix, unlike the arrows).
+        case "F1": return UIKeyCommand.f1
+        case "F2": return UIKeyCommand.f2
+        case "F3": return UIKeyCommand.f3
+        case "F4": return UIKeyCommand.f4
+        case "F5": return UIKeyCommand.f5
+        case "F6": return UIKeyCommand.f6
+        case "F7": return UIKeyCommand.f7
+        case "F8": return UIKeyCommand.f8
+        case "F9": return UIKeyCommand.f9
+        case "F10": return UIKeyCommand.f10
+        case "F11": return UIKeyCommand.f11
+        case "F12": return UIKeyCommand.f12
         default:
             // one letter, digit or punctuation mark; letters are lowercase, Shift travels as a modifier
             if name.count == 1 { return name.lowercased() }
