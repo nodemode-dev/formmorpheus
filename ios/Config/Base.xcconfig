@@ -1,0 +1,11 @@
+// Shared build settings for the iPad app. Committed.
+// Personal values (your team, optionally another bundle identifier) go in Local.xcconfig,
+// which is gitignored. Copy Local.xcconfig.example to Local.xcconfig and edit it.
+
+PRODUCT_BUNDLE_IDENTIFIER = ai.nodemode.formmorpheus
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+// Included last so its values win over the defaults above. The leading hash with a
+// question mark means the include is skipped when the file does not exist.
+#include? "Local.xcconfig"
