@@ -14,6 +14,7 @@ import { isParked, parkedEmpty } from '../paint/tiles';
 import { wetIngest, wetTake } from '../paint/wetmap';
 import type { FromWorker, ToWorker } from '../paint/paint-worker';
 import { patchTiles } from '../paint/history';
+import { memory } from '../platform/ipad-memory';
 
 const NO_BYTES = new Uint8ClampedArray(0);
 
@@ -57,6 +58,12 @@ export class PaintBridge {
       w.onmessage = (e: MessageEvent<FromWorker>) => this.current?.receive(e.data);
       w.onerror = () => this.fail();
       this.worker = w;
+      if (memory.kind === 'ipad') {
+        const send = (warn: boolean): void => { if (memory.tier !== 'desktop') w.postMessage({ t: 'memory', tier: memory.tier, warn } satisfies ToWorker); };
+        send(false);
+        memory.onChange(() => send(false));
+        memory.onPressure((level) => { if (level === 'warning') send(true); });
+      }
     } catch { this.broken = true; }
     return this.worker;
   }

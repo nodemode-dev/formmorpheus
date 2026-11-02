@@ -1,3 +1,4 @@
+import { platform } from '../platform';
 import { lowFetch } from './thumb-queue';
 
 export interface Capabilities {
@@ -178,17 +179,9 @@ function exportName(path: string): string | null {
   return rest && !/[\\/]/.test(rest) ? rest : null;
 }
 
-/** Saves a blob through the browser's download (an anchor with the download attribute). */
+/** Hands a file to the person: the browser's download on the desktop (platform/desktop.ts), the system export sheet on iPad. */
 export function downloadBlob(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  platform.files.download(blob, name);
 }
 
 /** Opens an export from the Exports page: downloads it. False when the path is not one of the kept exports. */

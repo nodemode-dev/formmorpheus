@@ -5,6 +5,7 @@ import { t } from './i18n';
 import { tf } from './i18n-fill';
 import { toast } from './toast';
 import { flipHome, flipToCloud, inCloudTheater } from './theater-flip';
+import { platform } from '../platform';
 
 /** Storage choices of the Theater: the side panel button that opens the library folder choice (its tooltip shows the
  *  folder in use) and Copy to Folder for movies (a second storage). Desktop picks the folder with the system dialog;
@@ -14,6 +15,14 @@ let dialog: LibraryFolderDialog | null = null;
 
 /** Wires the side panel button: click opens Library Folder, the tooltip follows the folder in use. */
 export function mountStorageButton(btn: HTMLElement): void {
+  // iPad: the Library is fixed in the app's Documents folder (shown in Files); there is no folder to choose
+  if (platform.kind === 'ipad') {
+    const span = btn.lastElementChild;
+    if (span) span.textContent = t('On This iPad');
+    btn.title = t('On This iPad');
+    btn.classList.add('is-here');
+    return;
+  }
   const tip = async (): Promise<void> => {
     const caps = await capabilities();
     const label = t('Library folder');

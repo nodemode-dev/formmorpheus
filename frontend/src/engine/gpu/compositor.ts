@@ -1,6 +1,7 @@
 // WebGL2 compositor on an OffscreenCanvas. It walks the tracks the way Renderer.composeTracks does (held
 // layer, clipping, alpha / luminance masks, blends, keyed opacity, live filters, groups) but on the GPU.
 // The CPU path in render.ts stays the reference and the fallback. No DOM.
+import { memory } from '../../platform/ipad-memory';
 import { end, flipIndexAt } from '../model';
 import { animate, type Animated } from '../keys';
 import { memberMatrix, topMatrix } from '../transform';
@@ -122,9 +123,6 @@ function permTable(seed: number): Uint8Array {
 }
 
 const NOISE_SEED = 7;
-const TEXTURE_CAP = 512 * 1024 * 1024;
-/** Idle pooled surfaces kept per size, in bytes (a 3840 px surface is 33 to 118 MB, a 1080p one 8 MB). */
-const POOL_IDLE_BYTES = 64 * 1024 * 1024;
 /** Below this the driver cannot hold even a small movie; the GL minimum is 2048. */
 const MIN_SIDE = 2048;
 
@@ -182,7 +180,12 @@ export class GpuCompositor {
     );
     if (this.maxSide < MIN_SIDE) return false;
     while (gl.getError() !== gl.NO_ERROR) { /* drain what the context start left */ }
-    this.cache = new TextureCache(gl, TEXTURE_CAP, this.maxSide);
+    this.cache = new TextureCache(gl, memory.get('gpuTexture'), this.maxSide);
+    this.unwatch = [
+      memory.watch('gpuTexture', (v) => { this.cache.setCap(v); }),
+      memory.watch('gpuPoolIdle', (v) => { this.trimPool(v); }),
+      memory.meter('gpuTexture', 'gpuTexture', () => this.cache.size),
+    ];
     this.checkFloat();
     this.tree = new GpuTree({
       gl,
@@ -289,6 +292,8 @@ export class GpuCompositor {
   }
 
   dispose(): void {
+    for (const u of this.unwatch) u();
+    this.unwatch = [];
     if (!this.lost && !this.gl.isContextLost()) {
       this.cache.forget();
       this.gl.getExtension('WEBGL_lose_context')?.loseContext();
@@ -360,9 +365,24 @@ export class GpuCompositor {
     let list = this.pool.get(key);
     if (!list) { list = []; this.pool.set(key, list); }
     // about 64 MB idle per size: ten at 1080p, two at 3840 px
-    const room = Math.min(10, Math.max(2, Math.floor(POOL_IDLE_BYTES / (s.w * s.h * (s.fmt === 'f16' ? 8 : 4)))));
-    if (list.length < room) list.push(s);
+    if (list.length < this.poolRoom(s)) list.push(s);
     else this.free(s);
+  }
+
+  /** Idle pooled surfaces kept per size, in bytes (a 3840 px surface is 33 to 118 MB, a 1080p one 8 MB). */
+  private poolRoom(s: Surf, bytes = memory.get('gpuPoolIdle')): number {
+    return Math.min(10, Math.max(2, Math.floor(bytes / (s.w * s.h * (s.fmt === 'f16' ? 8 : 4)))));
+  }
+
+  private unwatch: Array<() => void> = [];
+
+  /** A lower memory tier or a warning: pooled surfaces beyond the new room are freed now. */
+  private trimPool(bytes: number): void {
+    if (this.lost) return;
+    for (const [key, list] of this.pool) {
+      while (list.length && list.length > this.poolRoom(list[0], bytes)) this.free(list.pop() as Surf);
+      if (!list.length) this.pool.delete(key);
+    }
   }
 
   private free(s: Surf): void {

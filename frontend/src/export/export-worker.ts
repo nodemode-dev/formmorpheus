@@ -2,6 +2,7 @@
 // 'file' mode runs the ordinary exporter (run.ts) here; 'frames' mode sends one PNG per frame for the engine jobs.
 // Sound is mixed on the page and arrives as PCM. Video is decoded here too (worker-video.ts).
 import { Renderer } from '../engine/render';
+import { memory } from '../platform/ipad-memory';
 import { WorkerVideo } from './worker-video';
 import { Run, type PcmMix } from './run';
 import { drawDelivery, loadWatermark } from './reframe';
@@ -95,7 +96,7 @@ async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
     const list = m.frameList ?? [];
     for (let i = 0; i < list.length; i++) {
       // stay at most a few frames ahead of what the page has taken
-      while (i >= consumed + 4 && !cancelled) await new Promise<void>((res) => { wake = res; });
+      while (i >= consumed + memory.get('exportAhead') && !cancelled) await new Promise<void>((res) => { wake = res; });
       if (cancelled) throw new DOMException('Export cancelled', 'AbortError');
       await renderer.prepareFrame(movie, list[i]);
       drawDelivery(renderer, ctx, movie, list[i], o, m.keepAlpha === true, wm);
@@ -105,6 +106,7 @@ async function runFrames(m: StartMsg, renderer: Renderer): Promise<void> {
 }
 
 async function start(m: StartMsg): Promise<void> {
+  if (m.memTier) memory.adopt(m.memTier);
   const blobs = new Map(Object.entries(m.blobs));
   const renderer = new Renderer((id) => blobs.get(id), () => undefined);
   const video = new WorkerVideo((id) => blobs.get(id));

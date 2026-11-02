@@ -3,11 +3,15 @@ import { el, q, setText } from '../ui/dom';
 import { Dialog } from '../ui/dialogs';
 import { toast } from '../ui/toast';
 import { t, tn } from '../ui/i18n';
+import { tf } from '../ui/i18n-fill';
+import { memory } from '../platform/ipad-memory';
+import { platform } from '../platform';
 import { api, serviceReady } from './api';
 
 export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number; gone?: boolean; wait?: number }
 
-const EVERY_MS = 60_000;
+// the web view's content process can be killed without warning on iPad, so the beat is shorter there
+const EVERY_MS = memory.kind === 'ipad' ? 30_000 : 60_000;
 const BEAT_MS = 20_000;
 const FIRST_EDIT_MS = 5_000;
 const MIN_GAP_MS = 5_000;
@@ -109,11 +113,19 @@ export class Recovery {
     });
     // a window sent to the background may be closed or killed from there: write what is unwritten now
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.later(0); });
+    // the app sent to the background may be ended from there: write at once, past the minimum gap
+    memory.onAppState((active) => { if (!active) { this.lastAt = 0; void this.snapshot(); } });
     this.timer = window.setInterval(() => { host.engine.collectAssets(); void this.snapshot(); }, EVERY_MS);
     // this window's snapshot stays "alive" while the window lives, so another window does not take it for a crash
-    const beat = (): void => { if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined); };
+    const beat = (): void => {
+      if (this.written) void fetch(`${base(SESSION)}/alive`, { method: 'POST' }).catch(() => undefined);
+      // iPad: no socket, so the engine's lease (renewed here) says this window lives
+      if (!platform.features.liveRecoverySocket) void fetch(`${base(SESSION)}/live`, { method: 'POST' }).catch(() => undefined);
+    };
     this.beat = window.setInterval(beat, BEAT_MS);
     document.addEventListener('visibilitychange', beat);
+    // no socket on iPad: the 20 s beat above renews the engine's lease, and it is sent again whenever the app comes back
+    if (!platform.features.liveRecoverySocket) { platform.bridge.on('appState', () => beat()); beat(); }
     // an open stream tells the engine this window is alive; when the window dies the stream closes and its snapshot is offered at once
     void this.keepLive();
     window.addEventListener('pageshow', (e) => { if (e.persisted) void this.keepLive(); });
@@ -122,6 +134,7 @@ export class Recovery {
     window.addEventListener('pagehide', (e) => {
       if (e.persisted) return;
       try { void fetch(base(SESSION), { method: 'DELETE', keepalive: true }); } catch { /* the engine is gone */ }
+      if (!platform.features.liveRecoverySocket) { try { void fetch(`${base(SESSION)}/live`, { method: 'DELETE', keepalive: true }); } catch { /* the engine is gone */ } }
     });
   }
 
@@ -143,6 +156,7 @@ export class Recovery {
 
   /** Holds the live socket open, reopening it with a growing pause if it drops, until the page goes away. Stops when an engine that is up never accepts it (an older engine). */
   private async keepLive(): Promise<void> {
+    if (!platform.features.liveRecoverySocket) return;
     const run = ++this.liveRun;
     this.liveSock?.close();
     let fails = 0;
@@ -194,6 +208,29 @@ export class Recovery {
     }
   }
 
+  /**
+   * Opens the newest snapshot of any other session, dead or not (the killed page cannot say it is gone), as a new
+   * movie with a notice. Does nothing when a movie is already open or there is no snapshot.
+   */
+  private async openAfterKill(): Promise<void> {
+    const items = (await listSnapshots()).filter((i) => i.session !== SESSION).sort((a, b) => b.time - a.time);
+    const latest = items[0];
+    if (!latest || this.host.engine.movie) return;
+    try {
+      const res = await fetch(base(latest.session));
+      if (!res.ok) return;
+      const blob = await res.blob();
+      if (this.host.engine.movie) return;
+      const name = `${latest.name} (Recovered)`;
+      await this.host.openRecovered(blob, name);
+      this.clean = false;
+      this.forced = true;
+      await this.snapshot();
+      await fetch(base(latest.session), { method: 'DELETE' });
+      toast(tf('The web view restarted to free memory, so your last snapshot of "{name}" was opened.', { name: latest.name }), 'info');
+    } catch { /* the snapshot stays for the usual question */ }
+  }
+
   /** Removes this session's snapshot. */
   async clear(): Promise<void> {
     this.written = false;
@@ -208,6 +245,8 @@ export class Recovery {
    */
   async offer(mode: 'start' | 'menu' | 'new' = 'start'): Promise<void> {
     if (this.dialog?.isOpen) return;
+    // iPad: the web view was killed and reloaded, so the newest snapshot opens by itself instead of the usual question
+    if (mode === 'start' && memory.kind === 'ipad' && (await memory.afterKill())) await this.openAfterKill();
     const all = await listSnapshots();
     // a window whose stream closed a moment ago may only be reconnecting: look again when its grace ends
     const wait = Math.max(0, ...all.filter((i) => i.session !== SESSION && !i.gone).map((i) => i.wait ?? 0));

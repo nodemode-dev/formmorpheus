@@ -1,3 +1,4 @@
+import { memory } from '../platform/ipad-memory';
 import { end, flipIndexAt } from './model';
 import { drawMaskedRows, hasRowMask } from './flip-draw';
 import { animate, type Animated } from './keys';
@@ -43,13 +44,9 @@ export const BLEND_OP: Record<BlendMode, GlobalCompositeOperation> = {
   'pin-light': 'source-over', 'hard-mix': 'source-over', subtract: 'source-over', divide: 'source-over',
 };
 
-/** Decoded pictures may hold this many bytes; the ones drawn in the last two frames always stay. */
-const BITMAP_CAP_BYTES = 1024 * 1024 * 1024;
 /** Drawing-layer pictures are decoded at one of these shares of their size (never below the view's); under 1.5 Mpx they stay whole. */
 const DECODE_STEPS = [0.25, 0.375, 0.5, 0.75];
 const DECODE_MIN_AREA = 1.5e6;
-/** Most a movie's pictures decode ahead of its first frame. */
-const PRELOAD_BYTES = 384 * 1024 * 1024;
 /** Pictures decoded at once. */
 const DECODE_LANES = 3;
 /** Canvas filters (blur) where the browser has them; others take the CPU path in paint/filters. */
@@ -68,12 +65,11 @@ export interface View {
 
 /** Largest side and area (pixels) of the flat surface a Warp, Distort or bones content is drawn on before it is re-projected. */
 const FLAT_SIDE = 8192;
-const FLAT_AREA = 48 * 1024 * 1024;
 
 /** Pixels per movie pixel of the flat surface: the view's scale, lowered only when the surface would pass the caps (a deep zoom). */
 function flatScale(movie: Movie, view: View): number {
   const w = Math.max(1, movie.width * view.scale), h = Math.max(1, movie.height * view.scale);
-  const k = Math.min(1, FLAT_SIDE / Math.max(w, h), Math.sqrt(FLAT_AREA / (w * h)));
+  const k = Math.min(1, FLAT_SIDE / Math.max(w, h), Math.sqrt(memory.get('flatArea') / (w * h)));
   return view.scale * k;
 }
 
@@ -114,7 +110,12 @@ export class Renderer {
   /** What the last probe measured; null before the first probe. */
   gpuProbe: ProbeResult | null = null;
 
-  constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {}
+  constructor(private readonly blobOf: (id: string) => Blob | undefined, private readonly onReady: () => void) {
+    if (memory.kind !== 'ipad') return;
+    const me = new WeakRef(this);
+    const off = memory.watch('bitmaps', (v) => { const r = me.deref(); if (r) r.evictBitmaps(v); else off(); });
+    const un = memory.meter('bitmaps', 'bitmaps', () => { const r = me.deref(); if (!r) { un(); return 0; } let s = 0; for (const b of r.bitmaps.values()) if (b) s += b.width * b.height * 4; return s; });
+  }
 
   /** The stored file of an asset (the export worker is handed these). */
   assetBlob(id: string): Blob | undefined { return this.blobOf(id); }
@@ -290,7 +291,7 @@ export class Renderer {
     const lane = async (): Promise<void> => {
       // `ahead` (opening a movie): past a few hundred MB the rest decode when a frame asks for them, at the size it needs;
       // a frame about to be drawn or exported needs every picture, so it is not capped
-      for (let it = todo.shift(); it && (!ahead || bytes < PRELOAD_BYTES); it = todo.shift()) {
+      for (let it = todo.shift(); it && (!ahead || bytes < memory.get('preload')); it = todo.shift()) {
         const [id, blob] = it;
         try {
           // premultiplied on purpose: the GPU path ignores the unpack flag for a bitmap and assumes this
@@ -390,11 +391,16 @@ export class Renderer {
     // a picture decoded for the draw in progress is protected from eviction; one decoded ahead of time is not
     if (drawn) this.used.set(id, this.gen);
     else if (!this.used.has(id)) this.used.set(id, -10);
+    this.evictBitmaps();
+  }
+
+  /** Closes the least recently drawn pictures until the cap holds (also called when a lower memory tier lowers the cap). */
+  private evictBitmaps(cap = memory.get('bitmaps')): void {
     let sum = 0;
     for (const b of this.bitmaps.values()) if (b) sum += b.width * b.height * 4;
-    if (sum <= BITMAP_CAP_BYTES) return;
+    if (sum <= cap) return;
     for (const [key, b] of Array.from(this.bitmaps)) {
-      if (sum <= BITMAP_CAP_BYTES) break;
+      if (sum <= cap) break;
       if ((this.used.get(key) ?? 0) >= this.gen - 1) continue;
       if (b) { sum -= b.width * b.height * 4; b.close(); }
       this.bitmaps.delete(key);

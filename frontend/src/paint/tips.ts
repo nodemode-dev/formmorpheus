@@ -2,6 +2,7 @@
 // A tip is an N x N alpha map (0..255) of the dab at a bucketed diameter,
 // roundness and angle; the stroke engine resamples it to the exact dab size.
 
+import { memory } from '../platform/ipad-memory';
 import type { TipImage, TipShape } from './types';
 
 export interface Tip {
@@ -14,7 +15,6 @@ export interface Tip {
 
 const MAX_TIP = 384;
 /** Capped by bytes, not count: a brush that turns every dab (random angle, 3 degree buckets) misses a 96-entry cache each time and rebuilds a tip per dab. */
-const CACHE_BYTES = 96 * 1024 * 1024;
 const CACHE_MIN = 96;
 let cacheBytes = 0;
 const ANGLE_STEP = 3;
@@ -79,14 +79,20 @@ export function getTip(shape: TipShape, diameter: number, softness: number, roun
   const tip = buildTip(shape, d, soft, rn, ang, img);
   cache.set(key, tip);
   cacheBytes += tip.data.byteLength;
-  while (cache.size > CACHE_MIN && cacheBytes > CACHE_BYTES) {
+  shedTips(memory.get('tipCache'));
+  return tip;
+}
+
+function shedTips(cap: number): void {
+  while (cache.size > CACHE_MIN && cacheBytes > cap) {
     const first = cache.keys().next().value;
     if (first === undefined) break;
     cacheBytes -= cache.get(first)!.data.byteLength;
     cache.delete(first);
   }
-  return tip;
 }
+
+if (memory.kind === 'ipad') memory.watch('tipCache', shedTips);
 
 /** Bilinear coverage of a picture tip at fractional pixel (x, y); 0 outside. */
 function sampleImage(im: TipImage, x: number, y: number): number {

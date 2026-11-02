@@ -3,19 +3,19 @@
 // every shared edge pushed out 0.75 px (so neighbours overlap, no seams), outline edges antialiased, later
 // triangles overwriting earlier ones (never blending twice on a translucent picture). One draw per mesh.
 // No DOM.
+import { memory } from '../../platform/ipad-memory';
 import { HEAD } from './shaders';
 
 type Mat = [number, number, number, number, number, number];
 
 /** Largest side and area (pixels) of the flat surface; the same caps as render.ts flatScale. */
 const FLAT_SIDE = 8192;
-const FLAT_AREA = 48 * 1024 * 1024;
 
 /** Pixels per movie pixel of the flat surface for a view scale (lowered only when the surface would pass the caps). */
 export function flatScaleOf(movieW: number, movieH: number, scale: number, maxSide = FLAT_SIDE): number {
   const w = Math.max(1, movieW * scale), h = Math.max(1, movieH * scale);
   // the surface also has to fit the driver's own texture limit
-  const k = Math.min(1, Math.min(FLAT_SIDE, maxSide) / Math.max(w, h), Math.sqrt(FLAT_AREA / (w * h)));
+  const k = Math.min(1, Math.min(FLAT_SIDE, maxSide) / Math.max(w, h), Math.sqrt(memory.get('flatArea') / (w * h)));
   return scale * k;
 }
 
