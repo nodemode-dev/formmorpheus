@@ -23,9 +23,9 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 
 ## Run Diagnostics and send the file
 
-1. In the app open Settings > About > Diagnostics and run the checks.
+1. In the app open Help > About formmorpheus, then Diagnostics... . Do the Pencil test first (draw, hover and twist the Pencil on the pad), then Run Diagnostics.
 2. The app saves one file, `diagnostics-[date].json`, and shows the share sheet. Send it with AirDrop, Mail or Messages.
-3. The same file stays in the Files app under On My iPad > formmorpheus > Diagnostics.
+3. The same file stays in the Files app under On My iPad > FormMorpheus > Diagnostics.
 4. Send that file together with any Xcode build errors.
 
 ## Where things are
@@ -33,4 +33,4 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 - `ios/project.yml`: the project spec. `ios/Config/Base.xcconfig`: shared build settings.
 - `ios/App`, `ios/Web`: the app, the web view host, the `fm://` scheme handler and the bridge.
 - `ios/Resources/web`: the built interface (generated, not committed).
-- Files you create appear in the Files app under On My iPad > formmorpheus.
+- Files you create appear in the Files app under On My iPad > FormMorpheus. A movie opened from anywhere else in Files is copied into the Library there; the original is never changed.

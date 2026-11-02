@@ -1,15 +1,15 @@
 # App Store metadata (draft)
 
-A draft for App Store Connect. Edit freely; the owner decides the final name and wording.
+A draft for App Store Connect. The name is the owner's (2026-11-02); the rest is a draft to edit freely.
 
 ## Name and subtitle
 
-- Name: formmorpheus (30 characters at most)
+- Name: FormMorpheus (the owner's choice; it is also the name under the icon on the Home Screen and the app's folder in Files)
 - Subtitle: Frame by frame animation studio (30 characters at most)
 
 ## Description
 
-formmorpheus is an animation studio built around a Stage over a Timeline. Draw frame by frame with Apple Pencil, or perform your motion live and let the Timeline keep it.
+FormMorpheus is an animation studio built around a Stage over a Timeline. Draw frame by frame with Apple Pencil, or perform your motion live and let the Timeline keep it.
 
 Draw and paint with brushes that respond to pressure and tilt, and with Apple Pencil Pro squeeze, double tap, barrel roll and hover. Use onion skin to see the frames around the one you are drawing. Arrange drawings, video and sound on tracks, set keyframes, and play it all back on the Stage.
 
@@ -40,7 +40,7 @@ Answer No to every content question (no violence, no mature themes, no gambling,
 
 ## Review notes
 
-The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. All files are stored on the device in the Files app under On My iPad > formmorpheus. The app does not use the network. A Diagnostics page under Settings > About > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
+The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. All files are stored on the device in the Files app under On My iPad > FormMorpheus. The app does not use the network. A Diagnostics page under Help > About formmorpheus > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
 
 ## Support and marketing
 

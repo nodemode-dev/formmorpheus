@@ -4,7 +4,7 @@ Steps to put a build of the iPad app on TestFlight for internal testing. Needs a
 
 ## Before the first upload
 
-1. In App Store Connect (appstoreconnect.apple.com) open Apps and add a new app: platform iOS, a name, primary language, the bundle identifier `ai.nodemode.formmorpheus` (or the one set in `ios/Config/Local.xcconfig`) and an SKU of your choice. If the bundle identifier is not in the list, register it first under Certificates, Identifiers & Profiles.
+1. In App Store Connect (appstoreconnect.apple.com) open Apps and add a new app: platform iOS, the name FormMorpheus, primary language, the bundle identifier `ai.nodemode.formmorpheus` (or the one set in `ios/Config/Local.xcconfig`) and an SKU of your choice. If the bundle identifier is not in the list, register it first under Certificates, Identifiers & Profiles.
 2. Make sure `ios/Config/Local.xcconfig` holds your `DEVELOPMENT_TEAM`.
 3. Check the version: `MARKETING_VERSION` in `ios/project.yml` is the visible version. Raise `CURRENT_PROJECT_VERSION` (the build number) for every upload, since App Store Connect rejects a repeated number.
 

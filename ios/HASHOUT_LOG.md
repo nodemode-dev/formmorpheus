@@ -2,6 +2,12 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.18.1 · owner decisions
+
+- App Store name `FormMorpheus` (owner, 2026-11-02). `CFBundleDisplayName` is `FormMorpheus` too, so the Home Screen label, the Files folder (On My iPad > FormMorpheus) and the store listing agree. The in-app wordmark stays lowercase like the desktop.
+- Movies opened from Files stay copied into the Library, never edited in place (the owner left it to the lead). Why: the engine's atomic save, autosave, recovery snapshots and Recently Deleted all assume the movie lives in the Library; editing a file in iCloud Drive or another app's folder in place would need security-scoped bookmarks kept across launches, coordinated writes and conflict handling, and a failed write there could damage the person's only copy. A copy is never at risk; Share or Save to Files puts it back wherever they want.
+- A lower-end test iPad: not now (owner); the M5 is the only device for the first runs.
+
 ## v0.18.0 · swift review (engine, export)
 
 Read line by line as a compiler would: all of `ios/Engine/*.swift` and `ios/Export/*.swift` (19 files). Syntax by the tree-sitter parser (0 errors in all 19), symbols against the Apple docs (AVVideoCodecType spellings, requestMediaDataWhenReady, CVBufferSetAttachment), routes by `setup/api_contract_check` (required missing 0) and the engine route_check (no backend route without a Swift route). The zip code was ported step by step to Python (`w20_swiftrev/zipsim.py`): EOCD search, zip64 end records and extra fields, central directory, local header skip, raw DEFLATE (`zlib.decompress(data, -15)`, the format COMPRESSION_ZLIB reads), CRC-32 by the same table. It reads every entry of four real movies (stored and deflated) and of a data-descriptor zip with a comment, a folder and a UTF-8 name; the writer port (raw copy plus a stored entry, no data descriptor) opens with Python's `zipfile` (`testzip` clean, contents equal).
