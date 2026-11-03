@@ -1,6 +1,6 @@
 [package]
 name = "formmorpheus"
-version = "0.17.2"
+version = "0.17.3"
 description = "formmorpheus desktop shell"
 authors = ["nodemode-ai"]
 license = "Apache-2.0"
