@@ -4,6 +4,6 @@
 <dict>
   <!-- Tauri merges this file into the app bundle's Info.plist. macOS shows this text in its microphone prompt. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>formmorpheus records your voice onto the Timeline when you use Record sound. Nothing is recorded until you press Record.</string>
+  <string>FormMorpheus records your voice onto the Timeline when you use Record sound. Nothing is recorded until you press Record.</string>
 </dict>
 </plist>

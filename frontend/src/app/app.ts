@@ -760,7 +760,7 @@ export function startApp(): void {
     const m = engine.movie;
     const shown = movieLabel(engine);
     setText(docTitle, shown);
-    const title = m ? `${shown} - formmorpheus` : 'formmorpheus';
+    const title = m ? `${shown} - FormMorpheus` : 'FormMorpheus';
     if (title === windowTitle) return;
     windowTitle = title;
     document.title = title;
