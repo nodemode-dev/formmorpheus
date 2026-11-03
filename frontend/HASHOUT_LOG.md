@@ -190,7 +190,7 @@ frontend/
 ├── oc_install / boot_frontend  install & dev server scripts (+ .bat)
 ├── public/
 │   ├── splash.html             the desktop splash card, formmorpheusSplashDone()
-│   └── favicon.svg/.ico, apple-touch-icon.png
+│   └── favicon.png/.ico, apple-touch-icon.png
 └── src/
     ├── main.ts                 applyTheme, language, startApp, page translator
     ├── version.ts              VERSION (the dispatcher reads this line)
