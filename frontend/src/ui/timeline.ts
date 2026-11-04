@@ -1257,7 +1257,7 @@ export class TimelineView {
     }
     const tileW = Math.round(BLOCK_H * (m.width / m.height));
     if (item.kind === 'flipbook') {
-      drawFlipCells(c, item, x0, y, BLOCK_H, this.ppf, this.width, tileW, (local) => this.flipTile(m, item, local, tileW));
+      drawFlipCells(c, item, x0, y, BLOCK_H, this.ppf, this.width, tileW, (local) => this.flipTile(m, item, local, tileW), m.transparent ? undefined : m.background);
       return;
     }
     if (item.kind === 'group') { drawGroupPreview(c, item, x0, y, w, BLOCK_H, this.ppf, this.palette().text); return; }
