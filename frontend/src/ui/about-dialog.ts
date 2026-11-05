@@ -1,11 +1,11 @@
 import notice from '../../../NOTICE.md?raw';
 import '../styles/onboarding.css';
 import { capabilities } from '../io/api';
+import { platform } from '../platform';
 import { VERSION } from '../version';
 import { Dialog } from './dialogs';
 import { el, q, setHidden, setText } from './dom';
 import { renderMarkdown } from './help-view';
-import { icon } from './icons';
 import { t } from './i18n';
 
 /** About formmorpheus: the version of the interface and of the engine, the credits, and the licenses (NOTICE.md,
@@ -21,7 +21,7 @@ export class AboutDialog extends Dialog {
     q(this.scrim, '.cv-dialog').classList.add('fm-about-dlg');
     const root = el(`<div class="fm-about">
       <div class="fm-about-head">
-        <span class="fm-about-mark">${icon('film', 30)}</span>
+        <img class="fm-about-mark" src="/mark.png" width="52" height="52" alt="" decoding="sync">
         <div><div class="fm-about-name">formmorpheus</div><div class="fm-about-by">by NodeMode</div></div>
       </div>
       <dl class="fm-about-facts">
@@ -45,6 +45,16 @@ export class AboutDialog extends Dialog {
       setHidden(this.lic, !show);
       this.toggle.setAttribute('aria-expanded', String(show));
     });
+    // iPad only: the device checks the owner runs (built on first use, from a template, before it is shown)
+    if (platform.kind === 'ipad') {
+      const diag = el<HTMLButtonElement>('<button class="cv-btn fm-about-diag" type="button"></button>');
+      setText(diag, t('Diagnostics...'));
+      this.toggle.after(diag);
+      let dlg: { show(): void } | null = null;
+      diag.addEventListener('click', () => {
+        void import('./diagnostics-dialog').then((m) => { dlg ??= new m.DiagnosticsDialog(); dlg.show(); });
+      });
+    }
     this.button('Close', 'primary', () => this.close());
   }
 

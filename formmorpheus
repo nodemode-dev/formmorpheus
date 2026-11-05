@@ -17,8 +17,9 @@ usage: ./formmorpheus [command]
   freeze              freeze the backend into the desktop engine
   desktop dev         run the desktop app against the dev servers
   desktop build       build the desktop installers (same as ./build_app)
+  ios [--no-open]     build the iPad app project (macOS only): interface, XcodeGen, Xcode
   doctor              check the toolchain, installs and ports
-  lint                text lint: no em dash, emoji, attribution trailers or banned names
+  lint               text lint: no em dash, emoji, attribution trailers or banned names
   version             the version and build
   clean [--all]       remove build output (--all also venv and node_modules)
   help                this text
@@ -42,6 +43,7 @@ case "$cmd" in
       build) exec ./build_app "$@" ;;
       *) usage; exit 2 ;;
     esac ;;
+  ios) exec setup/ios "$@" ;;
   doctor) exec setup/doctor "$@" ;;
   lint) exec python3 setup/lint_text "$@" ;;
   clean) exec setup/clean "$@" ;;

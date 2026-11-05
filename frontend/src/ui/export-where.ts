@@ -1,6 +1,7 @@
 // Where an export goes when the person chooses a folder: the desktop app's folder dialog (the engine then writes the
 // files), or the browser's own directory picker where it has one. Without either, the file is downloaded as before.
 import { unzipSync } from 'fflate';
+import { platform } from '../platform';
 import { t } from './i18n';
 
 export type Dest = { kind: 'browser'; dir: FileSystemDirectoryHandle } | { kind: 'engine'; dir: string };
@@ -9,7 +10,7 @@ type DirPicker = (opts?: { mode?: 'read' | 'readwrite'; id?: string }) => Promis
 const picker = (): DirPicker | undefined => (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker;
 const desktop = (): boolean => '__TAURI_INTERNALS__' in window;
 
-export const canPickFolder = (): boolean => desktop() || typeof picker() === 'function';
+export const canPickFolder = (): boolean => platform.features.folderPicker && (desktop() || typeof picker() === 'function');
 
 /** Asks for a folder: null when the person cancels, 'unavailable' when the platform refuses the dialog (the browser wants a click
  *  just before it, which a started-from-elsewhere export does not have), so the caller falls back to a download. */

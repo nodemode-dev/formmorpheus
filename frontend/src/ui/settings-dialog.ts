@@ -1,4 +1,5 @@
 import { capabilities } from '../io/api';
+import { platform } from '../platform';
 import { Dialog, confirmAction } from './dialogs';
 import { el, q, setClass, setHidden, setText, setValue } from './dom';
 import { gesturePrefs, setFingerPaints } from './gestures';
@@ -73,6 +74,8 @@ export class SettingsDialog extends Dialog {
 
   constructor(private readonly onPrefs: (p: Prefs) => void) {
     super('Preferences', 620);
+    // iPad: the library is the app's Documents folder and the engine refuses a change, so the button is not offered
+    if (platform.kind === 'ipad') this.libraryBtn.hidden = true;
     this.libraryBtn.addEventListener('click', () => { this.libraryDialog ??= new LibraryFolderDialog(); void this.libraryDialog.show(() => this.sync()); });
     const swatches = document.createElement('template');
     swatches.innerHTML = themeSwatchesHtml();

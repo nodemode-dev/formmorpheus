@@ -15,6 +15,7 @@ import type { Movie, Track } from '../engine/types';
 import type { AudioClip, ClockSource } from './types';
 import { duckProbe, reductionAt } from './duck-meter';
 import { loadPeaks, savePeaks } from './peaks-cache';
+import { memory } from '../platform/ipad-memory';
 
 export interface Peaks { min: Float32Array; max: Float32Array; perSecond: number }
 
@@ -36,7 +37,6 @@ interface Session {
 /** Sample rate of pre-rendered track buses: fixed so playback and export read the same numbers. */
 const BUS_RATE = 48000;
 /** Most sample values the pre-rendered buses may hold in memory together (4 bytes each); the oldest are dropped first. */
-const BUS_CAP_SAMPLES = 96_000_000;
 
 /** A pre-rendered stretch of a track's sound: planar channels starting at sample `from` (BUS_RATE) of movie time. */
 interface Span { chs: Float32Array[]; from: number }
@@ -75,7 +75,7 @@ export class AudioEngine implements ClockSource {
   private trimBuses(): void {
     const size = (m: Map<string, { span: Span }>): number => { let n = 0; for (const e of m.values()) n += e.span.chs.length * (e.span.chs[0]?.length ?? 0); return n; };
     // a bus without ducking shares its arrays with the raw entry: count the larger of the two maps, drop raw first
-    while (size(this.rawCache) + size(this.busCache) > BUS_CAP_SAMPLES) {
+    while (size(this.rawCache) + size(this.busCache) > memory.get('audioBus')) {
       const k = this.rawCache.keys().next().value ?? this.busCache.keys().next().value;
       if (k === undefined) break;
       if (this.rawCache.has(k)) this.rawCache.delete(k); else this.busCache.delete(k);
@@ -793,7 +793,6 @@ function scheduleClip(
 
 const fxMade = new WeakMap<AudioBuffer, Map<string, AudioBuffer>>();
 /** Most sample values the processed block buffers may hold together (4 bytes each); the oldest go first. */
-const FX_CAP_SAMPLES = 48_000_000;
 const fxOrder: { per: Map<string, AudioBuffer>; key: string; size: number }[] = [];
 let fxHeld = 0;
 
@@ -833,7 +832,7 @@ function fxStore(ctx: BaseAudioContext, src: AudioBuffer, key: string, out: Floa
   const size = out.length * made.length;
   fxOrder.push({ per, key, size });
   fxHeld += size;
-  while (fxHeld > FX_CAP_SAMPLES && fxOrder.length > 1) {
+  while (fxHeld > memory.get('audioFx') && fxOrder.length > 1) {
     const o = fxOrder.shift() as (typeof fxOrder)[number];
     o.per.delete(o.key);
     fxHeld -= o.size;

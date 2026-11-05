@@ -60,13 +60,16 @@ import { wireBrushDrop } from './brush-drop';
 import { PaintClip } from './paint-clip';
 import { FeelPopover, FeelStore } from './paint-feel';
 import { PaintCursorLayer } from './paint-cursor';
+import { mountPaintOverflow } from './paint-narrow';
 import { paintCommandDefs, paintCommandFor, type PaintCmdId } from './paint-keys';
 import { ROLL_NAME, brushScale } from '../paint/feel';
 import type { BarrelAction } from '../paint/pen-arbiter';
+import { hoverPreviewOff, pencilRoll } from '../platform/ipad-pencil';
 import { setPressureGamma } from '../paint/dynamics';
 import type { Command, Commands } from './commands';
 import { decodeTiff } from '../media/tiff-decode';
 import { decodeTga } from '../media/tga-decode';
+import { memory } from '../platform/ipad-memory';
 
 interface BrushState { size: number; opacity: number; /** Smudge only: how far the smear carries (the brush's pickup is 1 minus this). */ strength?: number }
 
@@ -312,6 +315,7 @@ export class PaintView {
     this.toastEl = q(this.root, '.fm-paint-toast');
     historyNotice.handler = (text) => toast(text);
     this.menu = q(this.root, '.fm-paint-menu');
+    mountPaintOverflow(this.root);
 
     this.prefs = loadPaintPrefs();
     this.holdUndoBtn.delay = this.holdRedoBtn.delay = this.prefs.undoDelay;
@@ -329,6 +333,8 @@ export class PaintView {
     this.input = new PenInput({ toCanvas: (x, y) => this.toCanvas(x, y), smoothing: 0, fingerPaints: this.prefs.fingerPaints });
     // Preferences > Gestures can change finger painting while this view exists
     document.addEventListener('fm:gesture-prefs', () => { this.prefs = { ...this.prefs, fingerPaints: loadPaintPrefs().fingerPaints }; this.input.fingerPaints = this.prefs.fingerPaints; });
+    // the iPad's Pencil squeeze and double tap (platform/ipad-pencil.ts); the event never fires on the desktop
+    document.addEventListener('fm:pencil-action', (ev) => this.pencilAction((ev as CustomEvent<{ action: string }>).detail.action));
 
     this.colour = new ColourPanel({ onPick: (rgb) => this.setColourChip(rgb), onSecondary: (rgb) => setStyleVar(this.colourBtn, '--c2', `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`), onSwatchDrag: (e) => this.swatchDrag(e) });
     this.brushPanel = new BrushPanel({ onPick: (b) => this.pickBrush(b) });
@@ -927,6 +933,15 @@ export class PaintView {
     this.redraw();
   }
 
+  private shedGhosts(most: number): void {
+    while (this.ghosts.size > most) {
+      const k = this.ghosts.keys().next().value as string;
+      const g = this.ghosts.get(k);
+      if (g) { g.canvas.width = 0; g.canvas.height = 0; }
+      this.ghosts.delete(k);
+    }
+  }
+
   private drawOnions(ctx: CanvasRenderingContext2D, c: Content, m: Movie): void {
     const o = this.onion();
     if (!o.enabled || c.kind !== 'flipbook' || this.playTimer) return;
@@ -968,14 +983,16 @@ export class PaintView {
           g.globalCompositeOperation = 'source-over';
         }
         if (ready) this.ghosts.set(f.id, { key, canvas });
-        if (this.ghosts.size > 24) this.ghosts.delete(this.ghosts.keys().next().value as string);
+        this.shedGhosts(memory.get('onionGhosts'));
         ctx.globalAlpha = opacity * (1 - (k - 1) / (count + 1));
         ctx.drawImage(canvas, 0, 0);
       }
       ctx.globalAlpha = 1;
     };
-    side(o.backFrames, -1, o.backColor);
-    side(o.foreFrames, 1, o.foreColor);
+    // the setting stays as the person made it; a memory tier only limits how many are drawn
+    const most = memory.get('onionFrames');
+    side(Math.min(o.backFrames, most), -1, o.backColor);
+    side(Math.min(o.foreFrames, most), 1, o.foreColor);
   }
 
   // ---------------------------------------------------------------- drawing the view
@@ -1920,6 +1937,18 @@ export class PaintView {
     this.colour.commit(c);
   }
 
+  /** A Pencil squeeze or double tap, as the person mapped it. Outside Draw & Paint only Undo applies. */
+  private pencilAction(action: string): void {
+    if (!this.isOpen()) { if (action === 'undo') this.commands?.run('undo'); return; }
+    if (this.busy || this.stroke || this.interaction) return;
+    if (action === 'color') this.runCmd('paint-colour-panel');
+    else if (action === 'toggle') this.runCmd('paint-tool-erase');
+    else if (action === 'previous') this.runCmd('paint-last-tool');
+    else if (action === 'brush') this.runCmd('paint-tool-paint');
+    else if (action === 'eraser') { if (this.tool !== 'erase' || this.tools.mode() !== 'paint') this.setTool('erase'); }
+    else if (action === 'undo') this.undo();
+  }
+
   /** Undo and redo never run under a live stroke, transform or filter (their patches would be built on stale bytes). */
   private undo(): void {
     if (this.busy || this.remote) { this.queuedHistory = 'undo'; return; }
@@ -2303,8 +2332,10 @@ export class PaintView {
     if (this.stroke && e.pointerId === this.strokePointer) { this.lastStrokeMove = e; this.strokeMoves++; if (!this.qs.moved(e)) this.feed(this.input.move(e)); }
     else if (!this.stroke && !this.busy && this.doc && e.pointerId === this.resumePointer && e.buttons) { this.resumePointer = -1; this.startStroke(e); }
     if (e.pointerType !== 'touch') {
-      this.cursor = this.toCanvas(e.clientX, e.clientY);
-      if (e.pointerType === 'pen') this.lastTilt = this.input.runtime.settings.tiltAngle ? { x: e.tiltX || 0, y: e.tiltY || 0, roll: e.twist || 0 } : { x: 0, y: 0, roll: e.twist || 0 };
+      // Settings > Apple Pencil can switch the brush outline off while the Pencil only hovers (never true on the desktop)
+      this.cursor = e.pointerType === 'pen' && e.buttons === 0 && hoverPreviewOff() ? null : this.toCanvas(e.clientX, e.clientY);
+      const roll = e.twist || pencilRoll();
+      if (e.pointerType === 'pen') this.lastTilt = this.input.runtime.settings.tiltAngle ? { x: e.tiltX || 0, y: e.tiltY || 0, roll } : { x: 0, y: 0, roll };
       this.drawCursor();
     }
   }

@@ -12,6 +12,7 @@ import { el, q, setClass, setHidden, setText } from './dom';
 import { onLanguage, t } from './i18n';
 import { tf } from './i18n-fill';
 import { checkRow, selectRow, sliderRow } from './panels/controls';
+import { pencilRows } from '../platform/ipad-pencil-settings';
 
 const CURVE = 168, PAD = 10, MAX_POINTS = 8, MIN_GAP = 0.03;
 
@@ -63,6 +64,8 @@ export class PenSettingsPage {
   private readonly eraserRow = selectRow('Eraser end', [['erase', 'Erases'], ['off', 'Does nothing']], (v) => penRuntime.update({ eraserEnd: v as 'erase' | 'off' }));
   private readonly b1Row = selectRow('Barrel button 1', ACTIONS, (v) => penRuntime.update({ barrel1: v as BarrelAction }));
   private readonly b2Row = selectRow('Barrel button 2', ACTIONS, (v) => penRuntime.update({ barrel2: v as BarrelAction }));
+  /** The Apple Pencil rows; null on the desktop. */
+  private readonly pencil = pencilRows();
   private pts: CurvePoint[] = [[0, 0], [1, 1]];
   private dragIdx = -1;
   private readonly input: PenInput;
@@ -141,6 +144,7 @@ export class PenSettingsPage {
       grp('Pressure', curveBox, this.minRow.el, this.maxRow.el, this.smoothRow.el, this.mouseRow.el, dev, nt('Minimum ignores the faintest touch; maximum is the pressure that already counts as full. A pen saved here keeps its own curve; others use the shared one.')),
       grp('Pen buttons', this.eraserRow.el, this.b1Row.el, this.b2Row.el, this.tiltRow.el, this.palmRow.el, nt('The eraser end erases for that stroke only, then the tool you had comes back. Which button is 1 and which is 2 depends on your tablet driver.')),
     ];
+    if (this.pencil) this.groups.push(grp('Apple Pencil', ...this.pencil.rows, nt('Follow system setting uses the choice made in the iPad Settings app under Apple Pencil. With Draw with Pencil only on, fingers pan, zoom and use gestures but never paint.')));
 
     this.wirePad();
     this.wireCurve();
@@ -172,6 +176,7 @@ export class PenSettingsPage {
     this.eraserRow.set(s.eraserEnd ?? (legacy.eraserEnd ? 'erase' : 'off'));
     this.b1Row.set(s.barrel1 ?? (legacy.penButton === 'off' ? 'none' : legacy.penButton));
     this.b2Row.set(s.barrel2 ?? 'none');
+    this.pencil?.sync();
     this.syncDevice();
     this.draw();
   }

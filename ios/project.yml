@@ -1,0 +1,98 @@
+# XcodeGen 2.46 spec for the iPad app. Generate with: xcodegen generate --spec ios/project.yml
+# (./formmorpheus ios does this). The .xcodeproj is generated and gitignored; never edit it by hand.
+# Paths below are relative to this file (the ios folder).
+name: FormMorpheus
+
+options:
+  # No bundleIdPrefix: it would write PRODUCT_BUNDLE_IDENTIFIER into the target and override the xcconfig.
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+# Team, bundle identifier and signing style come from the xcconfig; do not repeat them in settings.
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    TARGETED_DEVICE_FAMILY: "2"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    MARKETING_VERSION: "0.18.2"
+    CURRENT_PROJECT_VERSION: "1"
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+
+targets:
+  FormMorpheus:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    # Every builder owns one folder. optional: true so a folder that is still empty does not stop generation.
+    sources:
+      - path: App
+        optional: true
+        excludes:
+          - Info.plist
+      - path: Web
+        optional: true
+      - path: Engine
+        optional: true
+      - path: Export
+        optional: true
+      - path: Pencil
+        optional: true
+      - path: UX
+        optional: true
+      - path: Memory
+        optional: true
+      # The built interface, copied from frontend/dist by ./formmorpheus ios. A folder reference
+      # (blue folder) keeps its tree, so the app finds it at <bundle>/web/index.html.
+      - path: Resources/web
+        type: folder
+        buildPhase: resources
+        optional: true
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_PREVIEWS: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    preBuildScripts:
+      - name: Check the built interface
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        script: |
+          if [ ! -f "${SRCROOT}/Resources/web/index.html" ]; then
+            echo "error: ios/Resources/web/index.html is missing. Run ./formmorpheus ios from the repository root: it builds the interface and copies it to ios/Resources/web." >&2
+            exit 1
+          fi
+
+schemes:
+  FormMorpheus:
+    build:
+      targets:
+        FormMorpheus: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release

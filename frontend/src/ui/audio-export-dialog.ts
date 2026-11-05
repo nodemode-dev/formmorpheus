@@ -4,6 +4,7 @@ import type { Engine } from '../engine/engine';
 import type { AudioEngine } from '../media/audio';
 import { AUDIO_FORMATS, exportAudio, type AudioFormat } from '../export/audio-export';
 import { downloadBlob } from '../io/api';
+import { platform } from '../platform';
 import { jobCapabilities } from '../export/engine-jobs';
 import { LUFS_PRESETS } from '../media/loudness';
 import { Dialog } from './dialogs';
@@ -15,11 +16,15 @@ const KEY = 'formmorpheus.audioExport';
 
 interface Saved { format: AudioFormat; stems: boolean; rate: number; lufs: number; kbps: number }
 const MP3_RATES = [96, 128, 160, 192, 256, 320];
+/** MP3 needs the engine's ffmpeg, which a platform may not have (iPad): then it is not offered. */
+const FORMATS = AUDIO_FORMATS.filter((f) => (f.id !== 'mp3' || platform.features.mp3Export)
+  // on iPad the engine has no Opus encoder either, so Opus is offered only when the page can encode it itself
+  && (platform.kind !== 'ipad' || !f.id.endsWith('-opus') || typeof (globalThis as { AudioEncoder?: unknown }).AudioEncoder !== 'undefined'));
 
 function load(): Saved {
   try {
     const r = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Saved>;
-    return { format: AUDIO_FORMATS.some((f) => f.id === r.format) ? (r.format as AudioFormat) : 'wav16', stems: r.stems === true, rate: r.rate === 44100 ? 44100 : 48000, lufs: (LUFS_PRESETS as readonly number[]).includes(r.lufs ?? 0) ? (r.lufs as number) : 0, kbps: MP3_RATES.includes(r.kbps ?? 0) ? (r.kbps as number) : 192 };
+    return { format: FORMATS.some((f) => f.id === r.format) ? (r.format as AudioFormat) : 'wav16', stems: r.stems === true, rate: r.rate === 44100 ? 44100 : 48000, lufs: (LUFS_PRESETS as readonly number[]).includes(r.lufs ?? 0) ? (r.lufs as number) : 0, kbps: MP3_RATES.includes(r.kbps ?? 0) ? (r.kbps as number) : 192 };
   } catch { return { format: 'wav16', stems: false, rate: 48000, lufs: 0, kbps: 192 }; }
 }
 
@@ -32,7 +37,7 @@ export interface AudioExportDeps {
 export class AudioExportDialog {
   private readonly dlg = new Dialog('Export sound', 440);
   private readonly state = load();
-  private readonly format = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Format">${AUDIO_FORMATS.map((f) => `<option value="${f.id}">${t(f.label)}</option>`).join('')}</select>`);
+  private readonly format = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Format">${FORMATS.map((f) => `<option value="${f.id}">${t(f.label)}</option>`).join('')}</select>`);
   private readonly scope = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Files"><option value="mix">${t('One mixed file')}</option><option value="stems">${t('One file per track (stems)')}</option></select>`);
   private readonly rate = el<HTMLSelectElement>('<select class="cv-input" aria-label="Sample rate"><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option></select>');
   private readonly loud = el<HTMLSelectElement>(`<select class="cv-input" aria-label="${t('Loudness')}"><option value="0">${t('Off')}</option>${LUFS_PRESETS.map((v) => `<option value="${v}">${v} LUFS</option>`).join('')}</select>`);
@@ -60,6 +65,11 @@ export class AudioExportDialog {
     this.loud.value = String(this.state.lufs);
     this.kbps.value = String(this.state.kbps);
     this.dlg.body.append(form, this.mp3Note, this.bar, this.note);
+    if (!platform.features.mp3Export) {
+      const off = el<HTMLElement>('<div class="fm-ex-notes"></div>');
+      setText(off, t('MP3 is not offered on this device. Choose WAV, AAC or Opus.'));
+      form.after(off);
+    }
     this.format.value = this.state.format;
     this.scope.value = this.state.stems ? 'stems' : 'mix';
     this.rate.value = String(this.state.rate);

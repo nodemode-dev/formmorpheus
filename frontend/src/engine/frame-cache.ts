@@ -1,3 +1,4 @@
+import { memory } from '../platform/ipad-memory';
 import type { Renderer } from './render';
 import type { Movie } from './types';
 
@@ -16,7 +17,6 @@ export interface FrameJob {
   last: number;
 }
 
-const DEFAULT_CAP = 384 * 1024 * 1024;
 const IDLE_MS = 1500;
 
 /** Last pointer, wheel, key or touch input and whether a button or finger is down; the idle fill reads it. */
@@ -57,7 +57,28 @@ export class FrameStore {
   private gen = 0;
 
   /** `surface`: gives a hidden canvas of the given size (the Stage supplies a real canvas element, so look-ahead frames match live ones pixel for pixel). */
-  constructor(private readonly renderer: Renderer, private readonly surface?: (w: number, h: number) => { width: number; height: number; getContext(k: '2d'): unknown }, private readonly capBytes = DEFAULT_CAP) {}
+  constructor(private readonly renderer: Renderer, private readonly surface?: (w: number, h: number) => { width: number; height: number; getContext(k: '2d'): unknown }, private readonly capOverride?: number) {
+    if (memory.kind !== 'ipad') return;
+    const me = new WeakRef(this);
+    const off = memory.watch('frameStore', (v) => { const r = me.deref(); if (r) r.shrink(v); else off(); });
+    const un = memory.meter('frameStore', 'frameStore', () => { const r = me.deref(); if (!r) { un(); return 0; } return r.bytes; });
+  }
+
+  private get capBytes(): number { return this.capOverride ?? memory.get('frameStore'); }
+
+  /** A lower memory tier or a warning: frames furthest from the Playhead go until `cap` holds. */
+  private shrink(cap: number): void {
+    const span = Math.max(1, this.job ? this.job.last - this.job.lo + 1 : 1);
+    const dist = (f: number): number => (((f - this.head) % span) + span) % span;
+    const order = [...this.frames.keys()].sort((a, b) => dist(b) - dist(a));
+    for (const f of order) {
+      if (this.bytes <= cap) break;
+      const b = this.frames.get(f) as ImageBitmap;
+      this.bytes -= b.width * b.height * 4;
+      b.close();
+      this.frames.delete(f);
+    }
+  }
 
   /** Number of frames held and their bytes (diagnostics). */
   get size(): { frames: number; bytes: number } {

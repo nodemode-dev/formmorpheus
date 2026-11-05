@@ -5,6 +5,7 @@
 // Stays on this thread (fallback): a browser without Worker or OffscreenCanvas, a movie the worker cannot be handed, a
 // GPU-composed page whose worker cannot get WebGL2, and a worker that fails to start.
 import type { Content, Movie, Track } from '../engine/types';
+import { memory } from '../platform/ipad-memory';
 import { loadTextFonts } from '../media/fonts';
 import { scriptFamilies } from '../media/font-bundle';
 import { normalise, startExport, type Deps } from './run';
@@ -75,7 +76,7 @@ async function prepare(deps: Deps): Promise<Pick<StartMsg, 'movie' | 'blobs' | '
     loads.push({ spec: `${s.weight} 32px "Inter"`, text });
     for (const f of scriptFamilies(text)) { wanted.add(f); loads.push({ spec: `${s.weight} 32px "${f}"`, text }); }
   });
-  return { movie, blobs, faces: loads.length ? collectFaces(wanted) : [], loads, gpu: renderer.gpuActive };
+  return { movie, blobs, faces: loads.length ? collectFaces(wanted) : [], loads, gpu: renderer.gpuActive, ...(memory.kind === 'ipad' ? { memTier: memory.tier } : {}) };
 }
 
 function spawn(): Worker {

@@ -36,6 +36,9 @@ import { enhanceAllSelects } from '../ui/dropdown';
 import { HelpView } from '../ui/help-view';
 import { AboutDialog } from '../ui/about-dialog';
 import { PenLink } from '../ui/pen-link';
+import { platform } from '../platform';
+import { installIpadMenu } from '../platform/ipad-menu';
+import { installIpadShell } from '../platform/ipad-shell';
 import { setupOnboarding } from '../ui/onboarding';
 import { setupHelpCenter } from '../ui/help-setup';
 import { previewFor } from '../ui/preview-strip';
@@ -490,13 +493,7 @@ export function startApp(): void {
     if (!m) return;
     const poster = stage ? await stage.snapshot(480) : null;
     const blob = await packMovie(m, engine.history.past, engine.history.recovery, engine.assets, poster, withHistory);
-    const a = el<HTMLAnchorElement>('<a hidden></a>');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${m.name}.fmo`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    platform.files.download(blob, `${m.name}.fmo`);
   }
 
   // the interval is only a safety net now: steps already write the movie (see scheduleSave)
@@ -537,13 +534,7 @@ export function startApp(): void {
       const out = what === 'movie' ? await movieToFormvfx(m, blobOf)
         : what === 'drawing' || (drawing && drawing.kind === 'drawing') ? await drawingToFormvis(m, drawing as Content, blobOf)
         : await frameToFormvis(m, engine.frame, renderer);
-      const a = el<HTMLAnchorElement>('<a hidden></a>');
-      a.href = URL.createObjectURL(out.blob);
-      a.download = out.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      platform.files.download(out.blob, out.name);
       if (what === 'movie') toast(`${out.name}: ${out.note ?? ''} Unzip it and open the .fvxproj in formvfx.`);
       else if (drawing && drawing.kind === 'drawing') toast(`${out.name} saved. Edit it in formvis, save it, then drop the file here to bring the layers back.`);
       else toast(`${out.name}: ${out.note ?? ''}`);
@@ -716,7 +707,7 @@ export function startApp(): void {
       edit: (c) => { void editContent(c); },
     }),
     { id: 'shortcuts', label: 'Keyboard Shortcuts...', run: () => shortcutsDialog.show() },
-    { id: 'pen-link', label: 'Pen Link...', run: () => penLink.show() },
+    { id: 'pen-link', label: 'Pen Link...', enabled: () => platform.features.penLink, run: () => penLink.show() },
     { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
     { id: 'recover-lost', label: 'Recover Lost Movies...', run: () => { void recovery.offer('menu'); } },
   );
@@ -727,10 +718,10 @@ export function startApp(): void {
   setupHelpCenter({ commands, engine, askToKeep, closeHome: () => home.hide() });
   menus.push(
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
-    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', 'pen-link', 'settings'] },
+    { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', '-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'help-web-handbook', 'help-web-community', 'help-web-tutorials', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
@@ -747,6 +738,10 @@ export function startApp(): void {
     void native.build().catch(() => undefined);
     for (const ev of ['movie', 'selection', 'history', 'mode', 'playing'] as const) engine.on(ev, () => native.refresh());
     engine.on('projects', () => { void native.build().catch(() => undefined); });
+  }
+  if (platform.kind === 'ipad') {
+    installIpadMenu({ commands, menus: () => menus, paintOpen: () => paint.isOpen(), onChange: (fn) => { for (const ev of ['movie', 'selection', 'history', 'mode', 'playing', 'projects', 'saved'] as const) engine.on(ev, fn); } });
+    installIpadShell({ engine, openFromLibrary, openFromPath, importFile: (file) => importFiles([file], { preview: true }) });
   }
 
   new TitleTools(q(root, '.cv-titlebar'), { commands });

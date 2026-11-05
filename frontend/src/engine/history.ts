@@ -1,3 +1,4 @@
+import { memory } from '../platform/ipad-memory';
 import type { Movie } from './types';
 
 export interface Step {
@@ -25,7 +26,11 @@ export class History {
   /** Share of the steps kept one by one; older steps beyond it are thinned so undo reaches further back (100: no thinning). */
   recentPercent = 100;
 
-  constructor(public depth = 250) {}
+  constructor(public depth = 250) {
+    if (memory.kind !== 'ipad') return;
+    memory.watch('undoDepth', (v) => { this.trim(v); });
+    memory.onPressure((level) => { if (level !== 'tier') this.shed(memory.get('undoFloor')); });
+  }
 
   get canUndo(): boolean {
     return this.past.length > 0;
@@ -96,13 +101,27 @@ export class History {
     this.trim();
   }
 
-  private trim(): void {
-    if (this.depth <= 0 || this.past.length <= this.depth) return;
-    const recent = Math.max(1, Math.round((this.depth * this.recentPercent) / 100));
-    if (recent >= this.depth) { this.past.splice(0, this.past.length - this.depth); return; }
+  /** The depth in force: the person's setting (0 is unlimited), held under the memory tier's cap (none on desktop). */
+  private limit(cap = memory.get('undoDepth')): number {
+    return this.depth <= 0 ? cap : Math.min(this.depth, cap);
+  }
+
+  /** A memory warning: keeps the newest `steps` undo and redo steps (the step that is current is not in either list). */
+  shed(steps: number): void {
+    if (!(steps >= 1) || !isFinite(steps)) return;
+    if (this.past.length > steps) this.past.splice(0, this.past.length - steps);
+    if (this.future.length > steps) this.future.splice(0, this.future.length - steps);
+    if (this.recovery.length > 1) this.recovery.length = 1;
+  }
+
+  private trim(cap?: number): void {
+    const depth = this.limit(cap);
+    if (!(depth > 0) || !isFinite(depth) || this.past.length <= depth) return;
+    const recent = Math.max(1, Math.round((depth * this.recentPercent) / 100));
+    if (recent >= depth) { this.past.splice(0, this.past.length - depth); return; }
     // the newest `recent` steps stay as they are; from the older ones a step is dropped at a spread-out place each time
     // (golden-ratio stepping), so what survives is spaced out over the whole past instead of piled at one end
-    while (this.past.length > this.depth) {
+    while (this.past.length > depth) {
       const older = this.past.length - recent;
       this.thinned += 0.6180339887;
       this.past.splice(Math.floor((this.thinned % 1) * older), 1);

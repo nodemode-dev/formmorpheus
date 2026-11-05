@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "只有在你於影片中錄製旁白或聲音時，formmorpheus 才會使用麥克風。";
+"NSPhotoLibraryAddUsageDescription" = "當你選擇時，formmorpheus 會將你匯出的影片和影像儲存到你的照片圖庫。";

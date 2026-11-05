@@ -6,6 +6,7 @@ import {
   type AudioCodec, type Quality, type VideoCodec,
 } from 'mediabunny';
 import { Zip, ZipPassThrough } from 'fflate';
+import { memory } from '../platform/ipad-memory';
 import type { Content, Movie } from '../engine/types';
 import type { Renderer, View } from '../engine/render';
 import type { AudioEngine } from '../media/audio';
@@ -31,7 +32,6 @@ const QUALITY: Record<ExportOptions['quality'], Quality> = {
   low: QUALITY_LOW, medium: QUALITY_MEDIUM, high: QUALITY_HIGH, 'very-high': QUALITY_VERY_HIGH,
 };
 const JPEG_QUALITY: Record<ExportOptions['quality'], number> = { low: 0.6, medium: 0.8, high: 0.92, 'very-high': 0.98 };
-const GIF_MEMORY_LIMIT = 1.5 * 1024 * 1024 * 1024;
 const GIF_SAMPLE_FRAMES = 24;
 
 /** True when this browser can encode AAC sound (otherwise the engine does it). */
@@ -343,7 +343,7 @@ export class Run {
     const total = this.steps();
     const n = o.to - o.from;
     const bytes = o.width * o.height * 4;
-    const keep = n * bytes < GIF_MEMORY_LIMIT;
+    const keep = n * bytes < memory.get('gifMemory');
     // Frames are numbered by source frame (0..n-1); ping pong repeats earlier ones.
     const cache = new Map<number, Uint8ClampedArray>();
     const pick = Math.min(n, GIF_SAMPLE_FRAMES);

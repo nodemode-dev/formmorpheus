@@ -2,6 +2,7 @@
 // structure edits with undo, compositing through cached per-layer canvases, and
 // PNG encode / decode. Needs OffscreenCanvas only, so it also runs in a worker.
 
+import { memory } from '../platform/ipad-memory';
 import type { Asset, DrawingLayer } from '../engine/types';
 import { blendPixels, isPixelBlend } from '../engine/blend';
 import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
@@ -53,12 +54,8 @@ interface Mirror {
   dirty: Rect | null;
 }
 
-/** Layer pixels held flat past this are parked into tiles (4K layers are 33 MB each). */
-const DENSE_BUDGET = 512 * 1024 * 1024;
-/** A layer is parked again only after this long unread: a tool may hold its flat array. */
+/** A layer is parked again only after this long unread: a tool may hold its flat array. Flat layer pixels past `paintDense` are parked into tiles (4K layers are 33 MB each); canvas copies of the layers are kept to `paintMirror`. */
 const IDLE_MS = 60_000;
-/** Canvas copies of the layers kept alive at once. */
-const MIRROR_BUDGET = 768 * 1024 * 1024;
 
 const mirrors = new WeakMap<Raster, Mirror>();
 let counter = 1;
@@ -171,7 +168,16 @@ export class PaintDoc implements PaintHost {
     this.layers = layers.length ? layers : [this.makeLayer('Layer 1')];
     this.active = (this.layers.find((l) => !l.group) ?? this.layers[0]).id;
     this.history = new PaintHistory(this);
+    if (memory.kind === 'ipad') {
+      // a lower tier or a warning: park idle layers at once and close canvas copies down to the new limits
+      this.memOff.push(
+        memory.watch('paintDense', (v) => { this.enforce(v, 0); }),
+        memory.watch('paintMirror', (v) => { const a = this.layers.find((l) => l.id === this.active); if (a) this.trimMirrors(a.raster, v); }),
+      );
+    }
   }
+
+  private memOff: Array<() => void> = [];
 
   static async load(width: number, height: number, layers: DrawingLayer[], blobOf: (assetId: string) => Blob | undefined): Promise<PaintDoc> {
     const out: PaintLayer[] = [];
@@ -193,7 +199,7 @@ export class PaintDoc implements PaintHost {
       // a drawing with many big layers keeps the first ones flat and the rest as tiles of their ink (read again, they turn flat)
       if (!d.group) {
         flat += raster.width * raster.height * 4;
-        if (flat > DENSE_BUDGET / 2 && out.length > 0) parkRaster(raster);
+        if (flat > memory.get('paintDense') / 2 && out.length > 0) parkRaster(raster);
       }
       const layer: PaintLayer = {
         id: d.id, name: d.name, visible: d.visible, opacity: d.opacity, blend: d.blend,
@@ -832,14 +838,14 @@ export class PaintDoc implements PaintHost {
     }
     this.mirrorOrder.delete(r);
     this.mirrorOrder.add(r);
-    if (this.mirrorBytes > MIRROR_BUDGET) this.trimMirrors(r);
+    if (this.mirrorBytes > memory.get('paintMirror')) this.trimMirrors(r);
     return m;
   }
 
   /** Mirrors are only a cache of the rasters: the least recently drawn are closed (a composite uses each canvas at once, so closing an older one is safe). */
-  private trimMirrors(keep: Raster): void {
+  private trimMirrors(keep: Raster, cap = memory.get('paintMirror')): void {
     for (const r of this.mirrorOrder) {
-      if (this.mirrorBytes <= MIRROR_BUDGET) break;
+      if (this.mirrorBytes <= cap) break;
       if (r === keep) continue;
       this.releaseMirror(r);
     }
@@ -855,19 +861,19 @@ export class PaintDoc implements PaintHost {
   }
 
   /** Layers whose pixels sit flat in memory are parked into tiles, least recently read first, once the flat ones pass the budget. */
-  private enforce(): void {
+  private enforce(budget = memory.get('paintDense'), idleMs = IDLE_MS): void {
     const now = Date.now();
     let flat = 0;
     const idle: PaintLayer[] = [];
     for (const l of this.layers) {
       if (l.group || isParked(l.raster) || l.raster.width * l.raster.height < 4096) continue;
       flat += l.raster.width * l.raster.height * 4;
-      if (l.id !== this.active && now - usedAt(l.raster) > IDLE_MS) idle.push(l);
+      if (l.id !== this.active && now - usedAt(l.raster) > idleMs) idle.push(l);
     }
-    if (flat <= DENSE_BUDGET) return;
+    if (flat <= budget) return;
     idle.sort((a, b) => usedAt(a.raster) - usedAt(b.raster));
     for (const l of idle) {
-      if (flat <= DENSE_BUDGET) break;
+      if (flat <= budget) break;
       const m = mirrors.get(l.raster);
       if (m && m.dirty) continue;
       if (parkRaster(l.raster)) flat -= l.raster.width * l.raster.height * 4;
@@ -1079,6 +1085,8 @@ export class PaintDoc implements PaintHost {
 
   dispose(): void {
     this.disposed = true;
+    for (const u of this.memOff) u();
+    this.memOff = [];
     const owned = this.history.rasters();
     for (const l of this.layers) { owned.add(l.raster); if (l.mask) owned.add(l.mask.raster); }
     for (const r of owned) {

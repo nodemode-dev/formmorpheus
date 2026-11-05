@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Builds the interface, copies it into the iPad app and opens the Xcode project (macOS only).
+set -e
+source "$(dirname "$0")/lib.sh"
+
+open_xcode=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-open) open_xcode=0 ;;
+    -h|--help)
+      printf 'usage: ./formmorpheus ios [--no-open]\n\n'
+      printf '  Builds the interface, copies it to ios/Resources/web, generates ios/FormMorpheus.xcodeproj\n'
+      printf '  with XcodeGen and opens it in Xcode. --no-open skips opening. macOS only.\n'
+      exit 0 ;;
+    *) fm_die "unknown option: $arg (try --no-open)" ;;
+  esac
+done
+
+if [ "$(fm_os)" != macos ]; then
+  fm_say "iPad builds need a Mac with Xcode. Run ./formmorpheus ios on the Mac (see docs/ios/BUILD.md)."
+  exit 1
+fi
+
+command -v xcodebuild > /dev/null 2>&1 || fm_die "Xcode is not installed (xcodebuild not found). Install Xcode from the App Store."
+command -v xcodegen > /dev/null 2>&1 || fm_die "XcodeGen is not installed. Run: brew install xcodegen"
+command -v npm > /dev/null 2>&1 || fm_die "npm is not installed. Install Node.js first."
+command -v rsync > /dev/null 2>&1 || fm_die "rsync is not installed."
+
+if [ ! -d "$FM_ROOT/frontend/node_modules" ]; then
+  fm_say "installing the interface packages"
+  (cd "$FM_ROOT/frontend" && npm install)
+fi
+
+fm_say "building the interface"
+(cd "$FM_ROOT/frontend" && npm run build)
+[ -f "$FM_ROOT/frontend/dist/index.html" ] || fm_die "frontend/dist/index.html is missing after the build"
+
+fm_say "copying the interface to ios/Resources/web"
+mkdir -p "$FM_ROOT/ios/Resources/web"
+rsync -a --delete "$FM_ROOT/frontend/dist/" "$FM_ROOT/ios/Resources/web/"
+
+# The app version comes from ios/project.yml; warn when it lags the interface version.
+app_version="$(sed -n 's/^ *MARKETING_VERSION: "\(.*\)"$/\1/p' "$FM_ROOT/ios/project.yml" | head -n 1)"
+if [ -n "$app_version" ] && [ "$app_version" != "$(fm_version)" ]; then
+  fm_say "note: ios/project.yml MARKETING_VERSION is $app_version, the interface is $(fm_version)"
+fi
+
+if [ ! -f "$FM_ROOT/ios/Config/Local.xcconfig" ]; then
+  fm_say "note: ios/Config/Local.xcconfig is missing. Copy Local.xcconfig.example there and set DEVELOPMENT_TEAM, or choose the team in Xcode."
+fi
+
+fm_say "generating the Xcode project"
+xcodegen generate --spec "$FM_ROOT/ios/project.yml"
+
+if [ "$open_xcode" = 1 ]; then
+  fm_say "opening Xcode"
+  open "$FM_ROOT/ios/FormMorpheus.xcodeproj"
+else
+  fm_say "done: ios/FormMorpheus.xcodeproj"
+fi

@@ -8,7 +8,7 @@
 /* About */
 .fm-about { display: grid; gap: var(--space-4); }
 .fm-about-head { display: flex; align-items: center; gap: var(--space-3); }
-.fm-about-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--radius-xl); background: var(--accent-soft); color: var(--accent-color); }
+.fm-about-mark { display: block; flex: none; width: 52px; height: 52px; }
 .fm-about-name { font-size: var(--fs-18); font-weight: 600; color: var(--text-primary); }
 .fm-about-by { font-size: var(--fs-12); color: var(--text-muted); }
 .fm-about-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; font-size: var(--fs-13); }
