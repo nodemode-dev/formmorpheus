@@ -3,6 +3,8 @@
 // live. Caches read their limit from `memory.get(key)` where they decide, and register a trim callback with
 // `memory.watch(key, fn)`. Pure module: no document access at import, safe in workers and in the paint core.
 
+import type { Bridge } from './types';
+
 export type TierName = 'desktop' | 'high' | 'mid' | 'low' | 'floor';
 
 export type BudgetKey =
@@ -226,15 +228,14 @@ class Memory {
 
   /**
    * Listens through the platform bridge (it owns `__fmNative.receive` and the replay of early messages, so nothing is
-   * wrapped here). Loaded on demand: the platform index needs `window`, and this module also runs in workers.
+   * wrapped here). The platform index calls this with its bridge: importing the index from here would pull the page's
+   * stylesheets into the paint worker bundle, whose first statement then touches `document` and kills the worker.
    */
-  attach(): void {
-    if (this.kind !== 'ipad' || this.attached || typeof window === 'undefined') return;
+  attach(bridge: Bridge): void {
+    if (this.kind !== 'ipad' || this.attached) return;
     this.attached = true;
-    void import('./index').then(({ platform }) => {
-      for (const type of ['memoryWarning', 'memoryInfo', 'contentProcessRecovered', 'appState']) platform.bridge.on(type, (p) => { this.handle(type, p); });
-      platform.bridge.post('memoryInfoRequest', {});
-    }).catch(() => { this.attached = false; });
+    for (const type of ['memoryWarning', 'memoryInfo', 'contentProcessRecovered', 'appState']) bridge.on(type, (p) => { this.handle(type, p); });
+    bridge.post('memoryInfoRequest', {});
   }
 
   /** Page to native, same channel the platform layer uses. */
@@ -314,6 +315,5 @@ class Memory {
 
 export const memory = new Memory();
 
-memory.attach();
 
 if (lsGet('fm-memory-debug') === '1') (globalThis as unknown as { __fmMemory?: Memory }).__fmMemory = memory;
