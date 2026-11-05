@@ -79,6 +79,9 @@ async function prepare(deps: Deps): Promise<Pick<StartMsg, 'movie' | 'blobs' | '
   return { movie, blobs, faces: loads.length ? collectFaces(wanted) : [], loads, gpu: renderer.gpuActive, ...(memory.kind === 'ipad' ? { memTier: memory.tier } : {}) };
 }
 
+/** An export whose worker says nothing for this long while drawing frames has stalled (an encoder that never answers): it is stopped with an error. The finishing step is not timed, since writing a long movie can take longer. */
+const STALL_MS = 60_000;
+
 function spawn(): Worker {
   return new Worker(new URL('./export-worker.ts', import.meta.url), { type: 'module' });
 }
@@ -130,12 +133,21 @@ export function startExportAuto(deps: Deps, opts: ExportOptions): ExportJob {
     return new Promise<ExportResult>((resolve, reject) => {
       let started = false;
       let settled = false;
-      const end = (fn: () => void): void => { if (settled) return; settled = true; w.terminate(); worker = null; fn(); };
+      let heard = Date.now();
+      let finishing = false;
+      let watch = 0;
+      const end = (fn: () => void): void => { if (settled) return; settled = true; window.clearInterval(watch); w.terminate(); worker = null; fn(); };
+      watch = window.setInterval(() => {
+        if (!started || finishing || cancelled || Date.now() - heard < STALL_MS) return;
+        w.postMessage({ t: 'cancel' } satisfies ToWorker);
+        end(() => reject(new Error('The export stopped making progress for a minute, so it was stopped. Try again, or choose another format.')));
+      }, 5000);
       const fallBack = (): void => { end(() => { local().then(resolve, reject); }); };
       w.onmessage = (e: MessageEvent<FromWorker>) => {
         const m = e.data;
+        heard = Date.now();
         if (m.t === 'ready') started = true;
-        else if (m.t === 'progress') { if (m.p.stage !== 'audio') emit(m.p); }
+        else if (m.t === 'progress') { finishing = m.p.stage === 'finishing'; if (m.p.stage !== 'audio') emit(m.p); }
         else if (m.t === 'done') end(() => resolve({ blob: m.blob, name: m.name, mime: m.mime, warnings: m.warnings, gpuReset: m.gpuReset }));
         else if (m.t === 'error') {
           if (m.fallback && !cancelled) fallBack();
