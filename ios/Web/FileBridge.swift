@@ -222,7 +222,7 @@ final class FileBridge: NSObject {
 
         if payload["data"] == nil, let path = payload["path"] as? String {
             // A file the engine wrote: only paths inside the app's own container are allowed.
-            guard path.hasPrefix(NSHomeDirectory()) else { return nil }
+            guard EngineConfig.isInside(URL(fileURLWithPath: path), URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) else { return nil }
             let dir = FileBridge.newTransferFolder()
             let copy = dir.appendingPathComponent(name)
             do {
