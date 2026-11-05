@@ -16,3 +16,9 @@ const info = readInfo();
 export const platform: Platform = info.kind === 'ipad' ? createIpad(info) : createDesktop(info);
 // the iPad stylesheet (styles/ipad-window.css) keys on this class; set at once so the first paint already has the insets
 if (platform.kind === 'ipad' && typeof document !== 'undefined') document.documentElement.classList.add('is-ipad');
+// WKWebView does not hand Blob request bodies to the app's fm: scheme handler (it sees an empty body), so on iPad they go as ArrayBuffer
+if (platform.kind === 'ipad' && typeof window !== 'undefined') {
+  const send = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+    send(input, init?.body instanceof Blob ? { ...init, body: await init.body.arrayBuffer() } : init);
+}
