@@ -7,6 +7,13 @@ Last updated: 2026-10-30 · reveal_folder for Show brush folder
 
 ---
 
+## v0.18.0 · app icon
+
+- `icons/` regenerated with `frontend/node_modules/.bin/tauri icon ../assets/icon_src/formmorpheus-icon-1024.png -o ../src-tauri/icons` (run from `frontend/`): `icon.icns`, `icon.ico` (16 to 256), `icon.png` (512), `32x32.png`, `128x128.png`, `128x128@2x.png`. The CLI also writes `android/`, `ios/`, `Square*Logo.png`, `StoreLogo.png` and `64x64.png`; they were deleted because `tauri.conf.json` lists only the five files and the CLI's iOS set is not used (the iPad icon is made separately). macOS keeps the supplied margin and shadow (the macOS icon grid); Windows and Linux use the same art.
+- `tauri.conf.json` `bundle.icon` is unchanged and every path resolves. `setup/desktop_build` still checks `icons/icon.icns`.
+- iPad: `ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` is the squircle scaled to fill 1024, opaque RGB, corners and rim filled with the squircle's own edge colour row by row (no seam under the system mask), plus a single-size universal `Contents.json` and `Assets.xcassets/Contents.json`.
+- `splash.html` now draws `mark.png` (see `frontend/HASHOUT_LOG.md`); the radius and the formmorpheusSplashDone hook are unchanged.
+
 ## Org-navi-map
 
 ```

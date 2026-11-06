@@ -6,16 +6,16 @@ import type { Content } from '../engine/types';
 
 type Ctx = CanvasRenderingContext2D;
 
-/** The paper of a Flipbook cell. */
+/** The paper of a Flipbook cell when the movie is transparent; otherwise the cells sit on the movie's own background. */
 export const FLIP_PAPER = '#ebc9b0';
 
 /**
  * A Flipbook block: one paper cell per drawing (as long as it is held), each showing its drawing, a white seam between cells.
  * `tile(local)` returns a small picture of the content at a content-local frame, or null while it is not ready.
  */
-export function drawFlipCells(c: Ctx, item: Content, x0: number, y: number, h: number, ppf: number, viewW: number, tileW: number, tile: (local: number) => HTMLCanvasElement | null): void {
+export function drawFlipCells(c: Ctx, item: Content, x0: number, y: number, h: number, ppf: number, viewW: number, tileW: number, tile: (local: number) => HTMLCanvasElement | null, paper: string = FLIP_PAPER): void {
   const row = item.flip.find((r) => !r.hidden) ?? item.flip[0];
-  c.fillStyle = FLIP_PAPER;
+  c.fillStyle = paper;
   c.fillRect(x0, y, Math.max(0, (item.duration) * ppf), h);
   if (!row || !row.frames.length) return;
   let pos = 0, i = 0;

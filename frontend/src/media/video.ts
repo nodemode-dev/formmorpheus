@@ -9,12 +9,11 @@
 // is dragged, a lane shows the nearest key frame (one packet to decode) and refines to the exact frame once the
 // drag rests.
 import { ALL_FORMATS, BlobSource, CanvasSink, EncodedPacketSink, Input, VideoSampleSink, type InputVideoTrack, type VideoSample } from 'mediabunny';
+import { memory } from '../platform/ipad-memory';
 import type { MediaInfo, VideoSource } from './types';
 import { blobHash, ThumbCache } from './thumb-cache';
 import { planThumbTimes, THUMB_LANES, THUMB_VERSION } from './key-thumbs';
 
-/** Upper bound for decoded frames over all assets, in bytes. */
-const CAP_BYTES = 768 * 1024 * 1024;
 /** Seconds of frames kept behind the focus for backwards scrubbing. */
 const BEHIND = 1;
 /** Default read-ahead in seconds when nobody asked for more. */
@@ -23,11 +22,8 @@ const AHEAD = 1;
 const THROUGH = 1.5;
 /** WebM and some MP4 timestamps are rounded to the millisecond; a request k/fps may land 0.7 ms before its frame. */
 const EPS = 7.5e-4;
-const THUMB_CAP_BYTES = 48 * 1024 * 1024;
 const THUMB_BUCKET = 0.25;
 const THUMB_QUEUE = 96;
-/** Decode foci per asset (one per active block). */
-const MAX_LANES = 4;
 /** A drag is "resting" this long after the last new target. */
 const SCRUB_REST_MS = 80;
 /** Two misses on different targets this close in time are a drag. */
@@ -136,7 +132,14 @@ export class VideoPool implements VideoSource {
   private cache = new ThumbCache();
   private busyUntil = 0;
 
-  constructor(private blobOf: (assetId: string) => Blob | undefined, private onReady: () => void) {}
+  constructor(private blobOf: (assetId: string) => Blob | undefined, private onReady: () => void) {
+    if (memory.kind !== 'ipad') return;
+    const me = new WeakRef(this);
+    const off = memory.watch('videoFrames', (v) => { const r = me.deref(); if (r) r.shed(v); else off(); });
+    // a warning also lets go of every decoded frame that is not on show; they decode again on demand
+    const offP = memory.onPressure((level) => { const r = me.deref(); if (!r) { offP(); return; } if (level !== 'tier') r.shed(0); });
+    const un = memory.meter('videoFrames', 'videoFrames', () => { const r = me.deref(); if (!r) { un(); return 0; } return r.total(); });
+  }
 
   static async probe(file: Blob): Promise<MediaInfo> {
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -332,7 +335,7 @@ export class VideoPool implements VideoSource {
     // lanes an exact() request holds (export asks for every block of a frame before drawing any) are never the victim;
     // when all are held the asset grows past MAX_LANES for a moment instead of evicting a picture about to be drawn
     const now = performance.now();
-    while (b.lanes.size >= MAX_LANES) {
+    while (b.lanes.size >= memory.get('videoLanes')) {
       let old: Lane | null = null;
       for (const l of b.lanes.values()) if (l.hold <= now && l.waiters.length === 0 && (!old || l.used < old.used)) old = l;
       if (!old) break;
@@ -449,7 +452,7 @@ export class VideoPool implements VideoSource {
     let live = 0;
     for (const b of this.bases.values()) for (const l of b.lanes.values()) if (l.frames.length) live++;
     live = Math.max(1, live);
-    const fit = Math.floor((CAP_BYTES * 0.6) / live / Math.max(1, f.bytes));
+    const fit = Math.floor((memory.get('videoFrames') * 0.6) / live / Math.max(1, f.bytes));
     return Math.max(0.2, Math.min(e.ahead, (fit * 0.7) / e.b.fps));
   }
 
@@ -684,9 +687,13 @@ export class VideoPool implements VideoSource {
       if (inside || this.protectedFrame(e, f)) keep.push(f); else this.free(f.canvas);
     }
     e.frames = keep;
+    this.shed(memory.get('videoFrames'));
+  }
+
+  /** Over `cap`: drops the frames farthest from each lane's focus first (a lower memory tier passes a smaller cap; 0 releases all but the shown ones). */
+  private shed(cap: number): void {
     let sum = this.total();
-    if (sum <= CAP_BYTES) return;
-    // over budget: drop the frames farthest from each lane's focus first
+    if (sum <= cap) return;
     const all: { e: Lane; f: Frame; d: number }[] = [];
     for (const b of this.bases.values()) {
       for (const x of b.lanes.values()) {
@@ -699,7 +706,7 @@ export class VideoPool implements VideoSource {
     }
     all.sort((a, b) => b.d - a.d);
     for (const it of all) {
-      if (sum <= CAP_BYTES) break;
+      if (sum <= cap) break;
       const k = it.e.frames.indexOf(it.f);
       if (k >= 0) { it.e.frames.splice(k, 1); sum -= it.f.bytes; this.free(it.f.canvas); }
     }
@@ -726,7 +733,7 @@ export class VideoPool implements VideoSource {
     const bytes = canvas.width * canvas.height * 4;
     this.thumbs.set(key, { canvas, bytes });
     this.thumbBytes += bytes;
-    while (this.thumbBytes > THUMB_CAP_BYTES && this.thumbs.size > 1) {
+    while (this.thumbBytes > memory.get('videoThumbs') && this.thumbs.size > 1) {
       const oldest = this.thumbs.keys().next().value as string;
       const th = this.thumbs.get(oldest)!;
       this.thumbs.delete(oldest);

@@ -1,0 +1,40 @@
+/* Draw & Paint at narrow widths. Above 800px nothing here applies, so the wide layout is the one it always was. */
+
+.fm-paint-more { display: none; }
+.fm-paint-more-pop {
+  position: absolute;
+  left: auto;
+  width: max-content;
+  right: var(--x, var(--space-2));
+  top: var(--y, var(--fm-paint-bar-h));
+  min-width: 160px;
+  z-index: var(--z-context);
+}
+.fm-paint-more-pop[hidden] { display: none; }
+.fm-paint-more-pop .fm-pop-row[data-g] { display: none; }
+
+.fm-paint-bar { min-width: 0; }
+.fm-paint-tools { flex-shrink: 0; margin-left: auto; }
+
+/* the four words and the frame label go to the More panel */
+@media (max-width: 800px) {
+  .fm-paint-words, .fm-paint-frame-label { display: none; }
+  .fm-paint-more { display: inline-flex; }
+  .fm-paint-more-pop .fm-pop-row[data-g="words"] { display: flex; }
+}
+
+/* the mode pill keeps its icon only, and Eyedropper and Fill join the panel */
+@media (max-width: 600px) {
+  .fm-paint-mode-name { display: none; }
+  .fm-paint-mode { padding: 0 var(--space-2); }
+  .fm-paint-bar { gap: var(--space-2); }
+  .fm-paint-tool-extra { display: none; }
+  .fm-paint-more-pop .fm-pop-row[data-g="extra"] { display: flex; }
+}
+
+/* short windows: the sliders sit under the bar and shrink so they never reach the transport controls */
+@media (max-height: 760px) {
+  .fm-paint-side { top: calc(var(--fm-paint-bar-h) + var(--space-2)); transform: none; gap: var(--space-2); }
+  .fm-paint-slider { height: clamp(56px, 14vh, 128px); }
+  .fm-paint-slider-short { height: clamp(44px, 10vh, 84px); }
+}

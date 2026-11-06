@@ -1,4 +1,5 @@
 import { missingCapabilities, showUnsupported } from './app/capability';
+import { platform } from './platform';
 import { startLanguage, startPageTranslator } from './ui/i18n';
 import { applyTheme } from './ui/themes';
 
@@ -15,5 +16,6 @@ void startLanguage().finally(() => {
   void app.then((m) => {
     m.startApp();
     startPageTranslator();
+    platform.ready();
   });
 });

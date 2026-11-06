@@ -1,135 +1,175 @@
 <p align="center">
-  <img src="assets/formmorpheus_folder_icon.png" alt="formmorpheus logo" width="160" />
+  <img src="assets/app-icon/formmorpheus-256.png" width="128" height="128" alt="FormMorpheus icon: the Form family app icon for the animation studio">
 </p>
 
-<h1 align="center">formmorpheus</h1>
-
-<p align="center"><b>The animation studio of the form family: a Stage over a Timeline, drawn frame by frame or performed live.</b></p>
+<h1 align="center">FormMorpheus</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.17.2-f97316" alt="version v0.17.2" />
-  <img src="https://img.shields.io/badge/Node.js-20.19%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20.19+" />
-  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
-  <img src="https://img.shields.io/badge/license-Apache--2.0-555555" alt="license Apache-2.0" />
+  <b>Animation; a Stage over a Timeline, drawn frame by frame, keyframed or performed live.</b><br>
+  Drawings, flipbooks, pictures, text, video and sound on tracks,<br>
+  in one window with no account. Offline, and yours.
 </p>
 
-## What it is
+<p align="center">
+  <img alt="version 0.18.2" src="https://img.shields.io/badge/version-v0.18.2-eef0f4?style=flat-square">
+  <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
+  <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
+  <img alt="macOS, Linux, Windows and iPad" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20iPad-native-2f7bf5?style=flat-square">
+  <img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-3a3a3a?style=flat-square">
+  <img alt="Status: in development" src="https://img.shields.io/badge/status-in%20development-d69e2e?style=flat-square">
+</p>
 
-formmorpheus is a desktop animation studio for macOS, Linux & Windows, built in the image of its siblings formvis (image) & formvfx (compositing). A movie is a Stage on top & a Timeline below: tracks hold content blocks (drawings, flipbooks, pictures, text, groups, later video & sound) that you arrange in Compose mode, animate by hand in Keyframe mode, or record from live gestures in Perform mode. Movies save as `.fmo` files w/ their full undo history inside. An iPad edition, MorpheusMobile by FormAI, follows once formmorpheus is stable.
+<p align="center">
+  <a href="https://formai.studio/"><b>Download FormMorpheus on formai.studio</b></a> ·
+  <a href="#run-it-from-source">Run it from source</a>
+</p>
 
-**Stack:** vanilla TypeScript + Vite · Python + FastAPI · Tauri 2 · **Scale:** v0.17.2, phases 1 to 53 of 53 (six parity ledgers list every reference feature through its 2.1.2 release, about 1,540 rows, each checked in the running app and the shortfalls fixed; the open items closed or stated w/ the hardware they need; parity awaiting the owner's pass)
+<br>
 
-## Highlights
+<p align="center">
+  <img src="docs/images/formmorpheus-hero.webp" alt="FormMorpheus in the Compose view: a black Stage shows a tumbling hand-drawn magenta and violet gem with white scribble hatching and red sketch outlines above the hand-lettered word FORMAI, with the Solid, FORMAI and Glow tracks, their blocks and the playhead on the Timeline below" width="100%">
+  <br>
+  <sub>FORMAI: a 16-drawing tumbling gem and a stroke-by-stroke lettering write-on on three tracks (FORMAI, Solid, Glow), drawn in FormMorpheus.</sub>
+</p>
 
-- **Stage over Timeline** one screen, resizable split, a dimmed backstage around the movie frame & a frame-accurate timecode
-- **Tracks of content** move in time & between tracks, trim, Free Trim (Alt) that ripples neighbours, split at the Playhead, duplicate, duplicate after, fill duration, group & ungroup, box select
-- **Content options** opacity, 17 blend modes plus passthrough for groups, clipping, alpha & luminance masks w/ invert, highlight colours, rename
-- **Compose on the Stage** drag to move, corner handles to scale, a handle to rotate (Shift snaps to 15 degrees), snapping to centre & quarter lines
-- **History that lasts** every edit is one undo step, drags merge into one, depth 10 to unlimited, saved inside the `.fmo`, w/ automatic recovery points when you branch after 3 or more undos
-- **Movie settings** resolution up to 3840 px a side, 12 to 120 fps presets & custom, duration by timecode, transparent background, loop, ping pong or one shot playback
-- **Draw & Paint** a full-area canvas w/ an original brush library of 18 brushes in 7 sets, paint, smudge & erase, pressure, tilt & streamline smoothing, a size & opacity sidebar, drawing layers w/ blend modes, clipping & alpha lock, a color panel (disc, classic, harmony, value, palettes), color drop fill, select (automatic, freehand, rectangle, ellipse), transform (freeform, uniform, distort, warp) & adjustment filters
-- **Flipbooks** frame by frame animation w/ multiple tracks, holds, insert, duplicate, cut, copy & paste of frames, onion skins tinted forwards & backwards, a floating frame strip w/ playback, & conversion to & from tracks of drawings
-- **Warp & Distort** keys on the Action menu w/ a mesh of 2x2 to 6x6 nodes, recorded by hand or in Perform, plus an optional GPU compositor that is used only when it is faster and matches the processor
-- **More paint & Flipbook tools** drawing layer groups & layer masks, remembered brush size & opacity slots, an eyedropper loupe, color drop threshold & continue fill, Transform nudge & a finer mesh w/ bending handles, canvas rotate, row masks, onion blend, a mini preview & looping the visible region
-- **Perform** drag a block on the Stage while the movie plays & your gesture becomes keys at the movie's frame rate (lift to pause, drag to resume), w/ motion filtering that thins the keys, pen barrel roll, & card sliders that record filters
-- **Video & sound** import video, sound, animated GIFs (as Flipbooks), TIFF & fonts; frame-accurate video, waveforms & filmstrips on the Timeline, sound locked to the picture by the audio clock, scrubbing, volume & Volume keys, separate audio from video
-- **Export** MP4, WebM (w/ transparency), MOV, animated GIF w/ its own palette & dithering, PNG, JPG or WebP frames, the current frame, ranges & ping pong; exports are kept on the Home screen's Exports page
-- **Engine export** ProRes 422 HQ, ProRes 4444 w/ transparency & HEVC through the ffmpeg you have installed, run by the engine as a separate program, w/ progress & cancel
-- **Safe by default** Recently Deleted keeps deleted movies & exports for 30 days w/ restore; crash recovery snapshots unsaved work every minute & offers it back after a crash
-- **In your language** the interface in 30 languages, right to left included; an in-app manual (F1) w/ search
-- **Stage you can move around** zoom toward the pointer, pan, fit, rotate the view & a full-screen preview; Stage Options for the background colour, transparency, backstage & timecode
-- **Rigging & motion** a Graph editor for custom eases, curved motion paths, pivots, parenting, a keyed camera & bones, plus lip-sync from sound & a Boil effect
-- **Brushes** 165 original brushes in 19 sets, `.abr` & `.brushset` import, export of a brush, a set or a whole library, per-brush pressure & smoothing
-- **Text in many scripts** 15 built-in open-licence font families loaded on demand, incl. Arabic, Japanese, Chinese, Korean, Thai & Devanagari
-- **Theater** stacks are real folders, carry several movies at once, enter a stack mid-drag, manual order kept by the engine
-- **Desktop apps** `./build_app` makes the macOS app & dmg, Windows msi & installer, Linux deb & AppImage; `.fmo` files open in the running app & join the OS recent list
-- **Keyframes** Move & Scale plus live filters (opacity, Gaussian blur, sharpen, noise, hue saturation brightness, lens blur) keyed on lanes under each block, easing (linear, ease in, ease out, ease in & out, hold), expanded per-channel rows, copy, paste & reverse
-- **The form family shell** the same splash & reveal, title bar, menus (in the window or the macOS menu bar), Home screen, Preferences & status bar as formvis, w/ 28 shared themes & zero flash on load
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#everything-in-the-box">In the box</a> ·
+  <a href="#under-the-hood">Under the hood</a> ·
+  <a href="#download">Download</a> ·
+  <a href="#run-it-from-source">Run from source</a>
+</p>
 
-## Quick Start
+<br>
 
-### Requirements
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <h3>Stage over Timeline</h3>
+      One screen: the movie frame above, tracks of content below, with a frame-accurate timecode.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Three ways to animate</h3>
+      Compose blocks on tracks, set keyframes with easing, or perform a drag live and record it as keys.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Draw frame by frame</h3>
+      Flipbooks with holds and onion skins, plus a full paint canvas with a brush library.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Safe by default</h3>
+      Every edit is an undo step saved inside the movie, with Recently Deleted and crash recovery.
+    </td>
+  </tr>
+</table>
 
-Node 20.19+ or 22.12+, Python 3.12+. Desktop builds also need Rust (`https://rustup.rs`). `./formmorpheus doctor` checks them.
+## Features
 
-### macOS & Linux
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/formmorpheus-onion.webp" alt="The Flipbook editor on one drawing of the tumbling gem: magenta and violet hatched faces with cyan ghosts of the earlier drawings and amber ghosts of the next, above a frame strip" width="100%">
+      <br><sub>Flipbook editing with onion skins tinted backwards and forwards.</sub>
+      <h3>Flipbooks and onion skins</h3>
+      Draw each frame, hold it as long as you need, and see the drawings before and after it as ghosts.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/formmorpheus-writeon.webp" alt="Keyframe mode with the FORMAI write-on block selected: the letters FORM are half drawn on the Stage and a Move lane with keys and eases sits under the block on the Timeline" width="100%">
+      <br><sub>Keyframe mode: the FORMAI write-on with a Move lane and an ease between the keys.</sub>
+      <h3>Keyframe mode</h3>
+      Key Move and Scale and live filters on lanes under each block, with ease and hold curves between keys.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/formmorpheus-export.webp" alt="The Export dialog on its Quick share tab: video, animated GIF, frames as images, current frame, sprite sheet, movie file and sound only" width="100%">
+      <br><sub>The Export dialog: quick share targets, with an Advanced tab for codec, resolution and range.</sub>
+      <h3>Export</h3>
+      Write video, animated GIF, image frames, a sprite sheet, a single frame or sound only, and save presets.
+    </td>
+  </tr>
+</table>
 
-```shell
-chmod +x formmorpheus_oc_install formmorpheus
-./formmorpheus_oc_install
-./formmorpheus
-```
+## Everything in the box
 
-Desktop app:
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h4>Content blocks</h4>
+      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups
+    </td>
+    <td width="33%" valign="top">
+      <h4>Animation tools</h4>
+      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync
+    </td>
+    <td width="33%" valign="top">
+      <h4>Formats</h4>
+      Opens: video, sound, GIF, TIFF, PSD, ORA, KRA, fonts · Saves: MP4, WebM, MOV, GIF, image frames · Native: <code>.fmo</code>
+    </td>
+  </tr>
+</table>
 
-```shell
-./formmorpheus desktop dev
-./formmorpheus desktop build
-```
+## Under the hood
 
-### Windows
+- **Stack:** a vanilla TypeScript and Vite interface, a Python and FastAPI engine and a Tauri 2 desktop shell.
+- **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
+- **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg.
+- **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
+- **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
+- **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is written but not yet built on a Mac, so its first run on an iPad is next.
 
-```shell
-formmorpheus_oc_install.bat
-formmorpheus.bat
-```
+## Download
 
-### Ports
-
-| Service | URL | Notes |
+| Platform | Download | Release |
 |---|---|---|
-| Frontend | http://localhost:5194 | Vite dev server, `server.host` false, proxies `/api/*` to the backend |
-| Backend | http://127.0.0.1:9494 | FastAPI/uvicorn, local only; `./formmorpheus serve` also serves the built interface here |
+| macOS | [Download FormMorpheus for macOS](https://formai.studio/get/formmorpheus/macos) | [FormMorpheus releases on FormCompiler](https://github.com/nodemode-dev/formcompiler/releases?q=formmorpheus-v&expanded=true) |
+| Windows | [Download FormMorpheus for Windows](https://formai.studio/get/formmorpheus/windows) | [FormMorpheus releases on FormCompiler](https://github.com/nodemode-dev/formcompiler/releases?q=formmorpheus-v&expanded=true) |
+| Linux | [Download FormMorpheus for Linux](https://formai.studio/get/formmorpheus/linux) | [FormMorpheus releases on FormCompiler](https://github.com/nodemode-dev/formcompiler/releases?q=formmorpheus-v&expanded=true) |
 
-## Configuration
+All FormMorpheus builds are compiled and released from [FormCompiler](https://github.com/nodemode-dev/formcompiler); this repo holds the source.
 
-| Variable | Purpose |
+## Run it from source
+
+Prefer it in your browser, or want to contribute? Run the web UI straight from this repo.
+
+**Requires:** Node 20.19+ or 22.12+ and Python 3.12+. `./formmorpheus doctor` checks them.
+
+```sh
+git clone git@github.com:nodemode-dev/formmorpheus.git
+cd formmorpheus
+./formmorpheus_oc_install   # installs the frontend and engine dependencies
+./formmorpheus              # web UI at http://localhost:5194
+```
+
+`./formmorpheus desktop dev` opens the desktop window instead. On Windows use `formmorpheus_oc_install.bat` and `formmorpheus.bat`. On a Mac with Xcode, `./formmorpheus ios` builds the iPad app; see [`docs/ios/BUILD.md`](docs/ios/BUILD.md), with TestFlight and App Store steps beside it.
+
+The interface runs on port 5194 and proxies `/api` to the local engine on 127.0.0.1:9494. `FORMMORPHEUS_DATA_DIR` moves the engine's data and movie library, and `FORMMORPHEUS_PORT` sets the engine port.
+
+> [!IMPORTANT]
+> **Status:** in development. The Linux desktop build is tested; the macOS and Windows builds are configured but untested here.
+
+**Contributing:** branch from `main`, keep changes to source here, and leave packaging and releases to formcompiler. See [`.docs/wiki/Contributing.md`](.docs/wiki/Contributing.md) and [`AGENTS.md`](AGENTS.md).
+
+## Repository
+
+| Path | What it is |
 |---|---|
-| `FORMMORPHEUS_DATA_DIR` | where the engine keeps its data & the movie library (default: the platform's app data folder) |
-| `FORMMORPHEUS_LIBRARY_DIR` | a different folder for the movie library |
-| `FORMMORPHEUS_PORT` | the backend port (desktop app: 0, a free port) |
-| `FORMMORPHEUS_DEV_URL` | debug desktop builds only: load this interface URL instead of the engine's |
-| `FORMMORPHEUS_SAFE_GRAPHICS` | Linux desktop app: `1` turns off the web view's DMABUF renderer, `2` also turns off its compositing mode; use it when the window opens blank. A variable you already set is never overwritten |
-| `FORMMORPHEUS_FFMPEG` | the ffmpeg program for ProRes & HEVC export (default: beside the engine, then `PATH`) |
-| `APPLE_SIGNING_IDENTITY`, `WINDOWS_CERT_THUMBPRINT` | optional: sign the desktop build made by `./build_app` |
+| `frontend/` | the interface: engine, paint core, Stage, Timeline, media and export |
+| `backend/` | the engine service: movie library, exports, Recently Deleted, crash recovery |
+| `src-tauri/` | the Tauri 2 desktop shell |
+| `ios/` | the iPad app: Swift shell, engine bridge, Pencil, export and memory |
 
-Set them in the shell. No `.env` is read or committed.
+---
 
-## Architecture
+## Maintainers
 
-```
-formmorpheus/
-├── frontend/              the interface (vanilla TS + Vite)
-│   ├── src/engine/        the decoupled engine: movie model, ops, flipbook & keyframe ops, history, renderer, no DOM
-│   ├── src/paint/         the paint core: brushes, strokes, layers & paint history, fill, select, transform, filters, no DOM
-│   ├── src/ui/            Stage, Timeline, Draw & Paint, popovers, the form family shell
-│   ├── src/media/         video decoding, the audio engine & clock, import of pictures, video, sound & fonts
-│   ├── src/export/        rendering & encoding MP4, WebM, MOV, GIF & frames
-│   ├── src/io/            the engine service client & the .fmo format
-│   ├── src/app/app.ts     wiring: commands, menus, keys, save & open
-│   └── src/styles/        tokens & stylesheets (tokens only, z-index from the scale)
-├── backend/               the engine service (FastAPI): library of .fmo movies, kept exports, export jobs, Recently Deleted, crash recovery
-├── src-tauri/             the desktop shell (Tauri 2): splash, reveal, title bar, engine sidecar, single instance, recent documents
-├── setup/                 install, boot, freeze, desktop & lint scripts behind ./formmorpheus
-├── docs/MANUAL.md         the user manual (also the in-app Help)
-├── .docs/wiki/            the GitHub wiki pages
-├── .github/workflows/     CI: typecheck, build, engine import, cargo check, text lint
-├── build_app              the desktop build, start to finish
-└── assets/                repo-level art (not wired into the build)
-```
+| Maintainer | Role |
+|---|---|
+| [@nodemode-ai](https://github.com/nodemode-ai) | Owner |
+| [@gbarnai](https://github.com/gbarnai) | Co-owner |
 
-## Status
+Code owners are set in [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
-All 22 phases of the plan have landed; parity w/ the reference is now measured by a fresh audit (most rows present; the rest listed in the planning notes) and waits on the owner's own pass. Phases 1 to 19 brought the shell, the movie model w/ saved history & `.fmo` files, the Timeline in Compose mode, Draw & Paint, Flipbooks w/ onion skins, Keyframe mode w/ easing & live filters, Perform mode, video & sound, export, engine export jobs & desktop distribution, the stability work, the documentation, the carried items (layer groups & masks, Warp & Distort keys, the GPU compositor), the extras beyond the reference (graph editor, motion paths, pivots, parenting, camera, bones, lip-sync, boil, round trips w/ formvis & formvfx), & the first wave of reference parity (Stage navigation & options, the Compose box, keyboard shortcuts, the Flipbook workflow & Mini Flipbook, paint feel & clipboard, the brush library, Timeline ergonomics, all blend modes, Theater management). Phases 20 to 22 added text formatting & inline editing, onboarding (What's New, About, example movies, a tour), export & import parity (TIFF / TGA / BMP frames, ProRes profiles, PCM or AAC, PSD / ORA / KRA layered import, TGA, AIFF / CAF / AC3), a canvas of its own for each Drawing, touch & pen gestures, the Animation & Classic brush libraries w/ wet mix & colour dynamics, & a fix wave from a fresh audit. Phases 23 to 25 closed most remaining audit rows (push, extend & contract content, flip content order, a loop range, pen button play), crop on the canvas w/ a Flipbook time bar, brush export, bundled fonts, video w/ transparency, HEIC through the engine, & a full review w/ a hardening wave (host & origin checks on the engine, safe moves across drives, size caps, old files normalised on load). Phases 26 to 28 took the rows still open (layers to tracks, Copy to Folder, secondary colour, multi-layer transform, painting while scrubbing, tips, the movie name in the title bar), the Warp, Flipbook row and GPU gaps, the speed of Stage zoom and pan, playback (a frame cache) and filmstrips, then a third fresh audit and its fix wave. Phases 29 to 31 made dragging on the Stage smooth on big movies, sped up far video seeks, turned brush libraries into folders of `.brush` files you can browse, and ran a second review and hardening round. Phases 32 to 35 closed the last audit rows, added an in-app Help Center w/ guided tutorials, moved warp, bones, layer trees and row masks onto the GPU compositor and export into a worker, made the app usable from the keyboard and w/ screen readers, hardened it under stress, and turned to depth: a full Brush Studio, sound recording and audio editing, an authored grain and tip library, real wet paint, a faster paint engine and editor-grade Timeline tools. Phases 36 to 39 added an effects library (shadow, glow, color correction, vignette, pixelate, directional and radial blur, motion blur, chroma and luma key), rich titles w/ text animators, shapes, solids and adjustment content, audio effects w/ meters and ducking, export presets and new formats, a media bin, painting in a worker, wet paint that drags, Materials w/ shine, palettes, and Flipbook timing w/ an exposure sheet. The Linux desktop build is tested; the macOS & Windows builds are configured but untested here. The iPad edition, MorpheusMobile, starts once the owner calls formmorpheus stable.
+## License
 
-## Development
-
-Changes follow the family's rules: single-region hand edits, zero DOM flash, tokens only, no emoji, decisions & removed code in `frontend/HASHOUT_LOG.md`, `backend/HASHOUT_LOG.md` & `src-tauri/HASHOUT_LOG.md`. Commits are Conventional Commits as `nodemode-ai <mackin@nodemode.ai>` w/o attribution trailers.
-
-## Contributors
-
-- nodemode-ai · owner
-
-## Licensing
-
-Apache-2.0, see `LICENSE` & `NOTICE.md`.
+FormMorpheus is licensed under the Apache License 2.0 ([`LICENSE`](LICENSE), SPDX `Apache-2.0`). Third-party notices: [`NOTICE.md`](NOTICE.md).

@@ -262,6 +262,12 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
 
+## New in 0.18.0
+
+**A new icon.** formmorpheus has a new app icon on the desktop, in the browser tab and in About.
+
+**On iPad.** formmorpheus is coming to iPad. On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About formmorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
+
 ## New in 0.17.2
 
 **Brushes.** Bristle, oil and knife brushes keep their streaks along the stroke in every direction and around curves, with highlights that follow them. Paints no longer show a repeating pattern in their body, and Round paint and Gouache break up at a dry edge.

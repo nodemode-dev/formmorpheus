@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""API contract check: which routes of the desktop engine the iPad engine does not serve.
+
+Loads docs/api-contract.json (the FastAPI engine's OpenAPI schema), scans the Swift in ios/Engine and ios/Export for
+the routes they handle, and prints the contract routes the iPad engine does not serve, split into required and
+desktop-only. Report only: the exit status is 0 whatever is found.
+
+Classification (edit DESKTOP_ONLY below to change it). A route is desktop-only when it needs something an iPad does not
+have: ffmpeg, a socket server, or a folder dialog onto the file system.
+  /api/penlink/*                 Pen Link runs a local network server with sockets; off on iPad
+  /api/transcode*                ffmpeg turns imported video and sound into formats the web view reads
+  /api/proxy/make                ffmpeg makes the small proxy copy of a big video
+  /api/audio-encode/mp3          ffmpeg with libmp3lame; MP3 export is hidden on iPad
+  /api/save-to/*                 writes into a folder picked with a folder dialog; saving goes through the system picker
+  /api/library/{name}/copy-to    copies a movie into a folder picked with a folder dialog
+  POST /api/system/library       moves the library to another folder; on iPad the library is the app's Documents folder
+  x-websockets in the contract   sockets cannot be served through the scheme handler
+Everything else is required.
+
+How routes are found in Swift:
+  table.add("GET", "/library/{name}")      exact: the method and the path are written out
+  a group that parses request.path by hand (prefix "/jobs" and tests such as rest[1] == "audio"): matched by
+  heuristic, shown as "~" in the lists: the group's prefix, every literal segment of the route and its method
+  must all appear in the group's file.
+"""
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CONTRACT = ROOT / "docs" / "api-contract.json"
+SWIFT_DIRS = [ROOT / "ios" / "Engine", ROOT / "ios" / "Export"]
+METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
+
+# (method or "*", path pattern with {} for every parameter); a trailing /* matches everything below
+DESKTOP_ONLY = [
+    ("*", "/api/penlink/*"),
+    ("*", "/api/transcode"),
+    ("*", "/api/transcode/*"),
+    ("*", "/api/proxy/make"),
+    ("*", "/api/audio-encode/mp3"),
+    ("*", "/api/save-to/*"),
+    ("*", "/api/library/{}/copy-to"),
+    ("POST", "/api/system/library"),
+]
+
+
+def norm(path: str) -> str:
+    return re.sub(r"\{[^}/]*\}", "{}", path.rstrip("/") or "/")
+
+
+def is_desktop_only(method: str, path: str) -> bool:
+    for m, pat in DESKTOP_ONLY:
+        if m not in ("*", method):
+            continue
+        if pat.endswith("/*"):
+            if path == pat[:-2] or path.startswith(pat[:-1]):
+                return True
+        elif path == pat:
+            return True
+    return False
+
+
+ADD = re.compile(r'\.add\(\s*"([A-Za-z]+)"\s*,\s*"([^"]+)"')
+PREFIX = re.compile(r'\bprefix\s*=\s*"(/[^"]*)"')
+FIRST = re.compile(r'parts\.first\s*==\s*"([^"]+)"')
+
+
+def scan():
+    exact: set[tuple[str, str]] = set()
+    groups: list[dict] = []
+    files = 0
+    for d in SWIFT_DIRS:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*.swift")):
+            files += 1
+            text = f.read_text(encoding="utf-8", errors="replace")
+            for m, p in ADD.findall(text):
+                exact.add((m.upper(), norm("/api" + p)))
+            pm = PREFIX.search(text)
+            fm = FIRST.search(text)
+            if pm or fm:
+                prefix = pm.group(1) if pm else "/" + fm.group(1)
+                groups.append({"file": f.relative_to(ROOT).as_posix(), "prefix": norm("/api" + prefix) if prefix != "/" else "/api",
+                               "text": text, "hand": not ADD.search(text)})
+    return exact, groups, files
+
+
+def heuristic(group: dict, method: str, path: str) -> bool:
+    if not group["hand"]:
+        return False
+    pre = group["prefix"]
+    if path != pre and not path.startswith(pre + "/"):
+        return False
+    literals = [s for s in path[len(pre):].split("/") if s and s != "{}"]
+    return all(f'"{s}"' in group["text"] for s in [method, *literals])
+
+
+def main() -> int:
+    if not CONTRACT.is_file():
+        print(f"api_contract_check: {CONTRACT.relative_to(ROOT)} is missing")
+        return 0
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    routes = [(m.upper(), norm(p)) for p, item in contract.get("paths", {}).items() for m in item if m in METHODS]
+    sockets = [norm(p) for p in contract.get("x-websockets", [])]
+    exact, groups, files = scan()
+    print(f"contract {contract.get('info', {}).get('title', '')} {contract.get('info', {}).get('version', '')}: {len(routes)} routes, {len(sockets)} sockets")
+    print(f"scanned {files} Swift files in ios/Engine and ios/Export: {len(exact)} exact routes, {sum(1 for g in groups if g['hand'])} hand-parsed groups")
+
+    served, guessed = [], []
+    missing_required, missing_desktop = [], []
+    for method, path in routes:
+        if (method, path) in exact:
+            served.append((method, path))
+        elif any(heuristic(g, method, path) for g in groups):
+            guessed.append((method, path))
+        elif is_desktop_only(method, path):
+            missing_desktop.append((method, path))
+        else:
+            missing_required.append((method, path))
+
+    def show(title: str, rows: list[tuple[str, str]], mark: str = " ") -> None:
+        print(f"\n{title} ({len(rows)})")
+        for method, path in rows:
+            print(f"  {mark} {method:6} {path}")
+
+    show("REQUIRED routes the iPad engine does not serve", missing_required)
+    show("DESKTOP-ONLY routes the iPad engine does not serve (expected)", missing_desktop)
+    print(f"\nDESKTOP-ONLY sockets (never served on iPad) ({len(sockets)})")
+    for p in sockets:
+        print(f"    WS     {p}")
+    show("Served by hand-parsed groups (heuristic, check by eye)", guessed, "~")
+    desk_served = [r for r in served + guessed if is_desktop_only(*r)]
+    if desk_served:
+        show("Desktop-only routes the iPad engine serves anyway", desk_served)
+    contract_set = set(routes)
+    extra = sorted(r for r in exact if r not in contract_set)
+    if extra:
+        show("Routes the iPad engine has that the contract does not list", extra)
+    print(f"\nsummary: served {len(served)} exact + {len(guessed)} heuristic of {len(routes)}; "
+          f"required missing {len(missing_required)}; desktop-only missing {len(missing_desktop)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

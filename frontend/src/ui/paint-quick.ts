@@ -7,6 +7,7 @@ import { fitShape, forceShape, pressureAt, shapePoints, type Pt, type Shape, typ
 import { Popover, popRow } from './popover';
 import { toast } from './toast';
 import { t as tr } from './i18n';
+import { pencilHaptic } from '../platform/ipad-pencil';
 
 export const DWELL_MS = 500;
 const STILL_PX = 3;
@@ -142,6 +143,7 @@ export class QuickShapeCtl {
     this.shape = s;
     this.pointer = null;
     this.apply();
+    pencilHaptic('pathCompleted');
     this.host.say(tr(label(s.kind)));
   }
 

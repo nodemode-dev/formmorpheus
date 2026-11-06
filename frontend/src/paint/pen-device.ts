@@ -152,8 +152,20 @@ export class DeviceTracker {
   }
 }
 
+/** A pointer record with a position: a PointerEvent, a coalesced one, or a stand-in carrying the same fields. */
+export type PenPointer = PointerLike & { clientX: number; clientY: number };
+
+/** What a platform adds to the pen's own events (the iPad's native Pencil data). The desktop leaves it null. */
+export interface PenExtras {
+  /** The same record with the native side's roll and settled pressure merged in; the event itself when it knows nothing. */
+  pointer(e: PenPointer): PenPointer;
+  /** The platform's predicted points ahead of this event, or null to use the engine's own. */
+  predicted(e: PenPointer): PenPointer[] | null;
+}
+
 /** The one place pen settings, saved devices, the arbiter and the device tracker live. */
 export class PenRuntime {
+  extras: PenExtras | null = null;
   settings: PenSettings = { ...DEFAULT_PEN_SETTINGS, curve: DEFAULT_PEN_SETTINGS.curve.map((p) => [...p] as CurvePoint) };
   profiles: Record<string, PenProfile> = {};
   readonly tracker = new DeviceTracker();

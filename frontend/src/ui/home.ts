@@ -7,6 +7,7 @@ import { ExamplesRow } from './examples-row';
 import { mountCloudButton, mountStorageButton } from './theater-storage';
 import { Popover, popRow } from './popover';
 import { theaterLayout } from './shell-opts';
+import { platform } from '../platform';
 import '../styles/theater-wall.css';
 
 export interface HomeDeps {
@@ -124,7 +125,8 @@ export class HomeScreen {
     document.addEventListener('fm:theater-layout', applyLayout);
     document.addEventListener('fm:show-exports', () => { this.show('outputs'); });
     mountStorageButton(this.root.querySelector('[data-storage]') as HTMLElement);
-    mountCloudButton(this.root.querySelector('[data-cloud]') as HTMLElement);
+    if (platform.kind === 'ipad') (this.root.querySelector('[data-cloud]') as HTMLElement).hidden = true;
+    else mountCloudButton(this.root.querySelector('[data-cloud]') as HTMLElement);
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.forced && d.engine.projects.length) { this.forced = false; this.sync(); } });

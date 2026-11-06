@@ -202,7 +202,7 @@ export class Dialog {
     } finally { m.busy = false; }
   }
 
-  /** Shows the dialog and moves focus into it: to `focus` if given, else to the first field or primary button. */
+  /** Shows the dialog and moves focus into it: to `focus` if given, else to the first field or primary button (on iPad the primary button, since focusing a field there pops its menu or the keyboard). */
   open(focus?: HTMLElement | null): void {
     if (this.isOpen) return;
     this.relabel();
@@ -215,7 +215,8 @@ export class Dialog {
     openCount++;
     openStack.push(this.fieldHistory);
     this.fieldHistory.start();
-    const target = focus ?? this.scrim.querySelector<HTMLElement>('input, select, .cv-btn-primary:not(:disabled)');
+    const touch = document.documentElement.classList.contains('is-ipad');
+    const target = focus ?? this.scrim.querySelector<HTMLElement>(touch ? '.cv-btn-primary:not(:disabled)' : 'input, select, .cv-btn-primary:not(:disabled)');
     target?.focus();
     if (!this.scrim.contains(document.activeElement)) q<HTMLElement>(this.scrim, '.cv-dialog').focus();
   }

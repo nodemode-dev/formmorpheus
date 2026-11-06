@@ -1,0 +1,8 @@
+// Copy this file to Local.xcconfig (same folder) and fill in your values.
+// Local.xcconfig is gitignored. Find your Team ID in Xcode under Settings > Accounts,
+// or at developer.apple.com under Membership details (ten characters, letters and digits).
+
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Only needed if ai.nodemode.formmorpheus is not available to your account:
+// PRODUCT_BUNDLE_IDENTIFIER = com.example.formmorpheus

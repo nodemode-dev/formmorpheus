@@ -19,6 +19,8 @@ export interface StartMsg {
   loads: FontLoad[];
   /** The page composes on the GPU: the worker must too (or say it cannot, and the page falls back). */
   gpu: boolean;
+  /** iPad: the page's memory tier, so the worker's caches use the same limits (absent on desktop). */
+  memTier?: 'high' | 'mid' | 'low' | 'floor';
   opts: ExportOptions;
   /** Frames mode: key alpha, and the frame list length. */
   keepAlpha?: boolean;

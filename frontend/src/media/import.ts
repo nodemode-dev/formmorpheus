@@ -2,6 +2,7 @@
 // (a Flipbook row), video, sound and fonts. Nothing here touches the movie; the caller places the result.
 import type { Asset, Content, FlipTrack, FlipbookFrame, Movie } from '../engine/types';
 import { content, drawingLayer, identity, uid } from '../engine/model';
+import { memory } from '../platform/ipad-memory';
 import { formvfxToTracks, formvisToDrawing, sniffRoundTrip } from '../io/round-trip';
 import { registerFont } from './fonts';
 import { isCollection, splitCollection } from './fonts-ttc';
@@ -159,7 +160,7 @@ async function importPicture(file: File, m: Movie, at: number, kind: Sniff): Pro
 
 const MAX_ANIMATION_FRAMES = 1000;
 /** RGBA bytes of source pictures one animation import may decode. */
-const MAX_DECODE_BYTES = 512 * 1024 * 1024;
+const maxDecodeBytes = (): number => memory.get('decodeBytes');
 
 interface RawFrame { image: CanvasImageSource | null; rgba: Uint8ClampedArray | null; w: number; h: number; delayMs: number }
 
@@ -271,7 +272,7 @@ async function viaImageDecoder(file: File, type: string): Promise<FrameSource | 
     // the first picture sizes the memory budget; later pulls are chained so they answer in order
     const first = await pull();
     if (!first) { close(); return null; }
-    const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (first.w * first.h * 4)));
+    const byMemory = Math.max(1, Math.floor(maxDecodeBytes() / (first.w * first.h * 4)));
     let chain: Promise<unknown> = Promise.resolve();
     let served = false;
     return {
@@ -300,7 +301,7 @@ async function importAnimated(file: File, m: Movie, at: number, kind: Sniff): Pr
     try { info = gifInfo(bytes); } catch { throw new Error(`${file.name} is a damaged GIF.`); }
     if (info.count < 2) return null;
     // streamed: one picture at a time is composed and encoded, so a 4K GIF never sits in memory whole
-    const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (info.width * info.height * 4)));
+    const byMemory = Math.max(1, Math.floor(maxDecodeBytes() / (info.width * info.height * 4)));
     const it = gifFrames(bytes);
     const src: FrameSource = {
       next: () => {
@@ -519,7 +520,7 @@ export async function importSequence(files: File[], movie: Movie, at: number, fp
   const rate = Math.min(240, Math.max(1, fps));
   let first: ImageBitmap;
   try { first = await createImageBitmap(files[0]); } catch { throw new Error(tf('{name} could not be read as a picture.', { name: files[0].name })); }
-  const byMemory = Math.max(1, Math.floor(MAX_DECODE_BYTES / (first.width * first.height * 4)));
+  const byMemory = Math.max(1, Math.floor(maxDecodeBytes() / (first.width * first.height * 4)));
   let at0 = 0;
   let chain: Promise<unknown> = Promise.resolve();
   const pull = async (): Promise<RawFrame | null> => {

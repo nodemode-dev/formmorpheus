@@ -18,7 +18,7 @@ mod window_state;
 const FALLBACK_SIZE: (f64, f64) = (1323.0, 860.0);
 const MIN_SIZE: (f64, f64) = (980.0, 640.0);
 const SCREEN_FRACTION: f64 = 0.9;
-const TITLE: &str = "formmorpheus";
+const TITLE: &str = "FormMorpheus";
 
 struct Backend(Mutex<Option<CommandChild>>);
 

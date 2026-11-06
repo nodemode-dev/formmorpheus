@@ -2,6 +2,7 @@
 // layer entries hold two layer-list snapshots (rasters are referenced, not copied)
 // plus the patches of any raster the edit changed in place (merge down).
 
+import { memory } from '../platform/ipad-memory';
 import type { PaintLayer, PaintMask, PixelPatch, Raster, Rect } from './types';
 import type { BlendMode } from '../engine/types';
 
@@ -143,8 +144,35 @@ export class PaintHistory {
   constructor(
     private readonly host: PaintHost,
     public depth = 200,
-    public budget = PAINT_HISTORY_BUDGET,
-  ) {}
+    public budget = memory.get('paintHistory'),
+  ) {
+    if (memory.kind !== 'ipad') return;
+    const me = new WeakRef(this);
+    const off = memory.watch('paintHistory', (v) => { const r = me.deref(); if (r) r.lowerTo(v); else off(); });
+    const offD = memory.watch('paintUndoDepth', (v) => { const r = me.deref(); if (r) r.shedDepth(v); else offD(); });
+    const offP = memory.onPressure((level) => { const r = me.deref(); if (!r) { offP(); return; } if (level !== 'tier') r.shedDepth(memory.get('undoFloor')); });
+  }
+
+  /** A lower memory tier or a warning: the byte limit drops to `bytes` and the oldest steps go until it holds (the newest step always stays). */
+  private lowerTo(bytes: number): void {
+    this.budget = Math.min(this.budget, bytes);
+    this.dropOld(this.depth);
+  }
+
+  /** Keeps at most the newest `steps` undo steps and the same number of redo steps. */
+  shedDepth(steps: number): void {
+    if (!(steps >= 1) || !isFinite(steps)) return;
+    this.dropOld(Math.min(this.depth, steps));
+    if (this.redoStack.length > steps) this.redoStack.splice(0, this.redoStack.length - steps);
+  }
+
+  private dropOld(depth: number): void {
+    while (this.undoStack.length > 1 && (this.undoStack.length > depth || this.bytes > this.budget)) {
+      const old = this.undoStack.shift()!;
+      this.bytes -= entryBytes(old);
+      this.dropped = true;
+    }
+  }
 
   push(input: PaintEntry | { kind: 'pixels'; label: string; patch: PixelPatch }): void {
     const e: PaintEntry = 'patch' in input ? { kind: 'pixels', label: input.label, patches: patchTiles.get(input.patch) ?? tilePatch(input.patch) } : input;
@@ -158,7 +186,7 @@ export class PaintHistory {
     this.undoStack.push(e);
     this.bytes += entryBytes(e);
     let overBudget = false;   // only a memory drop earns the toast; a depth drop is the setting working
-    while (this.undoStack.length > 1 && (this.undoStack.length > this.depth || this.bytes > this.budget)) {
+    while (this.undoStack.length > 1 && (this.undoStack.length > Math.min(this.depth, memory.get('paintUndoDepth')) || this.bytes > this.budget)) {
       if (this.bytes > this.budget) overBudget = true;
       const old = this.undoStack.shift()!;
       this.bytes -= entryBytes(old);

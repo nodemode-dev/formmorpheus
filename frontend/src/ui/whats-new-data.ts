@@ -5,6 +5,13 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.18.0', name: 'A new icon, and formmorpheus on iPad',
+    additions: [
+      { title: 'A new icon', text: 'formmorpheus has a new app icon everywhere it appears.', command: 'about' },
+      { title: 'On iPad', text: 'The iPad app keeps movies in Files, works with the menu bar and Apple Pencil Pro, and exports with the iPad\'s own encoders.', command: 'help' },
+    ],
+  },
+  {
     version: '0.17.2', name: 'Open items closed',
     additions: [
       { title: 'Brushes', text: 'Bristle and knife streaks follow the stroke in every direction, and paints have no repeating pattern.', command: 'new-flipbook' },

@@ -19,7 +19,13 @@ export class TextureCache {
   /** Set when a source could not be held (over the driver's size limit, or the upload raised a GL error): the frame is drawn by the CPU. */
   private refused = false;
 
-  constructor(private readonly gl: WebGL2RenderingContext, private readonly capBytes: number, private readonly maxSide = 16384) {}
+  constructor(private readonly gl: WebGL2RenderingContext, private capBytes: number, private readonly maxSide = 16384) {}
+
+  /** A new byte cap (a lower memory tier); textures drawn in the last two frames stay, the rest go at the next frame's end. */
+  setCap(bytes: number): void {
+    this.capBytes = bytes;
+    this.endFrame();
+  }
 
   get size(): number {
     return this.bytes;

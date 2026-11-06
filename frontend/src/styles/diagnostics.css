@@ -1,0 +1,25 @@
+/* Diagnostics (iPad): the panel of device checks opened from About. */
+.fm-diag { display: grid; gap: var(--space-4); }
+.fm-diag-note { margin: 0; font-size: var(--fs-12); line-height: 1.55; color: var(--text-secondary); }
+.fm-diag-bar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.fm-diag-cap { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-12); color: var(--text-muted); }
+.fm-diag-cap .cv-input { width: 84px; }
+.fm-diag-sent { font-size: var(--fs-12); color: var(--text-muted); }
+.fm-diag-pad-wrap { display: grid; gap: var(--space-2); }
+.fm-diag-pad-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.fm-diag-pad-title { font-size: var(--fs-13); font-weight: 600; color: var(--text-primary); }
+.fm-diag-pad { position: relative; height: 180px; border: 1px dashed var(--border-light); border-radius: var(--radius-md); background: var(--surface-1); color: var(--accent-color); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.fm-diag-pad canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fm-diag-pad-live { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-muted); min-height: 1.4em; }
+.fm-diag-pad-left { font-variant-numeric: tabular-nums; font-size: var(--fs-12); color: var(--text-muted); }
+.fm-diag-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; background: var(--border-color); }
+.fm-diag-row { display: grid; grid-template-columns: 10px minmax(120px, 190px) minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface-1); font-size: var(--fs-12); }
+.fm-diag-dot { width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--border-light); align-self: center; }
+.fm-diag-row[data-state="running"] .fm-diag-dot { background: var(--accent-color); }
+.fm-diag-row[data-state="ok"] .fm-diag-dot { background: var(--ok); }
+.fm-diag-row[data-state="warn"] .fm-diag-dot { background: var(--warn); }
+.fm-diag-row[data-state="fail"] .fm-diag-dot { background: var(--danger); }
+.fm-diag-name { color: var(--text-primary); }
+.fm-diag-sum { color: var(--text-muted); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.fm-diag-state { color: var(--text-secondary); white-space: nowrap; }
+@media (max-width: 640px) { .fm-diag-row { grid-template-columns: 10px 1fr auto; } .fm-diag-sum { grid-column: 2 / -1; } }

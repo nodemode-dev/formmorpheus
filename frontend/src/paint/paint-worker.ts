@@ -6,6 +6,7 @@
 
 import type { PenSample, Point, Raster, Rect, StrokeSettings, Mask } from './types';
 import { Stroke } from './stroke';
+import { memory } from '../platform/ipad-memory';
 import { setPressureCurve } from './dynamics';
 import { hasShine } from './shine';
 import { dries } from './wet-dry';
@@ -26,6 +27,8 @@ export type ToWorker =
     /** Wet marks the page made since the worker last saw its wet map (paint/wetmap.ts). */
     wet?: WetRecord[];
   }
+  /** iPad: the page's memory tier (the worker cannot see the platform), and whether this is a warning to trim for. */
+  | { t: 'memory'; tier: 'high' | 'mid' | 'low' | 'floor'; warn?: boolean }
   | { t: 'add'; id: number; samples: PenSample[] }
   | { t: 'finish'; id: number }
   | { t: 'cancel'; id: number };
@@ -90,6 +93,11 @@ function reply(kind: 'step' | 'done', l: Live, rect: Rect | null): void {
 ctx.onmessage = (e: MessageEvent<ToWorker>): void => {
   const m = e.data;
   try {
+    if (m.t === 'memory') {
+      memory.adopt(m.tier);
+      if (m.warn) memory.handle('memoryWarning', {});
+      return;
+    }
     if (m.t === 'begin') {
       if (m.full) mirror = { layer: m.layer, raster: { width: m.w, height: m.h, data: m.full } };
       else if (m.blank) mirror = { layer: m.layer, raster: { width: m.w, height: m.h, data: new Uint8ClampedArray(m.w * m.h * 4) } };
@@ -133,6 +141,6 @@ ctx.onmessage = (e: MessageEvent<ToWorker>): void => {
   } catch (err) {
     live = null;
     mirror = null;
-    ctx.postMessage({ t: 'error', id: m.id, msg: String((err as Error)?.message ?? err) });
+    ctx.postMessage({ t: 'error', id: m.t === 'memory' ? 0 : m.id, msg: String((err as Error)?.message ?? err) });
   }
 };

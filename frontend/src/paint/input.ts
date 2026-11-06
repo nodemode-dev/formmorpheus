@@ -4,7 +4,7 @@
 
 import { applyPressure } from './dynamics';
 import { MotionFilter } from './feel';
-import { penRuntime, type PenRuntime } from './pen-device';
+import { penRuntime, type PenPointer, type PenRuntime } from './pen-device';
 import { readPointer, type PenSampleV2 } from './pen-sample';
 
 type PenSample = PenSampleV2;
@@ -129,10 +129,12 @@ export class PenInput {
       const o = this.follow(s);
       if (o) { out.push(o); this.lastOut = o; }
     }
-    if (typeof e.getPredictedEvents === 'function') {
+    // the platform's own predicted points (iPad) take the place of the engine's when it has fresh ones
+    const native = this.runtime.extras ? this.runtime.extras.predicted(e) : null;
+    if (native || typeof e.getPredictedEvents === 'function') {
       // Run the rope on a scratch copy so prediction never moves the real state.
       let px = this.bx, py = this.by;
-      for (const ev of e.getPredictedEvents()) {
+      for (const ev of native ?? e.getPredictedEvents()) {
         const s = this.sample(ev, false);
         if (s.pressure < 0) s.pressure = this.lastPen?.pressure ?? 0.5;
         if (this.rope > 0) {
@@ -196,9 +198,11 @@ export class PenInput {
   }
 
   /** `advance` false reads without moving the pressure smoother (predicted points, the lift). */
-  private sample(e: PointerEvent, advance = true): PenSample {
-    const c = this.toCanvas(e.clientX, e.clientY);
+  private sample(ev: PenPointer, advance = true): PenSample {
     const rt = this.runtime;
+    // the platform may add what the web view lacks (barrel roll, settled pressure); null on the desktop
+    const e = rt.extras ? rt.extras.pointer(ev) : ev;
+    const c = this.toCanvas(e.clientX, e.clientY);
     const curve = rt.effective();
     if (advance && e.pointerType === 'pen') rt.tracker.observe(e);
     // a pen in contact that says 0 is missing; after a few in a row the device has no pressure and gets 0.5
