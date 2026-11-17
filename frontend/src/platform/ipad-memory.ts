@@ -232,19 +232,10 @@ class Memory {
    * stylesheets into the paint worker bundle, whose first statement then touches `document` and kills the worker.
    */
   attach(bridge: Bridge): void {
-    if (this.kind !== 'ipad' || this.attached) return;
+    if (this.kind !== 'ipad' || this.attached || typeof window === 'undefined') return;
     this.attached = true;
     for (const type of ['memoryWarning', 'memoryInfo', 'contentProcessRecovered', 'appState']) bridge.on(type, (p) => { this.handle(type, p); });
     bridge.post('memoryInfoRequest', {});
-   * wrapped here). Loaded on demand: the platform index needs `window`, and this module also runs in workers.
-   */
-  attach(): void {
-    if (this.kind !== 'ipad' || this.attached || typeof window === 'undefined') return;
-    this.attached = true;
-    void import('./index').then(({ platform }) => {
-      for (const type of ['memoryWarning', 'memoryInfo', 'contentProcessRecovered', 'appState']) platform.bridge.on(type, (p) => { this.handle(type, p); });
-      platform.bridge.post('memoryInfoRequest', {});
-    }).catch(() => { this.attached = false; });
   }
 
   /** Page to native, same channel the platform layer uses. */
@@ -323,7 +314,5 @@ class Memory {
 }
 
 export const memory = new Memory();
-
-memory.attach();
 
 if (lsGet('fm-memory-debug') === '1') (globalThis as unknown as { __fmMemory?: Memory }).__fmMemory = memory;
