@@ -599,6 +599,6 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
     }
     default:
       if (/\.drm$/i.test(file.name)) return importProjectFile(file, movie, at);
-      throw new Error(`${file.name} is not a picture, video, sound or font formmorpheus can place.`);
+      throw new Error(`${file.name} is not a picture, video, sound or font FormMorpheus can place.`);
   }
 }

@@ -55,7 +55,7 @@ class RecoverDialog extends Dialog {
 
   ask(items: RecoveryEntry[]): Promise<'recover' | 'discard' | 'later'> {
     const n = items.length;
-    setText(this.question, `${t('formmorpheus quit before it finished writing.')} ${tn(n, 'Bring back the last steps of {n} movie?', 'Bring back the last steps of {n} movies?')}`);
+    setText(this.question, `${t('FormMorpheus quit before it finished writing.')} ${tn(n, 'Bring back the last steps of {n} movie?', 'Bring back the last steps of {n} movies?')}`);
     const shown = items.slice(0, 4).map((i) => i.name).join(', ');
     setText(this.names, `${shown}${n > 4 ? `, ${tn(n - 4, 'and {n} more', 'and {n} more')}` : ''}. ${t('Each one is added to the Theater as a new movie with "(Recovered)" after its name; the original stays as it was.')}`);
     this.open(this.recover);

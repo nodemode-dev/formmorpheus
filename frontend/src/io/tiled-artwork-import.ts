@@ -121,7 +121,7 @@ export async function readTiledArtwork(file: File): Promise<LayeredDoc> {
   let n = 0, damaged = 0, drawn = 0;
   const blendOf = (o: Obj): BlendMode => {
     const ext = numOf(o.extendedBlend, 0), b = ext > 0 ? ext : numOf(o.blend, 0);
-    if (!(b in BLEND)) { notes.add('Some blend modes are not ones formmorpheus has; those layers open as Normal.'); return 'normal'; }
+    if (!(b in BLEND)) { notes.add('Some blend modes are not ones FormMorpheus has; those layers open as Normal.'); return 'normal'; }
     return BLEND[b];
   };
   const walk = (list: unknown, parent: string | null): void => {
@@ -156,7 +156,7 @@ export async function readTiledArtwork(file: File): Promise<LayeredDoc> {
   // the layer tree is top first; a file without it lists its pixel layers flat
   if (Array.isArray(doc.unwrappedLayers)) walk(doc.unwrappedLayers, null);
   else walk(doc.layers, null);
-  if (!layers.some((l) => !l.group)) return thumb('It holds no layers formmorpheus can read.');
+  if (!layers.some((l) => !l.group)) return thumb('It holds no layers FormMorpheus can read.');
   if (!drawn && folders.size) return thumb('Its tile files could not be decoded.');
 
   // the canvas colour sits under everything unless switched off: four little-endian float32 (r, g, b, a)

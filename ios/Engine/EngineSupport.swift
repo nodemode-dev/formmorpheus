@@ -600,7 +600,7 @@ enum EngineFolders {
             try Data().write(to: probe)
             EngineFS.remove(probe)
         } catch {
-            throw EngineError(400, "formmorpheus cannot write to that folder.")
+            throw EngineError(400, "FormMorpheus cannot write to that folder.")
         }
         return url
     }

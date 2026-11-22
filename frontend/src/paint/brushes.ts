@@ -62,12 +62,12 @@ export function stabilizationRope(b: Brush): number {
 
 /** The Classic sets in library order: `id` is the stored set id (fixed for good), `name` what the panel shows. */
 export const CLASSIC_SETS: { id: string; name: string }[] = [
-  { id: 'sketching', name: 'Graphite' }, { id: 'charcoals', name: 'Charcoal' }, { id: 'drawing', name: 'Markers' },
+  { id: 'sketching', name: 'Graphite' }, { id: 'charcoals', name: 'Charcoal' }, { id: 'drawing', name: 'Pens and markers' },
   { id: 'inking', name: 'Comic ink' }, { id: 'calligraphy', name: 'Nibs' }, { id: 'painting', name: 'Studio paint' },
   { id: 'water', name: 'Wet media' }, { id: 'airbrushing', name: 'Mist' }, { id: 'spraypaints', name: 'Graffiti' },
   { id: 'artistic', name: 'Mark making' }, { id: 'textures', name: 'Grit' }, { id: 'materials', name: 'Finishes' },
   { id: 'vintage', name: 'Printmaking' }, { id: 'industrial', name: 'Metalwork' }, { id: 'abstract', name: 'Shapes' },
-  { id: 'luminance', name: 'Light' }, { id: 'elements', name: 'Atmosphere' }, { id: 'organic', name: 'Nature' },
+  { id: 'luminance', name: 'Glow' }, { id: 'elements', name: 'Atmosphere' }, { id: 'organic', name: 'Nature' },
 ];
 
 /** A row's short set name to the stored set id it lands in (any other row name is its id in lower case); Touch-ups folds into Drawing. Libraries saved long ago used these short names too. */

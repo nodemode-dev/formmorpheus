@@ -138,7 +138,7 @@ export async function readKra(file: File): Promise<LayeredDoc> {
       if (!data) { notes.add('Some layers named pixel files the file does not hold, and were left out.'); continue; }
       const read = readTiles(data);
       if (!read || read.gray) { notRgba = true; continue; }
-      if (!FROM_KRA.has(op)) notes.add(`${op} is not a blend mode formmorpheus has; those layers open as Normal.`);
+      if (!FROM_KRA.has(op)) notes.add(`${op} is not a blend mode FormMorpheus has; those layers open as Normal.`);
       if (!read.tiles.length) { layers.push({ ...base, id: `k${n++}`, name, group: false, pixels: null, mask: maskOf(e) }); continue; }
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const t of read.tiles) { x0 = Math.min(x0, t.x); y0 = Math.min(y0, t.y); x1 = Math.max(x1, t.x + 64); y1 = Math.max(y1, t.y + 64); }

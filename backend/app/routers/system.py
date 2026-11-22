@@ -46,7 +46,7 @@ def _safe_folder(raw: str, create: bool = True) -> Path:
         probe.write_bytes(b"")
         probe.unlink()
     except OSError:
-        raise HTTPException(400, "formmorpheus cannot write to that folder.")
+        raise HTTPException(400, "FormMorpheus cannot write to that folder.")
     return path
 
 

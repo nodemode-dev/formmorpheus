@@ -431,7 +431,7 @@ async def write_project(name: str, request: Request) -> dict:
     path = project_path(name)
     body = await read_limited(request, config.MAX_PROJECT_BYTES, "The project is too large to save.")
     if body[:4] != b"PK\x03\x04":
-        raise HTTPException(400, "That is not a formmorpheus project.")
+        raise HTTPException(400, "That is not a FormMorpheus project.")
     # a part file per request, flushed to disk before the rename: a kill or a power cut leaves the old movie or the whole new one
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.part")
     try:
@@ -491,7 +491,7 @@ def duplicate_project(name: str) -> dict:
         except FileExistsError:
             continue   # the name was taken a moment ago: take the next one
         except OSError:
-            raise HTTPException(400, "formmorpheus could not duplicate the movie.")
+            raise HTTPException(400, "FormMorpheus could not duplicate the movie.")
         finally:
             tmp.unlink(missing_ok=True)
     raise HTTPException(409, "No free name for the copy.")
@@ -523,7 +523,7 @@ def copy_project_to(name: str, body: CopyToBody) -> dict:
             except FileExistsError:
                 n += 1
     except OSError:
-        raise HTTPException(400, "formmorpheus could not copy the movie there.")
+        raise HTTPException(400, "FormMorpheus could not copy the movie there.")
     finally:
         tmp.unlink(missing_ok=True)
     return {"path": str(dst), "name": dst.stem}

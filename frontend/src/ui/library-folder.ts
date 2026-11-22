@@ -12,7 +12,7 @@ import { cloudFolder, setCloudFolder } from './theater-storage';
 interface Info { dir: string; default: string; source: 'override' | 'custom' | 'default'; icloud: string | null }
 
 async function call<T>(method: 'GET' | 'POST', body?: unknown): Promise<T> {
-  if (!(await serviceReady())) throw new ApiError('The formmorpheus engine service is not running. Start it with ./formmorpheus.', 0);
+  if (!(await serviceReady())) throw new ApiError('The FormMorpheus engine service is not running. Start it with ./formmorpheus.', 0);
   const res = await fetch('/api/system/library', { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     let detail = res.statusText;

@@ -20,7 +20,7 @@ def read_file(path: str, request: Request) -> FileResponse:
     if host not in _LOOPBACK:
         raise HTTPException(403, "Files can only be opened by the app itself.")
     if not path.lower().endswith(config.PROJECT_EXT):
-        raise HTTPException(400, "Only formmorpheus movie files can be opened by path.")
+        raise HTTPException(400, "Only FormMorpheus movie files can be opened by path.")
     target = Path(path)
     if not target.is_absolute():
         raise HTTPException(400, "The path must be absolute.")

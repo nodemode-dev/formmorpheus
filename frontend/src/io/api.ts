@@ -45,7 +45,7 @@ async function probe(): Promise<Capabilities | null> {
 }
 if (typeof window !== 'undefined') window.addEventListener('focus', () => { if (serviceState === 'down') caps = probe(); });
 
-const NOT_RUNNING = 'The formmorpheus engine service is not running. Start it with ./formmorpheus.';
+const NOT_RUNNING = 'The FormMorpheus engine service is not running. Start it with ./formmorpheus.';
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
   if (!(await serviceReady())) throw new ApiError(NOT_RUNNING, 0);

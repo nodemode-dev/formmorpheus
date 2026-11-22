@@ -363,7 +363,7 @@ final class JobsRoutes: APIRoutes {
             job.state = "done"
         } catch is ExportCancelled {
             if job.expired && job.state != "cancelled" {
-                job.error = "formmorpheus was moved to the background and iPadOS stopped the export. Keep the app open while it encodes."
+                job.error = "FormMorpheus was moved to the background and iPadOS stopped the export. Keep the app open while it encodes."
                 job.state = "failed"
             } else {
                 job.state = "cancelled"
@@ -371,7 +371,7 @@ final class JobsRoutes: APIRoutes {
         } catch {
             if job.state != "cancelled" {
                 if job.expired {
-                    job.error = "formmorpheus was moved to the background and iPadOS stopped the export. Keep the app open while it encodes."
+                    job.error = "FormMorpheus was moved to the background and iPadOS stopped the export. Keep the app open while it encodes."
                 } else {
                     let text = exportMessage(error)
                     job.error = text.isEmpty ? "The encode failed." : text

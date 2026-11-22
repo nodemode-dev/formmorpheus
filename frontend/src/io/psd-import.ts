@@ -191,7 +191,7 @@ export async function readPsd(file: File): Promise<LayeredDoc> {
       if (r.section === 3) { stack.pop(); continue; }
       const blendKey = r.section === 1 || r.section === 2 ? (r.sectionBlend ?? r.blend) : r.blend;
       const blend = BLEND[blendKey] ?? 'normal';
-      if (!(blendKey in BLEND)) notes.add(`"${blendKey.trim()}" is not a blend mode formmorpheus has; those layers open as Normal.`);
+      if (!(blendKey in BLEND)) notes.add(`"${blendKey.trim()}" is not a blend mode FormMorpheus has; those layers open as Normal.`);
       const spec: LayerSpec = {
         id: `p${n++}`, name: r.name || (r.section ? 'Group' : 'Layer'), visible: (r.flags & 2) === 0, opacity: r.opacity / 255, blend,
         group: r.section === 1 || r.section === 2, parent: stack.length ? stack[stack.length - 1] : null, clipping: r.clip, alphaLock: (r.flags & 1) !== 0,

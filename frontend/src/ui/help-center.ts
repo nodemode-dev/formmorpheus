@@ -32,7 +32,7 @@ interface Saved { name: string; path: string; modified: number; size: number; te
 
 async function ideasCall<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
-  try { res = await fetch(`/api/ideas${path}`, init); } catch { throw new Error(t('The formmorpheus engine service is not running. Start it with ./formmorpheus.')); }
+  try { res = await fetch(`/api/ideas${path}`, init); } catch { throw new Error(t('The FormMorpheus engine service is not running. Start it with ./formmorpheus.')); }
   if (!res.ok) {
     let detail = '';
     try { const b = (await res.json()) as { detail?: unknown }; if (typeof b.detail === 'string') detail = b.detail; } catch { /* not JSON */ }
@@ -58,7 +58,7 @@ export class HelpCenter extends Dialog {
   private readonly ticks = new Map<string, HTMLElement>();
   private tab: Tab = 'start';
   private manual: HelpView | null = null;
-  private readonly note = el<HTMLTextAreaElement>('<textarea class="cv-input" rows="6" maxlength="20000" spellcheck="true" aria-label="Your note" placeholder="Tell us what would make formmorpheus better, or what went wrong."></textarea>');
+  private readonly note = el<HTMLTextAreaElement>('<textarea class="cv-input" rows="6" maxlength="20000" spellcheck="true" aria-label="Your note" placeholder="Tell us what would make FormMorpheus better, or what went wrong."></textarea>');
   private readonly kind = el<HTMLSelectElement>('<select class="cv-input" aria-label="What kind of note"><option value="Idea">An idea</option><option value="Problem">Something that went wrong</option><option value="Question">A question</option></select>');
   private readonly status = el('<span class="fm-hc-note"></span>');
   private readonly where = el('<div class="fm-hc-path" hidden></div>');
@@ -257,7 +257,7 @@ export class HelpCenter extends Dialog {
     b.append(
       this.btn("What's New...", () => this.go('whats-new')),
       this.btn('Take the Tour', () => this.go('tour')),
-      this.btn('About formmorpheus', () => this.go('about')),
+      this.btn('About FormMorpheus', () => this.go('about')),
       this.btn('Reset Examples...', () => this.go('reset-examples')),
     );
     p.appendChild(b);

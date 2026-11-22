@@ -70,9 +70,9 @@ async function packOnce(movie: Movie, past: Step[], recovery: RecoveryPoint[], a
 export async function unpackMovie(data: Blob): Promise<MovieFile> {
   const entries = unzipSync(new Uint8Array(await data.arrayBuffer()));
   const manifestRaw = entries['manifest.json'];
-  if (!manifestRaw) throw new Error('This is not a formmorpheus movie.');
+  if (!manifestRaw) throw new Error('This is not a FormMorpheus movie.');
   const manifest = JSON.parse(strFromU8(manifestRaw)) as Partial<Manifest>;
-  if (manifest.app !== 'formmorpheus') throw new Error('This is not a formmorpheus movie.');
+  if (manifest.app !== 'formmorpheus') throw new Error('This is not a FormMorpheus movie.');
   if (typeof manifest.format !== 'number' || manifest.format > FORMAT_VERSION) throw new Error('This movie was saved by a newer formmorpheus. Update to open it.');
   const movieRaw = entries['movie.json'];
   if (!movieRaw) throw new Error('The movie file is damaged.');

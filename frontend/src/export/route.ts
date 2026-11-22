@@ -23,8 +23,8 @@ export async function browserEncodesVideo(fmt: 'mp4' | 'webm' | 'mov', o: Pick<E
 /** Why the engine cannot encode H.264 either, in a sentence that names the fix; '' when it can. */
 export async function engineVideoBlocker(): Promise<string> {
   const caps = await jobCapabilities();
-  if (!caps) return t('The formmorpheus engine is not answering, so it cannot encode the video either. Start it with ./formmorpheus.');
-  if (!caps.ffmpeg) return t('The formmorpheus engine has no ffmpeg, so it cannot encode the video either. Install ffmpeg with the H.264 encoder (libx264), or set FORMMORPHEUS_FFMPEG to its path.');
+  if (!caps) return t('The FormMorpheus engine is not answering, so it cannot encode the video either. Start it with ./formmorpheus.');
+  if (!caps.ffmpeg) return t('The FormMorpheus engine has no ffmpeg, so it cannot encode the video either. Install ffmpeg with the H.264 encoder (libx264), or set FORMMORPHEUS_FFMPEG to its path.');
   if (!caps.targets.h264?.available) return t('The engine\'s ffmpeg has no H.264 encoder (libx264), so it cannot encode the video either. Install an ffmpeg build that includes libx264.');
   return '';
 }

@@ -25,11 +25,11 @@ function osAdvice(kind: 'flat' | 'zero' | 'mouse'): string {
   const mouse = kind === 'mouse';
   // whole sentences, one per case, so a language can order them as it needs
   if (/Windows/i.test(ua)) return mouse
-    ? t('Your tablet is arriving as a mouse. In your tablet driver, turn on Windows Ink, restart the driver, then reopen formmorpheus.')
-    : t('This pen reports no pressure. In your tablet driver, turn on Windows Ink, restart the driver, then reopen formmorpheus.');
+    ? t('Your tablet is arriving as a mouse. In your tablet driver, turn on Windows Ink, restart the driver, then reopen FormMorpheus.')
+    : t('This pen reports no pressure. In your tablet driver, turn on Windows Ink, restart the driver, then reopen FormMorpheus.');
   if (/Mac/i.test(ua)) return mouse
-    ? t('Your tablet is arriving as a mouse. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen formmorpheus.')
-    : t('This pen reports no pressure. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen formmorpheus.');
+    ? t('Your tablet is arriving as a mouse. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen FormMorpheus.')
+    : t('This pen reports no pressure. Install your tablet\'s own driver (the system\'s generic one gives no pressure), then reopen FormMorpheus.');
   return mouse
     ? t('Your tablet is arriving as a mouse. On Linux the web view may not pass pressure through; an X11 session with your tablet\'s driver gives the best chance.')
     : t('This pen reports no pressure. On Linux the web view may not pass pressure through; an X11 session with your tablet\'s driver gives the best chance.');

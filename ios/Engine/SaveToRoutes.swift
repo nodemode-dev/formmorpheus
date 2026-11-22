@@ -52,7 +52,7 @@ final class SaveToRoutes: APIRoutes {
             try EngineFS.writeFile(body, to: tmp)
         } catch {
             EngineFS.remove(tmp)
-            throw EngineError(400, "formmorpheus could not write there.")
+            throw EngineError(400, "FormMorpheus could not write there.")
         }
         return tmp
     }
@@ -71,7 +71,7 @@ final class SaveToRoutes: APIRoutes {
             } catch EngineFSError.exists {
                 n += 1
             } catch {
-                throw EngineError(400, "formmorpheus could not write there.")
+                throw EngineError(400, "FormMorpheus could not write there.")
             }
         }
     }
@@ -109,7 +109,7 @@ final class SaveToRoutes: APIRoutes {
             } catch let e as CocoaError where e.code == .fileWriteFileExists {
                 n += 1
             } catch {
-                throw EngineError(400, "formmorpheus could not write there.")
+                throw EngineError(400, "FormMorpheus could not write there.")
             }
         }
         var made: [URL] = []
@@ -130,7 +130,7 @@ final class SaveToRoutes: APIRoutes {
             // a half-written folder is worse than none: take back what this call made
             for p in made { EngineFS.remove(p) }
             _ = EngineFS.rmdir(dst)
-            throw EngineError(400, "formmorpheus could not write all the frames there.")
+            throw EngineError(400, "FormMorpheus could not write all the frames there.")
         }
         return APIResponse.json(["path": dst.path, "name": dst.lastPathComponent, "files": written])
     }

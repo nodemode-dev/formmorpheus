@@ -280,7 +280,7 @@ export function parseFormvis(bytes: Uint8Array, fileName = 'formvis document'): 
   if (adjustments) notes.push(`${plural(adjustments, 'adjustment layer', 'adjustment layers')} left out.`);
   if (styled) notes.push(`Layer styles on ${plural(styled, 'layer', 'layers')} are not drawn.`);
   if (options) notes.push(`Blending options (Blend If, knockout, fill, vector masks) on ${plural(options, 'layer', 'layers')} are dropped.`);
-  if (modes) notes.push(`${plural(modes, 'layer uses', 'layers use')} a blend mode formmorpheus does not have and show${modes === 1 ? 's' : ''} as Normal.`);
+  if (modes) notes.push(`${plural(modes, 'layer uses', 'layers use')} a blend mode FormMorpheus does not have and show${modes === 1 ? 's' : ''} as Normal.`);
   if (rotated) notes.push(`${plural(rotated, 'transformed layer was', 'transformed layers were')} baked in place.`);
   const id = str(m.documentID);
   // bottom to top in the file; a Drawing lists top first
