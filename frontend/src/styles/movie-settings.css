@@ -54,7 +54,7 @@
 .fm-ms-chip { min-width: 52px; padding: 2px var(--space-2); border-radius: var(--radius-md); background: var(--surface-field); color: var(--text-secondary); font-size: var(--fs-12); text-align: center; }
 
 /* G22: one pair of Undo and Redo on screen: the status bar pair gives way while the Stage pair is showing */
-body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="undo"], body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="redo"] { display: none; }
+body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="undo"], body:not(.fm-no-stage-undo) .cv-app:not(.is-painting) .cv-status [data-cmd="redo"] { visibility: hidden; }
 
 /* the toolbar button fills while the panel is open */
 .fm-round-btn.is-ms-open { background: var(--accent-color); color: var(--text-on-accent); }

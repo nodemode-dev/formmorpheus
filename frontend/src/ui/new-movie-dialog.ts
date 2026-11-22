@@ -15,7 +15,9 @@ const CUSTOM = SCREEN + 1;
 /** This screen's size in device pixels, capped to the movie limit and kept even, then three smaller steps down. */
 function screenSizes(): Array<[number, number]> {
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(16, Math.round((window.screen?.width || 1920) * dpr)), h = Math.max(16, Math.round((window.screen?.height || 1080) * dpr));
+  const a = Math.max(16, Math.round((window.screen?.width || 1920) * dpr)), b = Math.max(16, Math.round((window.screen?.height || 1080) * dpr));
+  const wide = window.innerWidth >= window.innerHeight;
+  const w = wide ? Math.max(a, b) : Math.min(a, b), h = wide ? Math.min(a, b) : Math.max(a, b);
   const k = Math.min(1, MAX_SIDE / Math.max(w, h));
   return [1, 0.75, 0.5, 0.25].map((s): [number, number] => [Math.max(16, Math.round((w * k * s) / 2) * 2), Math.max(16, Math.round((h * k * s) / 2) * 2)]);
 }

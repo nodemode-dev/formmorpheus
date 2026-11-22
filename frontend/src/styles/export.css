@@ -79,7 +79,8 @@
 
 .fm-ex-run { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--surface-1); }
 .fm-ex-run-head { min-height: 1.4em; display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
-.fm-ex-run-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cv-dialog-foot .cv-btn.fm-ex-cancel { min-width: 17ch; }
+.fm-ex-run-count { min-width: 14ch; text-align: end; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .fm-ex-run-time { min-height: 1.4em; font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .fm-ex-run .cv-run-bar > i { transition: transform 120ms linear; }
 
