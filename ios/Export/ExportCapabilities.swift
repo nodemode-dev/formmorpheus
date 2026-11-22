@@ -16,7 +16,9 @@ final class ExportCapabilities: @unchecked Sendable {
         case "422": return AVVideoCodecType.proRes422
         case "hq": return AVVideoCodecType.proRes422HQ
         case "4444": return AVVideoCodecType.proRes4444
-        case "4444xq": return AVVideoCodecType.appleProRes4444XQ
+        case "4444xq":
+            if #available(iOS 18.0, *) { return AVVideoCodecType.appleProRes4444XQ }
+            return nil
         default: return nil
         }
     }

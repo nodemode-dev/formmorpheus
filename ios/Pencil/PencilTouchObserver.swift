@@ -142,7 +142,7 @@ final class PencilTouchObserver: UIGestureRecognizer, UIGestureRecognizerDelegat
                 force,
                 Double(touch.altitudeAngle),
                 Double(touch.azimuthAngle(in: self.view)),
-                Double(touch.rollAngle),
+                roll(touch),
                 mask(expecting),
             ])
             if expecting.isEmpty { pending.remove(index.intValue) }
@@ -213,7 +213,7 @@ final class PencilTouchObserver: UIGestureRecognizer, UIGestureRecognizerDelegat
             force,
             Double(touch.altitudeAngle),
             Double(touch.azimuthAngle(in: view)),
-            Double(touch.rollAngle),
+            roll(touch),
             mask(touch.estimatedProperties),
             mask(touch.estimatedPropertiesExpectingUpdates),
             index,
@@ -226,7 +226,12 @@ final class PencilTouchObserver: UIGestureRecognizer, UIGestureRecognizerDelegat
         if p.contains(.azimuth) { m |= 2 }
         if p.contains(.altitude) { m |= 4 }
         if p.contains(.location) { m |= 8 }
-        if p.contains(.roll) { m |= 16 }
+        if #available(iOS 17.5, *), p.contains(.roll) { m |= 16 }
         return Double(m)
+    }
+
+    private func roll(_ touch: UITouch) -> Double {
+        if #available(iOS 17.5, *) { return Double(touch.rollAngle) }
+        return 0
     }
 }

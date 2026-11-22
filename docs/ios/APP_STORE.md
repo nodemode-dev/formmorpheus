@@ -40,7 +40,7 @@ Answer No to every content question (no violence, no mature themes, no gambling,
 
 ## Review notes
 
-The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. All files are stored on the device in the Files app under On My iPad > FormMorpheus. The app does not use the network. A Diagnostics page under Help > About formmorpheus > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
+The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. Files are stored on the device in the Files app under On My iPad > FormMorpheus. On Home, the person can instead keep the movie library in the app's iCloud Drive folder (iCloud Drive > FormMorpheus), which the system syncs; the app itself makes no network requests. A Diagnostics page under Help > About formmorpheus > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
 
 ## Support and marketing
 

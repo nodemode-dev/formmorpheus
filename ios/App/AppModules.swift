@@ -13,5 +13,6 @@ enum AppModules {
         // ExportModule.register()
         MemoryModule.register()
         UXModule.register()
+        CloudLibrary.start()
     }
 }

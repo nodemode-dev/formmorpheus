@@ -6,3 +6,7 @@ DEVELOPMENT_TEAM = ABCDE12345
 
 // Only needed if ai.nodemode.formmorpheus is not available to your account:
 // PRODUCT_BUNDLE_IDENTIFIER = com.example.formmorpheus
+
+// A personal (free) team cannot sign the iCloud entitlement. To build without iCloud Drive
+// (the library then stays on the iPad), clear the entitlements file:
+// CODE_SIGN_ENTITLEMENTS =

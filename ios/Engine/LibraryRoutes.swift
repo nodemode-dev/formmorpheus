@@ -291,7 +291,9 @@ final class LibraryRoutes: APIRoutes {
         store.migrate()
         let folder = store.root
         var paths = store.movies(in: folder)
-        for d in store.stackDirs() { paths += store.movies(in: d) }
+        let stacks = store.stackDirs()
+        for d in stacks { paths += store.movies(in: d) }
+        CloudLibrary.fetchMissing([folder] + stacks)
         var items = paths.map { store.entry($0) }
         items.sort { (($0["modified"] as? Double) ?? 0) > (($1["modified"] as? Double) ?? 0) }
         return APIResponse.json(["folder": folder.path, "items": items])
@@ -424,6 +426,7 @@ final class LibraryRoutes: APIRoutes {
     private func existing(_ c: RouteContext) throws -> URL {
         let path = try store.projectPath(c.param("name"))
         if !EngineFS.isFile(path) { throw EngineError(404, "No project by that name.") }
+        CloudLibrary.makeLocal(path)
         return path
     }
 

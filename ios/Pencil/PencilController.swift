@@ -43,7 +43,7 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
     private var hoverEnabled = true
     private var hoverPending: [String: Any]?
 
-    private var canvasFeedback: UICanvasFeedbackGenerator?
+    private var canvasFeedback: UIFeedbackGenerator?
     private var impactFeedback: [Int: UIImpactFeedbackGenerator] = [:]
 
     private override init() {
@@ -69,7 +69,13 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
         webView.addGestureRecognizer(hover)
         self.hoverRecognizer = hover
 
-        let pencil = UIPencilInteraction(delegate: self)
+        let pencil: UIPencilInteraction
+        if #available(iOS 17.5, *) {
+            pencil = UIPencilInteraction(delegate: self)
+        } else {
+            pencil = UIPencilInteraction()
+            pencil.delegate = self
+        }
         pencil.isEnabled = true
         webView.addInteraction(pencil)
         self.interaction = pencil
@@ -204,6 +210,8 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
         let altitude = Double(recognizer.altitudeAngle)
         let height = Double(recognizer.zOffset)
         let isPencil = height > 0 || altitude < Double.pi / 2 - 0.001
+        var roll = 0.0
+        if #available(iOS 17.5, *) { roll = Double(recognizer.rollAngle) }
         hoverPending = [
             "state": state,
             "x": Double(point.x),
@@ -211,7 +219,7 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
             "z": height,
             "altitude": altitude,
             "azimuth": Double(recognizer.azimuthAngle(in: view)),
-            "roll": Double(recognizer.rollAngle),
+            "roll": roll,
             "pencil": isPencil,
             "t": ProcessInfo.processInfo.systemUptime * 1000,
         ]
@@ -225,14 +233,23 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
 
     // MARK: Double tap and squeeze
 
+    func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+        if #available(iOS 17.5, *) { return }
+        let payload: [String: Any] = ["phase": "ended", "t": ProcessInfo.processInfo.systemUptime * 1000, "hasPose": false]
+        send("doubleTap", payload)
+    }
+
+    @available(iOS 17.5, *)
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
         send("doubleTap", gesturePayload(phase: "ended", pose: tap.hoverPose, time: tap.timestamp))
     }
 
+    @available(iOS 17.5, *)
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
         send("squeeze", gesturePayload(phase: phaseName(squeeze.phase), pose: squeeze.hoverPose, time: squeeze.timestamp))
     }
 
+    @available(iOS 17.5, *)
     private func gesturePayload(phase: String, pose: UIPencilHoverPose?, time: TimeInterval) -> [String: Any] {
         var payload: [String: Any] = ["phase": phase, "t": time * 1000, "hasPose": pose != nil]
         if let pose = pose {
@@ -246,6 +263,7 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
         return payload
     }
 
+    @available(iOS 17.5, *)
     private func phaseName(_ phase: UIPencilInteraction.Phase) -> String {
         switch phase {
         case .began: return "began"
@@ -265,19 +283,26 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
         case .switchPrevious: return "switchPrevious"
         case .showColorPalette: return "showColorPalette"
         case .showInkAttributes: return "showInkAttributes"
-        case .showContextualPalette: return "showContextualPalette"
-        case .runSystemShortcut: return "runSystemShortcut"
-        @unknown default: return "ignore"
+        default:
+            if #available(iOS 17.5, *) {
+                if action == .showContextualPalette { return "showContextualPalette" }
+                if action == .runSystemShortcut { return "runSystemShortcut" }
+            }
+            return "ignore"
         }
     }
 
     private func sendPrefs() {
-        send("pencilPrefs", [
+        var prefs: [String: Any] = [
             "tap": actionName(UIPencilInteraction.preferredTapAction),
-            "squeeze": actionName(UIPencilInteraction.preferredSqueezeAction),
+            "squeeze": "ignore",
             "pencilOnly": UIPencilInteraction.prefersPencilOnlyDrawing,
-            "hoverPreview": UIPencilInteraction.prefersHoverToolPreview,
-        ])
+        ]
+        if #available(iOS 17.5, *) {
+            prefs["squeeze"] = actionName(UIPencilInteraction.preferredSqueezeAction)
+            prefs["hoverPreview"] = UIPencilInteraction.prefersHoverToolPreview
+        }
+        send("pencilPrefs", prefs)
     }
 
     // MARK: Haptics
@@ -295,19 +320,25 @@ final class PencilController: NSObject, UIPencilInteractionDelegate, UIGestureRe
 
     private func playHaptic(kind: String, at point: CGPoint, intensity: CGFloat) {
         guard let view = webView else { return }
-        switch kind {
-        case "alignment", "snap":
+        let canvasKind = kind == "alignment" || kind == "snap" || kind == "pathCompleted"
+        if #available(iOS 17.5, *), canvasKind {
             if canvasFeedback == nil { canvasFeedback = UICanvasFeedbackGenerator(view: view) }
-            canvasFeedback?.alignmentOccurred(at: point)
-        case "pathCompleted":
-            if canvasFeedback == nil { canvasFeedback = UICanvasFeedbackGenerator(view: view) }
-            canvasFeedback?.pathCompleted(at: point)
-        default:
-            let style = impactStyle(kind)
+            guard let canvas = canvasFeedback as? UICanvasFeedbackGenerator else { return }
+            if kind == "pathCompleted" { canvas.pathCompleted(at: point) } else { canvas.alignmentOccurred(at: point) }
+            return
+        }
+        let style = impactStyle(kind)
+        let level = min(1, max(0, intensity))
+        if #available(iOS 17.5, *) {
             if impactFeedback[style.rawValue] == nil {
                 impactFeedback[style.rawValue] = UIImpactFeedbackGenerator(style: style, view: view)
             }
-            impactFeedback[style.rawValue]?.impactOccurred(intensity: min(1, max(0, intensity)), at: point)
+            impactFeedback[style.rawValue]?.impactOccurred(intensity: level, at: point)
+        } else {
+            if impactFeedback[style.rawValue] == nil {
+                impactFeedback[style.rawValue] = UIImpactFeedbackGenerator(style: style)
+            }
+            impactFeedback[style.rawValue]?.impactOccurred(intensity: level)
         }
     }
 }

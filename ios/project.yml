@@ -7,7 +7,7 @@ options:
   # No bundleIdPrefix: it would write PRODUCT_BUNDLE_IDENTIFIER into the target and override the xcconfig.
   developmentLanguage: en
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "16.4"
   createIntermediateGroups: true
   generateEmptyDirectories: false
 
@@ -23,7 +23,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.4"
     TARGETED_DEVICE_FAMILY: "2"
     SUPPORTS_MACCATALYST: NO
     SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
@@ -41,13 +41,14 @@ targets:
   FormMorpheus:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "16.4"
     # Every builder owns one folder. optional: true so a folder that is still empty does not stop generation.
     sources:
       - path: App
         optional: true
         excludes:
           - Info.plist
+          - FormMorpheus.entitlements
       - path: Web
         optional: true
       - path: Engine
