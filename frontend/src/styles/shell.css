@@ -337,7 +337,7 @@ html[dir='rtl'] :is(.fm-ghost-btn[data-act='back'], .fm-ghost-btn[data-act='fwd'
 .cv-st-zoom { width: 64px; height: 20px; padding: 0 var(--space-1); border: 1px solid transparent; border-radius: var(--radius-sm, 4px); background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; }
 .cv-st-zoom:hover { border-color: var(--border-color); }
 .cv-st-zoom:focus { outline: none; border-color: var(--accent-color); background: var(--bg-primary); color: var(--text-primary); }
-.cv-st-dims { flex: 0 1 auto; min-width: 120px; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.cv-st-dims { flex: 0 1 420px; min-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .cv-st-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cv-st-info { flex: none; width: 196px; height: 20px; padding: 0 var(--space-1); border: 1px solid transparent; border-radius: var(--radius-sm, 4px); background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .cv-st-info:hover { border-color: var(--border-color); }
