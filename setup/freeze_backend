@@ -33,7 +33,7 @@ pyinstaller --noconfirm --clean "$mode" --name formmorpheus-engine \
   --distpath dist-engine --workpath build/pyinstaller --specpath build/pyinstaller \
   --add-data "$src/frontend/dist${sep}frontend_dist" \
   --add-data "$src/backend/app/penlink_static${sep}app/penlink_static" \
-  --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring \
+  --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring --exclude-module readline \
   "${extra[@]}" \
   "$src/backend/formmorpheus_engine.py"
 if [ "$mode" = --onedir ]; then
