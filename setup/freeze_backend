@@ -25,6 +25,7 @@ fi
 if [ "$(fm_os)" = windows ]; then
   mode=--onedir
   [ "${FORMMORPHEUS_ENGINE_WINDOWED:-1}" = 0 ] || extra+=(--noconsole)
+  extra+=(--collect-all winpty)
 fi
 src="$(fm_native_path "$FM_ROOT")"
 rm -rf build/pyinstaller dist-engine
@@ -32,7 +33,7 @@ pyinstaller --noconfirm --clean "$mode" --name formmorpheus-engine \
   --distpath dist-engine --workpath build/pyinstaller --specpath build/pyinstaller \
   --add-data "$src/frontend/dist${sep}frontend_dist" \
   --add-data "$src/backend/app/penlink_static${sep}app/penlink_static" \
-  --collect-submodules app --collect-submodules uvicorn \
+  --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring \
   "${extra[@]}" \
   "$src/backend/formmorpheus_engine.py"
 if [ "$mode" = --onedir ]; then

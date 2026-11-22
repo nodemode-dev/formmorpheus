@@ -1,0 +1,177 @@
+"""The dock's terminal tabs and agent programs, for the window that holds the key (dock contract clauses 3 to 11).
+
+FormDeck 0.46.3's routers/terminal.py with this app's names and paths. The key guard (core/window_key.py) already
+refuses an /api/ request without the key and spends the socket's ?ticket= before the stream route runs."""
+import asyncio
+import json
+
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+
+from app.core import window_key
+from app.services import agent_programs, claude_code, terminal
+
+router = APIRouter(prefix="/api", tags=["terminal"])
+
+
+def _mine(request: Request) -> None:
+    window_key.require(request)
+    terminal.heard_on((request.scope.get("server") or (None, None))[1])
+    if not terminal.available():
+        raise HTTPException(503, "This system has no pseudo-terminal for the engine, so the dock has no terminal tabs here.")
+
+
+class OpenBody(BaseModel):
+    cols: int = Field(100, ge=10, le=500)
+    rows: int = Field(30, ge=4, le=200)
+    title: str | None = Field(None, max_length=60)
+    cwd: str | None = Field(None, max_length=4096)
+
+
+class SizeBody(BaseModel):
+    cols: int = Field(ge=10, le=500)
+    rows: int = Field(ge=4, le=200)
+
+
+class ClaudeBody(BaseModel):
+    prompt: str | None = Field(None, max_length=100_000)
+    cols: int = Field(100, ge=10, le=500)
+    rows: int = Field(30, ge=4, le=200)
+    fresh: bool = False
+    resume: str | None = Field(None, max_length=200)
+
+
+class AgentBody(BaseModel):
+    cols: int = Field(100, ge=10, le=500)
+    rows: int = Field(30, ge=4, le=200)
+
+
+def _session(sid: str) -> terminal.Session:
+    try:
+        return terminal.get(sid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="There is no such terminal.") from None
+
+
+@router.get("/terminal")
+def list_terminals(request: Request) -> dict:
+    window_key.require(request)
+    return {"terminals": terminal.listing()}
+
+
+@router.post("/terminal")
+async def open_terminal(body: OpenBody, request: Request) -> dict:
+    _mine(request)
+    terminal.bind(asyncio.get_running_loop())
+    try:
+        return terminal.open_session(body.cwd, body.cols, body.rows, body.title).describe()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"The shell could not start: {exc}") from None
+
+
+@router.post("/terminal/{sid}/resize")
+def resize_terminal(sid: str, body: SizeBody, request: Request) -> dict:
+    window_key.require(request)
+    _session(sid)
+    terminal.resize(sid, body.cols, body.rows)
+    return {"ok": True}
+
+
+@router.post("/terminal/{sid}/restart")
+def restart_terminal(sid: str, request: Request) -> dict:
+    _mine(request)
+    _session(sid)
+    return terminal.restart(sid).describe()
+
+
+@router.delete("/terminal/{sid}")
+def close_terminal(sid: str, request: Request) -> dict:
+    window_key.require(request)
+    terminal.close(sid)
+    return {"ok": True}
+
+
+@router.get("/agent/status")
+def agent_status(request: Request, fresh: bool = False) -> dict:
+    window_key.require(request)
+    return agent_programs.status(fresh)
+
+
+@router.get("/agent/claude/status")
+def claude_status(request: Request) -> dict:
+    window_key.require(request)
+    return claude_code.status()
+
+
+@router.post("/agent/claude/open")
+async def claude_open(body: ClaudeBody, request: Request) -> dict:
+    _mine(request)
+    terminal.bind(asyncio.get_running_loop())
+    try:
+        return claude_code.open_tab(body.prompt, body.cols, body.rows, body.fresh, body.resume)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Claude Code could not start: {exc}") from None
+
+
+@router.post("/agent/{kind}/open")
+async def agent_open(kind: str, body: AgentBody, request: Request) -> dict:
+    _mine(request)
+    if kind not in agent_programs.PROGRAMS:
+        raise HTTPException(status_code=404, detail="There is no such agent program.")
+    terminal.bind(asyncio.get_running_loop())
+    try:
+        return agent_programs.open_tab(kind, body.cols, body.rows)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"{agent_programs.PROGRAMS[kind]['title']} could not start: {exc}") from None
+
+
+@router.websocket("/terminal/{sid}/stream")
+async def attach(ws: WebSocket, sid: str) -> None:
+    await ws.accept()
+    try:
+        session = terminal.get(sid)
+    except KeyError:
+        await ws.close(code=4404)
+        return
+    terminal.bind(asyncio.get_running_loop())
+    queue: asyncio.Queue = asyncio.Queue()
+    session.subscribers.add(queue)
+
+    async def outbound() -> None:
+        await ws.send_text(session.scrollback())
+        if not session.alive:
+            await ws.send_bytes(json.dumps({"type": "exit"}).encode())
+        while True:
+            text = await queue.get()
+            if text is None:
+                await ws.send_bytes(json.dumps({"type": "exit"}).encode())
+                continue
+            await ws.send_text(text)
+
+    sender = asyncio.create_task(outbound())
+    try:
+        while True:
+            try:
+                msg = json.loads(await ws.receive_text())
+            except ValueError:
+                continue
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "input" and session.alive:
+                terminal.write(sid, str(msg.get("data", "")))
+            elif msg.get("type") == "resize":
+                try:
+                    terminal.resize(sid, int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                except (TypeError, ValueError):
+                    continue
+    except WebSocketDisconnect:
+        pass
+    finally:
+        sender.cancel()
+        session.subscribers.discard(queue)

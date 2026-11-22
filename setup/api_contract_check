@@ -43,6 +43,12 @@ DESKTOP_ONLY = [
     ("*", "/api/save-to/*"),
     ("*", "/api/library/{}/copy-to"),
     ("POST", "/api/system/library"),
+    ("*", "/api/agents"),
+    ("*", "/api/agents/*"),
+    ("*", "/api/agent/*"),
+    ("*", "/api/terminal"),
+    ("*", "/api/terminal/*"),
+    ("*", "/api/mcp/*"),
 ]
 
 
