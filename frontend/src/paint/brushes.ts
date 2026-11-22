@@ -1,4 +1,4 @@
-// The starter brush library: original brushes in nineteen sets, all made in code
+// The Classic brush library: original brushes in eighteen sets, all made in code
 // (tip shapes and grain are generated, see tips.ts). `brushById` reads a registry that
 // the brush store (ui/brush-store.ts) keeps current with renames, edits and imports.
 
@@ -60,10 +60,25 @@ export function stabilizationRope(b: Brush): number {
   return Math.max(0, Math.min(100, b.stabilization ?? 0)) / 100 * 0.5;
 }
 
-/** Renamed on the way in so each brush's `set` matches BRUSH_SETS; Touch-ups folds into Drawing. */
-const SET_NAMES: Record<string, string> = {
-  Sketch: 'Sketching', Airbrush: 'Airbrushing', Texture: 'Textures', Charcoal: 'Charcoals', Spray: 'Spraypaints',
-  Material: 'Materials', Glow: 'Luminance', 'Touch-ups': 'Drawing',
+/** The Classic sets in library order: `id` is the stored set id (fixed for good), `name` what the panel shows. */
+export const CLASSIC_SETS: { id: string; name: string }[] = [
+  { id: 'sketching', name: 'Graphite' }, { id: 'charcoals', name: 'Charcoal' }, { id: 'drawing', name: 'Markers' },
+  { id: 'inking', name: 'Comic ink' }, { id: 'calligraphy', name: 'Nibs' }, { id: 'painting', name: 'Studio paint' },
+  { id: 'water', name: 'Wet media' }, { id: 'airbrushing', name: 'Mist' }, { id: 'spraypaints', name: 'Graffiti' },
+  { id: 'artistic', name: 'Mark making' }, { id: 'textures', name: 'Grit' }, { id: 'materials', name: 'Finishes' },
+  { id: 'vintage', name: 'Printmaking' }, { id: 'industrial', name: 'Metalwork' }, { id: 'abstract', name: 'Shapes' },
+  { id: 'luminance', name: 'Light' }, { id: 'elements', name: 'Atmosphere' }, { id: 'organic', name: 'Nature' },
+];
+
+/** A row's short set name to the stored set id it lands in (any other row name is its id in lower case); Touch-ups folds into Drawing. Libraries saved long ago used these short names too. */
+export const OLD_SET_NAMES: Record<string, string> = {
+  Sketch: 'sketching', Airbrush: 'airbrushing', Texture: 'textures', Charcoal: 'charcoals', Spray: 'spraypaints',
+  Material: 'materials', Glow: 'luminance', 'Touch-ups': 'drawing',
+};
+
+const classicName = (row: string): string => {
+  const id = OLD_SET_NAMES[row] ?? row.toLowerCase();
+  return CLASSIC_SETS.find((s) => s.id === id)?.name ?? row;
 };
 
 const RAW_BRUSHES: Brush[] = [
@@ -354,11 +369,7 @@ const RAW_BRUSHES: Brush[] = [
   d('spot-heal', 'Spot dab', 'Touch-ups', 'blob', 0.55, 36, 6, 0.35, 0.8, 0.9, 0.7, { rotationJitter: 1 }, 0.9),
 ];
 
-export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => migrateBrush(withMaterials(keepCorners({ ...b, set: SET_NAMES[b.set] ?? b.set }))));
-
-export const BRUSH_SETS: string[] = ['Sketching', 'Drawing', 'Inking', 'Painting', 'Artistic', 'Calligraphy', 'Airbrushing', 'Textures', 'Abstract', 'Charcoals', 'Elements', 'Spraypaints', 'Materials', 'Vintage', 'Luminance', 'Industrial', 'Organic', 'Water'];
-/** Old Classic set names to current ones, for libraries saved before the rename. */
-export const OLD_SET_NAMES: Record<string, string> = SET_NAMES;
+export const BRUSHES: Brush[] = RAW_BRUSHES.map((b) => migrateBrush(withMaterials(keepCorners({ ...b, set: classicName(b.set) }))));
 
 export const DEFAULT_PAINT = 'studio-ink';
 export const DEFAULT_SMUDGE = 'wet-blend';

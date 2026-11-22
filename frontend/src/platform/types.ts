@@ -77,6 +77,10 @@ export interface FeatureFlags {
   mp3Export: boolean;
   /** The in-window menu bar. */
   desktopMenus: boolean;
+  /** The engine converts a sound the window cannot decode (desktop: ffmpeg; the iPad converts video only). */
+  soundConvert: boolean;
+  /** The engine converts a HEIC picture the window cannot decode. */
+  pictureConvert: boolean;
 }
 
 export interface Platform {

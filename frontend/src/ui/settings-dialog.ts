@@ -14,11 +14,12 @@ import { LibraryFolderDialog } from './library-folder';
 import { THEATER_LAYOUTS, setTheaterLayout, theaterLayout } from './shell-opts';
 import { PenSettingsPage } from './pen-settings';
 import { THEMES, readChoice, setAccent, setIntensity, setTheme, themeSwatchesHtml } from './themes';
+import { VIDEO_TOOLS, VideoToolsPage } from './video-tools';
 
 const RAIL_KEY = 'formmorpheus.prefsRailCollapsed';
 const AUTOSAVE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Off'], ['10', '10 s'], ['30', '30 s'], ['60', '1 min'], ['300', '5 min']];
 const NOTICE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Automatic'], ['3', '3 seconds'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds']];
-const SECTION_ORDER = ['General', 'Interface', 'Timeline', 'Pen and Tablet', 'Agents'];
+const SECTION_ORDER = ['General', 'Interface', 'Timeline', 'Pen and Tablet', VIDEO_TOOLS, 'Agents'];
 
 export class SettingsDialog extends Dialog {
   private readonly grid = el('<div class="nm-theme-grid" role="group" aria-label="Theme"></div>');
@@ -40,6 +41,7 @@ export class SettingsDialog extends Dialog {
   private portY = Number.NaN;
   private prefs: Prefs = loadPrefs();
   private readonly penPage = new PenSettingsPage();
+  private videoTools: VideoToolsPage | null = null;
 
   private readonly homeRow = checkRow('Show Home screen at launch', (v) => this.change({ autoShowHome: v }));
   private readonly homeCloseRow = checkRow('Show Home screen when the last movie closes', (v) => this.change({ homeOnLastClose: v }));
@@ -89,7 +91,7 @@ export class SettingsDialog extends Dialog {
     this.grid.append(swatches.content);
     for (const b of Array.from(this.grid.querySelectorAll<HTMLElement>('[data-theme-id]'))) b.style.removeProperty('border-color');
     const pages = el('<div class="cv-prefs-pages"></div>');
-    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory', 'Pen and Tablet': 'shPen', Agents: 'agent' };
+    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory', 'Pen and Tablet': 'shPen', [VIDEO_TOOLS]: 'film', Agents: 'agent' };
     const grp = (label: string, ...content: HTMLElement[]): HTMLElement => {
       const g = el('<section class="cv-prefs-group"><h3 class="cv-prefs-label"></h3></section>');
       const h = q<HTMLElement>(g, '.cv-prefs-label');
@@ -154,6 +156,10 @@ export class SettingsDialog extends Dialog {
       grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.multiFingerRow.el, this.penHoverRow.el, this.penRollRow.el, this.penPlayRow.el, this.fingerPaintRow.el),
       grp('Editing', this.confirmDeleteRow.el, this.snapAlwaysRow.el, this.showTipsRow.el));
     add('Pen and Tablet', ...this.penPage.groups);
+    if (platform.kind !== 'ipad') {
+      this.videoTools = new VideoToolsPage(grp, nt);
+      add(VIDEO_TOOLS, ...this.videoTools.groups);
+    }
     const mcpRow = (label: string, value: string): HTMLElement => {
       const row = el('<div class="cv-field"><span></span><code class="cv-prefs-agents-mcp" translate="no" dir="ltr"></code></div>');
       const name = q<HTMLElement>(row, 'span');
@@ -269,6 +275,7 @@ export class SettingsDialog extends Dialog {
     this.confirmDeleteRow.set(p.confirmDelete);
     this.snapAlwaysRow.set(p.stageSnapAlways);
     this.penPage.show();
+    this.videoTools?.show();
     void this.loadAgents();
     this.sync();
     if (section && this.sections.has(section)) this.showSection(section);

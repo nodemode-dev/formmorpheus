@@ -4,13 +4,14 @@ export interface FpsPreset {
 }
 
 export const FPS_PRESETS: FpsPreset[] = [
-  { fps: 12, label: 'Frame by frame' },
-  { fps: 15, label: 'Anime' },
-  { fps: 24, label: 'Cinema' },
-  { fps: 30, label: 'Television' },
-  { fps: 50, label: 'PAL' },
-  { fps: 60, label: 'NTSC' },
-  { fps: 120, label: 'Mobile' },
+  { fps: 12, label: 'On twos' },
+  { fps: 15, label: 'Web and GIF' },
+  { fps: 24, label: 'Film' },
+  { fps: 25, label: 'Video (Europe)' },
+  { fps: 30, label: 'Video' },
+  { fps: 50, label: 'Smooth (Europe)' },
+  { fps: 60, label: 'Smooth' },
+  { fps: 120, label: 'Extra smooth' },
 ];
 
 export const MIN_FPS = 1;

@@ -45,7 +45,7 @@ enum EngineConfig {
         if let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, !v.isEmpty {
             return v
         }
-        return "0.22.0"
+        return "0.23.0"
     }
 
     static var dataDir: URL {
@@ -61,7 +61,8 @@ enum EngineConfig {
         return u
     }
 
-    static var libraryDir: URL { return folder("Library") }
+    static var libraryDir: URL { return CloudLibrary.activeFolder() ?? folder("Library") }
+    static var localLibraryDir: URL { return folder("Library") }
     static var brushesDir: URL { return folder("Brushes") }
     static var fontsDir: URL { return folder("Fonts") }
     static var ideasDir: URL { return folder("Ideas") }
@@ -74,7 +75,7 @@ enum EngineConfig {
     /// Jobs is left out: the export builder keeps its temporary job folders in Caches (thousands of frames
     /// do not belong in Files or in the device backup), so Documents/Jobs would stay empty.
     static func ensureTree() {
-        _ = libraryDir; _ = brushesDir; _ = fontsDir; _ = ideasDir
+        _ = localLibraryDir; _ = brushesDir; _ = fontsDir; _ = ideasDir
         _ = trashDir; _ = recoveryDir; _ = exportsDir
     }
 
@@ -576,7 +577,7 @@ enum EngineFolders {
         }
         let url = URL(fileURLWithPath: EngineConfig.remapStale(raw)).standardizedFileURL.resolvingSymlinksInPath()
         var allowed = false
-        for root in [EngineConfig.dataDir] + EngineConfig.extraWritableRoots where EngineConfig.isInside(url, root) {
+        for root in [EngineConfig.dataDir] + EngineConfig.extraWritableRoots + CloudLibrary.writableRoots where EngineConfig.isInside(url, root) {
             allowed = true
         }
         if !allowed || url.pathComponents.count < 2 {

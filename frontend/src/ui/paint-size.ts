@@ -28,7 +28,7 @@ export function defaultSlider(b: Brush): number {
   // an imported brush's picture is a stamp: at pen size it is a smudge a few pixels wide, so it starts at a readable size
   if (b.custom && (b.tip === 'sampled' || b.set === 'Imported')) want = Math.max(want, Math.min(b.maxSize * 0.7, 56));
   // an airbrush or mist is a cloud: at pen size its soft falloff is a few pixels and reads as a hairline
-  if (b.softness >= 0.3 && b.flow <= 0.45 && /air|mist|fade|haze/i.test(b.set + ' ' + b.name)) want = Math.max(want, Math.min(b.maxSize * 0.55, 90));
+  if (b.softness >= 0.3 && b.flow <= 0.45 && /air|mist|fade|haze|^spray /i.test(b.set + ' ' + b.name)) want = Math.max(want, Math.min(b.maxSize * 0.55, 90));
   want = paintWant(b, want);
   return Math.round(sliderOf(Math.min(1, Math.max(0, (want - b.minSize) / range))) * 100) / 100;
 }

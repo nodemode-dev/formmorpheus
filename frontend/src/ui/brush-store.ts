@@ -4,7 +4,7 @@
 // cleared browser profile cannot lose it. IndexedDB holds a copy so the library still loads when the engine
 // is not answering. paint/brushes.ts keeps the live lookup that strokes read.
 
-import { ALL_STARTERS, BRUSH_SETS, OLD_SET_NAMES, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
+import { ALL_STARTERS, CLASSIC_SETS, OLD_SET_NAMES, brushById, registerBrush, starterBrush, unregisterBrush } from '../paint/brushes';
 import { ANIMATION_SETS } from '../paint/brushes-animation';
 import type { Brush } from '../paint/types';
 import { importBrushFile } from '../io/brush-import';
@@ -33,7 +33,11 @@ interface Saved {
   active?: string;
 }
 
-const animId = (n: string): string => `anim-${slug(n)}`;
+/** The stored id of the starter set a brush names; the id keeps the name the set first shipped under. */
+const starterSetId = (b: Brush): string => {
+  const anim = b.lib === 'animation';
+  return (anim ? ANIMATION_SETS : CLASSIC_SETS).find((s) => s.name === b.set)?.id ?? `${anim ? 'anim-' : ''}${slug(b.set)}`;
+};
 
 export const IMPORTED_ID = 'imported';
 const IDB_NAME = 'formmorpheus-brushes', IDB_STORE = 'library', IDB_KEY = 'main';
@@ -75,8 +79,8 @@ function unpack(s: SavedBrush): Brush | null {
 }
 
 function defaults(): Saved {
-  const sets: BrushSet[] = ANIMATION_SETS.map((n) => ({ id: animId(n), name: n, lib: LIB_ANIMATION, ids: ALL_STARTERS.filter((b) => b.lib === 'animation' && b.set === n).map((b) => b.id) }));
-  for (const n of BRUSH_SETS) sets.push({ id: slug(n), name: n, lib: LIB_CLASSIC, ids: ALL_STARTERS.filter((b) => !b.lib && b.set === n).map((b) => b.id) });
+  const sets: BrushSet[] = ANIMATION_SETS.map((s) => ({ id: s.id, name: s.name, lib: LIB_ANIMATION, ids: ALL_STARTERS.filter((b) => b.lib === 'animation' && b.set === s.name).map((b) => b.id) }));
+  for (const s of CLASSIC_SETS) sets.push({ id: s.id, name: s.name, lib: LIB_CLASSIC, ids: ALL_STARTERS.filter((b) => !b.lib && b.set === s.name).map((b) => b.id) });
   sets.push({ id: IMPORTED_ID, name: 'Imported', lib: LIB_CLASSIC, ids: [] });
   const libs: BrushLib[] = [{ id: LIB_ANIMATION, name: 'Animation' }, { id: LIB_CLASSIC, name: 'Classic' }];
   return { v: 1, sets, custom: {}, names: {}, tweaks: {}, deleted: [], libs, active: LIB_ANIMATION };
@@ -584,13 +588,18 @@ class BrushStore {
       const lib = typeof rec.lib === 'string' && rec.lib !== LIB_IMPORTED ? rec.lib : LIB_CLASSIC;
       sets.push({ id: rec.id, name: rec.name, ids, lib });
     }
-    // Classic sets saved under the shorter names take the full names; Touch-ups folds into Drawing. Renamed-by-hand sets stay.
+    // Classic sets saved under the shorter names move to their stored ids; Touch-ups folds into Drawing. Renamed-by-hand sets stay.
     for (const [from, to] of Object.entries(OLD_SET_NAMES)) {
       const old = sets.find((x) => x.id === slug(from) && x.name === from && (x.lib ?? LIB_CLASSIC) === LIB_CLASSIC);
       if (!old) continue;
-      const into = to === 'Drawing' ? sets.find((x) => x.id === 'drawing') : undefined;
+      const into = to === 'drawing' ? sets.find((x) => x.id === 'drawing') : undefined;
       if (into) { into.ids.push(...old.ids); sets.splice(sets.indexOf(old), 1); }
-      else if (to !== 'Drawing' && !sets.some((x) => x.id === slug(to))) { old.id = slug(to); old.name = to; }
+      else if (to !== 'drawing' && !sets.some((x) => x.id === to)) { old.id = to; old.name = to; }
+    }
+    // Starter sets still under the name their id was made from take the current name; the next save renames the folder.
+    for (const a of [...ANIMATION_SETS, ...CLASSIC_SETS]) {
+      const old = sets.find((x) => x.id === a.id && (`anim-${slug(x.name)}` === a.id || slug(x.name) === a.id));
+      if (old) old.name = a.name;
     }
     // Libraries: a file from before libraries has none, so its sets stay in Classic and Animation is added.
     const savedLibs = Array.isArray(s.libs) ? s.libs.filter((l) => l && typeof l.id === 'string' && typeof l.name === 'string') : [];
@@ -605,7 +614,7 @@ class BrushStore {
       if (placed.has(b.id) || st.deleted.includes(b.id)) continue;
       const anim = b.lib === 'animation';
       if (anim && animHidden) continue;
-      const sid = anim ? animId(b.set) : slug(b.set);
+      const sid = starterSetId(b);
       let home = sets.find((x) => x.id === sid);
       if (!home) {
         home = { id: sid, name: b.set, ids: [], lib: anim ? LIB_ANIMATION : LIB_CLASSIC };

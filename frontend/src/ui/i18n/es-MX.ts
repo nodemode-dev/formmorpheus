@@ -6,7 +6,7 @@ export const esMX: Record<string, string> = {
   'Clear': 'Borrar', 'Clear frame': 'Borrar cuadro', 'Current frame': 'Cuadro actual', 'Cut frame': 'Cortar cuadro',
   'Delete': 'Borrar', 'Delete frame': 'Eliminar cuadro', 'Drawing frames': 'Cuadros de dibujo',
   'Duplicate frame': 'Duplicar cuadro', 'Exact frame times': 'Tiempos de cuadro exactos',
-  'Flipbook frames': 'Cuadros del flipbook', 'Frame Rate': 'Velocidad de cuadros', 'Frame by frame': 'Cuadro a cuadro',
+  'Flipbook frames': 'Cuadros del flipbook', 'Frame Rate': 'Velocidad de cuadros',
   'Frame duration': 'Duración del cuadro', 'Frame rate': 'Velocidad de cuadros', 'Frames': 'Cuadros',
   'Insert frame': 'Insertar cuadro', 'JPG frames': 'Cuadros JPG', 'MOV video': 'Video MOV', 'MP4 video': 'Video MP4',
   'Match System Appearance switches between the light and dark theme chosen here when the appearance of the computer changes.': 'Igualar apariencia del sistema alterna entre el tema claro y el oscuro elegidos aquí cuando cambia la apariencia de la computadora.',

@@ -1,8 +1,8 @@
 // SystemRoutes.swift
 // /api/health, /api/capabilities, /api/system/library. A port of backend/app/routers/system.py.
 //
-// On iPad the library is Documents/Library and cannot be moved: GET /system/library reports source "override",
-// which locks the Library Folder dialog the way FORMMORPHEUS_LIBRARY_DIR does on the desktop, and POST answers 409.
+// On iPad the library is Documents/Library (source "default") or Library in the app's iCloud Drive folder
+// (source "custom", see CloudLibrary.swift). POST moves it between those two places only; nothing is copied.
 // There is no ffmpeg here, so capabilities carries "ffmpeg": false. The export targets (VideoToolbox encoders) are
 // reported by the export builder's GET /api/jobs/capabilities, which is where the interface reads them.
 
@@ -25,13 +25,40 @@ final class SystemRoutes: APIRoutes {
     }
 
     private func libraryInfo(_ c: RouteContext) throws -> APIResponse {
+        let cloud = CloudLibrary.current()
+        let local = EngineConfig.localLibraryDir.path
         let dir = EngineConfig.libraryDir.path
-        let r: [String: Any] = ["dir": dir, "default": dir, "source": "override", "icloud": NSNull()]
+        var icloud: Any = NSNull()
+        if let f = cloud.folder { icloud = f.path }
+        let r: [String: Any] = [
+            "dir": dir,
+            "default": local,
+            "source": dir == local ? "default" : "custom",
+            "icloud": icloud,
+            "icloudState": cloud.state.rawValue,
+        ]
         return APIResponse.json(r)
     }
 
     private func setLibrary(_ c: RouteContext) throws -> APIResponse {
-        throw EngineError(409, "The library folder on iPad is always Documents/Library, so it cannot be changed here.")
+        let body = try c.json()
+        let raw = EngineText.strip(try body.optString("dir") ?? "")
+        if raw.isEmpty {
+            CloudLibrary.choose(false)
+            let r: [String: Any] = ["dir": EngineConfig.libraryDir.path, "copied": 0, "source": "default"]
+            return APIResponse.json(r)
+        }
+        let cloud = CloudLibrary.current()
+        guard let folder = cloud.folder else {
+            throw EngineError(409, CloudLibrary.message(cloud.state))
+        }
+        let asked = URL(fileURLWithPath: raw).standardizedFileURL.resolvingSymlinksInPath().path
+        if asked != folder.standardizedFileURL.resolvingSymlinksInPath().path {
+            throw EngineError(409, "On iPad the library lives on this iPad or in iCloud Drive, so no other folder can be chosen.")
+        }
+        CloudLibrary.choose(true)
+        let r: [String: Any] = ["dir": EngineConfig.libraryDir.path, "copied": 0, "source": "custom"]
+        return APIResponse.json(r)
     }
 
     private func health(_ c: RouteContext) throws -> APIResponse {

@@ -19,8 +19,9 @@
 //   JobsRoutes       /jobs         (ios/Export) export jobs
 //   ExportsRoutes    /exports      (ios/Export) the Exports folder
 //   AudioEncodeRoutes /audio-encode (ios/Export) sound encoders
-// Not ported, on purpose: /proxy and /transcode (a desktop-only ffmpeg and network helper) and /penlink
-// (Pen Link is hidden on iPad). The first of those requests answers 404, as the desktop does for an unknown route.
+//   TranscodeRoutes  /transcode    video the window cannot decode, converted with AVFoundation
+// Not ported, on purpose: /proxy (a desktop-only ffmpeg and network helper) and /penlink
+// (Pen Link is hidden on iPad). Those requests answer 404, as the desktop does for an unknown route.
 //
 // Storage root: EngineConfig.dataDir, the Documents folder, so the Files app shows
 // Library, Brushes, Fonts, Ideas, Recently Deleted, Recovery and Exports like the desktop data folder.
@@ -38,6 +39,7 @@ final class EngineRouter {
     private let groups: [APIRoutes]
 
     private init() {
+        CloudLibrary.start()
         EngineConfig.ensureTree()
         groups = [
             SystemRoutes(),
@@ -52,6 +54,7 @@ final class EngineRouter {
             JobsRoutes(),
             ExportsRoutes(),
             AudioEncodeRoutes(),
+            TranscodeRoutes(),
         ]
         EngineMaintenance.start()
     }

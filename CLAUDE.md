@@ -29,7 +29,7 @@ The form family's animation studio: a Stage over a Timeline, drawn frame by fram
 4. **No emoji. No em dash (U+2014).** Use a comma, a colon or the interpunct `·`.
 5. **No icon libraries.** Icons are inline SVG strings in `currentColor`. No new npm dependency without a license check against NOTICE.md.
 6. **No self-written tests.** The test plan (`TEST_PLAN.md`) lives in the planning sidecar, and the owner decides when tests are written. Verify by running the app in Chromium and by typechecking.
-7. **Generic words.** Never name other vendors' products in code, comments or labels: Stage, Timeline, Track, Keyframe, Flipbook, Onion skin, Drawing, Brush.
+7. **Generic words.** Never name other vendors' products in code, comments or labels: Stage, Timeline, Track, Keyframe, Flipbook, Onion skin, Drawing, Brush. File extensions and type identifiers are formats, not names, so `.procreate` stays (the text lint passes a lower-case match after a dot or as a whole plist string).
 8. **HASHOUT_LOG routing.** Decisions and removed code go in the log next to the code: `frontend/HASHOUT_LOG.md`, `backend/HASHOUT_LOG.md`, `src-tauri/HASHOUT_LOG.md`. Read it before editing there.
 9. **Performance.** Movies reach 3840 px a side: dirty rectangles, reused buffers, typed arrays, no per-pixel allocation.
 10. **Comments** are short and say why, not what. UI labels use "Color".

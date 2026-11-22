@@ -8,12 +8,11 @@ desktop-only. Report only: the exit status is 0 whatever is found.
 Classification (edit DESKTOP_ONLY below to change it). A route is desktop-only when it needs something an iPad does not
 have: ffmpeg, a socket server, or a folder dialog onto the file system.
   /api/penlink/*                 Pen Link runs a local network server with sockets; off on iPad
-  /api/transcode*                ffmpeg turns imported video and sound into formats the web view reads
-  /api/proxy/make                ffmpeg makes the small proxy copy of a big video
+  /api/proxy/make               ffmpeg makes the small proxy copy of a big video
   /api/audio-encode/mp3          ffmpeg with libmp3lame; MP3 export is hidden on iPad
   /api/save-to/*                 writes into a folder picked with a folder dialog; saving goes through the system picker
   /api/library/{name}/copy-to    copies a movie into a folder picked with a folder dialog
-  POST /api/system/library       moves the library to another folder; on iPad the library is the app's Documents folder
+  /api/video-tools*              finds, downloads and removes ffmpeg; the iPad encodes with its own video encoders
   x-websockets in the contract   sockets cannot be served through the scheme handler
 Everything else is required.
 
@@ -36,19 +35,18 @@ METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
 # (method or "*", path pattern with {} for every parameter); a trailing /* matches everything below
 DESKTOP_ONLY = [
     ("*", "/api/penlink/*"),
-    ("*", "/api/transcode"),
-    ("*", "/api/transcode/*"),
     ("*", "/api/proxy/make"),
     ("*", "/api/audio-encode/mp3"),
     ("*", "/api/save-to/*"),
     ("*", "/api/library/{}/copy-to"),
-    ("POST", "/api/system/library"),
     ("*", "/api/agents"),
     ("*", "/api/agents/*"),
     ("*", "/api/agent/*"),
     ("*", "/api/terminal"),
     ("*", "/api/terminal/*"),
     ("*", "/api/mcp/*"),
+    ("*", "/api/video-tools"),
+    ("*", "/api/video-tools/*"),
 ]
 
 

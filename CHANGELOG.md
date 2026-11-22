@@ -2,6 +2,31 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.23.0 · 2026-11-22
+
+The iPad catches up, ffmpeg is one click away, and FormMorpheus uses its own names.
+
+### New
+- iPad: ProRes and transparent video come in. The iPad converts them with its own video tools: ProRes 4444 with transparency becomes HEVC with transparency, other video it cannot play becomes H.264. If a converted clip shows no transparency on this iPad, a notice says so.
+- iPad: the movie library can live in iCloud Drive. Home's two places are On This iPad and iCloud Drive; a movie saved there opens on your other iPads once it has downloaded.
+- iPad: runs from iPadOS 16.4 (it asked for iPadOS 26 before). Pencil squeeze, roll and the hover preview need iPadOS 17.5; before that the Pencil's double tap still works.
+- Preferences, Video Tools: where ffmpeg was found and what it can make, and a button that downloads the family's ffmpeg build (LGPL, about 12 MB, from the formai-binaries releases on GitHub) into your data folder, checks every file and can remove it again. An ffmpeg already on your computer is used first.
+- Export and Sound only say when ProRes, HEVC or MP3 need ffmpeg, and open Video Tools.
+- New Movie: 25 fps (European video) joins the frame rates.
+- The README and the manual say what comes over from another animation app: layered `.procreate` artwork with its layers, and a movie as the video, numbered PNG frames or GIF it exports.
+
+### Changed
+- Frame rates have FormMorpheus's own labels: 12 Frame by frame is now On twos, 15 Anime is Web and GIF, 24 Cinema is Film, 30 Television is Video, 50 PAL is Smooth (Europe), 60 NTSC is Smooth, 120 Mobile is Extra smooth. The Home size cards follow them. Movies keep their rate.
+- Brush sets have FormMorpheus's own names and order. Brushes you chose, sets you renamed and your own order are kept; on disk, a set's folder takes the new name at the next save.
+  - Animation: Sketch is Pencil, Chalk is Pastel, Outline is Line art, Monoline is Even line, Wiggle is Boiling line, Ink is Pens, Script is Lettering, Wash is Watercolor, Paint is Thick paint, Bristle is Rough brush, Airbrush is Spray, Sponge is Dabbing, Noise is Grain, Texture is Surfaces, Graphic is Stamps, Pattern is Motifs, Metro is Geometric, Environment is Scenery.
+  - Classic: Sketching is Graphite, Charcoals is Charcoal, Drawing is Markers, Inking is Comic ink, Calligraphy is Nibs, Painting is Studio paint, Water is Wet media, Airbrushing is Mist, Spraypaints is Graffiti, Artistic is Mark making, Textures is Grit, Materials is Finishes, Vintage is Printmaking, Industrial is Metalwork, Abstract is Shapes, Luminance is Light, Elements is Atmosphere, Organic is Nature.
+- The layered artwork reader's file is now `io/tiled-artwork-import.ts` (it was named after the other app), and the text lint catches other vendors' names in any case.
+- New Movie's Screen size follows the way the screen is held.
+
+### Fixed
+- The export progress and the Close button no longer move while an export runs.
+- The status bar no longer shifts when Draw and Paint opens.
+
 ## 0.22.0 · 2026-11-22
 
 AI programs on your computer can work with FormMorpheus, and only as far as you allow.

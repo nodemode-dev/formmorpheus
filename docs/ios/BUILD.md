@@ -1,12 +1,15 @@
 # Build formmorpheus for iPad
 
-This is the first-run guide for the Mac that builds the iPad app. You need a Mac with Xcode 26 or later (iPadOS 26 SDK), an Apple developer account signed in to Xcode, Node.js, and an iPad on iPadOS 26.
+This is the first-run guide for the Mac that builds the iPad app. You need a Mac with Xcode 26 or later (iPadOS 26 SDK), an Apple developer account signed in to Xcode, Node.js, and an iPad on iPadOS 16.4 or later.
+
+The app runs from iPadOS 16.4 because its interface decodes video with the web view's video decoder (Web Codecs) and draws with 2D OffscreenCanvas, which WebKit has from Safari 16.4, the version iPadOS 16.4 carries. On iPadOS 16.4 to 17.4 squeeze, barrel roll, the Pencil's position sent with a double tap and the canvas haptics are not there (they came with iPadOS 17.5); double tap and hover still work. Before iPadOS 17 the Stage draws without the GPU compositor (WebGL in OffscreenCanvas came with Safari 17), so large movies play slower. ProRes 4444 XQ export needs iPadOS 18; before that it falls back to ProRes 4444 with a note.
 
 ## One-time setup
 
 1. Install XcodeGen: `brew install xcodegen`.
 2. Set your team. Either copy `ios/Config/Local.xcconfig.example` to `ios/Config/Local.xcconfig` and put your Team ID in `DEVELOPMENT_TEAM`, or leave it empty and pick the team in Xcode under the FormMorpheus target, Signing & Capabilities. `Local.xcconfig` is not committed. If `ai.nodemode.formmorpheus` is not available to your account, set `PRODUCT_BUNDLE_IDENTIFIER` there too.
 3. Connect the iPad with a cable the first time. On the iPad, turn on Developer Mode (Settings > Privacy & Security > Developer Mode), then restart when asked.
+4. Turn on iCloud for the app, so the library can live in iCloud Drive. The entitlements are in `ios/App/FormMorpheus.entitlements` (wired through `CODE_SIGN_ENTITLEMENTS` in `ios/Config/Base.xcconfig`) and ask for iCloud Documents with the container `iCloud.<bundle id>`, which is `iCloud.ai.nodemode.formmorpheus` for the default bundle id. In your Apple developer account, under Certificates, Identifiers & Profiles: create the iCloud container `iCloud.ai.nodemode.formmorpheus` (Identifiers, iCloud Containers), then open the App ID `ai.nodemode.formmorpheus`, turn on iCloud, choose Edit and tick that container. With automatic signing, Xcode may offer to do the same from Signing & Capabilities; check that iCloud shows there with iCloud Documents and the container ticked. A personal (free) team cannot sign iCloud: put `CODE_SIGN_ENTITLEMENTS =` in `Local.xcconfig` to build without it, and the library then stays on the iPad.
 
 ## Build and run
 
@@ -28,9 +31,19 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 3. The same file stays in the Files app under On My iPad > FormMorpheus > Diagnostics.
 4. Send that file together with any Xcode build errors.
 
+## Check on the iPad (0.23.0)
+
+Nothing in this list has been tried on a device yet; the Swift code has never been compiled.
+
+1. ProRes 4444 with transparency: import a ProRes 4444 .mov that has an alpha channel into an open movie. A progress line says "Converting ..."; the clip lands on the Stage. Put a color under it and check that the see-through parts stay see-through. If a notice says the first frame shows no transparency, the iPad's video decoder drops it: note the iPad model and iPadOS version.
+2. ProRes 422 without transparency: import a ProRes 422 .mov. It should be converted and play.
+3. HEVC with transparency: import an HEVC .mov with alpha (for example one exported from formmorpheus on the iPad with HEVC and transparency). It should open without converting. Check the same see-through parts over a color.
+4. iCloud Drive library on two iPads signed in to the same Apple Account: on the first iPad, on Home, tap iCloud Drive, make a movie and save it. In the Files app it is under iCloud Drive > FormMorpheus > Library. On the second iPad, tap iCloud Drive on Home: the movie appears once iCloud has brought it over (reopen Home if it is not there yet); open it, change it, save. Back on the first iPad, open it again and check the change. Also try iCloud Drive with iCloud signed out and check the message.
+5. Handwriting in the text card: add a text, open its card and write into the text field with the Pencil (the iPad's handwriting-to-text, Settings > Apple Pencil). Also try writing on the Stage while editing a text in place.
+
 ## Where things are
 
-- `ios/project.yml`: the project spec. `ios/Config/Base.xcconfig`: shared build settings.
+- `ios/project.yml`: the project spec. `ios/Config/Base.xcconfig`: shared build settings. `ios/App/FormMorpheus.entitlements`: iCloud Documents.
 - `ios/App`, `ios/Web`: the app, the web view host, the `fm://` scheme handler and the bridge.
 - `ios/Resources/web`: the built interface (generated, not committed).
 - Files you create appear in the Files app under On My iPad > FormMorpheus. A movie opened from anywhere else in Files is copied into the Library there; the original is never changed.

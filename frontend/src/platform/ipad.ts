@@ -110,7 +110,7 @@ export function createIpad(info: PlatformInfo): Platform {
     },
     capabilities,
     // no sockets through the scheme handler, no network server, no ffmpeg, no folder dialog (saving goes through the system picker)
-    features: { penLink: false, liveRecoverySocket: false, folderPicker: false, mp3Export: false, desktopMenus: false },
+    features: { penLink: false, liveRecoverySocket: false, folderPicker: false, mp3Export: false, desktopMenus: false, soundConvert: false, pictureConvert: false },
     ready() { bridge.post('ready', { version: info.appVersion, build: info.build, width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio }); },
   };
 }

@@ -15,14 +15,7 @@ let dialog: LibraryFolderDialog | null = null;
 
 /** Wires the side panel button: click opens Library Folder, the tooltip follows the folder in use. */
 export function mountStorageButton(btn: HTMLElement): void {
-  // iPad: the Library is fixed in the app's Documents folder (shown in Files); there is no folder to choose
-  if (platform.kind === 'ipad') {
-    const span = btn.lastElementChild;
-    if (span) span.textContent = t('On This iPad');
-    btn.title = t('On This iPad');
-    btn.classList.add('is-here');
-    return;
-  }
+  if (platform.kind === 'ipad') { mountIpadPlace(btn, 'ipad'); return; }
   const tip = async (): Promise<void> => {
     const caps = await capabilities();
     const label = t('Library folder');
@@ -43,6 +36,7 @@ export function mountStorageButton(btn: HTMLElement): void {
 
 /** The second storage entry of the side panel (G08): named for the cloud folder, "Cloud folder" while none is set; a click opens the Library Folder window where it is chosen. */
 export function mountCloudButton(btn: HTMLElement): void {
+  if (platform.kind === 'ipad') { mountIpadPlace(btn, 'icloud'); return; }
   const paint = async (): Promise<void> => {
     const to = await cloudTarget();
     const name = to ? to.name : t('Cloud folder');
@@ -58,7 +52,39 @@ export function mountCloudButton(btn: HTMLElement): void {
   void paint();
 }
 
-interface Locations { dir: string; default: string; source: string; icloud: string | null }
+/** iPad: the two places the library can live, this iPad and the app's iCloud Drive folder; a click moves the library there, nothing is copied. */
+function mountIpadPlace(btn: HTMLElement, place: 'ipad' | 'icloud'): void {
+  const name = place === 'ipad' ? t('On This iPad') : t('iCloud Drive');
+  const span = btn.lastElementChild;
+  if (span && span.textContent !== name) span.textContent = name;
+  btn.title = name;
+  btn.classList.toggle('is-here', place === 'ipad');
+  const inCloud = (i: Locations | null): boolean => !!i?.icloud && i.dir === i.icloud;
+  const paint = async (): Promise<void> => {
+    const info = await locations();
+    btn.classList.toggle('is-here', place === 'icloud' ? inCloud(info) : !inCloud(info));
+  };
+  btn.addEventListener('click', () => {
+    void (async () => {
+      const info = await locations();
+      if (place === 'ipad') { if (inCloud(info)) await flipHome(); return; }
+      if (inCloud(info)) return;
+      if (!info?.icloud) { toast(icloudOff(info?.icloudState), 'error'); return; }
+      await flipToCloud();
+    })();
+  });
+  document.addEventListener('fm:library-changed', () => { void paint(); });
+  void paint();
+}
+
+function icloudOff(state: string | undefined): string {
+  if (state === 'signedOut') return t('iCloud Drive is off on this iPad, or no one is signed in to iCloud. Turn it on in the Settings app, under your name, then iCloud, and try again.');
+  if (state === 'unavailable') return t('iCloud Drive is on, but this app cannot reach its folder there. In the Settings app, under your name, then iCloud, check that iCloud Drive is allowed for FormMorpheus, and try again.');
+  if (state === 'checking') return t('iCloud Drive is still being checked. Try again in a moment.');
+  return t('iCloud Drive cannot be reached right now. Try again in a moment.');
+}
+
+interface Locations { dir: string; default: string; source: string; icloud: string | null; icloudState?: string }
 
 /** The library's current folder and the iCloud Drive folder when this computer has one (null when the engine is away). */
 export async function locations(): Promise<Locations | null> {

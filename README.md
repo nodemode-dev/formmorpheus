@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.22.0" src="https://img.shields.io/badge/version-v0.22.0-eef0f4?style=flat-square">
+  <img alt="version 0.23.0" src="https://img.shields.io/badge/version-v0.23.0-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
   <img alt="macOS, Linux, Windows and iPad" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20iPad-native-2f7bf5?style=flat-square">
@@ -108,6 +108,8 @@
     </td>
   </tr>
 </table>
+
+**Coming from another animation app?** Layered `.procreate` artwork opens as a Drawing with its layers, blend modes and groups. Another app's movie project file cannot be read, so bring the movie over as what that app exports: a video (MP4 or MOV, in H.264, HEVC or ProRes, with its transparency), a folder of numbered PNG frames, which becomes one Flipbook, or an animated GIF, which becomes a Flipbook with its holds. See "Coming from another animation app" in [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ## Under the hood
 

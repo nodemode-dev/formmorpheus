@@ -1,4 +1,4 @@
-"""Finding and probing a user-installed ffmpeg.
+"""Finding and probing ffmpeg: the person's own first, then the family's LGPL build they chose to download.
 
 formmorpheus never ships a GPL ffmpeg. libx265 is GPL; when the person's own ffmpeg has it, we run that
 program as a separate process (arguments only, no shell) and nothing of it is linked or bundled.
@@ -10,6 +10,8 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from app.services import ffmpeg_fetch
 
 HEVC_ORDER = ["hevc_videotoolbox", "hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
 WANTED = ["prores_ks", "aac", "libmp3lame", "libopus", "libx264", *HEVC_ORDER]
@@ -54,13 +56,14 @@ def find_ffmpeg() -> str | None:
         if beside.is_file():
             return str(beside)
     found = shutil.which("ffmpeg")
-    if found or sys.platform != "darwin":
+    if found:
         return found
-    for folder in MAC_INSTALL_DIRS:
-        candidate = Path(folder) / exe
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
+    if sys.platform == "darwin":
+        for folder in MAC_INSTALL_DIRS:
+            candidate = Path(folder) / exe
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+    return ffmpeg_fetch.installed()
 
 
 def probe(refresh: bool = False) -> FfmpegInfo | None:

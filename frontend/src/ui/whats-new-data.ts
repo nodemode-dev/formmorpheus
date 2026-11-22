@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.23.0', name: 'Video Tools, and names of our own',
+    additions: [
+      { title: 'Video Tools', text: 'Preferences shows where ffmpeg is and what it can make, and can download the family build for ProRes and HEVC.', command: 'settings' },
+      { title: 'New names', text: 'Brush sets and frame rates have FormMorpheus\'s own names. Your brushes and movies are kept as they were.', command: 'new' },
+      { title: 'On iPad', text: 'ProRes and transparent video come in, the library can live in iCloud Drive, and the app runs from iPadOS 16.4.', command: 'about' },
+    ],
+  },
+  {
     version: '0.22.0', name: 'Agents, with your yes',
     additions: [
       { title: 'A terminal panel', text: 'A shell, Claude Code, Codex, Cursor and Antigravity run beside the Stage and the Timeline. View, Terminal opens it.', command: 'view-terminal' },
