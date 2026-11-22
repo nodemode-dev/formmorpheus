@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.19.0', name: 'A start that says what went wrong, and a clean close',
+    additions: [
+      { title: 'A start you can trust', text: 'If the app cannot start, a message says why and where the engine keeps its log.', command: 'about' },
+      { title: 'Nothing left behind', text: 'Closing the app also closes its engine on every system, and a leftover from a crash is replaced at the next start.', command: 'about' },
+      { title: 'Settings that stay', text: 'Your theme, language and preferences are kept from one launch to the next.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.18.4', name: 'Help that always opens, and ffmpeg found on a Mac',
     additions: [
       { title: 'Help', text: 'Every button in the Help Center opens something: the Manual and Send an idea inside the app, and the FormMorpheus page in your browser.', command: 'help-center' },

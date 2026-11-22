@@ -1,6 +1,6 @@
 [package]
 name = "formmorpheus"
-version = "0.18.4"
+version = "0.19.0"
 description = "formmorpheus desktop shell"
 authors = ["nodemode-ai"]
 license = "Apache-2.0"
@@ -27,7 +27,7 @@ webkit2gtk = "2.0"
 
 # Windows: SHAddToRecentDocs for the taskbar jump list.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_Shell"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

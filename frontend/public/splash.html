@@ -14,7 +14,7 @@
     @keyframes load { to { transform: scaleX(0.92); } }
   </style>
 </head>
-<body><img src="mark.png" width="72" height="72" alt="FormMorpheus" draggable="false" decoding="sync"><p>Starting FormMorpheus</p><div class="bar"><div class="fill"></div></div><script>
+<body><img src="mark.png" width="72" height="72" alt="FormMorpheus" draggable="false" decoding="sync"><p>Starting FormMorpheus</p><div class="bar" role="progressbar" aria-label="Starting FormMorpheus"><div class="fill"></div></div><script>
 window.formmorpheusSplashDone = function () {
   var fill = document.querySelector('.fill');
   fill.style.transform = getComputedStyle(fill).transform;

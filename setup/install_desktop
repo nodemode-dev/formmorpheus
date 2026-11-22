@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+source "$(dirname "$0")/lib.sh"
+[ -f "$FM_ROOT/backend/venv/bin/activate" ] || [ -f "$FM_ROOT/backend/venv/Scripts/activate" ] || "$FM_ROOT/setup/install_all"
+fm_venv
+python -m pip install -r "$FM_ROOT/backend/requirements_desktop.txt"
+fm_say "desktop build packages installed into backend/venv"

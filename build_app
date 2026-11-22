@@ -9,6 +9,7 @@ usage() {
 ./build_app            build the formmorpheus desktop app from this folder, start to finish
   --clean              rebuild the Rust side and the frozen engine from nothing
   --bundles a,b        override the bundle list (macOS: app,dmg; Linux: deb,appimage,rpm; Windows: msi,nsis)
+  --config X           extra Tauri settings passed on to tauri build, a file path or inline JSON; may be given more than once
 Signing is optional: set APPLE_SIGNING_IDENTITY (macOS) or WINDOWS_CERT_THUMBPRINT (Windows) for a signed build;
 leave them unset for an unsigned build. CARGO_TARGET_DIR moves the Rust build folder.
 Every step's output goes to build_app.log beside this file.
@@ -16,10 +17,14 @@ EOF
 }
 
 clean=0 bundles=""
+configs=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --clean) clean=1 ;;
     --bundles) bundles="${2:-}"; shift ;;
+    --config)
+      [ $# -ge 2 ] && [ -n "$2" ] || { usage >&2; exit 2; }
+      configs+=(--config "$2"); shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -39,11 +44,7 @@ step "checking the tools"
 command -v node >/dev/null 2>&1 || fm_die "Node 20.19 or newer is required"
 node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=12)||(a===20&&b>=19)?0:1)' || fm_die "Node $(node -v) is too old; Vite needs 20.19 or 22.12 or newer"
 command -v npm >/dev/null 2>&1 || fm_die "npm is missing; it ships with Node"
-py=""
-for c in python3.13 python3.12 python3 python; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then py="$c"; break; fi
-done
-[ -n "$py" ] || fm_die "Python 3.12 or newer is required"
+py="$(fm_python)" || fm_die "Python 3.12 or newer is required"
 [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
 command -v cargo >/dev/null 2>&1 || fm_die "cargo is missing; install Rust from https://rustup.rs and run build_app again"
 if [ "$os" = linux ] && command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
@@ -93,6 +94,7 @@ case "$os" in
 esac
 args+=(--bundles "$bundles")
 [ -z "$cfg" ] || args+=(--config "$cfg")
+args+=(${configs[@]+"${configs[@]}"})
 
 step "building the desktop app (the first build compiles several hundred Rust crates)"
 cd "$FM_ROOT/src-tauri"

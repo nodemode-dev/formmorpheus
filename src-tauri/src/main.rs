@@ -3,16 +3,19 @@
 use std::sync::Mutex;
 
 use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+mod engine_start;
 mod packaged;
 mod folder;
 mod recent;
 mod reveal;
 mod text_edit;
 mod traffic_lights;
+#[cfg(windows)]
+mod win_job;
 mod window_state;
 
 const FALLBACK_SIZE: (f64, f64) = (1323.0, 860.0);
@@ -20,7 +23,10 @@ const MIN_SIZE: (f64, f64) = (980.0, 640.0);
 const SCREEN_FRACTION: f64 = 0.9;
 const TITLE: &str = "FormMorpheus";
 
+type EngineStep = Result<CommandEvent, Option<engine_start::Wait>>;
+
 struct Backend(Mutex<Option<CommandChild>>);
+struct DataGiven(Option<String>);
 
 #[derive(Default)]
 struct Opens {
@@ -54,7 +60,17 @@ fn kill_backend(handle: &tauri::AppHandle) {
             }
         }
     }
+    #[cfg(windows)]
+    win_job::end();
     let _ = child.kill();
+}
+
+fn start_limit(late: &tauri::async_runtime::Sender<EngineStep>, limit: std::time::Duration, wait: Option<engine_start::Wait>) {
+    let late = late.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(limit);
+        let _ = late.blocking_send(Err(wait));
+    });
 }
 
 fn close_splash(handle: &tauri::AppHandle) {
@@ -198,10 +214,9 @@ fn dev_url() -> Option<String> {
     }
 }
 
-fn build_main(handle: &tauri::AppHandle, url: &str) {
+fn build_main(handle: &tauri::AppHandle, url: &str) -> bool {
     let Ok(parsed) = url.parse() else {
-        close_splash(handle);
-        return;
+        return false;
     };
     let place = window_state::load(handle);
     let (width, height) = if place.width > 0.0 {
@@ -239,16 +254,45 @@ fn build_main(handle: &tauri::AppHandle, url: &str) {
             window_state::restore(&window, &place);
             #[cfg(target_os = "linux")]
             allow_own_microphone(&window, origin_of(url));
+            true
         }
-        Err(_) => close_splash(handle),
+        Err(_) => false,
     }
 }
 
-fn engine_failed(handle: &tauri::AppHandle) {
+fn engine_failed(handle: &tauri::AppHandle, failure: engine_start::Failure, tail: &engine_start::Tail) {
+    let given = handle.try_state::<DataGiven>().and_then(|given| given.0.clone());
+    let text = engine_start::message(&failure, &tail.lines(), engine_start::engine_log(given.as_deref()).as_deref());
+    eprintln!("formmorpheus: {text}");
+    if let Some(splash) = handle.get_webview_window("splash") {
+        let _ = splash.hide();
+    }
+    handle.dialog().message(text).title(engine_start::APP).kind(MessageDialogKind::Error).blocking_show();
     close_splash(handle);
-    let _ = handle.dialog().message("The formmorpheus engine failed to start. Please relaunch the app.").blocking_show();
     kill_backend(handle);
-    handle.exit(1);
+    std::process::exit(1);
+}
+
+fn engine_lost(handle: &tauri::AppHandle, code: Option<i32>, tail: &engine_start::Tail) {
+    let ours = handle.state::<Backend>().0.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    if ours {
+        window_state::flush(handle);
+        engine_failed(handle, engine_start::Failure::Lost(code), tail);
+    }
+}
+
+fn data_given(args: &[String]) -> Option<String> {
+    if let Some(dir) = user_data_dir_arg(args) {
+        return Some(dir);
+    }
+    #[cfg(windows)]
+    {
+        let dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))?;
+        if args.iter().any(|a| a == "--portable") || dir.join("portable").is_file() || dir.join("portable.txt").is_file() {
+            return Some(dir.join("FormmorpheusData").to_string_lossy().into_owned());
+        }
+    }
+    None
 }
 
 fn main() {
@@ -295,40 +339,109 @@ fn main() {
             let launch_args: Vec<String> = std::env::args().collect();
             open_paths(&handle, paths_from_args(&launch_args, None));
             if let Some(url) = dev_url() {
-                build_main(&handle, &url);
+                if !build_main(&handle, &url) {
+                    std::thread::spawn(move || engine_failed(&handle, engine_start::Failure::Window, &engine_start::Tail::default()));
+                }
                 return Ok(());
             }
-            let engine = match packaged::engine_folder() {
-                Some(program) => app.shell().command(program),
-                None => app.shell().sidecar("formmorpheus-engine").expect("the formmorpheus engine sidecar is missing; bundle its binary"),
+            let given = data_given(&launch_args);
+            app.manage(DataGiven(given.clone()));
+            let portable = launch_args.iter().any(|a| a == "--portable");
+            let command = match packaged::engine_folder() {
+                Some(program) => Ok(app.shell().command(program)),
+                None => app.shell().sidecar("formmorpheus-engine").map_err(|_| engine_start::Failure::Missing),
             };
-            let mut engine = engine.env("FORMMORPHEUS_PORT", "0");
-            if let Some(dir) = user_data_dir_arg(&launch_args) {
-                engine = engine.env("FORMMORPHEUS_DATA_DIR", dir);
-            }
-            if launch_args.iter().any(|a| a == "--portable") {
-                engine = engine.env("FORMMORPHEUS_PORTABLE", "1");
-            }
-            let (mut rx, child) = engine.spawn().expect("the formmorpheus engine failed to spawn");
+            let started = command.and_then(|engine| {
+                let mut engine = engine
+                    .env("FORMMORPHEUS_PORT", "0")
+                    .env("FORMMORPHEUS_PORT_PREFER", engine_start::PORT_PREFER)
+                    .env(engine_start::SHELL_ENV, std::process::id().to_string());
+                if let Some(dir) = &given {
+                    engine = engine.env(engine_start::DATA_ENV, dir);
+                }
+                if portable {
+                    engine = engine.env("FORMMORPHEUS_PORTABLE", "1");
+                }
+                engine.spawn().map_err(|err| engine_start::Failure::NotStarted(err.to_string()))
+            });
+            let (mut rx, child) = match started {
+                Ok(pair) => pair,
+                Err(failure) => {
+                    std::thread::spawn(move || engine_failed(&handle, failure, &engine_start::Tail::default()));
+                    return Ok(());
+                }
+            };
+            #[cfg(windows)]
+            win_job::hold_pid(child.pid());
             *app.state::<Backend>().0.lock().unwrap() = Some(child);
 
             tauri::async_runtime::spawn(async move {
                 let pattern = regex::Regex::new(r"http://127\.0\.0\.1:(\d+)").unwrap();
+                let (tx, mut events) = tauri::async_runtime::channel::<EngineStep>(64);
+                let late = tx.clone();
+                tauri::async_runtime::spawn(async move {
+                    while let Some(event) = rx.recv().await {
+                        if tx.send(Ok(event)).await.is_err() {
+                            break;
+                        }
+                    }
+                    let _ = tx.send(Err(None)).await;
+                });
+                start_limit(&late, engine_start::Wait::Address.limit(), Some(engine_start::Wait::Address));
                 let mut port: Option<u16> = None;
-                while let Some(event) = rx.recv().await {
-                    let text = match event {
-                        CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                        CommandEvent::Terminated(_) => break,
-                        _ => continue,
+                let mut stopped = false;
+                let mut tail = engine_start::Tail::default();
+                let mut failure = engine_start::Failure::Stopped(None);
+                while let Some(step) = events.recv().await {
+                    let text = match step {
+                        Ok(CommandEvent::Stdout(bytes)) | Ok(CommandEvent::Stderr(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+                        Ok(CommandEvent::Terminated(ended)) => {
+                            failure = engine_start::Failure::Stopped(ended.code);
+                            stopped = true;
+                            start_limit(&late, engine_start::EXIT_WAIT, None);
+                            continue;
+                        }
+                        Ok(_) => continue,
+                        Err(None) => break,
+                        Err(Some(_)) if stopped => break,
+                        Err(Some(wait)) => {
+                            failure = engine_start::Failure::TimedOut(wait);
+                            break;
+                        }
                     };
-                    if let Some(found) = pattern.captures(&text).and_then(|c| c[1].parse::<u16>().ok()) {
-                        port = Some(found);
+                    for line in text.lines() {
+                        tail.push(line);
+                    }
+                    port = pattern.captures(&text).and_then(|found| found[1].parse::<u16>().ok());
+                    if port.is_some() {
                         break;
                     }
                 }
-                match port {
-                    Some(port) => build_main(&handle, &format!("http://127.0.0.1:{port}")),
-                    None => engine_failed(&handle),
+                let Some(found) = port.filter(|_| !stopped) else {
+                    engine_failed(&handle, failure, &tail);
+                    return;
+                };
+                if !build_main(&handle, &format!("http://127.0.0.1:{found}")) {
+                    engine_failed(&handle, engine_start::Failure::Window, &engine_start::Tail::default());
+                    return;
+                }
+                while let Some(step) = events.recv().await {
+                    match step {
+                        Ok(CommandEvent::Stdout(bytes)) | Ok(CommandEvent::Stderr(bytes)) => {
+                            for line in String::from_utf8_lossy(&bytes).lines() {
+                                tail.push(line);
+                            }
+                        }
+                        Ok(CommandEvent::Terminated(ended)) => {
+                            engine_lost(&handle, ended.code, &tail);
+                            return;
+                        }
+                        Err(None) => {
+                            engine_lost(&handle, None, &tail);
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
             });
             Ok(())

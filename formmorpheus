@@ -10,6 +10,7 @@ usage: ./formmorpheus [command]
 
   (none) | boot       boot backend (9494) and frontend (5194) together
   install             install backend and frontend
+  install-desktop     install the desktop build packages into backend/venv
   backend             boot the backend only
   frontend            boot the frontend only
   build               production build of the frontend into frontend/dist
@@ -30,6 +31,7 @@ cmd="${1:-boot}"
 case "$cmd" in
   boot|dev) exec setup/boot_all "$@" ;;
   install) exec setup/install_all "$@" ;;
+  install-desktop) exec setup/install_desktop "$@" ;;
   backend) cd backend && exec ./boot_backend "$@" ;;
   frontend) cd frontend && exec ./boot_frontend "$@" ;;
   build) exec setup/build_frontend "$@" ;;

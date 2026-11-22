@@ -119,7 +119,14 @@ export function revealApp(): void {
   if (document.body.classList.contains('app-ready')) return;
   requestAnimationFrame(() => requestAnimationFrame(() => {
     document.body.classList.add('app-ready');
-    if ('__TAURI_INTERNALS__' in window) requestAnimationFrame(() => { void import('@tauri-apps/api/core').then((m) => m.invoke('app_ready')).catch(() => undefined); });
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    const rgb = (getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map((n) => Math.round(Number(n)));
+    const bg = rgb.length === 3 ? rgb : null;
+    void Promise.race([document.fonts.ready, new Promise((r) => window.setTimeout(r, 1500))])
+      .then(() => new Promise<void>((r) => requestAnimationFrame(() => r())))
+      .then(() => import('@tauri-apps/api/core'))
+      .then((m) => m.invoke('app_ready', { bg }))
+      .catch(() => undefined);
   }));
 }
 

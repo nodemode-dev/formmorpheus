@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -e
-source "$(dirname "$0")/lib.sh"
-"$FM_ROOT/setup/build_frontend"
-"$FM_ROOT/setup/freeze_backend"
-cd "$FM_ROOT"
-[ -f src-tauri/icons/icon.icns ] || fm_die "src-tauri/icons is missing; run frontend/node_modules/.bin/tauri icon <1024px png>"
-frontend/node_modules/.bin/tauri build "$@"
-fm_say "bundles are in src-tauri/target/release/bundle"
