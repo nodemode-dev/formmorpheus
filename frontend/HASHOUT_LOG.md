@@ -7,6 +7,46 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.21.0 · the family look
+
+- refers-to: styles/tokens.css and 55 feature sheets; ui/themes.ts; index.html (theme boot); ui/prefs.ts :: applyUiFontSize; ui/home.ts; ui/shell-opts.ts; styles/theater-wall.css; ui/dropdown.ts :: fill; ui/menu.ts :: PopupMenu.setItems, dispose; ui/paint-quick.ts :: menu
+- kind: decision
+- logged: v0.21.0 · 2026-11-22
+
+The reference is FormVis 2.8.1 `frontend/src/styles/tokens.css` and `ui/themes.ts`, compared by reading (the family's audit script was not available). Counts are greps over `src/styles` leaving out `tokens.css` and `light-mode.css`.
+
+**Counts.** Lines with a colour literal (`#hex`, `rgb()`, `hsl()`): 242 before, 0 after. Raw numeric `z-index`: 32 before, 0 after. `border-radius` in raw px off the radius scale: 90 before, 22 after; the 22 are 2 px or more from any token (14, 16, 20, 22, 26 px and six 1 px hairlines) and stay as they are until a design decision names a token for them.
+
+**Token values now equal FormVis's** for every name both files declare: `--text-muted` #8c8b8d to #717072; `--radius-xl` 18 to 12 px; `--fs-9` to `--fs-18` each one pixel smaller, so each equals its number (`applyUiFontSize` in `prefs.ts` scales from the same numbers); `--glass-bg` 99% to 82%. Added with FormVis's values: `--z-under`, `--z-local-2`, `--z-local-4`, `--z-local-5`, and the `:root[data-oled]` block. `themes.ts` had its own lighter `--text-muted` in 16 profiles; they are FormVis's values again, which is also what the boot table in `index.html` already held, so first paint and the loaded page now agree.
+
+**Names FormVis lacks, kept, and why.** `--dur-pop`, `--dur-dialog`, `--dur-fast`: the popover, dialog and scrim timings. `--glass-menu-bg`, `--glass-menu-filter`, `--glass-pop-border`: the popover and menu glass and its hairline. `--radius-2xl` (24: Stage, Timeline, dialogs), `--radius-pop` (18: popovers, menus, cards), `--radius-row` (12: rows and tabs). `--fs-body`, `--fs-title`, `--fs-ruler`: declared, read by nothing; candidates to remove. New here: `--glass-solid-bg` (99%; the log of FV-210 says dense glass was chosen so that panels over a white canvas read as one piece, so every panel that used `--glass-bg` for that now reads this), `--shadow-color` (black; shadows, scrims and darkening mixes are `color-mix` on it), and one token per content colour, each with the old literal's value: layer labels (`--label-*`), track highlights (`--fm-hl-*`, which were declared three times and are now declared once), guides and safe areas (`--guide-*`, `--safe-*`), the picker (`--picker-*`, `--hue-stops`), paper, ink, matte and checker colours for previews. Content colours are the same in every theme on purpose.
+
+**How a literal was replaced.** An exact token of the same role when there was one; what FormVis writes for the same rule; a white wash as `color-mix(in srgb, var(--text-primary) N%, transparent)` so that it turns dark on a light theme; black with alpha as a mix on `--shadow-color`.
+
+**`--radius-xl` rule by rule.** Stays `--radius-xl` and is now 12 as in FormVis: the welcome card, the Preferences rail and section cards. Rules that meant 18 moved to `--radius-pop` and look as before: the floating panels (sound effects, voice, media bin, bones, paint panels, crop bars, the tour card), the New Movie and export cards, the shortcuts layout, paint settings rows. Raw 12 px rules became `--radius-xl` with no visual change.
+
+**`z-index`.** Each raw number became a layer token that keeps every pairwise order inside its stacking context: -1 to `--z-under`; 2, 4 and 5 to `--z-local-*` where FormVis uses the same numbers; inside the colour panel, the brush library, the layers panel and the exposure sheet the small numbers were shifted up together onto `--z-local-2/4/5` and `--z-raised`, ties resolving by DOM order as before.
+
+**Georgia.** `.fm-tc-i` in `text-card.css` is the "I" on the Italic button, interface chrome and not a preview of the person's text, so it uses `--font-ui`, still italic.
+
+**What looks different in the default dark theme.** Muted text is darker; text set with `--fs-*` is one pixel smaller; the three `--radius-xl` surfaces are 12 px; four rules render glass at 82% (the navigator zoom strip, the two drag ghosts, and the Action menu's arrow, which now matches its card); status colours use the family's `--ok`, `--warn` and `--danger`; chips have a border in `--border-color` (they read undeclared `--border`, `--text` and `--accent` before, so the border fell back to the text colour); 1 px radius roundings (2 to 3, 5 to 4, 7 to 6, 9 to 8).
+
+**To look at on a light theme.** The faint grid and glow around the Stage frame (`stage-box2.css`) and the glow of the Home primary button are now mixes of the text and call-to-action colours, so they are dark on light where they were invisible white.
+
+**Left.** `panels.css` reads `--dyn-track`, which nothing sets (a rule from FormVis that never applies here). Colour words inside data-URI masks stay: they are image content.
+
+**The 29th profile and the accent.** `amoled` is FormVis's profile, in `themes.ts`, in the boot table and as `data-oled` on the root element before first paint (the boot comment said "same 14 ids"; it says 29). `applyTheme` now also removes a custom property the previous profile set and the new one does not, as FormVis's does. The default accent is `#857cf3`, the hue formai.studio, FormPortal and FormTray give this app, in `tokens.css`, `themes.ts` and the boot script, and as the fallback where a canvas reads the accent. Appearance generation 4: a saved choice keeps its theme, intensity and any accent the person picked; an accent that was only the default of its day (lavender, then orange) becomes the violet. Checked in Chrome: a generation-3 choice with the light theme and the orange default opens light, with the violet accent, at first paint with layout shift 0.
+
+**Home.** The Theater had two layouts: Gallery (a poster wall with the nav as a drawer) and Library (a standing nav column). The family's Home (FormVis `ui/home.ts`, FormDeck `ui/home.ts`) is a standing column with the brand at its top, sections with counts, Create, and Preferences and Help at its foot, every page built once and shown or hidden. Library is now the default and the column spans the full height with the brand (`.cv-home-brand`, which opens the same About menu as the wordmark) at its top; the top bar sits over the main area only. Gallery is still in Preferences, General, Theater, and a stored choice is kept. The five pages are five nodes that are only hidden and shown; switching them measured layout shift 0.
+
+**Preferences.** Already the family's node wire dialog (a floating rail of tabs outside the dialog's left edge, one SVG wire from the chosen tab to a port on the dialog, every panel a card in one scroller); checked against FormVis `ui/app-dialogs.ts` and `styles/dialogs.css` and left as it is. Every setting of the app is a panel there; no setting sits on a page of its own.
+
+**Three live rebuilds patched in place.**
+- `dropdown.ts` `fill` emptied the list and rebuilt every row on each open and each search keystroke. Rows are now kept in a map by option value (heads by group label) and reconciled against the select's options: reused when the option is still there, created only for new ones, removed only when gone, moved with `insertBefore` only where the order differs. Filtering toggles `hidden` (plus an inline `display: none`, since `.cv-dd-item` sets `display: flex`) and the state classes. No caller passes a search field today, so that path is correct by reading only.
+- `paint-quick.ts` `menu` rebuilt its four rows on every open. They are built once; each handler reads `this.last` when clicked.
+- `menu.ts` `PopupMenu.setItems` emptied the panel and rebuilt every row, separator and submenu when the items changed. It now matches command rows by id, submenus by label and separators by position, updates what is kept in place, and removes only what is gone (`dispose` also removes nested submenu panels, which leaked before). A kept submenu that is open stays open.
+- FormVis's `dropdown.ts` and `menu.ts` rebuild the same way; nothing was taken from them.
+
 ## v0.20.0 · the window key in the interface, and the catch blocks
 
 - refers-to: io/window-key.ts; main.ts; app/capability.ts :: showUnsupported, KEY_TAKEN; ui/pen-link.ts :: attach; io/recovery.ts :: hold; ui/perform-ui.ts; ui/paint-settings.ts; platform/ipad-memory.ts; vite.config.ts

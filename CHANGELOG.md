@@ -2,6 +2,26 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.21.0 · 2026-11-22
+
+FormMorpheus looks like the rest of the Form family, in its own violet.
+
+### New
+- A violet accent, FormMorpheus's own. An accent you picked yourself is kept; only the old default changes.
+- AMOLED Black joins the themes, 29 in all.
+- Home opens with a side column: the app's name, Movies, Recent, Start, Exports and Recently Deleted with their counts, the ways to start something new, and Preferences and Help at the foot. The poster wall is still there: Preferences, General, Theater layout, Gallery.
+
+### Improved
+- Colours, corner sizes and text sizes are the family's across the whole interface, so every theme recolours every part of it. Before, about 240 colours were fixed and ignored the theme.
+- Lists in menus and dropdowns update in place when their contents change, with nothing redrawn around them.
+
+### Changed
+- Text is one pixel smaller where it was one pixel larger than the family's, and muted text is a little darker.
+- The Italic button shows its "I" in the interface font.
+
+### Fixed
+- Chips in dialogs draw their border in the border colour. Before, three colour names they used did not exist.
+
 ## 0.20.0 · 2026-11-22
 
 Only the FormMorpheus window can talk to its engine, and a release build carries nothing it does not need.
