@@ -1,9 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The window shows the page the engine serves on 127.0.0.1, or the Vite dev server on localhost, both remote origins to Tauri, so the capability lists those addresses and every app command has an allow permission from build.rs.",
-  "windows": ["splash", "main"],
-  "remote": { "urls": ["http://127.0.0.1:*", "http://localhost:5194"] },
+  "description": "The permissions of the main window's page. This file grants them to no remote address: the shell reads the list and grants it at run time to the one origin the window was opened on (allow_page in src/main.rs), the engine's own http://127.0.0.1:<port> or the dev server.",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-request-user-attention",

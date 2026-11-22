@@ -174,11 +174,19 @@ fn linux_graphics() {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn origin_of(url: &str) -> String {
     let after = url.find("://").map_or(0, |i| i + 3);
     let end = url[after..].find('/').map_or(url.len(), |i| after + i);
     url[..end].to_string()
+}
+
+fn allow_page(handle: &tauri::AppHandle, origin: &str) -> bool {
+    let listed: serde_json::Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap_or_default();
+    let mut capability = tauri::ipc::CapabilityBuilder::new("engine-page").local(false).remote(origin.to_string()).window("main");
+    for permission in listed["permissions"].as_array().into_iter().flatten().filter_map(|entry| entry.as_str()) {
+        capability = capability.permission(permission);
+    }
+    handle.add_capability(capability).is_ok()
 }
 
 #[cfg(target_os = "linux")]
@@ -214,10 +222,13 @@ fn dev_url() -> Option<String> {
     }
 }
 
-fn build_main(handle: &tauri::AppHandle, url: &str) -> bool {
+fn build_main(handle: &tauri::AppHandle, url: &str, key_script: &str) -> bool {
     let Ok(parsed) = url.parse() else {
         return false;
     };
+    if !allow_page(handle, &origin_of(url)) {
+        return false;
+    }
     let place = window_state::load(handle);
     let (width, height) = if place.width > 0.0 {
         (place.width, place.height)
@@ -234,6 +245,7 @@ fn build_main(handle: &tauri::AppHandle, url: &str) -> bool {
     };
     let builder = WebviewWindowBuilder::new(handle, "main", WebviewUrl::External(parsed))
         .title(TITLE)
+        .initialization_script(key_script)
         .visible(reveal::BUILD_VISIBLE)
         .background_color(reveal::BACKGROUND)
         .inner_size(width, height)
@@ -267,6 +279,8 @@ fn engine_failed(handle: &tauri::AppHandle, failure: engine_start::Failure, tail
     if let Some(splash) = handle.get_webview_window("splash") {
         let _ = splash.hide();
     }
+    #[cfg(target_os = "linux")]
+    let text = text.replace('%', "%%");
     handle.dialog().message(text).title(engine_start::APP).kind(MessageDialogKind::Error).blocking_show();
     close_splash(handle);
     kill_backend(handle);
@@ -339,7 +353,7 @@ fn main() {
             let launch_args: Vec<String> = std::env::args().collect();
             open_paths(&handle, paths_from_args(&launch_args, None));
             if let Some(url) = dev_url() {
-                if !build_main(&handle, &url) {
+                if !build_main(&handle, &url, "") {
                     std::thread::spawn(move || engine_failed(&handle, engine_start::Failure::Window, &engine_start::Tail::default()));
                 }
                 return Ok(());
@@ -355,6 +369,7 @@ fn main() {
                 let mut engine = engine
                     .env("FORMMORPHEUS_PORT", "0")
                     .env("FORMMORPHEUS_PORT_PREFER", engine_start::PORT_PREFER)
+                    .env("FORMMORPHEUS_WINDOW_KEY_STDOUT", "1")
                     .env(engine_start::SHELL_ENV, std::process::id().to_string());
                 if let Some(dir) = &given {
                     engine = engine.env(engine_start::DATA_ENV, dir);
@@ -388,13 +403,23 @@ fn main() {
                     let _ = tx.send(Err(None)).await;
                 });
                 start_limit(&late, engine_start::Wait::Address.limit(), Some(engine_start::Wait::Address));
+                let key_pattern = regex::Regex::new(r"formmorpheus-window-key: ([A-Za-z0-9_-]{32,})").unwrap();
                 let mut port: Option<u16> = None;
+                let mut key: Option<String> = None;
+                let mut waiting = false;
                 let mut stopped = false;
                 let mut tail = engine_start::Tail::default();
                 let mut failure = engine_start::Failure::Stopped(None);
                 while let Some(step) = events.recv().await {
                     let text = match step {
-                        Ok(CommandEvent::Stdout(bytes)) | Ok(CommandEvent::Stderr(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+                        Ok(CommandEvent::Stdout(bytes)) => {
+                            let text = String::from_utf8_lossy(&bytes).into_owned();
+                            if key.is_none() {
+                                key = key_pattern.captures(&text).map(|found| found[1].to_string());
+                            }
+                            text
+                        }
+                        Ok(CommandEvent::Stderr(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
                         Ok(CommandEvent::Terminated(ended)) => {
                             failure = engine_start::Failure::Stopped(ended.code);
                             stopped = true;
@@ -404,6 +429,7 @@ fn main() {
                         Ok(_) => continue,
                         Err(None) => break,
                         Err(Some(_)) if stopped => break,
+                        Err(Some(engine_start::Wait::Address)) if port.is_some() => continue,
                         Err(Some(wait)) => {
                             failure = engine_start::Failure::TimedOut(wait);
                             break;
@@ -412,16 +438,24 @@ fn main() {
                     for line in text.lines() {
                         tail.push(line);
                     }
-                    port = pattern.captures(&text).and_then(|found| found[1].parse::<u16>().ok());
-                    if port.is_some() {
+                    if port.is_none() {
+                        port = pattern.captures(&text).and_then(|found| found[1].parse::<u16>().ok());
+                    }
+                    if port.is_some() && key.is_some() {
                         break;
                     }
+                    if port.is_some() && !waiting {
+                        waiting = true;
+                        start_limit(&late, engine_start::Wait::Key.limit(), Some(engine_start::Wait::Key));
+                    }
                 }
-                let Some(found) = port.filter(|_| !stopped) else {
+                let (Some(found), Some(key)) = (port.filter(|_| !stopped), key) else {
                     engine_failed(&handle, failure, &tail);
                     return;
                 };
-                if !build_main(&handle, &format!("http://127.0.0.1:{found}")) {
+                let origin = format!("http://127.0.0.1:{found}");
+                let key_script = format!("if (window.location.origin === {origin:?}) {{ window.__FORMMORPHEUS_WINDOW_KEY = {key:?}; }}");
+                if !build_main(&handle, &origin, &key_script) {
                     engine_failed(&handle, engine_start::Failure::Window, &engine_start::Tail::default());
                     return;
                 }
