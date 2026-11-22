@@ -7,6 +7,11 @@ Last updated: 2026-10-30 · reveal_folder for Show brush folder
 
 ---
 
+## v0.18.3 · Windows engine data
+
+- `../build_app.bat` froze the engine without `app/penlink_static`, which `../setup/freeze_backend` has carried since v0.15.0, so a Windows build had no Pen Link page. The `pyinstaller` line now carries `--add-data "%~dp0backend\app\penlink_static;app\penlink_static"` beside the `frontend_dist` entry (same destination as the script, spelled the way `build_app.bat` spells paths).
+- Compared the two freeze commands: the only other differences are macOS-only in `freeze_backend` (one-folder mode, code signing with the entitlements file, `FORMMORPHEUS_PYI_ARCH`). Neither passes `--hidden-import`; both collect the submodules of `app`, `uvicorn` and `keyring`.
+
 ## v0.18.0 · app icon
 
 - `icons/` regenerated with `frontend/node_modules/.bin/tauri icon ../assets/icon_src/formmorpheus-icon-1024.png -o ../src-tauri/icons` (run from `frontend/`): `icon.icns`, `icon.ico` (16 to 256), `icon.png` (512), `32x32.png`, `128x128.png`, `128x128@2x.png`. The CLI also writes `android/`, `ios/`, `Square*Logo.png`, `StoreLogo.png` and `64x64.png`; they were deleted because `tauri.conf.json` lists only the five files and the CLI's iOS set is not used (the iPad icon is made separately). macOS keeps the supplied margin and shadow (the macOS icon grid); Windows and Linux use the same art.
