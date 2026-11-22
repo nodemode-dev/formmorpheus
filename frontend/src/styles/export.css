@@ -10,7 +10,7 @@
    a result note takes that place instead. */
 .fm-ex-run[hidden] { display: grid; visibility: hidden; }
 .fm-ex-run[hidden]:has(~ .fm-ex-notes:not([hidden])) { display: none; }
-.fm-ex-tile { display: grid; justify-items: start; align-content: start; gap: var(--space-1); min-height: 112px; padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-xl); background: var(--surface-1); color: var(--text-primary); font: inherit; text-align: left; cursor: default; }
+.fm-ex-tile { display: grid; justify-items: start; align-content: start; gap: var(--space-1); min-height: 112px; padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-pop); background: var(--surface-1); color: var(--text-primary); font: inherit; text-align: left; cursor: default; }
 .fm-ex-tile:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--accent-line); }
 .fm-ex-tile:focus-visible { outline: none; border-color: var(--accent-color); }
 .fm-ex-tile:disabled { opacity: 0.5; }
@@ -56,7 +56,7 @@
 .fm-ex-pal .cv-input { flex: 1 1 0; min-width: 0; }
 .fm-ex-pick { width: 30px; height: 28px; padding: 0; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: transparent; }
 .fm-ex-chips { display: flex; flex-wrap: wrap; gap: 3px; max-height: 76px; overflow: auto; }
-.fm-ex-chip { width: 16px; height: 16px; border-radius: 3px; background: var(--c); border: 1px solid var(--line-2); }
+.fm-ex-chip { width: 16px; height: 16px; border-radius: var(--radius-xs); background: var(--c); border: 1px solid var(--line-2); }
 .fm-ex-chip[hidden] { display: none; }
 .fm-ex-chip:hover { outline: 2px solid var(--accent-color); }
 .fm-ex-adv.is-busy { opacity: 0.5; pointer-events: none; }

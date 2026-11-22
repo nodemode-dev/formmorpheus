@@ -95,7 +95,7 @@ export class CameraLane {
     c.clearRect(0, 0, w, h);
     const s = getComputedStyle(this.canvas);
     const v = (n: string, d: string): string => s.getPropertyValue(n).trim() || d;
-    const pal = { bar: v('--fm-key-bar', '#1e1e22'), row: v('--fm-key-row', '#1a1a1e'), accent: v('--accent-color', '#f97316'), text: v('--text-primary', '#f2f2f2'), onAccent: v('--text-on-accent', '#ffffff') };
+    const pal = { bar: v('--fm-key-bar', '#1e1e22'), row: v('--fm-key-row', '#1a1a1e'), accent: v('--accent-color', '#857cf3'), text: v('--text-primary', '#f2f2f2'), onAccent: v('--text-on-accent', '#ffffff') };
     const si = standIn(m);
     const x0 = ax.x(0), x1 = ax.x(m.duration);
     if (si) {

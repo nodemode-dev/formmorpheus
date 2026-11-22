@@ -4,9 +4,9 @@
   width: 260px;
   box-sizing: border-box;
   padding: var(--space-3) var(--space-2) var(--space-2);
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 18px;
+  border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
@@ -35,7 +35,7 @@
   display: flex; align-items: center; gap: var(--space-2);
   box-sizing: border-box; width: 100%; min-height: 38px;
   padding: var(--space-1) var(--space-3);
-  border: 0; border-radius: var(--radius-xl);
+  border: 0; border-radius: var(--radius-pop);
   background: var(--surface-raised); color: var(--text-primary);
   font: inherit; font-size: var(--fs-13); text-align: left; cursor: default;
 }
@@ -68,7 +68,7 @@
 
 .fm-ps-colorbar {
   position: relative; height: 24px; margin: 0 var(--space-3);
-  border-radius: var(--radius-pill); background: var(--c, #2f6bf0);
+  border-radius: var(--radius-pill); background: var(--c, var(--cursor-colour-default));
   box-shadow: inset 0 0 0 1px var(--glass-border);
 }
 .fm-ps-colorbar.is-disabled { opacity: 0.4; pointer-events: none; }

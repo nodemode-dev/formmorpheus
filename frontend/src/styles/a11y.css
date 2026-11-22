@@ -19,14 +19,14 @@
 }
 
 .fm-skip {
-  position: fixed; top: 8px; left: 8px; z-index: var(--z-debug); padding: 8px 14px; border-radius: 8px;
+  position: fixed; top: 8px; left: 8px; z-index: var(--z-debug); padding: 8px 14px; border-radius: var(--radius-md);
   border: 1px solid var(--accent-color); background: var(--bg-tertiary); color: var(--text-primary);
   font: inherit; transform: translateY(-200%); opacity: 0;
 }
 .fm-skip:focus { transform: none; opacity: 1; }
 
 /* Accent text on its own tint fails AA on the light themes (1.6 to 2.3); darken the text, keep the hue. */
-body.theme-light .fm-mode.is-active .icon { color: color-mix(in srgb, var(--accent-color) 45%, #000); }
+body.theme-light .fm-mode.is-active .icon { color: color-mix(in srgb, var(--accent-color) 45%, var(--shadow-color)); }
 body:not(.theme-light) .fm-mode.is-active .icon { color: var(--accent-color); }
 
 /* Reduced motion: the reveal, popover and menu transitions, and any looping animation stop; state still changes. */

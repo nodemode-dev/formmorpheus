@@ -1,16 +1,5 @@
 /* Timeline and Stage readouts: the look pass (v0.16.0). */
 
-/* The reference's highlight colors: coral (the red slot), amber (the orange slot), yellow, green, blue, purple, pink. */
-:root:root {
-  --fm-hl-red: #ff6b5b;
-  --fm-hl-orange: #ffb020;
-  --fm-hl-yellow: #f2d54a;
-  --fm-hl-green: #3fb985;
-  --fm-hl-blue: #4a7dff;
-  --fm-hl-purple: #9a5be0;
-  --fm-hl-pink: #f06aa8;
-}
-
 /* FV-220: the timecode reads light and large, tabular so it never jitters; undo and redo are bare glyphs. */
 .fm-timecode, .fm-tc-bar .fm-timecode { font: 300 20px/1.1 var(--font-sans, system-ui, sans-serif); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--text-primary) 70%, transparent); min-width: 148px; }
 .fm-stage-ubtn { width: 32px; height: 32px; border: 0; background: transparent; color: var(--text-primary); }
@@ -21,7 +10,7 @@
 /* FV-225: in Perform the pill keeps the accent and only the record dot is red. */
 .fm-key-pill.is-rec { background: var(--accent-color); }
 .fm-key-pill.is-rec:hover { background: var(--accent-color-hover, var(--accent-color)); }
-.fm-timeline.is-perform .fm-key-pill .fm-rec-core { fill: var(--fm-hl-red, #e5484d); }
+.fm-timeline.is-perform .fm-key-pill .fm-rec-core { fill: var(--fm-hl-red); }
 
 /* FV-235: the pause bars are accent while it plays. */
 .fm-play-btn .fm-play-off { color: var(--accent-color); display: inline-grid; }

@@ -261,7 +261,7 @@ export class PenSettingsPage {
     if (!g) return;
     const cs = getComputedStyle(this.pad);
     g.globalCompositeOperation = eraser ? 'destination-out' : 'source-over';
-    g.fillStyle = cs.getPropertyValue('--accent-color').trim() || '#f97316';
+    g.fillStyle = cs.getPropertyValue('--accent-color').trim() || '#857cf3';
     for (const s of list) {
       if (s.predicted) continue;
       const r = 0.8 + Math.max(0, s.pressure) * 10 * (eraser ? 1.6 : 1);
@@ -413,7 +413,7 @@ export class PenSettingsPage {
     const g = this.cctx;
     if (!g) return;
     const cs = getComputedStyle(this.curveCv), s = CURVE - PAD * 2, cur = penRuntime.effective();
-    const accent = cs.getPropertyValue('--accent-color').trim() || '#f97316';
+    const accent = cs.getPropertyValue('--accent-color').trim() || '#857cf3';
     const line = cs.getPropertyValue('--border-light').trim() || '#555';
     const muted = cs.getPropertyValue('--text-muted').trim() || '#888';
     const fill = cs.getPropertyValue('--text-primary').trim() || '#fff';

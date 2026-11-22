@@ -2,7 +2,7 @@
 .fm-th { position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; background: var(--bg-secondary); box-shadow: 1px 0 0 var(--line-1, var(--border-color)); z-index: var(--z-raised); }
 .fm-th[hidden] { display: none; }
 .fm-th-row { position: absolute; left: 0; top: 0; right: 0; display: flex; align-items: center; gap: 1px; padding: 0 3px 0 2px; box-sizing: border-box; color: var(--text-muted); font-size: var(--fs-11); will-change: transform; }
-.fm-th-row::before { content: ""; position: absolute; inset: 0 2px 0 1px; border-radius: 6px; background: var(--fm-lane, var(--bg-tertiary)); z-index: -1; }
+.fm-th-row::before { content: ""; position: absolute; inset: 0 2px 0 1px; border-radius: var(--radius); background: var(--fm-lane, var(--bg-tertiary)); z-index: var(--z-under); }
 .fm-th-row.is-selected::before { background: var(--fm-lane-alt, var(--bg-hover)); }
 .fm-th-row.is-dragging::before { box-shadow: inset 0 0 0 1px var(--accent-color); }
 .fm-th-row.is-hidden .fm-th-name { opacity: 0.45; text-decoration: line-through; }
@@ -10,12 +10,12 @@
 .fm-th-grip { display: grid; place-items: center; width: 14px; height: 100%; cursor: grab; opacity: 0.55; flex: none; touch-action: none; }
 .fm-th-grip:hover { opacity: 1; }
 .fm-th-name, .fm-th-input { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-weight: 500; cursor: default; }
-.fm-th-input { height: 20px; padding: 0 4px; border: 1px solid var(--accent-color); border-radius: 4px; background: var(--bg-primary); font: inherit; outline: none; }
+.fm-th-input { height: 20px; padding: 0 4px; border: 1px solid var(--accent-color); border-radius: var(--radius-sm); background: var(--bg-primary); font: inherit; outline: none; }
 .fm-th-input[hidden] { display: none; }
-.fm-th-b { display: grid; place-items: center; width: 20px; height: 22px; padding: 0; flex: none; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); font: 700 10px var(--font-sans, inherit); cursor: pointer; }
+.fm-th-b { display: grid; place-items: center; width: 20px; height: 22px; padding: 0; flex: none; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: 700 10px var(--font-sans, inherit); cursor: pointer; }
 .fm-th-b[hidden] { display: none; }
 .fm-th-b:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
-.fm-th-b.is-on { color: var(--text-on-accent, #fff); background: var(--accent-color); }
+.fm-th-b.is-on { color: var(--text-on-accent); background: var(--accent-color); }
 .fm-th-eye.is-on { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 14%, transparent); }
 .fm-th.is-slim .fm-th-grip, .fm-th.is-slim .fm-th-name, .fm-th.is-slim .fm-th-input, .fm-th.is-slim .fm-th-lock, .fm-th.is-slim .fm-th-mute, .fm-th.is-slim .fm-th-solo { display: none; }
 .fm-th.is-slim .fm-th-row { justify-content: center; padding: 0; }

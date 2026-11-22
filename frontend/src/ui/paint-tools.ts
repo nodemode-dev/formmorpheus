@@ -1106,7 +1106,7 @@ export class PaintTools {
 // ------------------------------------------------------------ helpers
 
 function accent(): string {
-  return getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#f97316';
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#857cf3';
 }
 
 function dot(ctx: CanvasRenderingContext2D, p: Point, r: number): void {

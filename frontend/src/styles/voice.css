@@ -8,9 +8,9 @@
   max-height: calc(100vh - var(--space-6));
   overflow-y: auto;
   padding: var(--space-3);
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
@@ -29,7 +29,7 @@
 .fm-vo-lab, .fm-snd-lab { color: var(--text-secondary); font-size: var(--fs-12); }
 .fm-vo-row .cv-input, .fm-snd-row .cv-input { width: 100%; }
 .fm-vo-split { display: grid; grid-template-columns: minmax(0, 1fr) 64px; gap: var(--space-2); }
-.fm-vo-meter { position: relative; height: 10px; margin: 0 0 var(--space-3); border-radius: 5px; background: var(--bg-input); overflow: hidden; border: 1px solid var(--border-light); }
+.fm-vo-meter { position: relative; height: 10px; margin: 0 0 var(--space-3); border-radius: var(--radius-sm); background: var(--bg-input); overflow: hidden; border: 1px solid var(--border-light); }
 .fm-vo-bar { position: absolute; inset: 0 auto 0 0; width: calc(var(--lv, 0) * 100%); background: linear-gradient(90deg, var(--accent-color), var(--accent-color) 70%, var(--danger-fill)); }
 .fm-vo-meter.is-clip { border-color: var(--danger-fill); }
 .fm-vo-chk { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--fs-12); }

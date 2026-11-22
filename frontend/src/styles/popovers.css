@@ -1,12 +1,4 @@
 :root {
-  --fm-hl-red: #e5484d;
-  --fm-hl-orange: #f76b15;
-  --fm-hl-yellow: #f5d90a;
-  --fm-hl-green: #30a46c;
-  --fm-hl-teal: #12a594;
-  --fm-hl-blue: #3e63dd;
-  --fm-hl-purple: #8e4ec6;
-  --fm-hl-pink: #d6409f;
   --fm-pop-row-h: 38px;
 }
 
@@ -192,7 +184,7 @@
 .fm-ms-btn:hover { background: var(--accent-color-hover); }
 
 .fm-nm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-3); }
-.fm-nm-card { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-xl); background: var(--surface-1); color: var(--text-primary); cursor: default; }
+.fm-nm-card { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-pop); background: var(--surface-1); color: var(--text-primary); cursor: default; }
 .fm-nm-card:hover { background: var(--surface-raised); }
 .fm-nm-card:focus-visible { outline: none; border-color: var(--accent-color); }
 .fm-nm-card.is-active { border-color: var(--accent-color); background: var(--accent-wash); }

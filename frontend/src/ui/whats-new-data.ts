@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.21.0', name: 'The family look, in violet',
+    additions: [
+      { title: 'A violet accent', text: 'FormMorpheus has its own accent color. An accent you picked yourself is kept.', command: 'settings' },
+      { title: 'A new Home', text: 'A side column lists your movies, exports and Recently Deleted with their counts, and Preferences sits at its foot.', command: 'home' },
+      { title: 'AMOLED Black', text: 'A pure black theme joins the others, 29 in all.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.20.0', name: 'Your library is the window\'s alone',
     additions: [
       { title: 'A key for the window', text: 'The engine answers only its own window, so no other program on the computer can ask it for your movies.', command: 'about' },

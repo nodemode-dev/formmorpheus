@@ -9,4 +9,4 @@
 .fm-kc-swatch[data-pick] { grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; }
 .fm-kc-pickbtn { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; width: 26px; height: 26px; border-radius: var(--radius-sm, 6px); border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
 .fm-kc-pickbtn:hover { border-color: var(--accent-color); color: var(--accent-color); }
-.fm-kc-pickbtn.is-on { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent, #fff); }
+.fm-kc-pickbtn.is-on { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent); }

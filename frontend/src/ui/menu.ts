@@ -59,35 +59,60 @@ export class PopupMenu {
     const key = JSON.stringify(items) + JSON.stringify(itemColors);
     if (key === this.key) return;
     this.key = key;
-    this.closeSub();
-    for (const s of this.subs) s.menu.panel.remove();
-    this.panel.replaceChildren();
-    this.rows = [];
-    this.subs = [];
-    this.seps = [];
+    const oldRows = this.rows.slice(), oldSubs = this.subs.slice(), oldSeps = this.seps.slice();
+    const take = <T>(list: T[], match: (x: T) => boolean): T | null => { const i = list.findIndex(match); return i < 0 ? null : list.splice(i, 1)[0]; };
+    const rows: typeof this.rows = [], subs: typeof this.subs = [], seps: HTMLElement[] = [], want: HTMLElement[] = [];
     for (const item of items) {
-      if (item === '-') { const sep = el<HTMLElement>('<div class="cv-menu-sep"></div>'); this.seps.push(sep); this.panel.appendChild(sep); continue; }
+      if (item === '-') { const sep = oldSeps.shift() ?? el<HTMLElement>('<div class="cv-menu-sep"></div>'); seps.push(sep); want.push(sep); continue; }
       if (isSub(item)) {
-        const node = el<HTMLButtonElement>(`<button class="cv-menu-item cv-menu-sub" role="menuitem" aria-haspopup="menu" type="button"><span class="cv-menu-check"></span><span class="cv-menu-label"></span><span class="cv-menu-keys">${icon('chevronRight', 12)}</span></button>`);
-        setText(q(node, '.cv-menu-label'), t(item.label));
-        const menu = new PopupMenu(this.commands, this);
-        menu.setItems(item.items);
-        node.addEventListener('pointerenter', () => this.showSub(menu, node));
-        node.addEventListener('click', () => this.showSub(menu, node));
-        this.subs.push({ sub: item, node, menu });
-        this.panel.appendChild(node);
+        let s = take(oldSubs, (x) => x.sub.label === item.label);
+        if (s) s.sub = item;
+        else {
+          const node = el<HTMLButtonElement>(`<button class="cv-menu-item cv-menu-sub" role="menuitem" aria-haspopup="menu" type="button"><span class="cv-menu-check"></span><span class="cv-menu-label"></span><span class="cv-menu-keys">${icon('chevronRight', 12)}</span></button>`);
+          const menu = new PopupMenu(this.commands, this);
+          node.addEventListener('pointerenter', () => this.showSub(menu, node));
+          node.addEventListener('click', () => this.showSub(menu, node));
+          s = { sub: item, node, menu };
+        }
+        setText(q(s.node, '.cv-menu-label'), t(item.label));
+        s.menu.setItems(item.items);
+        subs.push(s);
+        want.push(s.node);
         continue;
       }
       const cmd = this.commands.get(item);
       if (!cmd) continue;
-      const node = el<HTMLButtonElement>(`<button class="cv-menu-item" role="menuitem" type="button"><span class="cv-menu-check">${icon('check', 14)}</span><span class="cv-menu-label"></span><span class="cv-menu-keys"></span></button>`);
-      setText(q(node, '.cv-menu-keys'), this.commands.keyLabel(cmd));
-      if (itemColors[item]) node.dataset.color = itemColors[item];
-      node.addEventListener('pointerenter', () => this.closeSub());
-      node.addEventListener('click', () => { this.root().close(); this.commands.run(item); });
-      this.rows.push({ id: item, node });
-      this.panel.appendChild(node);
+      let r = take(oldRows, (x) => x.id === item);
+      if (!r) {
+        const node = el<HTMLButtonElement>(`<button class="cv-menu-item" role="menuitem" type="button"><span class="cv-menu-check">${icon('check', 14)}</span><span class="cv-menu-label"></span><span class="cv-menu-keys"></span></button>`);
+        node.addEventListener('pointerenter', () => this.closeSub());
+        node.addEventListener('click', () => { this.root().close(); this.commands.run(item); });
+        r = { id: item, node };
+      }
+      setText(q(r.node, '.cv-menu-keys'), this.commands.keyLabel(cmd));
+      const color = itemColors[item];
+      if (color && r.node.dataset.color !== color) r.node.dataset.color = color;
+      else if (!color && r.node.dataset.color !== undefined) delete r.node.dataset.color;
+      rows.push(r);
+      want.push(r.node);
     }
+    for (const s of oldSubs) { if (this.openSub === s.menu) this.closeSub(); s.menu.dispose(); s.node.remove(); }
+    for (const r of oldRows) r.node.remove();
+    for (const sep of oldSeps) sep.remove();
+    let cursor = this.panel.firstElementChild;
+    for (const n of want) { if (n !== cursor) this.panel.insertBefore(n, cursor); else cursor = cursor.nextElementSibling; }
+    this.rows = rows;
+    this.subs = subs;
+    this.seps = seps;
+    // rows added while the menu shows need their labels and states now, not at the next open
+    if (this.isOpen) this.refresh();
+  }
+
+  /** Closes this menu and takes its panel, and those of its submenus, out of the page. */
+  private dispose(): void {
+    this.close();
+    for (const s of this.subs) s.menu.dispose();
+    this.panel.remove();
   }
 
   private root(): PopupMenu { let m: PopupMenu = this; while (m.parent) m = m.parent; return m; }

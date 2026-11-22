@@ -313,7 +313,7 @@ export class SoundFxCard {
     c.lineTo(w, h / 2 + 0.5);
     c.stroke();
     if (!eq) return;
-    c.strokeStyle = st.getPropertyValue('--accent-color').trim() || '#f97316';
+    c.strokeStyle = st.getPropertyValue('--accent-color').trim() || '#857cf3';
     c.lineWidth = 1.6;
     c.beginPath();
     for (let x = 0; x <= w; x += 2) {

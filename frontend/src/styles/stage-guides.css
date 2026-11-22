@@ -3,23 +3,23 @@
 .fm-gd[hidden], .fm-gd [hidden] { display: none; }
 .fm-gd-grid { fill: none; stroke: var(--accent-color); stroke-width: 1; stroke-opacity: .38; }
 .fm-gd-grid.is-minor { stroke-opacity: .16; }
-.fm-gd-thirds { fill: none; stroke: #fff; stroke-width: 1; stroke-opacity: .55; stroke-dasharray: 4 4; }
+.fm-gd-thirds { fill: none; stroke: var(--guide-thirds); stroke-width: 1; stroke-opacity: .55; stroke-dasharray: 4 4; }
 /* Safe areas: a 2 px dashed outline with a dark edge so it reads on white and on black, a dimmed margin outside it, and a name */
-.fm-gd-safe { fill: none; stroke-width: 2; stroke-dasharray: 8 5; filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 1px rgba(0, 0, 0, .9)); }
-.fm-gd-safe.is-title { stroke: #3cc8ff; }
-.fm-gd-safe.is-action { stroke: #ffd21f; }
-.fm-gd-safe.is-vertical { stroke: #ff5fd0; }
-.fm-gd-safe.is-square { stroke: #9dff6a; }
-.fm-gd-safe.is-portrait { stroke: #ff9a3c; }
-.fm-gd-name.is-square { fill: #9dff6a; }
-.fm-gd-name.is-portrait { fill: #ff9a3c; }
-.fm-gd-shade { fill: rgba(0, 0, 0, .3); fill-rule: evenodd; stroke: none; }
-.fm-gd-shade.is-vertical { fill: rgba(255, 95, 208, .12); }
-.fm-gd-name { font: 600 11px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: .02em; paint-order: stroke; stroke: rgba(0, 0, 0, .85); stroke-width: 3px; stroke-linejoin: round; }
-.fm-gd-name.is-title { fill: #3cc8ff; }
-.fm-gd-name.is-action { fill: #ffd21f; }
-.fm-gd-name.is-vertical { fill: #ff5fd0; }
-.fm-gd-vis { stroke: #19c2c9; stroke-width: 1; stroke-opacity: .95; }
+.fm-gd-safe { fill: none; stroke-width: 2; stroke-dasharray: 8 5; filter: drop-shadow(0 0 1px color-mix(in srgb, var(--guide-edge) 90%, transparent)) drop-shadow(0 0 1px color-mix(in srgb, var(--guide-edge) 90%, transparent)); }
+.fm-gd-safe.is-title { stroke: var(--safe-title); }
+.fm-gd-safe.is-action { stroke: var(--safe-action); }
+.fm-gd-safe.is-vertical { stroke: var(--safe-vertical); }
+.fm-gd-safe.is-square { stroke: var(--safe-square); }
+.fm-gd-safe.is-portrait { stroke: var(--safe-portrait); }
+.fm-gd-name.is-square { fill: var(--safe-square); }
+.fm-gd-name.is-portrait { fill: var(--safe-portrait); }
+.fm-gd-shade { fill: color-mix(in srgb, var(--guide-edge) 30%, transparent); fill-rule: evenodd; stroke: none; }
+.fm-gd-shade.is-vertical { fill: color-mix(in srgb, var(--safe-vertical) 12%, transparent); }
+.fm-gd-name { font: 600 11px/1 var(--font-sans, system-ui, sans-serif); letter-spacing: .02em; paint-order: stroke; stroke: color-mix(in srgb, var(--guide-edge) 85%, transparent); stroke-width: 3px; stroke-linejoin: round; }
+.fm-gd-name.is-title { fill: var(--safe-title); }
+.fm-gd-name.is-action { fill: var(--safe-action); }
+.fm-gd-name.is-vertical { fill: var(--safe-vertical); }
+.fm-gd-vis { stroke: var(--guide-line); stroke-width: 1; stroke-opacity: .95; }
 .fm-gd-hit { stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: col-resize; }
 .fm-gd-line[data-axis="y"] .fm-gd-hit { cursor: row-resize; }
 .fm-gd-ruler { position: absolute; z-index: var(--z-selected); touch-action: none; }

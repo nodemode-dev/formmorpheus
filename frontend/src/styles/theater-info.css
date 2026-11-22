@@ -1,4 +1,4 @@
-.fm-tinfo { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); }
+.fm-tinfo { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--shadow-color) 45%, transparent); }
 .fm-tinfo[hidden] { display: none; }
 .fm-tinfo-card { width: min(420px, calc(100vw - 32px)); background: var(--bg-panel, var(--bg-secondary)); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: var(--space-4); color: var(--text-primary); }
 .fm-tinfo-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); font-weight: 600; }

@@ -1,7 +1,7 @@
 /* Draw & Paint view: a full-area canvas over the main screen with floating chrome. */
 
 .fm-paint {
-  --fm-paint-backdrop: color-mix(in srgb, var(--bg-primary) 82%, #000);
+  --fm-paint-backdrop: color-mix(in srgb, var(--bg-primary) 82%, var(--shadow-color));
   --fm-paint-bar-h: 52px;
   position: absolute;
   inset: 0;
@@ -53,7 +53,7 @@
   gap: var(--space-2);
   height: 36px;
   padding: 0 var(--space-3) 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--glass-border);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -94,7 +94,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -102,7 +102,7 @@
 .fm-paint-tool:hover { color: var(--text-primary); background: var(--surface-1); }
 .fm-paint-tool.is-active { color: var(--accent-color); }
 .fm-paint-colour {
-  --c: #111;
+  --c: var(--ink-default);
   width: 40px;
   height: 40px;
   border: 0;
@@ -124,7 +124,7 @@
 /* the secondary color as a second, smaller swatch at the corner */
 .fm-paint-colour > span::after {
   content: ''; position: absolute; right: -6px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%;
-  background: var(--c2, #fff); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--glass-border);
+  background: var(--c2, var(--ink-default-second)); box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px var(--glass-border);
 }
 
 /* size and opacity sidebar */
@@ -140,7 +140,7 @@
   align-items: center;
   gap: var(--space-3);
   border-radius: 16px;
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   backdrop-filter: blur(14px);
@@ -153,7 +153,7 @@
   position: relative;
   width: 24px;
   height: 128px;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: var(--surface-1);
   cursor: ns-resize;
   touch-action: none;
@@ -164,7 +164,7 @@
   right: 0;
   bottom: 0;
   height: calc(var(--v) * 100%);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--accent-color) 28%, transparent);
 }
 .fm-paint-slider-thumb {
@@ -173,9 +173,9 @@
   right: 3px;
   height: 14px;
   bottom: calc(var(--v) * (100% - 14px));
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-color) 40%, transparent);
 }
 /* the four remembered values of the brush: small ticks beside the track */
 .fm-paint-slot {
@@ -189,7 +189,7 @@
   border: 0;
   background: transparent;
   cursor: pointer;
-  z-index: 1;
+  z-index: var(--z-local-2);
 }
 .fm-paint-slot::after {
   content: '';
@@ -198,7 +198,7 @@
   top: 5px;
   width: 8px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   background: var(--text-secondary);
   transition: background 0.12s var(--ease-glass), transform 0.12s var(--ease-glass);
 }
@@ -210,7 +210,7 @@
   width: 34px;
   height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-primary);
   display: inline-flex;
@@ -229,7 +229,7 @@
   width: 140px;
   padding: var(--space-2);
   border-radius: 14px;
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   z-index: var(--z-menu);
@@ -243,7 +243,7 @@
   width: 28px;
   height: 24px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-1);
   color: var(--text-primary);
   display: inline-flex;
@@ -263,8 +263,8 @@
   top: calc(var(--fm-paint-bar-h) + var(--space-3));
   transform: translateX(-50%);
   padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--glass-bg);
+  border-radius: var(--radius-pill);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   font-size: 12px;
@@ -290,7 +290,7 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: 20px;
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   backdrop-filter: blur(14px);
@@ -306,7 +306,7 @@
   height: 30px;
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary);
   font-size: 12.5px;

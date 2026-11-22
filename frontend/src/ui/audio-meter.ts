@@ -80,7 +80,7 @@ export class MasterMeter {
     c.clearRect(0, 0, w, h);
     const st = getComputedStyle(this.canvas);
     const track = st.getPropertyValue('--fm-meter-track').trim() || 'rgba(128,128,128,.28)';
-    const accent = st.getPropertyValue('--accent-color').trim() || '#f97316';
+    const accent = st.getPropertyValue('--accent-color').trim() || '#857cf3';
     const bar = Math.max(2, Math.floor((h - 4) / 2));
     const lightW = 7, len = this.barW - lightW - 4;
     c.fillStyle = track;

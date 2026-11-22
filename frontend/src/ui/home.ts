@@ -54,6 +54,7 @@ export class HomeScreen {
       <button class="cv-home-plus" type="button" data-cmd="new" title="New Movie" aria-label="New Movie">${icon('plus', 18)}</button>
     </header>
     <nav class="cv-home-nav" aria-label="Home">
+      <button class="cv-home-brand" type="button" data-brand aria-haspopup="menu" title="About, What's New, Help">formmorpheus <span translate="no">by nodemode.ai</span></button>
       <button class="cv-home-nav-item cv-home-storage" type="button" data-storage>${icon('folder', 16)}<span>Library folder</span></button>
       <button class="cv-home-nav-item cv-home-storage" type="button" data-cloud>${icon('upload', 16)}<span>Cloud folder</span></button>
       ${navItem('projects', 'folder', 'Movies')}${navItem('recent', 'history', 'Recent')}${navItem('start', 'film', 'Start')}${navItem('outputs', 'download', 'Exports')}${navItem('trash', 'delete', 'Recently Deleted')}
@@ -116,8 +117,7 @@ export class HomeScreen {
       r.el.addEventListener('click', () => { brandPop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: cmd })); });
       brandPop.body.appendChild(r.el);
     }
-    const brandBtn = this.root.querySelector('[data-brand]') as HTMLElement;
-    brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
+    for (const brandBtn of Array.from(this.root.querySelectorAll<HTMLElement>('[data-brand]'))) brandBtn.addEventListener('click', () => brandPop.showFor(brandBtn, 'below'));
     this.wireTop();
     // G06: Gallery (the poster wall) or Library (the file manager look: a standing sidebar, filter and sort, kind and age)
     const applyLayout = (): void => { setClass(this.root, 'is-library', theaterLayout() === 'library'); };

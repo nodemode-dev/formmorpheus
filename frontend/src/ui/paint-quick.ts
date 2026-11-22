@@ -4,7 +4,7 @@
 // Also Shift+click: a straight line from where the last stroke ended.
 
 import { fitShape, forceShape, pressureAt, shapePoints, type Pt, type Shape, type ShapeKind } from '../paint/quickshape';
-import { Popover, popRow } from './popover';
+import { Popover, popRow, type PopRow } from './popover';
 import { toast } from './toast';
 import { t as tr } from './i18n';
 import { pencilHaptic } from '../platform/ipad-pencil';
@@ -39,6 +39,7 @@ export class QuickShapeCtl {
   private frame = 0;
   private last: { raw: Pt[]; prs: number[]; tpl: unknown } | null = null;
   private pop: Popover | null = null;
+  private readonly rows: Array<{ row: PopRow; name: string }> = [];
 
   constructor(private readonly host: QuickHost) {}
 
@@ -167,23 +168,28 @@ export class QuickShapeCtl {
 
   /** The type menu: the last snapped shape is redone as another kind (one undo step either way). */
   private menu(): void {
-    const l = this.last;
-    if (!l) return;
-    this.pop ??= new Popover('fm-qs-menu', 190);
-    const pop = this.pop;
-    while (pop.body.firstChild) pop.body.removeChild(pop.body.firstChild);
-    for (const [kind, name] of [['line', 'Line'], ['ellipse', 'Ellipse'], ['rectangle', 'Rectangle'], ['triangle', 'Triangle']] as const) {
-      const row = popRow(null, tr(name));
-      row.el.addEventListener('click', () => {
-        pop.hide();
-        const s = forceShape(l.raw, kind);
-        const pts = shapePoints(s, null, false);
-        this.host.replaceLast(pts, pts.map((_, i) => pressureAt(l.prs, pts.length > 1 ? i / (pts.length - 1) : 0)), l.tpl);
-        this.lastEnd = pts[pts.length - 1] ?? this.lastEnd;
-      });
-      pop.body.appendChild(row.el);
+    if (!this.last) return;
+    if (!this.pop) {
+      const pop = new Popover('fm-qs-menu', 190);
+      this.pop = pop;
+      for (const [kind, name] of [['line', 'Line'], ['ellipse', 'Ellipse'], ['rectangle', 'Rectangle'], ['triangle', 'Triangle']] as const) {
+        const row = popRow(null, tr(name));
+        this.rows.push({ row, name });
+        row.el.addEventListener('click', () => {
+          pop.hide();
+          const l = this.last;
+          if (!l) return;
+          const s = forceShape(l.raw, kind);
+          const pts = shapePoints(s, null, false);
+          this.host.replaceLast(pts, pts.map((_, i) => pressureAt(l.prs, pts.length > 1 ? i / (pts.length - 1) : 0)), l.tpl);
+          this.lastEnd = pts[pts.length - 1] ?? this.lastEnd;
+        });
+        pop.body.appendChild(row.el);
+      }
     }
-    pop.showAt(window.innerWidth / 2 - 95, 56);
+    // labels follow a language change made since the rows were built
+    for (const r of this.rows) r.row.setLabel(tr(r.name));
+    this.pop.showAt(window.innerWidth / 2 - 95, 56);
   }
 }
 

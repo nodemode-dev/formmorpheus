@@ -13,7 +13,7 @@ const STATUS_KEY = 'formmorpheus.hideStatusBar';
 const read = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
 
-let layout: TheaterLayout = read(LAYOUT_KEY) === 'library' ? 'library' : 'gallery';
+let layout: TheaterLayout = read(LAYOUT_KEY) === 'gallery' ? 'gallery' : 'library';
 
 export function theaterLayout(): TheaterLayout { return layout; }
 
