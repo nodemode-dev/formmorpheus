@@ -9,7 +9,7 @@ The form family's animation studio: a Stage over a Timeline, drawn frame by fram
 - `./formmorpheus desktop dev` and `./formmorpheus desktop build` (or `./build_app`) run and build the Tauri app.
 - `cd frontend && npx tsc --noEmit` is the typecheck; `npm run build` typechecks and builds.
 - Ports: interface http://localhost:5194 (Vite, `server.host` false, proxies `/api` to the engine), engine http://127.0.0.1:9494.
-- `FORMMORPHEUS_DATA_DIR`, `FORMMORPHEUS_LIBRARY_DIR`, `FORMMORPHEUS_PORT`, `FORMMORPHEUS_DEV_URL` and `FORMMORPHEUS_SAFE_GRAPHICS` (Linux desktop: 1 or 2) are the only configuration. No `.env` is read.
+- Configuration is environment variables only; no `.env` is read. For a person: `FORMMORPHEUS_DATA_DIR` (the data folder), `FORMMORPHEUS_LIBRARY_DIR` (the library), `FORMMORPHEUS_FFMPEG` (the ffmpeg to use), `FORMMORPHEUS_PORT` (the engine's port; 0 or unset picks one), `FORMMORPHEUS_PORTABLE` (1: data beside the app), `FORMMORPHEUS_SAFE_GRAPHICS` (Linux desktop: 1 or 2). For development and builds: `FORMMORPHEUS_DEV_URL` (a debug desktop build loads this page), `FORMMORPHEUS_BACKEND_PORT` (the engine port Vite proxies to), `FORMMORPHEUS_DIST` (the built interface the engine serves), `FORMMORPHEUS_NO_SHELL` (1: a frozen engine serves without its app), `FORMMORPHEUS_TARGET` and `FORMMORPHEUS_PYI_ARCH` (the freeze's target), `FORMMORPHEUS_ENGINE_WINDOWED` (0: a Windows engine with a console). Set by the app for its own engine, never by hand: `FORMMORPHEUS_DESKTOP`, `FORMMORPHEUS_PORT_PREFER`, `FORMMORPHEUS_SHELL_PID`, `FORMMORPHEUS_WINDOW_KEY_STDOUT`. The engine listens on 127.0.0.1 only; there is no variable to change that.
 
 ## Where things live
 

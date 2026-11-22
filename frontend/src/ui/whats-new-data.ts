@@ -5,6 +5,13 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.20.0', name: 'Your library is the window\'s alone',
+    additions: [
+      { title: 'A key for the window', text: 'The engine answers only its own window, so no other program on the computer can ask it for your movies.', command: 'about' },
+      { title: 'This computer only', text: 'The engine listens on this computer and nowhere else, always.', command: 'about' },
+    ],
+  },
+  {
     version: '0.19.0', name: 'A start that says what went wrong, and a clean close',
     additions: [
       { title: 'A start you can trust', text: 'If the app cannot start, a message says why and where the engine keeps its log.', command: 'about' },
