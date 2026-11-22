@@ -215,7 +215,7 @@ def describe(job: Job) -> dict:
 def capabilities() -> dict:
     info = ff.probe(refresh=True)
     if info is None:
-        why = "ffmpeg was not found. Install it, or set FORMMORPHEUS_FFMPEG to its path."
+        why = "ffmpeg was not found. Get it in Preferences, Video Tools."
         none = {"available": False, "encoder": "", "reason": why}
         return {"ffmpeg": False, "path": "", "version": "", "gpl": False, "aac": False, "mp3": False, "targets": {t: dict(none) for t in TARGETS}}
     prores_ok = info.has("prores_ks")

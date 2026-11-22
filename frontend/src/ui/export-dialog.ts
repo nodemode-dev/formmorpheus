@@ -23,6 +23,8 @@ import { ExportChip } from './export-chip';
 import { exportCard } from './export-cards';
 import { copyFrameToClipboard, exportSpriteSheet } from '../export/sprite-sheet';
 import { ProgressMeter, clock, planFor, type Reading } from '../export/progress-meter';
+import { platform } from '../platform';
+import { VIDEO_TOOLS_CHANGED, ffmpegChip } from './video-tools';
 
 const KEY = 'formmorpheus.export';
 
@@ -179,6 +181,7 @@ export class ExportDialog {
   private readonly colorStep = el<HTMLSelectElement>(`<select class="cv-input" aria-label="Number of colors">${COLOR_STEPS.map((n) => `<option value="${n}">${n}</option>`).join('')}<option value="custom">Custom</option></select>`);
   private readonly fontNote = el<HTMLElement>('<div class="fm-ex-fontnote" hidden><p></p><button class="cv-btn" type="button">Fix fonts</button></div>');
   private readonly alphaNote = el<HTMLElement>('<span class="cv-note fm-ex-alpha-note" hidden></span>');
+  private readonly noFfmpeg = ffmpegChip(() => this.close());
   private readonly framesTo = el<HTMLSelectElement>('<select class="cv-input" aria-label="Save frames as"><option value="folder">A folder of images</option><option value="zip">One zip file</option></select>');
   private readonly askWhere = el<HTMLInputElement>('<input type="checkbox" aria-label="Choose where to save">');
   private readonly exactFrames = el<HTMLInputElement>('<input type="checkbox" aria-label="One GIF frame for every movie frame">');
@@ -257,11 +260,14 @@ export class ExportDialog {
     q(this.fontNote, 'button').addEventListener('click', () => { void askMissingFonts().then(() => this.sync()); });
     body.append(seg, this.fontNote, this.shareBox, this.advBox, this.runBox, this.notes);
     this.cancel = this.dlg.button('Close', 'ghost', () => this.onCancel());
+    this.cancel.classList.add('fm-ex-cancel');
     this.run = this.dlg.button('Export', 'primary', () => {
       if (this.rangeBad()) { this.note([this.range().error], 'error'); return; }
       this.start(this.fromForm());
     });
     this.dlg.onClose = () => { save(this.state); this.preview.stop(); if (!this.busy) this.preview.release(); this.syncChip(); };
+    void jobCapabilities().then((caps) => { this.caps ??= caps; });
+    document.addEventListener(VIDEO_TOOLS_CHANGED, () => { void this.refreshEngine(); });
     body.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement) || e.target.type === 'checkbox' || this.state.tab !== 'advanced') return;
       e.preventDefault();
@@ -390,6 +396,7 @@ export class ExportDialog {
       exportCard('Video',
         this.row('kind', 'Format', this.kind),
         this.row('codec', 'Video codec', this.codec),
+        this.noFfmpeg,
         this.row('profile', 'ProRes type', this.profile),
         this.row('container', 'File container', this.container),
         this.row('picture', 'File container', this.picture),
@@ -638,6 +645,7 @@ export class ExportDialog {
     const still = s.kind === 'still' || s.kind === 'psd', gif = s.kind === 'gif' || s.kind === 'webp-anim' || s.kind === 'apng', video = s.kind === 'video', frames = s.kind === 'frames';
     const pic = s.kind === 'still' || frames;
     show('codec', video);
+    setHidden(this.noFfmpeg, !(video && platform.kind !== 'ipad' && this.caps?.ffmpeg === false));
     show('profile', video && s.codec === 'prores');
     show('container', video);
     show('picture', pic);

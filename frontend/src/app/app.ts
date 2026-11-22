@@ -687,6 +687,7 @@ export function startApp(): void {
   const shortcutsDialog = new ShortcutsDialog(commands, groupOfCommand, () => { prefs = updatePrefs({ shortcuts: commands.overrides() }); });
   const recoveryDialog = new RecoveryDialog(engine);
   document.addEventListener('fm:open-shortcuts', () => shortcutsDialog.show());
+  document.addEventListener('fm:open-settings', (e) => settings.show(String((e as CustomEvent<{ section?: string }>).detail?.section ?? '') || undefined));
   document.addEventListener('fm:command', (e) => { const id = (e as CustomEvent<string>).detail; if (typeof id === 'string') commands.run(id); });
   const mid = (): { x: number; y: number } => { const r = q(root, '.fm-stage-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
   commands.add(

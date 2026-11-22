@@ -1,0 +1,23 @@
+.fm-vt-found { display: grid; gap: var(--space-1); min-width: 0; }
+.fm-vt-found-title { color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; }
+.fm-vt-found-path { display: block; min-height: 1.45em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-11); user-select: text; -webkit-user-select: text; }
+.fm-vt-formats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
+.fm-vt-format { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--text-muted); font-size: var(--fs-12); }
+.fm-vt-format.is-on { color: var(--text-primary); }
+.fm-vt-mark { display: inline-flex; flex: none; width: 14px; height: 14px; }
+.fm-vt-format .fm-vt-yes, .fm-vt-format.is-on .fm-vt-no { display: none; }
+.fm-vt-format.is-on .fm-vt-yes { display: inline-flex; color: var(--ok); }
+.fm-vt-format:not(.is-known) .fm-vt-mark { visibility: hidden; }
+.fm-vt-sentence { color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-vt-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.fm-vt-btn { min-width: 11em; justify-content: center; }
+.fm-vt-progress { display: grid; gap: var(--space-2); }
+.fm-vt-progress .cv-run-bar { visibility: hidden; }
+.fm-vt-progress.is-running .cv-run-bar { visibility: visible; }
+.fm-vt-progress .cv-run-bar > i { width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 120ms linear; }
+.fm-vt-status { min-height: 1.45em; font-variant-numeric: tabular-nums; }
+
+.fm-vt-chip { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-1) var(--space-3); border: 1px solid var(--accent-line); border-radius: var(--radius-md); background: var(--accent-soft); color: var(--text-primary); font: inherit; font-size: var(--fs-11); line-height: 1.35; text-align: start; cursor: pointer; }
+.fm-vt-chip:hover { border-color: var(--accent-color); }
+.fm-vt-chip[hidden] { display: none; }
+.fm-vt-chip-icon { display: inline-flex; flex: none; color: var(--warn); }

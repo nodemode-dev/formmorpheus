@@ -11,6 +11,7 @@ from app.core.page_policy import PagePolicy
 from app import penlink
 from app.routers import save_to, fonts,audio_encode, proxy, brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
 from app.routers import agents, mcp, terminal
+from app.routers import video_tools
 from app.services import claude_code
 from app.services import terminal as terminals
 
@@ -33,6 +34,7 @@ app.include_router(jobs.router, prefix="/api/jobs")
 app.include_router(transcode.router, prefix="/api/transcode")
 app.include_router(audio_encode.router, prefix="/api/audio-encode")
 app.include_router(proxy.router, prefix="/api/proxy")
+app.include_router(video_tools.router, prefix="/api/video-tools")
 app.on_event("startup")(jobs.sweep)
 app.include_router(files.router, prefix="/api/files")
 app.include_router(trash.router, prefix="/api/trash")

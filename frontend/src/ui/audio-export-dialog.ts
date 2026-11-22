@@ -11,6 +11,7 @@ import { Dialog } from './dialogs';
 import { el, q, setDisabled, setHidden, setText } from './dom';
 import { t } from './i18n';
 import { toast } from './toast';
+import { MP3_MISSING, VIDEO_TOOLS_CHANGED, ffmpegChip } from './video-tools';
 
 const KEY = 'formmorpheus.audioExport';
 
@@ -45,6 +46,8 @@ export class AudioExportDialog {
   private readonly kbpsRow: HTMLElement;
   private readonly mp3Note = el<HTMLElement>('<div class="fm-ex-notes is-warn" hidden></div>');
   private mp3Ok: boolean | null = null;
+  private mp3Missing = false;
+  private readonly mp3Chip = ffmpegChip(() => this.dlg.close(), MP3_MISSING);
   private readonly note = el<HTMLElement>('<div class="fm-ex-notes" hidden></div>');
   private readonly bar = el<HTMLElement>('<div class="cv-run-bar" hidden><i></i></div>');
   private readonly rateRow: HTMLElement;
@@ -64,7 +67,7 @@ export class AudioExportDialog {
     form.append(row('Format', this.format), row('Files', this.scope), this.rateRow, this.kbpsRow, row('Normalize loudness', this.loud));
     this.loud.value = String(this.state.lufs);
     this.kbps.value = String(this.state.kbps);
-    this.dlg.body.append(form, this.mp3Note, this.bar, this.note);
+    this.dlg.body.append(form, this.mp3Note, this.mp3Chip, this.bar, this.note);
     if (!platform.features.mp3Export) {
       const off = el<HTMLElement>('<div class="fm-ex-notes"></div>');
       setText(off, t('MP3 is not offered on this device. Choose WAV, AAC or Opus.'));
@@ -88,19 +91,28 @@ export class AudioExportDialog {
     change();
     this.dlg.button('Close', 'ghost', () => this.dlg.close());
     this.go = this.dlg.button('Export', 'primary', () => { void this.run(); });
+    document.addEventListener(VIDEO_TOOLS_CHANGED, () => { void this.readMp3(); });
   }
 
   open(): void {
     if (!this.deps.engine.movie) { toast('Open or create a movie first.'); return; }
+    if (this.mp3Ok === null) { void this.readMp3().then(() => { if (this.deps.engine.movie && !this.dlg.isOpen) this.dlg.open(this.format); }); return; }
     this.dlg.open(this.format);
-    // the engine's ffmpeg decides whether MP3 can be made; asked each time the dialog opens
-    void jobCapabilities().then((c) => { this.mp3Ok = c?.ffmpeg === true && c.mp3 === true; this.paintMp3(); });
+    void this.readMp3();
+  }
+
+  private async readMp3(): Promise<void> {
+    const c = await jobCapabilities();
+    this.mp3Ok = c?.ffmpeg === true && c.mp3 === true;
+    this.mp3Missing = c !== null && !this.mp3Ok;
+    this.paintMp3();
   }
 
   /** Tells, in the dialog, that MP3 goes through the engine's ffmpeg, and when that is missing. */
   private paintMp3(): void {
     const on = this.state.format === 'mp3';
-    setHidden(this.mp3Note, !on);
+    setHidden(this.mp3Note, !on || this.mp3Missing);
+    setHidden(this.mp3Chip, !on || !this.mp3Missing);
     if (!on) return;
     setText(this.mp3Note, this.mp3Ok === false
       ? t('MP3 needs ffmpeg with the libmp3lame encoder, and this engine has none. Pick WAV, AAC or Opus, or install ffmpeg and reopen this dialog.')
