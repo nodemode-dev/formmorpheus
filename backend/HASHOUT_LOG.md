@@ -7,6 +7,11 @@ Last updated: 2026-10-30 · brush libraries as files, recovery presence over a W
 
 ---
 
+## v0.18.3 · installer Python
+
+- `oc_install` tried Python 3.14, then 3.13, then 3.12, so a runner that carries a newer Python built the venv, and with it the frozen engine (PyInstaller ships the interpreter it runs under), on a version CI never runs. CI (`.github/workflows/ci.yml`) and the stack line in `AGENTS.md` are 3.12, so the order is now 3.12, 3.13, 3.14, then `python3`; any of them still has to be 3.12 or newer. An existing `backend/venv` is still reused as it is.
+- Not changed: `../build_app` walks 3.13, 3.12 for its own check, but it only reads `tauri.conf.json` with that interpreter and prints its version; the engine is frozen from the venv.
+
 ## v0.17.2 · media fallbacks
 
 - `routers/audio_encode.py`: `POST /api/audio-encode/lossy?kind=opus-webm|opus-ogg|aac-m4a&kbps=` turns the window's WAV mixdown into Opus (WebM or OGG) or AAC (M4A) with the person's ffmpeg, for a web component with no `AudioEncoder`. Same shape and limits as the MP3 route; 503 with the install hint when the encoder is missing.
