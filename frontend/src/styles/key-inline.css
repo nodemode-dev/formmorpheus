@@ -11,7 +11,7 @@
   padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--bg-secondary);
-  box-shadow: inset 0 0 0 1px var(--accent-color), var(--shadow-menu, 0 6px 18px rgba(0, 0, 0, 0.35));
+  box-shadow: inset 0 0 0 1px var(--accent-color), 0 6px 18px color-mix(in srgb, var(--shadow-color) 35%, transparent);
   color: var(--text-primary);
   font-size: var(--fs-12);
 }

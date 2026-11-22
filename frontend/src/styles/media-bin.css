@@ -9,9 +9,9 @@
   width: 340px;
   max-width: calc(100vw - var(--space-4));
   max-height: min(560px, calc(100vh - 128px));
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);

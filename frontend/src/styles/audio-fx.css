@@ -10,9 +10,9 @@
   max-height: calc(100vh - 220px - var(--space-4) - 56px);
   overflow-y: auto;
   padding: var(--space-3);
-  background: var(--glass-bg);
+  background: var(--glass-solid-bg);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-pop);
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
@@ -36,7 +36,7 @@
 .fm-sfx-lab { color: var(--text-secondary); font-size: var(--fs-12); }
 .fm-sfx-row input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-color); }
 .fm-sfx-row .cv-input { grid-column: 2 / 4; width: 100%; }
-.fm-sfx-grbar { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--surface-field); overflow: hidden; }
+.fm-sfx-grbar { position: relative; display: block; height: 6px; border-radius: var(--radius-xs); background: var(--surface-field); overflow: hidden; }
 .fm-sfx-grbar i { position: absolute; inset: 0; background: var(--accent-color); transform-origin: left center; transform: scaleX(0); transition: transform 60ms linear; }
 .fm-sfx-val { color: var(--text-secondary); font-size: var(--fs-12); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fm-sfx-curve { display: block; width: 100%; height: 54px; margin-bottom: var(--space-1); border-radius: var(--radius-sm); background: var(--bg-input); border: 1px solid var(--border-light); }

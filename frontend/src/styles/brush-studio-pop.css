@@ -6,7 +6,7 @@
 .fm-bs-adv.is-on { color: var(--accent-color); }
 .fm-bs-adv:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
 
-.fm-bs-pop { position: absolute; z-index: 5; width: 272px; max-height: calc(100% - 72px); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--bg-secondary); box-shadow: var(--shadow-lg); color: var(--text-secondary); }
+.fm-bs-pop { position: absolute; z-index: var(--z-local-5); width: 272px; max-height: calc(100% - 72px); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line-2); border-radius: var(--radius-lg); background: var(--bg-secondary); box-shadow: var(--shadow-lg); color: var(--text-secondary); }
 .fm-bs-pop[hidden], .fm-bs-pop-sec[hidden], .fm-bs-pop .fm-bc[hidden], .fm-bp-curves .fm-bc[hidden], .fm-bs-pop-angle[hidden] { display: none; }
 .fm-bs-pop-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .fm-bs-pop-title { color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; }

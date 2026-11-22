@@ -1,11 +1,11 @@
 /* Phase 26 row builder: previous-color half, Passthrough filter hint, sample-all-layers option. */
 .fm-col-chip.is-primary { cursor: default; }
-.fm-col-chip.is-primary.has-prev { cursor: pointer; background: linear-gradient(90deg, var(--p, var(--c)) 50%, var(--c, #888) 50%); }
+.fm-col-chip.is-primary.has-prev { cursor: pointer; background: linear-gradient(90deg, var(--p, var(--c)) 50%, var(--c, var(--swatch-unset)) 50%); }
 .fm-col-chip.is-primary.has-prev:hover, .fm-col-chip.is-primary.has-prev:focus-visible { border-color: var(--accent-color); outline: none; }
 
-.fm-ka-hint { display: flex; align-items: center; gap: var(--space-2); margin: 2px var(--space-2) var(--space-2); padding: var(--space-2); border-radius: var(--radius); background: var(--surface-2, rgba(255, 255, 255, 0.06)); color: var(--text-secondary); font-size: var(--fs-11); line-height: 1.35; }
+.fm-ka-hint { display: flex; align-items: center; gap: var(--space-2); margin: 2px var(--space-2) var(--space-2); padding: var(--space-2); border-radius: var(--radius); background: var(--surface-2); color: var(--text-secondary); font-size: var(--fs-11); line-height: 1.35; }
 .fm-ka-hint[hidden] { display: none; }
 .fm-ka-hint-text { flex: 1; }
-.fm-ka-hint-fix { flex: none; padding: 3px var(--space-3); border: 0; border-radius: var(--radius); background: var(--accent-color); color: #fff; font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer; }
+.fm-ka-hint-fix { flex: none; padding: 3px var(--space-3); border: 0; border-radius: var(--radius); background: var(--accent-color); color: var(--text-on-accent); font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer; }
 
 .cv-home-storage { margin-bottom: var(--space-1); }

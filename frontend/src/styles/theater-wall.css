@@ -1,7 +1,7 @@
 /* The Theater as a poster wall (G06, G17, FV-208): a gradient ground, a top bar with the wordmark and the sidebar
    toggle on the left and Select and "+" on the right, 16:9 borderless posters with the name centred under each,
    the sidebar closed until asked for, and the filter, sort and view controls in a quiet row behind the "..." button. */
-.cv-home { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 82%, #000) 0%, color-mix(in srgb, var(--surface-0) 70%, var(--surface-2)) 100%); }
+.cv-home { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); background: linear-gradient(180deg, color-mix(in srgb, var(--surface-0) 82%, var(--shadow-color)) 0%, color-mix(in srgb, var(--surface-0) 70%, var(--surface-2)) 100%); }
 .cv-home-top { grid-row: 1; display: flex; align-items: center; gap: var(--space-3); height: 64px; padding: 0 28px; }
 .cv-home-top-gap { flex: 1; }
 .cv-home-toggle { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--text-secondary); cursor: pointer; }
@@ -32,7 +32,7 @@
 .cv-home .cv-hf:not(.is-list) .cv-hf-items { grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 36px 28px; padding-top: 20px; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-open { padding: 0; border: 0; background: transparent; border-radius: 0; gap: 10px; transition: transform 0.14s ease; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-open:hover { border: 0; transform: translateY(-2px); }
-.cv-home .cv-hf:not(.is-list) .cv-hf-thumb { aspect-ratio: 16 / 9; margin: 0; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--surface-0) 60%, var(--surface-2)); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.38), 0 1px 3px rgba(0, 0, 0, 0.4); }
+.cv-home .cv-hf:not(.is-list) .cv-hf-thumb { aspect-ratio: 16 / 9; margin: 0; border: 0; border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-0) 60%, var(--surface-2)); box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow-color) 38%, transparent), 0 1px 3px color-mix(in srgb, var(--shadow-color) 40%, transparent); }
 .cv-home .cv-hf:not(.is-list) .cv-hf-open:hover .cv-hf-thumb { border: 0; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-open:focus-visible .cv-hf-thumb { outline: 2px solid var(--accent-color); outline-offset: 3px; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-name { padding: 0 4px; color: var(--text-secondary); font-size: 13px; font-weight: 600; text-align: center; }
@@ -41,14 +41,14 @@
 .cv-home .cv-hf-item.is-selected .cv-hf-open { border: 0; }
 /* Select mode (FV-237): an empty ring (white edge, dark glass inside, so it reads on a white poster and a dark one),
    filled with the accent and a white check once chosen; unchosen posters dim a little so the chosen ones stand out */
-.cv-home .cv-hf:not(.is-list) .cv-hf-check { top: 10px; inset-inline-start: 10px; width: 24px; height: 24px; border: 2px solid #fff; background: rgba(20, 20, 20, 0.45); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35); transition: background 0.12s ease, transform 0.12s ease; }
+.cv-home .cv-hf:not(.is-list) .cv-hf-check { top: 10px; inset-inline-start: 10px; width: 24px; height: 24px; border: 2px solid var(--cv-handle-fill); background: var(--poster-check-fill); box-shadow: 0 0 0 1px color-mix(in srgb, var(--shadow-color) 35%, transparent), 0 2px 6px color-mix(in srgb, var(--shadow-color) 35%, transparent); transition: background 0.12s ease, transform 0.12s ease; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-check .icon { width: 14px !important; height: 14px !important; }
-.cv-home .cv-hf-item.is-selected .cv-hf-check { background: var(--accent-color); border-color: #fff; color: #fff; transform: scale(1.06); }
+.cv-home .cv-hf-item.is-selected .cv-hf-check { background: var(--accent-color); border-color: var(--cv-handle-fill); color: var(--text-on-accent); transform: scale(1.06); }
 .cv-home .cv-hf.is-selecting .cv-hf-item:not(.is-selected) .cv-hf-thumb { filter: brightness(0.82); }
 /* the hover delete only shows after the pointer rests on a card (G21): a quick pass over a card never offers it */
 .cv-home .cv-hf:not(.is-list) .cv-hf-remove { top: 8px; inset-inline-end: 8px; transition: opacity 0.12s 0.45s; }
 .cv-home .cv-hf:not(.is-list) .cv-hf-item:not(:hover) .cv-hf-remove { transition-delay: 0s; }
-.cv-home .cv-hf-item.is-stack .cv-hf-thumb::after { border-radius: 8px; }
+.cv-home .cv-hf-item.is-stack .cv-hf-thumb::after { border-radius: var(--radius-md); }
 
 /* Library layout (G06, a choice in Preferences > Interface): the sidebar stands, the tools row shows, cards are 4:3
    with kind and age, as a file manager lays them out. Same markup; only these rules differ from the wall. */

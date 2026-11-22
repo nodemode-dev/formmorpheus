@@ -1,9 +1,9 @@
 /* G16: rounded movie frame, 1 px outline; the corner pieces repaint the Stage colour outside a 12 px arc. */
 .fm-frame-ring {
   --fr: 12px;
-  position: absolute; left: 0; top: 0; box-sizing: border-box; pointer-events: none; z-index: 1;
+  position: absolute; left: 0; top: 0; box-sizing: border-box; pointer-events: none; z-index: var(--z-local-2);
   border-radius: var(--fr);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-primary) 35%, transparent);
   background:
     radial-gradient(circle at var(--fr) var(--fr), transparent calc(var(--fr) - 0.5px), var(--fm-stage-bg) var(--fr)) top left / var(--fr) var(--fr) no-repeat,
     radial-gradient(circle at 0 var(--fr), transparent calc(var(--fr) - 0.5px), var(--fm-stage-bg) var(--fr)) top right / var(--fr) var(--fr) no-repeat,

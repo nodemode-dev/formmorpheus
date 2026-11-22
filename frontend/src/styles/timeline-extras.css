@@ -1,15 +1,15 @@
 .fm-timeline.is-resizing, .fm-timeline.is-resizing * { cursor: row-resize !important; }
 .fm-transport { cursor: grab; touch-action: pan-x; }
 .fm-transport button, .fm-transport canvas { cursor: pointer; }
-.fm-freetrim { position: fixed; top: var(--fm-freetrim-top, 44px); left: 50%; transform: translateX(-50%); height: 24px; padding: 0 var(--space-3); display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--fm-hl-red, #e5484d); color: #fff; font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.02em; pointer-events: none; z-index: var(--z-raised); box-shadow: var(--shadow-md); }
+.fm-freetrim { position: fixed; top: var(--fm-freetrim-top, 44px); left: 50%; transform: translateX(-50%); height: 24px; padding: 0 var(--space-3); display: inline-flex; align-items: center; border-radius: var(--radius-pill); background: var(--fm-hl-red); color: var(--text-on-accent); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.02em; pointer-events: none; z-index: var(--z-raised); box-shadow: var(--shadow-md); }
 .fm-freetrim[hidden] { display: none; }
 .fm-round-btn.is-reload { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 
 /* Action menu: properties the content already animates */
 .fm-ka-krow { display: flex; align-items: stretch; }
 .fm-ka-krow .fm-pop-row { flex: 1; min-width: 0; }
-.fm-ka-krow.is-keyed .fm-pop-row { background: color-mix(in srgb, var(--fm-hl-red, #e5484d) 16%, transparent); }
-.fm-ka-krow.is-keyed .fm-pop-label { color: var(--fm-hl-red, #e5484d); }
-.fm-ka-clear { margin: 2px 4px 2px 0; padding: 0 var(--space-3); border: 0; border-radius: var(--radius); background: var(--fm-hl-red, #e5484d); color: #fff; font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer; }
+.fm-ka-krow.is-keyed .fm-pop-row { background: color-mix(in srgb, var(--fm-hl-red) 16%, transparent); }
+.fm-ka-krow.is-keyed .fm-pop-label { color: var(--fm-hl-red); }
+.fm-ka-clear { margin: 2px 4px 2px 0; padding: 0 var(--space-3); border: 0; border-radius: var(--radius); background: var(--fm-hl-red); color: var(--text-on-accent); font: inherit; font-size: var(--fs-11); font-weight: 600; cursor: pointer; }
 .fm-ka-clear[hidden] { display: none; }
-.fm-ka-btn.is-keyed { background: color-mix(in srgb, var(--fm-hl-red, #e5484d) 22%, var(--surface-raised)); }
+.fm-ka-btn.is-keyed { background: color-mix(in srgb, var(--fm-hl-red) 22%, var(--surface-raised)); }

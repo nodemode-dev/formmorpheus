@@ -8,9 +8,9 @@
 .cv-th-act:disabled { opacity: 0.4; cursor: default; }
 .cv-th-act.is-danger:hover:not(:disabled) { color: var(--danger, var(--accent-color)); }
 
-.cv-hf-check { display: none; position: absolute; top: 12px; inset-inline-start: 12px; width: 20px; height: 20px; place-items: center; border: 1px solid var(--line-2, var(--line-1)); border-radius: 50%; background: var(--surface-1); color: transparent; pointer-events: none; z-index: 1; }
+.cv-hf-check { display: none; position: absolute; top: 12px; inset-inline-start: 12px; width: 20px; height: 20px; place-items: center; border: 1px solid var(--line-2, var(--line-1)); border-radius: 50%; background: var(--surface-1); color: transparent; pointer-events: none; z-index: var(--z-local-2); }
 .cv-hf.is-selecting .cv-hf-check { display: grid; }
-.cv-hf-item.is-selected .cv-hf-check { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent, #fff); }
+.cv-hf-item.is-selected .cv-hf-check { background: var(--accent-color); border-color: var(--accent-color); color: var(--text-on-accent); }
 .cv-hf-item.is-selected .cv-hf-open { border-color: var(--accent-color); }
 .cv-hf.is-selecting .cv-hf-remove { display: none; }
 .cv-hf-item.is-dragging { opacity: 0.45; }
@@ -19,13 +19,13 @@
 /* Carrying: a pile of cards follows the pointer (built once, moved by transform). */
 .cv-th-ghost { position: fixed; top: 0; left: 0; z-index: var(--z-home-preview); width: 0; height: 0; pointer-events: none; will-change: transform; }
 .cv-th-ghost[hidden] { display: none; }
-.cv-th-gc { position: absolute; left: -48px; top: -36px; width: 96px; height: 72px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line-2, var(--line-1)); border-radius: var(--radius-md); background: var(--surface-2); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); }
+.cv-th-gc { position: absolute; left: -48px; top: -36px; width: 96px; height: 72px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line-2, var(--line-1)); border-radius: var(--radius-md); background: var(--surface-2); box-shadow: 0 8px 22px color-mix(in srgb, var(--shadow-color) 50%, transparent); }
 .cv-th-gc[hidden], .cv-th-gc > img[hidden], .cv-th-gn[hidden] { display: none; }
 .cv-th-gc > img { width: 100%; height: 100%; object-fit: contain; }
 .cv-th-gc:nth-child(1) { transform: rotate(-6deg) translate(-8px, 6px); }
 .cv-th-gc:nth-child(2) { transform: rotate(5deg) translate(6px, 3px); }
 .cv-th-gc:nth-child(3) { transform: rotate(-1deg); }
-.cv-th-gn { position: absolute; left: 30px; top: -48px; min-width: 22px; height: 22px; padding: 0 6px; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--accent-color); color: var(--text-on-accent, #fff); font-size: 11px; font-weight: 600; }
+.cv-th-gn { position: absolute; left: 30px; top: -48px; min-width: 22px; height: 22px; padding: 0 6px; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--accent-color); color: var(--text-on-accent); font-size: 11px; font-weight: 600; }
 body.cv-th-carrying, body.cv-th-carrying * { user-select: none; cursor: grabbing; }
 .cv-hf-items.is-drop-end { box-shadow: inset 0 -3px 0 0 var(--accent-color); }
 .cv-hf-item.is-entering .cv-hf-thumb, .cv-th-back.is-entering { animation: cv-th-enter 650ms ease-out forwards; }
