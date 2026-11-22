@@ -95,11 +95,15 @@ case "$os" in
       command -v dpkg >/dev/null 2>&1 || fm_die "the AppImage carries GStreamer plug-ins: set GSTREAMER_PLUGINS_DIR to a folder of LGPL plug-ins (core, base, good, gl) on a system without dpkg"
       gst="$(mktemp -d)"
       for p in libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-gl; do
-        dpkg -L "$p" 2>/dev/null | grep '/gstreamer-1\.0/libgst[^/]*\.so$' | while read -r f; do cp "$f" "$gst/"; done
+        case "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)" in
+          *" ok installed") ;;
+          *) fm_say "AppImage: $p is not installed, so its plug-ins stay out"; continue ;;
+        esac
+        for f in $(dpkg -L "$p" | grep '/gstreamer-1\.0/libgst[^/]*\.so$' || true); do cp "$f" "$gst/"; done
       done
       [ -n "$(ls -A "$gst")" ] || fm_die "no GStreamer plug-ins found: install gstreamer1.0-plugins-base and gstreamer1.0-plugins-good"
       export GSTREAMER_PLUGINS_DIR="$gst"
-      fm_say "AppImage: GStreamer core, base, good and gl plug-ins only ($(ls "$gst" | wc -l) files, LGPL-2.1-or-later); GSTREAMER_PLUGINS_DIR chooses another set"
+      fm_say "AppImage: LGPL GStreamer plug-ins only, from the core, base, good and gl sets that are installed ($(ls "$gst" | wc -l) files, LGPL-2.1-or-later); GSTREAMER_PLUGINS_DIR chooses another set"
     fi ;;
 esac
 args+=(--bundles "$bundles")
