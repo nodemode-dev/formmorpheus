@@ -1,15 +1,7 @@
 // Web addresses the Help Center points to, opened in the system browser (never inside the app window).
 
-const SITE = 'https://github.com/nodemode-ai/formmorpheus';
-
-/** The handbook, the community and the tutorial videos. One place, so a project site can replace them later. */
-export const HELP_LINKS = {
-  handbook: `${SITE}/wiki`,
-  community: `${SITE}/discussions`,
-  tutorials: `${SITE}/wiki/Getting-Started`,
-  education: `${SITE}/wiki/Home`,
-  ideas: `${SITE}/issues`,
-} as const;
+/** The app's page on the family site: the one web address Help opens. The handbook is the manual bundled in the app. */
+export const SITE_URL = 'https://formai.studio/formmorpheus/';
 
 export function openExternal(url: string): void {
   let ok = false;

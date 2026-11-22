@@ -4,7 +4,7 @@ import { el, q, setClass, setHidden, setText } from './dom';
 import { HelpView } from './help-view';
 import { icon } from './icons';
 import { t } from './i18n';
-import { HELP_LINKS, openExternal } from './external-link';
+import { SITE_URL, openExternal } from './external-link';
 import { toast } from './toast';
 import { tutorialsDone, type TutorialCoach } from './tutorials';
 
@@ -134,14 +134,12 @@ export class HelpCenter extends Dialog {
     );
     p.appendChild(row);
     p.appendChild(this.head('On the web'));
-    p.appendChild(this.lead('The handbook, the community and the tutorial videos open in your web browser.'));
+    p.appendChild(this.lead('The manual is inside the app and needs no connection. The FormMorpheus page opens in your web browser.'));
     const web = el('<div class="fm-hc-links"></div>');
     web.append(
-      this.btn('Handbook on the web', () => openExternal(HELP_LINKS.handbook)),
-      this.btn('Community', () => openExternal(HELP_LINKS.community)),
-      this.btn('Video tutorials', () => openExternal(HELP_LINKS.tutorials)),
-      this.btn('Education and learning', () => openExternal(HELP_LINKS.education)),
-      this.btn('Idea board', () => openExternal(HELP_LINKS.ideas)),
+      this.btn('Manual', () => this.pick('manual')),
+      this.btn('Send an idea', () => this.pick('idea')),
+      this.btn('FormMorpheus on the web', () => openExternal(SITE_URL)),
     );
     p.appendChild(web);
   }
