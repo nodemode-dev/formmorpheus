@@ -32,7 +32,7 @@ if defined FORMMORPHEUS_TARGET set TRIPLE=%FORMMORPHEUS_TARGET%
 pushd backend
 if exist build\pyinstaller rmdir /s /q build\pyinstaller
 if exist dist-engine rmdir /s /q dist-engine
-pyinstaller --noconfirm --clean --onefile --name formmorpheus-engine --distpath dist-engine --workpath build\pyinstaller --specpath build\pyinstaller --add-data "%~dp0frontend\dist;frontend_dist" --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring formmorpheus_engine.py >> "%LOG%" 2>&1
+pyinstaller --noconfirm --clean --onefile --name formmorpheus-engine --distpath dist-engine --workpath build\pyinstaller --specpath build\pyinstaller --add-data "%~dp0frontend\dist;frontend_dist" --add-data "%~dp0backend\app\penlink_static;app\penlink_static" --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring formmorpheus_engine.py >> "%LOG%" 2>&1
 if errorlevel 1 (popd & call :die freezing the engine failed & exit /b 1)
 popd
 if not exist src-tauri\binaries mkdir src-tauri\binaries
