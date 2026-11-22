@@ -55,8 +55,12 @@ Everything is set through environment variables in the shell; no `.env` file is 
 | `FORMMORPHEUS_PORTABLE` | `1` keeps the data beside the app |
 | `FORMMORPHEUS_SAFE_GRAPHICS` | Linux desktop: `1` or `2` for graphics drivers that draw wrongly |
 | `FORMMORPHEUS_DEV_URL` | a debug desktop build loads this page instead of the engine's |
-| `FORMMORPHEUS_BACKEND_PORT` | the engine port the Vite server proxies `/api` to |
+| `FORMMORPHEUS_BACKEND_PORT` | the engine port the Vite server proxies `/api` and `/mcp` to |
 | `FORMMORPHEUS_NO_SHELL` | `1` lets a frozen engine serve the page in a browser without the app |
+| `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN`, `FORMMORPHEUS_ANTIGRAVITY_BIN` | the path of that agent program, when it is installed but not found |
+| `FORMMORPHEUS_AGENT_DIR` | the folder the agent tabs work in (default `Agent` in the data folder) |
+| `FORMMORPHEUS_MCP_URL` | where `./formmorpheus mcp` finds the engine's `/mcp` |
+| `FORMMORPHEUS_MCP_AUTOSTART` | `0` stops `./formmorpheus mcp` from starting an engine when none answers |
 
 The engine listens on 127.0.0.1 only. `CLAUDE.md` lists the build variables and the ones the app sets for its own engine.
 

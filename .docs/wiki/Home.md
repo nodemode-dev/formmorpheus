@@ -6,6 +6,7 @@ The animation studio of the form family: a Stage over a Timeline, drawn frame by
 
 - **Use it**: [[Getting-Started]] gets the app running; the user manual is `docs/MANUAL.md` in the repo and the Help window in the app (F1).
 - **How it is built**: [[Architecture]] maps the parts. [[Engine]], [[Paint-Core]] and [[Media-and-Export]] go into each one. [[Desktop]] covers the Tauri shell and the bundles.
+- **Use it with an agent**: [[Agents]] covers the MCP server, the Outside agents choice and the terminal panel.
 - **Change it**: [[Contributing]] has the rules.
 
 ## What it does

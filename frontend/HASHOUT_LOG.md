@@ -7,6 +7,26 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.22.0 · the shared dock and the window side of agents
+
+- refers-to: dock/ (shared module, MANIFEST.json); dock-adapter.ts; app/agent-bridge.ts :: startAgentBridge; app/app.ts (dock creation, commands, bridge start); ui/settings-dialog.ts :: Agents panel, loadAgents; index.html (dock boot, four stylesheet links); styles/dock-tokens.css, terminal.css, dock-host.css; styles/onboarding.css (.fm-tour-ring, .fm-tour-card); styles/shell.css :: .cv-st-dims; ui/status.ts :: syncDims; vite.config.ts (/mcp proxy); package.json (@xterm/xterm 6.0.0, @xterm/addon-fit 0.11.0)
+- kind: decision
+- logged: v0.22.0 · 2026-11-22
+
+**The module is not ours to edit.** `dock/` is the family's dock, version 2.2.1, copied whole from FormVis (FormDeck's copy is identical) and checked by `./formmorpheus agents sync --check` against its `MANIFEST.json`. Everything FormMorpheus-specific is in `dock-adapter.ts`: the words (app name, noun, example), three sentences replaced (`empty`, `tourChatBody`, `tourPanelBody`, since FormMorpheus has no chat pane), placement, the terminal and agent routes, consent, the stored choice. xterm 6.0.0 and its fit add-on are the versions FormDeck and FormVis pin.
+
+**No flash when the dock opens or at first paint.** An inline script in `index.html` runs before any stylesheet and writes `data-ft-dock`, its side and size, and `--ft-dock-size` onto the root from `localStorage['formmorpheus.dock']`, with the module's own limits (height 140 px to 70% of the window, default 280; width 460 to the smaller of 60% and the window minus 440; the right side only from 900 px). The module computes the same numbers when it mounts, so nothing moves. `.cv-app.fm-app` has four fixed rows and two columns; the dock is mounted once before the status bar while `#app` is still hidden. Opening, closing, moving and resizing change only those root attributes and variables. While the dock is open the Theater ends above it and notices move up out of its way.
+
+**Keys.** The dock opens on Mod+` only: FormDeck's Mod+J is Movie Settings here. `Shift+Mod+~` sits beside ``Shift+Mod+` `` because the app names a key from `e.key`, and Shift+` arrives as ~ on a US keyboard. Seen in Chrome: every letter, digit, punctuation, Space, Delete, Backspace, arrows, Home, Tab, Escape and Enter typed in a shell tab reach the shell with a movie open, and focus stays in the terminal. The other capture listeners were read, not each tried.
+
+**The window bridge** (`app/agent-bridge.ts`). It long-polls `/api/mcp/bridge/next` for as long as the page lives, waiting 3 seconds after an error. A `consent` item goes to the dock's consent box through `outsideAgents.show`; the answer goes to `/api/agents/consent/{id}`, not to the bridge. `export_movie` opens the named movie when another one is in front (refused while an export runs), commits an open Draw and Paint session, then exports with the Export dialog's own paths: an engine job for ProRes, HEVC and H.264, otherwise the routed export, written to Exports under the asked name. The job shows in the status bar and Jobs list and can be cancelled there. `import_file` reads the bytes from `bridge/file/{id}`, places them with the importer as a drop on the Timeline (at the asked frame and on the named track when given), and saves. Only one agent request runs at a time; a second is answered at once with a sentence to try again.
+
+**The stored choice lives in the engine.** The adapter reads `GET /api/agents` and writes `POST /api/agents/choice`; nothing about agents is kept in local storage. Questions still waiting are shown again after a reload from `GET /api/agents/consent`.
+
+**Preferences, Agents.** Outside agents (Ask, Allowed, Blocked), the MCP address built from the page's own port (the Vite server now proxies `/mcp` as well as `/api`, so the address is right from source too), the standard input and output command, and Open the Terminal Panel. The panel is left out on iPad, where there is no dock.
+
+**Two layout jumps found while checking agent work, both fixed.** The first-run tour's ring and card moved with `left` and `top`, which counts as a layout shift; they move with `transform` now. The status bar's movie size field grew with its text, so the hint beside it slid right when a movie opened without a click (an agent's export); the field has a fixed share of the bar now, clipped with an ellipsis and the full text as its tooltip.
+
 ## v0.21.0 · the family look
 
 - refers-to: styles/tokens.css and 55 feature sheets; ui/themes.ts; index.html (theme boot); ui/prefs.ts :: applyUiFontSize; ui/home.ts; ui/shell-opts.ts; styles/theater-wall.css; ui/dropdown.ts :: fill; ui/menu.ts :: PopupMenu.setItems, dispose; ui/paint-quick.ts :: menu
