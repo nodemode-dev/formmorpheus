@@ -90,8 +90,11 @@ def serve() -> int:
 
     import uvicorn
 
+    from app.core import window_key
     from app.main import app as fastapi_app
 
+    if window_key.stdout_mode():
+        print(window_key.LINE + window_key.KEY, flush=True)
     port = free_port()
     os.environ["FORMMORPHEUS_PORT"] = str(port)
     server = uvicorn.Server(uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="info", timeout_graceful_shutdown=3))

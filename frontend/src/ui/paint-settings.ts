@@ -104,7 +104,7 @@ export function loadPaintPrefs(): PaintPrefs {
 }
 
 export function savePaintPrefs(p: PaintPrefs): void {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* ignore */ }
+  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* storage blocked: the settings last this session */ }
 }
 
 /** Monotone cubic (Fritsch-Carlson) through the points, clamped 0..1. */

@@ -7,6 +7,7 @@ pub const SHELL_ENV: &str = "FORMMORPHEUS_SHELL_PID";
 pub const DATA_ENV: &str = "FORMMORPHEUS_DATA_DIR";
 pub const PORT_PREFER: &str = "9496";
 pub const ADDRESS_WAIT: Duration = Duration::from_secs(90);
+pub const KEY_WAIT: Duration = Duration::from_secs(10);
 pub const EXIT_WAIT: Duration = Duration::from_secs(1);
 pub const BUSY_CODE: i32 = 2;
 const DATA_NAME: &str = "formmorpheus";
@@ -19,18 +20,21 @@ const LINE_CHARS: usize = 300;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Wait {
     Address,
+    Key,
 }
 
 impl Wait {
     pub fn limit(self) -> Duration {
         match self {
             Wait::Address => ADDRESS_WAIT,
+            Wait::Key => KEY_WAIT,
         }
     }
 
     pub fn what(self) -> &'static str {
         match self {
             Wait::Address => "its engine to say which address it serves on",
+            Wait::Key => "its engine to hand over the key for the window",
         }
     }
 }

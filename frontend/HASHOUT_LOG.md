@@ -7,6 +7,17 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.20.0 · the window key in the interface, and the catch blocks
+
+- refers-to: io/window-key.ts; main.ts; app/capability.ts :: showUnsupported, KEY_TAKEN; ui/pen-link.ts :: attach; io/recovery.ts :: hold; ui/perform-ui.ts; ui/paint-settings.ts; platform/ipad-memory.ts; vite.config.ts
+- kind: decision
+- logged: v0.20.0 · 2026-11-22
+
+- **The key.** `io/window-key.ts` is FormDeck's module with this app's names. `loadWindowKey` runs before anything else in `main.ts`: it takes the key the desktop shell left on `window` (and deletes it from there), else one kept in `sessionStorage` that still works, else claims one from `POST /api/window/key`. With a key it wraps `window.fetch` once so that every same-origin request under `/api/` carries the header; nothing else in the interface had to change, because every engine call already goes through `fetch` on the main thread (checked: no `src` or `href` points at `/api`, and no worker calls it). The two sockets build their address with `socketUrl`, which asks for a one-use ticket first. On iPad the claim gets a 404 from the native engine and the interface runs without a key, as before.
+- **A second tab says why.** From source the engine gives its key once. A second tab would have loaded and then failed every call with 403. `keyTaken` asks the open `GET /api/window/key`, and `main.ts` shows one message in the existing cannot-start box ("FormMorpheus is already open in another window") in place of starting the app. `showUnsupported` gained a title and a switch for the system-requirements line. Two new sentences have no translation yet.
+- **Catch blocks.** The audit counted 54 silent catches. By grep at this commit there are 0 empty ones, 195 whose body is a comment giving the reason, and 81 that return a fallback. The reasons fall into: storage blocked or full, so the choice lasts the session (about 60); a pointer capture, URL or handle already released (about 30); an answer that is not JSON, so the status text is used (9); the engine not answering, where the caller already shows that (about 10); and one-off fallbacks each named in place. Four said only "ignore": the two storage writes in `perform-ui.ts` and `paint-settings.ts` now say what they are, and the two listener loops in `ipad-memory.ts` now report the failing listener with `console.warn` and carry on, since a listener that throws is a fault worth seeing.
+- **No source maps** in a production build (`sourcemap: false`).
+
 ## v0.19.0 · the reveal hands over the page's colour
 
 - refers-to: ui/dom.ts :: revealApp; public/splash.html

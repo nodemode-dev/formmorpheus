@@ -44,7 +44,21 @@ formmorpheus.bat
 
 ## Configuration
 
-`FORMMORPHEUS_DATA_DIR`, `FORMMORPHEUS_LIBRARY_DIR` and `FORMMORPHEUS_PORT` are set in the shell. `FORMMORPHEUS_DEV_URL` is for debug desktop builds. No `.env` file is read.
+Everything is set through environment variables in the shell; no `.env` file is read.
+
+| Variable | What it does |
+|---|---|
+| `FORMMORPHEUS_DATA_DIR` | the folder for the library, settings, exports and logs |
+| `FORMMORPHEUS_LIBRARY_DIR` | the movie library alone, when it should live elsewhere |
+| `FORMMORPHEUS_FFMPEG` | the ffmpeg program to use for ProRes, HEVC and MP3 |
+| `FORMMORPHEUS_PORT` | the engine's port (9494 from source; the desktop app picks its own) |
+| `FORMMORPHEUS_PORTABLE` | `1` keeps the data beside the app |
+| `FORMMORPHEUS_SAFE_GRAPHICS` | Linux desktop: `1` or `2` for graphics drivers that draw wrongly |
+| `FORMMORPHEUS_DEV_URL` | a debug desktop build loads this page instead of the engine's |
+| `FORMMORPHEUS_BACKEND_PORT` | the engine port the Vite server proxies `/api` to |
+| `FORMMORPHEUS_NO_SHELL` | `1` lets a frozen engine serve the page in a browser without the app |
+
+The engine listens on 127.0.0.1 only. `CLAUDE.md` lists the build variables and the ones the app sets for its own engine.
 
 ## First movie
 

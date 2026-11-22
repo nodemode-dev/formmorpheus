@@ -2,6 +2,29 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.20.0 · 2026-11-22
+
+Only the FormMorpheus window can talk to its engine, and a release build carries nothing it does not need.
+
+### Improved
+- Your library is the window's alone: the engine answers only requests that carry a key it made for this launch and gave to its own window. Before, another program on the same computer could ask the engine for your movies.
+- The engine listens on this computer only, always. The setting that could open it to the network is gone.
+- The page the window shows can load code, pictures and sound only from the app itself.
+- macOS: the installer asks for macOS 13 or later, which the app has needed since 0.17. Before, it installed on macOS 11 and 12 and then could not start.
+
+### Changed
+- From source, the page opens in one browser tab at a time. A second tab says that FormMorpheus is already open.
+- `FORMMORPHEUS_HOST` is no longer read.
+
+### Fixed
+- Linux: a message about the engine shows web addresses as they are. Before, parts of them came out as digits.
+
+### Under the hood
+- Release builds have no web inspector and no source maps.
+- The desktop window's permissions are granted to the engine's own address only.
+- Two background clean-up jobs write their errors to the engine's log.
+- `CLAUDE.md` and the wiki list every configuration variable.
+
 ## 0.19.0 · 2026-11-22
 
 FormMorpheus starts and closes dependably on every system: when something goes wrong at the start it says what, and nothing is left running after you close it.

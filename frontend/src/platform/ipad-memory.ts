@@ -294,7 +294,7 @@ class Memory {
   private broadcastTier(reason: TrimReason): void {
     for (const key of this.watchers.keys()) this.fire(key, this.get(key), reason);
     this.firePressure(reason === 'warning' ? 'warning' : reason === 'kill' ? 'kill' : 'tier');
-    for (const fn of this.changeListeners) { try { fn(); } catch { /* ignore */ } }
+    for (const fn of this.changeListeners) { try { fn(); } catch (e) { console.warn('formmorpheus: a memory listener failed', e); } }
   }
 
   private fire(key: BudgetKey, limit: number, reason: TrimReason): void {
@@ -304,7 +304,7 @@ class Memory {
   }
 
   private firePressure(level: 'warning' | 'tier' | 'kill'): void {
-    for (const fn of [...this.pressure]) { try { fn(level); } catch { /* ignore */ } }
+    for (const fn of [...this.pressure]) { try { fn(level); } catch (e) { console.warn('formmorpheus: a memory pressure listener failed', e); } }
   }
 
   private settleKill(v: boolean): void {
