@@ -7,6 +7,14 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.19.0 · the reveal hands over the page's colour
+
+- refers-to: ui/dom.ts :: revealApp; public/splash.html
+- kind: explainer
+- logged: v0.19.0 · 2026-11-22
+
+`revealApp` told the shell `app_ready` one frame after `app-ready` was set on the body. It now waits for the fonts (at most 1.5 seconds, so a font that never loads cannot hold the window back), then one frame, and passes the body's computed background colour as `bg`. The shell paints the native window with it before showing it, so a light theme opens on a light frame (FormDeck's `revealApp` does the same). In a browser nothing changes: the function returns before any of this when there is no Tauri. The splash's bar gained `role="progressbar"` and a label, as FormVis's and FormDeck's have.
+
 ## v0.18.4 · Help links and installs from the lock file
 
 - refers-to: ui/external-link.ts :: SITE_URL; ui/help-center.ts :: buildStart; ui/help-setup.ts :: setupHelpCenter; app/app.ts (Help menu); oc_install, oc_install.bat

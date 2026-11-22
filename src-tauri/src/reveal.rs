@@ -16,9 +16,7 @@ pub fn mark_launch() {
     let _ = LAUNCH.set(Instant::now());
 }
 
-/// Built visible off macOS so the hidden-window frame throttling cannot stall the page's first paint; the splash is
-/// always on top (tauri.conf.json), so the empty main window waits behind it until `show_main`.
-pub const BUILD_VISIBLE: bool = !cfg!(target_os = "macos");
+pub const BUILD_VISIBLE: bool = !cfg!(any(target_os = "macos", target_os = "linux"));
 
 pub fn conceal<R: Runtime>(window: &WebviewWindow<R>) {
     if !BUILD_VISIBLE {
@@ -33,7 +31,10 @@ pub fn conceal<R: Runtime>(window: &WebviewWindow<R>) {
 }
 
 #[tauri::command(async)]
-pub fn app_ready<R: Runtime>(app: tauri::AppHandle<R>) {
+pub fn app_ready<R: Runtime>(app: tauri::AppHandle<R>, bg: Option<[u8; 3]>) {
+    if let (Some([r, g, b]), Some(main)) = (bg, app.get_webview_window("main")) {
+        let _ = main.set_background_color(Some(tauri::window::Color(r, g, b, 255)));
+    }
     show_main(&app);
 }
 
@@ -72,7 +73,19 @@ fn set_seen<R: Runtime>(window: &WebviewWindow<R>, seen: bool) {
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn set_seen<R: Runtime>(window: &WebviewWindow<R>, seen: bool) {
+    let target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        use gtk::prelude::WidgetExt;
+        if let Ok(gtk_window) = target.gtk_window() {
+            gtk_window.realize();
+            gtk_window.set_opacity(if seen { 1.0 } else { 0.0 });
+        }
+    });
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn set_seen<R: Runtime>(_window: &WebviewWindow<R>, _seen: bool) {}
 
 #[cfg(target_os = "macos")]
