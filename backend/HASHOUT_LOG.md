@@ -7,6 +7,17 @@ Last updated: 2026-10-30 · brush libraries as files, recovery presence over a W
 
 ---
 
+## v0.18.4 · ffmpeg on a Mac, and every package pinned
+
+- refers-to: app/services/ffmpeg.py :: find_ffmpeg, MAC_INSTALL_DIRS; requirements.txt; requirements_desktop.txt; oc_install
+- kind: decision
+- logged: v0.18.4 · 2026-11-22
+
+**ffmpeg from Finder.** A Mac app opened from Finder or the Dock gets the system PATH only, so `shutil.which("ffmpeg")` missed a Homebrew or MacPorts ffmpeg and ProRes, HEVC, MP3 and the proxy routes reported no ffmpeg. The search order is now: `FORMMORPHEUS_FFMPEG`, a binary beside the frozen engine, the PATH, and then on macOS only `/opt/homebrew/bin` (Homebrew on Apple silicon), `/usr/local/bin` (Homebrew on Intel) and `/opt/local/bin` (MacPorts). The PATH stays ahead of the three folders so a person who put a particular ffmpeg first in a terminal still gets that one; the folders only answer when the PATH has none. Not run on a Mac from here: `TEST_PLAN.md` has the Finder step.
+**Pins.** `requirements.txt` named only fastapi and uvicorn[standard], so starlette, pydantic and the uvicorn extras floated to whatever was newest on the day of the build. It now lists every package the two resolve to on Python 3.12 (19 lines after the two top lines, taken from `pip freeze` in a fresh venv on Linux, then checked for Windows and both Mac architectures with pip's platform resolver). Two lines carry markers copied from uvicorn's own metadata: `uvloop` is not installed on Windows and `colorama` only there. `requirements_desktop.txt` is pinned the same way: PyInstaller's `macholib` on macOS, `pefile` and `pywin32-ctypes` on Windows; `pefile` is 2023.2.7 because PyInstaller 6.16.0 excludes 2024.8.26. No hashes: pip's hash mode needs a hash for every wheel of every platform, pip itself included, and none of the Windows or Mac ones could be confirmed by installing here.
+**requirements_macos.txt removed** (`git rm`). It was byte-identical to `requirements.txt` and nothing on macOS needs another list, so `oc_install` installs `requirements.txt` on every system. If a Mac-only pin is ever needed, a marker line in `requirements.txt` does it.
+**To move a pin:** change the top line, make a fresh venv, `pip install -r` the two top lines alone, copy `pip freeze` back by hand, keep the marker lines.
+
 ## v0.18.3 · installer Python
 
 - `oc_install` tried Python 3.14, then 3.13, then 3.12, so a runner that carries a newer Python built the venv, and with it the frozen engine (PyInstaller ships the interpreter it runs under), on a version CI never runs. CI (`.github/workflows/ci.yml`) and the stack line in `AGENTS.md` are 3.12, so the order is now 3.12, 3.13, 3.14, then `python3`; any of them still has to be 3.12 or newer. An existing `backend/venv` is still reused as it is.
