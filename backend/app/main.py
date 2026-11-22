@@ -1,18 +1,25 @@
 import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.core import config, partsweep
+from app.core import config, partsweep, window_key
 from app.core.guard import GuardMiddleware
+from app.core.page_policy import PagePolicy
 from app import penlink
 from app.routers import save_to, fonts,audio_encode, proxy, brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
 
+log = logging.getLogger("formmorpheus")
+
 app = FastAPI(title=config.APP_NAME, version=config.VERSION)
+app.add_middleware(PagePolicy)
+app.add_middleware(window_key.WindowKeyGuard)
 app.add_middleware(CORSMiddleware, allow_origins=config.window_origins(), allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(GuardMiddleware)   # added last, so it runs first on every request
 
+app.include_router(window_key.router)
 app.include_router(system.router, prefix="/api")
 app.include_router(library.router, prefix="/api/library")
 app.include_router(exports.router, prefix="/api/exports")
@@ -46,7 +53,7 @@ async def _part_sweep_loop() -> None:
         try:
             await asyncio.to_thread(partsweep.sweep)
         except Exception:
-            pass
+            log.exception("the hourly sweep of leftover part files failed; it runs again in an hour")
         await asyncio.sleep(3600)
 
 

@@ -6,6 +6,7 @@ formmorpheus never ships a GPL ffmpeg: libx265 is GPL, and a user-installed ffmp
 an ordinary use of that program, so nothing here links to or bundles it.
 """
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -162,7 +163,7 @@ async def sweep_loop() -> None:
         try:
             await asyncio.to_thread(sweep_abandoned)
         except Exception:
-            pass
+            logging.getLogger("formmorpheus").exception("the sweep of abandoned export jobs failed; it runs again later")
 
 
 def rate_text(fps: float) -> str:
