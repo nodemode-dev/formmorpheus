@@ -53,10 +53,12 @@
 /* Library layout (G06, a choice in Preferences > Interface): the sidebar stands, the tools row shows, cards are 4:3
    with kind and age, as a file manager lays them out. Same markup; only these rules differ from the wall. */
 .cv-home.is-library { grid-template-columns: 232px minmax(0, 1fr); background: var(--group-head); }
-.cv-home.is-library .cv-home-top { grid-column: 1 / -1; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--line-0); }
+.cv-home.is-library .cv-home-top { grid-column: 2; grid-row: 1; height: 52px; padding: 0 20px; border-bottom: 1px solid var(--line-0); }
 .cv-home.is-library .cv-home-top .cv-home-toggle[data-toggle] { display: none; }
-.cv-home.is-library .cv-home-word { font-size: 20px; }
-.cv-home.is-library .cv-home-nav { position: static; grid-row: 2; grid-column: 1; width: auto; transform: none; visibility: visible; box-shadow: none; transition: none; }
+.cv-home.is-library .cv-home-word { display: none; }
+.cv-home:not(.is-library) .cv-home-brand { display: none; }
+.cv-home-brand { white-space: nowrap; }
+.cv-home.is-library .cv-home-nav { position: static; grid-row: 1 / -1; grid-column: 1; width: auto; transform: none; visibility: visible; box-shadow: none; transition: none; }
 .cv-home.is-library .cv-home-main { grid-row: 2; grid-column: 2; padding: 24px 32px 56px; }
 .cv-home.is-library .cv-home-main > * { max-width: 1180px; }
 .cv-home.is-library .cv-home-page[data-page="projects"] .cv-home-head, .cv-home.is-library .cv-home-page[data-page="recent"] .cv-home-head, .cv-home.is-library .cv-home-page[data-page="outputs"] .cv-home-head { display: block; }
