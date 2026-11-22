@@ -7,6 +7,23 @@ Last updated: 2026-10-30 · brush libraries as files, recovery presence over a W
 
 ---
 
+## v0.19.0 · the engine's start and exit
+
+- refers-to: formmorpheus_engine.py :: serve, watch_shell, free_port; app/core/startup.py; app/core/runtime.py
+- kind: decision
+- logged: v0.19.0 · 2026-11-22
+
+`app/core/startup.py` and `app/core/runtime.py` are FormDeck 0.46.3's files (Apache-2.0) with this app's names; the entry script follows FormDeck's and FormTools'.
+
+- **Streams first.** A Windows engine built with no console starts with `sys.stdin`, `sys.stdout` and `sys.stderr` set to `None`, and the first `print` or log line would raise. The entry replaces each missing stream with the null device right after `import os, sys`, before anything else is imported.
+- **A log file.** `runtime.start_logging` writes `Logs/formmorpheus-engine.log` in the data folder (1 MiB, three kept) for the `formmorpheus` and `uvicorn` loggers. With no console, errors that would have gone to stderr go to `Logs/formmorpheus-engine-errors.log` (`startup.keep_errors`). The shell's failure dialog names the first file.
+- **One engine per data folder.** `runtime.claim` writes `engine.lock` (process id, start time, the shell's process id and its start time). A second engine on the same folder reads it: when the holder and its shell are both alive it prints "formmorpheus is already running on ..." and exits 2; when the holder is alive but its shell is gone it is a leftover from a crashed app, so it is ended (TERM, then KILL after five seconds; `taskkill /T /F` on Windows) and the new engine takes over. Start times are compared so that a recycled process id is not mistaken for the old engine.
+- **Leaving with the shell.** `watch_shell` polls the shell's process every two seconds (a wait on its handle on Windows) and exits when it is gone, releasing the lock. SIGTERM releases the lock too.
+- **Started alone.** A frozen engine started by hand, with no `FORMMORPHEUS_SHELL_PID`, opens the app that sits beside it and exits 0; when there is none it says it is a part of FormMorpheus and exits 4. `FORMMORPHEUS_NO_SHELL=1` lets it serve alone, for someone who wants the page in a browser. formcompiler's Windows start check runs the engine alone and expects this.
+- **The port.** `FORMMORPHEUS_PORT` set to a number is used as it is. With 0 or unset, `FORMMORPHEUS_PORT_PREFER` is tried first and a free port is taken when it is busy. The shell sets the preference to 9496 (reason in `src-tauri/HASHOUT_LOG.md`).
+- Exit codes: 0 served and stopped, or opened the app; 2 another engine holds the folder; 3 the server never started; 4 started alone with no app nearby; 5 the data folder cannot be used.
+- Seen here on Linux, unfrozen, with `sleep` processes standing in for the shell: the port line on 9496, the lock file, a second engine refused with code 2, the engine gone and the lock removed within five seconds of its shell ending, and a leftover engine replaced by the next start with the log line "an engine left running without its app was stopped".
+
 ## v0.18.4 · ffmpeg on a Mac, and every package pinned
 
 - refers-to: app/services/ffmpeg.py :: find_ffmpeg, MAC_INSTALL_DIRS; requirements.txt; requirements_desktop.txt; oc_install
