@@ -25,6 +25,20 @@ Taken from FormDeck 0.46.3 and FormTools (both Apache-2.0): `win_job.rs` as it i
 - **The splash, from FormDeck's fuller reveal.** On Linux the main window is now built unseen at opacity 0 (GTK) the way macOS builds it at alpha 0, in place of visible behind the splash. `app_ready` takes the page's background colour and gives it to the main window before it is shown, so a light theme does not open on a dark frame; without the argument nothing changes. The declared window is still the splash alone, the main window is built after the engine answers, and the splash stays at least 2.6 seconds.
 - Not run on macOS or Windows from here. `cargo check --locked` passes for `x86_64-pc-windows-msvc`, `aarch64-apple-darwin` and `x86_64-apple-darwin`.
 
+## v0.19.0 · the launchers and the Windows engine folder
+
+- refers-to: ../formmorpheus; ../formmorpheus.bat; ../build_app; ../build_app.bat; ../setup/lib.sh :: fm_python, fm_native_path, fm_venv; ../setup/freeze_backend; ../setup/*.bat; ../setup/install_desktop; ../backend/oc_install.bat; ../.gitattributes
+- kind: decision
+- logged: v0.19.0 · 2026-11-22
+
+- **The twins match.** `formmorpheus.bat` knew `install` and a boot. It now has every command of `./formmorpheus` (`ios` says it is macOS only and exits 2), each calling a `setup\*.bat` twin of the bash script of the same name, the way FormTools lays them out. `formmorpheus_oc_install.bat` used to change into `backend` and then look for `frontend\oc_install.bat` from there; it now calls `setup\install_all.bat`, which uses full paths.
+- **One Python choice.** Windows: `setup\find_python.bat` sets `FM_PY` to `py -3.12`, else `py -3` when it is 3.12 or newer, else `python` when it is 3.12 or newer, else stops with "Python 3.12 or newer is required". `backend\oc_install.bat`, `build_app.bat`, `doctor.bat` and `lint` use it; before, they took plain `python` unchecked. Bash: `fm_python` in `lib.sh` walks python3.12, 3.13, 3.14, python3, the order `backend/oc_install` already had; `build_app` walked 3.13 first.
+- **Contract mode.** `install-desktop` on both launchers installs `backend/requirements_desktop.txt` into the venv (running the normal install first when there is no venv). `build_app --config X` used to exit 2; it now passes each `--config` on to `tauri build` after the script's own signing one, and `build_app.bat` takes `--config`, `--bundles` and `--clean` too. cmd splits `msi,nsis` at the comma, so the batch file joins the pieces after `--bundles` back together. A `--config` file path is dependable on Windows; inline JSON through cmd is not. The registry stays in commands mode until the owner switches it.
+- **The Windows engine is a folder with no console.** `setup\freeze_backend.bat` is the one Windows freeze: `--onedir --noconsole` into `src-tauri\engine`, self-checked by exit code (it prints nothing without a console). `FORMMORPHEUS_ENGINE_WINDOWED=0` keeps the console for someone debugging. `build_app.bat` calls it in place of its own one-file freeze, and the bash `freeze_backend` does the same under Git Bash. macOS stays a folder, Linux stays one file in `binaries/`. `FORMMORPHEUS_TARGET` no longer matters on Windows, since no file is named by triple there.
+- **`setup/desktop_build` removed** (`git rm`). Nothing called it, and it built without the tool checks, the install step and the signing settings that `build_app` has. Its whole body was: build the frontend, freeze the backend, `tauri build`.
+- **Line endings.** `.gitattributes` gives `*.bat` and `*.cmd` CRLF in a checkout. cmd can miss a `goto` or `call :label` target in a file with LF endings, and `formmorpheus.bat` and `build_app.bat` now depend on labels. The two batch files in `frontend/` were stored with CRLF and were renormalized; their text is unchanged.
+- None of the batch files was run: there is no Windows here. Each was read line by line for labels, `call` and `errorlevel`. `TEST_PLAN.md` section 2.8 has the steps.
+
 ## v0.18.4 · the build scripts
 
 - refers-to: ../build_app; ../build_app.bat; ../setup/freeze_backend; ../rust-toolchain.toml; ../.github/workflows/ci.yml :: tauri
