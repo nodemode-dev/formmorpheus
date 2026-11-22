@@ -55,9 +55,9 @@ step "installing dependencies"
 if [ ! -f backend/venv/bin/activate ] || [ ! -d frontend/node_modules ]; then
   setup/install_all
 fi
-[ -x frontend/node_modules/.bin/tauri ] || ( cd frontend && npm install )
+[ -x frontend/node_modules/.bin/tauri ] || ( cd frontend && npm ci )
 tauri_cli="$FM_ROOT/frontend/node_modules/.bin/tauri"
-[ -x "$tauri_cli" ] || fm_die "the Tauri command line is missing; run npm install in frontend (it comes from @tauri-apps/cli)"
+[ -x "$tauri_cli" ] || fm_die "the Tauri command line is missing; run npm ci in frontend (it comes from @tauri-apps/cli)"
 fm_say "tauri cli $("$tauri_cli" --version)"
 ( fm_venv && pip install -q -r backend/requirements_desktop.txt )
 
@@ -106,5 +106,5 @@ bundle="$target/release/bundle"
 step "done in ${SECONDS}s: formmorpheus $version"
 fm_say "bundles are in $bundle"
 find "$bundle" -maxdepth 2 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' -o -name '*.dmg' \) 2>/dev/null | sed 's/^/  /' || true
-[ -d "$bundle/macos/formmorpheus.app" ] && printf '  %s\n' "$bundle/macos/formmorpheus.app"
+find "$bundle/macos" -maxdepth 1 -type d -name '*.app' 2>/dev/null | sed 's/^/  /' || true
 exit 0

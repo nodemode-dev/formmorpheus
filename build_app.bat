@@ -19,8 +19,8 @@ if not exist backend\venv\Scripts\activate.bat (
 call backend\venv\Scripts\activate.bat
 pip install -q -r backend\requirements.txt -r backend\requirements_desktop.txt >> "%LOG%" 2>&1 || (call :die pip install failed & exit /b 1)
 pushd frontend
-if not exist node_modules call npm install >> "%LOG%" 2>&1
-if errorlevel 1 (popd & call :die npm install failed & exit /b 1)
+if not exist node_modules call npm ci >> "%LOG%" 2>&1
+if errorlevel 1 (popd & call :die npm ci failed & exit /b 1)
 call npm run build >> "%LOG%" 2>&1
 if errorlevel 1 (popd & call :die the frontend build failed & exit /b 1)
 popd
@@ -32,7 +32,7 @@ if defined FORMMORPHEUS_TARGET set TRIPLE=%FORMMORPHEUS_TARGET%
 pushd backend
 if exist build\pyinstaller rmdir /s /q build\pyinstaller
 if exist dist-engine rmdir /s /q dist-engine
-pyinstaller --noconfirm --clean --onefile --name formmorpheus-engine --distpath dist-engine --workpath build\pyinstaller --specpath build\pyinstaller --add-data "%~dp0frontend\dist;frontend_dist" --add-data "%~dp0backend\app\penlink_static;app\penlink_static" --collect-submodules app --collect-submodules uvicorn --collect-submodules keyring formmorpheus_engine.py >> "%LOG%" 2>&1
+pyinstaller --noconfirm --clean --onefile --name formmorpheus-engine --distpath dist-engine --workpath build\pyinstaller --specpath build\pyinstaller --add-data "%~dp0frontend\dist;frontend_dist" --add-data "%~dp0backend\app\penlink_static;app\penlink_static" --collect-submodules app --collect-submodules uvicorn formmorpheus_engine.py >> "%LOG%" 2>&1
 if errorlevel 1 (popd & call :die freezing the engine failed & exit /b 1)
 popd
 if not exist src-tauri\binaries mkdir src-tauri\binaries
@@ -42,7 +42,11 @@ if errorlevel 1 (call :die the frozen engine failed its self check & exit /b 1)
 
 call :say building the desktop app, msi and nsis
 set CFG=
-if defined WINDOWS_CERT_THUMBPRINT (
+set SIGNCMD=
+if exist src-tauri\tauri.windows.conf.json findstr /c:"signCommand" src-tauri\tauri.windows.conf.json >nul 2>&1 && set SIGNCMD=1
+if defined SIGNCMD (
+  call :say signing with the signCommand in tauri.windows.conf.json
+) else if defined WINDOWS_CERT_THUMBPRINT (
   set CFG=--config "{\"bundle\":{\"windows\":{\"certificateThumbprint\":\"%WINDOWS_CERT_THUMBPRINT%\"}}}"
   call :say signing with WINDOWS_CERT_THUMBPRINT
 ) else (
