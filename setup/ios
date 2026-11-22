@@ -28,7 +28,7 @@ command -v rsync > /dev/null 2>&1 || fm_die "rsync is not installed."
 
 if [ ! -d "$FM_ROOT/frontend/node_modules" ]; then
   fm_say "installing the interface packages"
-  (cd "$FM_ROOT/frontend" && npm install)
+  (cd "$FM_ROOT/frontend" && npm ci)
 fi
 
 fm_say "building the interface"

@@ -13,6 +13,8 @@ from pathlib import Path
 
 HEVC_ORDER = ["hevc_videotoolbox", "hevc_nvenc", "hevc_qsv", "hevc_vaapi", "libx265"]
 WANTED = ["prores_ks", "aac", "libmp3lame", "libopus", "libx264", *HEVC_ORDER]
+# An app opened from Finder gets the system PATH only, which has none of these.
+MAC_INSTALL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin")
 
 
 @dataclass
@@ -51,7 +53,14 @@ def find_ffmpeg() -> str | None:
         beside = Path(sys.executable).resolve().parent / exe
         if beside.is_file():
             return str(beside)
-    return shutil.which("ffmpeg")
+    found = shutil.which("ffmpeg")
+    if found or sys.platform != "darwin":
+        return found
+    for folder in MAC_INSTALL_DIRS:
+        candidate = Path(folder) / exe
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
 
 def probe(refresh: bool = False) -> FfmpegInfo | None:

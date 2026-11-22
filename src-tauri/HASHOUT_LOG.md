@@ -7,6 +7,17 @@ Last updated: 2026-10-30 · reveal_folder for Show brush folder
 
 ---
 
+## v0.18.4 · the build scripts
+
+- refers-to: ../build_app; ../build_app.bat; ../setup/freeze_backend; ../rust-toolchain.toml; ../.github/workflows/ci.yml :: tauri
+- kind: decision
+- logged: v0.18.4 · 2026-11-22
+
+- **keyring.** Both freeze commands passed `--collect-submodules keyring`. The engine neither depends on nor imports keyring, so PyInstaller only printed a warning that the package was not found. The argument is gone from `freeze_backend` and from `build_app.bat`; both now collect the submodules of `app` and `uvicorn` only.
+- **One Windows signing route.** formcompiler's release run puts `WINDOWS_CERT_THUMBPRINT` in the environment and also writes `tauri.windows.conf.json` with a `signCommand`, after dropping any `certificateThumbprint` from that file. `build_app.bat` then added `certificateThumbprint` back through `--config`, so one build carried both. Now, when `tauri.windows.conf.json` exists and names `signCommand`, the script passes no signing `--config` and says which route it took; the thumbprint is used only when there is no `signCommand`. A build by hand with only the thumbprint set signs as before, and one with neither is unsigned as before.
+- **The Mac app in the log.** `build_app` looked for `formmorpheus.app`, but `productName` is `FormMorpheus`, so the last lines of a macOS build never named the app. It now lists whatever `.app` is in `bundle/macos`, so the line cannot go stale with the product name again.
+- **Rust pinned.** `rust-toolchain.toml` at the repository root names 1.97.0 (minimal profile), and the CI job installs the same version in place of `stable`. rustup reads the file from any folder below it, so `cargo` in `src-tauri`, `build_app` and a release runner all compile with one compiler. 1.97.0 is the version `cargo check --locked` was run with for this change; `rust-version` in `Cargo.toml` (1.77.2, the oldest that may build it) is unchanged. To move it: change the file and the CI line together and run `cargo check --locked`.
+
 ## v0.18.3 · Windows engine data
 
 - `../build_app.bat` froze the engine without `app/penlink_static`, which `../setup/freeze_backend` has carried since v0.15.0, so a Windows build had no Pen Link page. The `pyinstaller` line now carries `--add-data "%~dp0backend\app\penlink_static;app\penlink_static"` beside the `frontend_dist` entry (same destination as the script, spelled the way `build_app.bat` spells paths).

@@ -7,6 +7,15 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.18.4 · Help links and installs from the lock file
+
+- refers-to: ui/external-link.ts :: SITE_URL; ui/help-center.ts :: buildStart; ui/help-setup.ts :: setupHelpCenter; app/app.ts (Help menu); oc_install, oc_install.bat
+- kind: decision
+- logged: v0.18.4 · 2026-11-22
+
+**Help links.** `HELP_LINKS` held five addresses under `github.com/nodemode-ai/formmorpheus` (wiki, discussions, issues): the wrong owner, and a repository a signed-out visitor cannot open. The owner's rule: Help opens the manual bundled in the app, one web link goes to `https://formai.studio/formmorpheus/`, and no link points at a private repository. So `HELP_LINKS` is gone and `SITE_URL` is the one address. In the Help Center's "On the web" row, Manual and Send an idea switch to those tabs of the same window (`pick`, no close and reopen), and "FormMorpheus on the web" opens the site in the system browser. The three menu commands `help-web-handbook`, `help-web-community` and `help-web-tutorials` are replaced by one, `help-web`. Removed labels: "Handbook on the web", "Community", "Video tutorials", "Education and learning", "Idea board", "Handbook on the Web", "Video Tutorials"; their rows stay in the language tables until the tables are next gone through. New labels with no translation yet: "FormMorpheus on the web", "FormMorpheus on the Web", and the new lead sentence.
+**Lock file.** `oc_install` and `oc_install.bat` ran `npm install`, which may rewrite `package-lock.json` instead of obeying it. Both run `npm ci` now, as CI already did, and so do `../build_app`, `../build_app.bat`, `../setup/desktop_dev` and `../setup/ios`. A lock file that disagrees with `package.json` now stops the install. To change a package: edit `package.json`, run `npm install` once by hand, commit both files.
+
 ## v0.18.3 · tauri packages
 
 `src-tauri/Cargo.lock` resolves the `tauri` crate to 2.12.5, and Tauri's build stops when the crate and `@tauri-apps/api` differ in minor version, so `package.json` now pins `@tauri-apps/api` 2.12.5 and `@tauri-apps/cli` 2.12.5 (were 2.11.1 and 2.11.4), the same minor line as the crate. There is no `@tauri-apps/plugin-*` package here: the interface reaches the dialog and shell plugins through `invoke` from `@tauri-apps/api/core`, so only these two needed to move. `package-lock.json` was refreshed by `npm install`. When `Cargo.lock` moves to another minor line, move both packages with it.

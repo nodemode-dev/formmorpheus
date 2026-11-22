@@ -45,7 +45,7 @@ enum EngineConfig {
         if let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, !v.isEmpty {
             return v
         }
-        return "0.18.3"
+        return "0.18.4"
     }
 
     static var dataDir: URL {

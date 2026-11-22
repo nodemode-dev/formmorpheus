@@ -58,7 +58,7 @@ jobs:
           fi
           printf 'Acquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.0
       - name: Install the webkit2gtk packages
         run: |
           sudo apt-get update
