@@ -7,6 +7,24 @@ Last updated: 2026-10-30 · reveal_folder for Show brush folder
 
 ---
 
+## v0.19.0 · the engine starts and leaves the family way
+
+- refers-to: src/main.rs :: setup, kill_backend, engine_failed, engine_lost, data_given, build_main; src/engine_start.rs; src/win_job.rs; src/reveal.rs :: BUILD_VISIBLE, app_ready, set_seen; Cargo.toml (windows-sys features); tauri.windows.conf.json
+- kind: decision
+- logged: v0.19.0 · 2026-11-22
+
+Taken from FormDeck 0.46.3 and FormTools (both Apache-2.0): `win_job.rs` as it is, `engine_start.rs` with this app's names and data folder, and the start loop in `main.rs`.
+
+- **A failed start says why.** The start used two `expect` calls, and the release profile aborts on panic, so a missing or unstartable engine closed the app with nothing on screen. Every way a start can fail is now an `engine_start::Failure` (program missing, could not be started, stopped with a code, no address within 90 seconds, window could not be built). `engine_failed` hides the splash, shows a native error dialog with the sentence for that failure, the engine's last 12 lines and the path of its log, then closes. Exit code 2 from the engine means another engine holds the data folder and has its own sentence. 90 seconds is what every Form app waits.
+- **A later engine death is noticed.** The loop used to stop reading at the port line, so an engine that died afterwards left a dead window. It now keeps reading after the window is built; `Terminated` (or the channel ending) calls `engine_lost`, which shows "FormMorpheus has to close: its engine stopped" with the last lines and exits. `engine_lost` does nothing when the `Backend` slot is already empty, which is the case when the app itself is quitting and has taken the child to stop it.
+- **Windows: the engine leaves with the shell.** The engine's process is put in a job object with kill-on-close (`win_job::hold_pid`), so ending the shell in Task Manager ends the engine too, and `kill_backend` ends the job before `child.kill()`. The engine is also now a folder build with no console (below), which is one process, not PyInstaller's two.
+- **The engine knows its shell.** `FORMMORPHEUS_SHELL_PID` carries the shell's process id; the engine watches it and leaves when it is gone, and writes it into `engine.lock` so the next start can tell a leftover engine from a live one (`backend/HASHOUT_LOG.md`).
+- **A preferred port, so settings survive.** The interface keeps preferences, theme and language in the web view's `localStorage`, which belongs to the page's origin, and the origin carried a new port on every launch. Whether each web view keeps storage across ports was never established, so the question is removed: the shell sets `FORMMORPHEUS_PORT_PREFER=9496` and the engine binds it when it is free, a random port only when it is not. 9494 is the dev engine and 9495 is Pen Link, so 9496 is the next free one in the app's range. A second copy on another data folder gets a random port and its own storage, as before.
+- **One data folder for a portable copy on Windows.** With the engine in `engine\`, "beside the engine" is no longer the install folder, so the engine's own portable rule would have put `FormmorpheusData` inside `engine\` while the web view's data stayed beside the app. The shell now names the folder itself (`data_given`: `--user-data-dir`, else on Windows `FormmorpheusData` beside the app when `--portable` or a `portable` or `portable.txt` file is there) and passes it as `FORMMORPHEUS_DATA_DIR`. The same value feeds the log path in the failure dialog.
+- **tauri.windows.conf.json** is new: no `externalBin` on Windows and the `engine/` folder as a resource, the way `tauri.macos.conf.json` does it for macOS. `packaged::engine_folder` already looks in `engine\` beside the app. Linux keeps the one-file sidecar. formcompiler merges its own settings into this file and keeps what is there.
+- **The splash, from FormDeck's fuller reveal.** On Linux the main window is now built unseen at opacity 0 (GTK) the way macOS builds it at alpha 0, in place of visible behind the splash. `app_ready` takes the page's background colour and gives it to the main window before it is shown, so a light theme does not open on a dark frame; without the argument nothing changes. The declared window is still the splash alone, the main window is built after the engine answers, and the splash stays at least 2.6 seconds.
+- Not run on macOS or Windows from here. `cargo check --locked` passes for `x86_64-pc-windows-msvc`, `aarch64-apple-darwin` and `x86_64-apple-darwin`.
+
 ## v0.18.4 · the build scripts
 
 - refers-to: ../build_app; ../build_app.bat; ../setup/freeze_backend; ../rust-toolchain.toml; ../.github/workflows/ci.yml :: tauri
