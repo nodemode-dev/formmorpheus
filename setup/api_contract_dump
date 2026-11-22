@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Writes docs/api-contract.json from the engine's own routes: app.openapi() with one path and one schema per line, plus
+"x-websockets", the socket routes OpenAPI leaves out. --check writes nothing and exits 1 when the file is out of date.
+
+Run with the engine's Python (backend/venv) so the engine imports; the data folder is a temporary one unless
+FORMMORPHEUS_DATA_DIR is set, so nothing of a person's library is touched."""
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs" / "api-contract.json"
+
+
+def dump() -> str:
+    os.environ.setdefault("FORMMORPHEUS_DATA_DIR", tempfile.mkdtemp(prefix="fm-contract-"))
+    sys.path.insert(0, str(ROOT / "backend"))
+    from starlette.routing import WebSocketRoute
+    from app.main import app
+
+    spec = app.openapi()
+    one = lambda v: json.dumps(v, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    paths = spec.get("paths", {})
+    schemas = spec.get("components", {}).get("schemas", {})
+    def walk(routes, prefix: str):
+        for r in routes:
+            if hasattr(r, "original_router"):
+                yield from walk(r.original_router.routes, prefix + (getattr(r.include_context, "prefix", "") or ""))
+            elif isinstance(r, WebSocketRoute):
+                yield prefix + r.path
+
+    sockets = sorted(set(walk(app.routes, "")))
+    lines = ["{",
+             '"info":' + one(spec.get("info", {})) + ",",
+             '"openapi":' + one(spec.get("openapi", "")) + ",",
+             '"paths":{']
+    keys = sorted(paths)
+    lines += [one(k) + ":" + one(paths[k]) + ("," if i < len(keys) - 1 else "") for i, k in enumerate(keys)]
+    lines += ["},", '"components":{"schemas":{']
+    names = sorted(schemas)
+    lines += [one(k) + ":" + one(schemas[k]) + ("," if i < len(names) - 1 else "") for i, k in enumerate(names)]
+    lines += ["}},", '"x-websockets":' + one(sockets), "}"]
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    text = dump()
+    json.loads(text)
+    if "--check" in sys.argv:
+        same = OUT.is_file() and OUT.read_text("utf-8") == text
+        print("api contract: in step" if same else "api contract: out of date, run setup/api_contract_dump")
+        return 0 if same else 1
+    OUT.write_text(text, "utf-8")
+    print(f"api contract: wrote {OUT.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

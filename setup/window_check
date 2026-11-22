@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Window check: the built interface opens in a real browser window, served by the engine, under the page policy.
+
+Starts the engine from backend/ on a free loopback port with an empty data folder and the built frontend/dist, opens the
+page in headless Chrome or Chromium through the DevTools protocol (over a pipe, so nothing listens on a port), waits,
+and reads what the page drew and what the browser reported. It fails when the app did not draw its window, when the
+page says it cannot start, or when the browser reports an uncaught error, a console error, or anything the page policy
+refused. Run it with the engine's Python, after `npm run build` in frontend/.
+
+  setup/window_check [--chrome PATH] [--wait SECONDS] [--dist FOLDER]
+The browser is CHROME, then google-chrome, chromium or chromium-browser on PATH. Linux and macOS."""
+import json
+import os
+import select
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DIST = ROOT / "frontend" / "dist"
+DREW = ("!!document.querySelector('.cv-app') && !!document.querySelector('.cv-home, .fm-timeline')"
+        " && !/cannot start on this system|already open in another window/.test(document.body.innerText)")
+
+
+def arg(name: str, default: str) -> str:
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv[:-1] else default
+
+
+def browser() -> str:
+    for c in (arg("--chrome", ""), os.environ.get("CHROME", ""), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+        if c and (Path(c).is_file() or shutil.which(c)):
+            return c
+    sys.exit("window check: no Chrome or Chromium found; set CHROME to its path")
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class Pipe:
+    """The DevTools protocol over --remote-debugging-pipe: JSON messages ended by a NUL byte, written to the browser's
+    fd 3 and read from its fd 4."""
+
+    def __init__(self, chrome: str, profile: str):
+        to_r, self.to_w = os.pipe()
+        self.from_r, from_w = os.pipe()
+        os.set_inheritable(to_r, True)
+        os.set_inheritable(from_w, True)
+
+        def fds():
+            os.dup2(to_r, 3)
+            os.dup2(from_w, 4)
+
+        self.proc = subprocess.Popen([chrome, "--headless=new", "--remote-debugging-pipe", "--no-sandbox", "--disable-gpu", "--no-first-run",
+                                      "--no-default-browser-check", "--no-proxy-server", f"--user-data-dir={profile}", "--window-size=1440,900",
+                                      "about:blank"], preexec_fn=fds, close_fds=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.close(to_r)
+        os.close(from_w)
+        self.buf, self.next, self.events = b"", 0, []
+
+    def send(self, method: str, params: dict | None = None, session: str | None = None) -> int:
+        self.next += 1
+        msg = {"id": self.next, "method": method, "params": params or {}}
+        if session:
+            msg["sessionId"] = session
+        os.write(self.to_w, json.dumps(msg).encode() + b"\0")
+        return self.next
+
+    def pump(self, seconds: float) -> None:
+        end = time.time() + seconds
+        while (left := end - time.time()) > 0:
+            ready, _, _ = select.select([self.from_r], [], [], left)
+            if not ready:
+                break
+            chunk = os.read(self.from_r, 1 << 16)
+            if not chunk:
+                break
+            self.buf += chunk
+            while b"\0" in self.buf:
+                raw, self.buf = self.buf.split(b"\0", 1)
+                self.events.append(json.loads(raw))
+
+    def call(self, method: str, params: dict | None = None, session: str | None = None, wait: float = 20) -> dict:
+        n = self.send(method, params, session)
+        end = time.time() + wait
+        while time.time() < end:
+            for m in self.events:
+                if m.get("id") == n:
+                    if "error" in m:
+                        raise RuntimeError(f"{method}: {m['error']}")
+                    return m.get("result", {})
+            self.pump(0.2)
+        raise RuntimeError(f"{method}: no answer")
+
+    def close(self) -> None:
+        try:
+            self.send("Browser.close")
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+
+
+def problems(events: list) -> list[str]:
+    out = []
+    for m in events:
+        p, kind = m.get("params", {}), m.get("method")
+        if kind == "Runtime.exceptionThrown":
+            d = p.get("exceptionDetails", {})
+            out.append("uncaught: " + (d.get("exception", {}).get("description") or d.get("text", "")))
+        elif kind == "Runtime.consoleAPICalled" and p.get("type") == "error":
+            out.append("console error: " + " ".join(str(a.get("value", a.get("description", ""))) for a in p.get("args", [])))
+        elif kind == "Log.entryAdded" and p.get("entry", {}).get("level") == "error":
+            e = p["entry"]
+            out.append(f"{e.get('source', 'browser')}: {e.get('text', '')}")
+    return out
+
+
+def main() -> int:
+    dist = Path(arg("--dist", str(DIST))).resolve()
+    if not (dist / "index.html").is_file():
+        sys.exit(f"window check: {dist}/index.html is missing; run npm run build in frontend first")
+    chrome, port, wait = browser(), free_port(), int(arg("--wait", "15"))
+    data, profile = tempfile.mkdtemp(prefix="fm-window-"), tempfile.mkdtemp(prefix="fm-window-profile-")
+    env = dict(os.environ, FORMMORPHEUS_DATA_DIR=data, FORMMORPHEUS_DIST=str(dist))
+    engine = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
+                              cwd=ROOT / "backend", env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    url = f"http://127.0.0.1:{port}/"
+    pipe = None
+    try:
+        for _ in range(120):
+            try:
+                with urllib.request.urlopen(url + "api/health", timeout=1) as r:
+                    if r.status == 200:
+                        break
+            except OSError:
+                time.sleep(0.25)
+        else:
+            sys.exit("window check: the engine did not answer")
+        pipe = Pipe(chrome, profile)
+        target = pipe.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+        session = pipe.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
+        for m in ("Runtime.enable", "Log.enable", "Page.enable"):
+            pipe.call(m, session=session)
+        pipe.call("Page.navigate", {"url": url}, session=session)
+        pipe.pump(wait)
+        drew = pipe.call("Runtime.evaluate", {"expression": DREW, "returnByValue": True}, session=session).get("result", {}).get("value") is True
+        found = problems(pipe.events)
+        print(f"window check: {url} in {Path(chrome).name} after {wait} s: window drawn {'yes' if drew else 'no'}, {len(found)} problems")
+        for line in found[:20]:
+            print("  " + line.strip()[:400])
+        return 0 if drew and not found else 1
+    finally:
+        if pipe:
+            pipe.close()
+        engine.terminate()
+        try:
+            engine.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            engine.kill()
+        shutil.rmtree(data, ignore_errors=True)
+        shutil.rmtree(profile, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

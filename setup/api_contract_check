@@ -13,6 +13,10 @@ have: ffmpeg, a socket server, or a folder dialog onto the file system.
   /api/save-to/*                 writes into a folder picked with a folder dialog; saving goes through the system picker
   /api/library/{name}/copy-to    copies a movie into a folder picked with a folder dialog
   /api/video-tools*              finds, downloads and removes ffmpeg; the iPad encodes with its own video encoders
+  /api/agents*, /api/agent/*, /api/terminal*, /api/mcp/*, /mcp
+                                 outside agents and the terminal panel are desktop only
+  /api/window/*                  the window key guards a loopback server other programs can reach; the iPad's scheme
+                                 handler answers only its own web view
   x-websockets in the contract   sockets cannot be served through the scheme handler
 Everything else is required.
 
@@ -47,6 +51,8 @@ DESKTOP_ONLY = [
     ("*", "/api/mcp/*"),
     ("*", "/api/video-tools"),
     ("*", "/api/video-tools/*"),
+    ("*", "/api/window/*"),
+    ("*", "/mcp"),
 ]
 
 
