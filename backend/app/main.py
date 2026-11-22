@@ -10,6 +10,9 @@ from app.core.guard import GuardMiddleware
 from app.core.page_policy import PagePolicy
 from app import penlink
 from app.routers import save_to, fonts,audio_encode, proxy, brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
+from app.routers import agents, mcp, terminal
+from app.services import claude_code
+from app.services import terminal as terminals
 
 log = logging.getLogger("formmorpheus")
 
@@ -37,6 +40,12 @@ app.include_router(recovery.router, prefix="/api/recovery")
 app.include_router(ideas.router, prefix="/api/ideas")
 app.include_router(penlink.router, prefix="/api/penlink")
 app.on_event("shutdown")(penlink.shutdown)
+app.include_router(agents.router)
+app.include_router(terminal.router)
+app.include_router(mcp.router)
+app.on_event("startup")(claude_code.sweep)
+app.on_event("shutdown")(terminals.close_all)
+app.on_event("shutdown")(claude_code.revoke_all)
 
 
 @app.on_event("startup")

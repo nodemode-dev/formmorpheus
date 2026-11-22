@@ -12,6 +12,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': { target: `http://127.0.0.1:${BACKEND_PORT}`, changeOrigin: true, ws: true },
+      '/mcp': { target: `http://127.0.0.1:${BACKEND_PORT}`, changeOrigin: true },
     },
   },
   preview: {
@@ -20,6 +21,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': { target: `http://127.0.0.1:${BACKEND_PORT}`, changeOrigin: true, ws: true },
+      '/mcp': { target: `http://127.0.0.1:${BACKEND_PORT}`, changeOrigin: true },
     },
   },
   build: {

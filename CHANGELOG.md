@@ -2,6 +2,21 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.22.0 · 2026-11-22
+
+AI programs on your computer can work with FormMorpheus, and only as far as you allow.
+
+### New
+- A terminal panel beside the Stage and the Timeline: View, Terminal, or Ctrl+` (Cmd+` on a Mac). It runs a shell, and Claude Code, Codex, Cursor and Antigravity when they are installed on your computer. FormMorpheus does not install them or sign you in. Type a request in the line at the bottom and Claude Code opens with it. The panel can sit at the bottom or on the right and keeps its size.
+- An MCP server, so an agent can read your library, create, rename, duplicate, delete and restore movies, and export or import. Desktop only.
+- Agents ask first. Preferences, Agents has Outside agents: Ask (the default), Allowed or Blocked. Under Ask, a change waits for your yes in a box in the window. An export or an import always asks, whatever you chose.
+- Preferences, Agents shows the MCP address and the `./formmorpheus mcp` command for clients that start their own server. `./formmorpheus agents install` sets up Claude Code, Codex, Cursor and Antigravity for you.
+- A `formmorpheus` skill for agents, so they know how a movie is made and how to export it.
+
+### Fixed
+- The text in the status bar no longer shifts when a movie opens.
+- The first-run tour moves its highlight without shifting the page.
+
 ## 0.21.0 · 2026-11-22
 
 FormMorpheus looks like the rest of the Form family, in its own violet.

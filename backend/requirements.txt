@@ -1,17 +1,30 @@
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
+keyring==25.7.0
+ptyprocess==0.7.0 ; sys_platform != "win32"
+pywinpty==3.0.5 ; sys_platform == "win32"
 annotated-doc==0.0.7
 annotated-types==0.8.0
 anyio==4.16.0
+cffi==2.1.1 ; sys_platform == "linux" and platform_python_implementation != "PyPy"
 click==8.5.1
 colorama==0.4.6 ; sys_platform == "win32"
+cryptography==50.0.2 ; sys_platform == "linux"
 h11==0.16.0
 httptools==0.9.0
 idna==3.20
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+jeepney==0.9.0 ; sys_platform == "linux"
+more-itertools==11.2.1
+pycparser==3.12 ; sys_platform == "linux" and implementation_name != "PyPy"
 pydantic==2.14.4
 pydantic_core==2.50.5
 python-dotenv==1.2.4
+pywin32-ctypes==0.2.3 ; sys_platform == "win32"
 PyYAML==6.0.4
+SecretStorage==3.5.0 ; sys_platform == "linux"
 starlette==1.10.0
 typing-inspection==0.4.5
 typing_extensions==4.16.0

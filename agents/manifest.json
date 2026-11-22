@@ -1,0 +1,96 @@
+{
+  "format": "form-agent-manifest",
+  "version": 1,
+  "app": "formmorpheus",
+  "mcp": {
+    "tools": [
+      "get_context",
+      "list_movies",
+      "get_movie",
+      "get_movie_picture",
+      "manage_movie",
+      "export_movie",
+      "import_file",
+      "list_commands",
+      "run_command"
+    ],
+    "read_only": [
+      "get_context",
+      "list_movies",
+      "get_movie",
+      "get_movie_picture",
+      "list_commands"
+    ],
+    "approval_gated": [
+      "manage_movie",
+      "export_movie",
+      "import_file",
+      "run_command"
+    ],
+    "asks_first": [
+      "export_movie",
+      "import_file"
+    ],
+    "commands": [
+      {
+        "id": "list_deleted",
+        "kind": "reads"
+      },
+      {
+        "id": "list_exports",
+        "kind": "reads"
+      },
+      {
+        "id": "list_stacks",
+        "kind": "reads"
+      },
+      {
+        "id": "export_capabilities",
+        "kind": "reads"
+      },
+      {
+        "id": "list_fonts",
+        "kind": "reads"
+      },
+      {
+        "id": "set_tags",
+        "kind": "changes"
+      },
+      {
+        "id": "set_stack",
+        "kind": "changes"
+      }
+    ],
+    "versions": [
+      "2026-07-28",
+      "2025-11-25"
+    ],
+    "transports": [
+      "stdio",
+      "http"
+    ]
+  },
+  "skills": [
+    {
+      "name": "formmorpheus",
+      "sub_skills": [
+        "export",
+        "fmo-and-engine",
+        "ipad-build",
+        "mcp-tools",
+        "releasing"
+      ]
+    }
+  ],
+  "dock": {
+    "present": true,
+    "contract": "2.2.1",
+    "tabs": [
+      "shell",
+      "claude",
+      "codex",
+      "cursor",
+      "antigravity"
+    ]
+  }
+}

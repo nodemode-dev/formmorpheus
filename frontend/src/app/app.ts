@@ -88,6 +88,9 @@ import { toast } from '../ui/toast';
 import { gestures } from '../ui/gestures';
 import { TrackMenu } from '../ui/track-menu';
 import { VERSION } from '../version';
+import { Dock } from '../dock/dock';
+import { formmorpheusDock, outsideAgents, reserveDock } from '../dock-adapter';
+import { startAgentBridge } from './agent-bridge';
 
 const SHELL = `<div class="cv-app fm-app">
 <header class="cv-titlebar">
@@ -711,6 +714,37 @@ export function startApp(): void {
     { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
     { id: 'recover-lost', label: 'Recover Lost Movies...', run: () => { void recovery.offer('menu'); } },
   );
+  reserveDock(platform.kind === 'ipad');
+  const dock: Dock<'antigravity'> | null = platform.kind === 'ipad' ? null : new Dock(formmorpheusDock({
+    context: () => {
+      const m = engine.movie;
+      if (!m) return 'FormMorpheus window: no movie open';
+      const chosen = engine.selection.content;
+      return `FormMorpheus window: movie "${m.name}", frame ${engine.frame + 1} of ${m.duration}${chosen.length ? `, selected content ids ${chosen.slice(0, 40).join(', ')}` : ''}`;
+    },
+    openSettings: () => settings.show('Agents'),
+    layerOpen: () => anyDialogOpen(),
+    firstRun: () => !home.isShown && !anyDialogOpen(),
+  }));
+  if (dock) {
+    dock.mount(root, q(root, '.cv-status'));
+    document.addEventListener('fm:dock-open', () => { if (dock.isOpen()) dock.focus(); else dock.toggle(true); });
+    commands.add(
+      { id: 'view-terminal', label: 'Terminal', icon: 'terminal', keys: ['Mod+`'], checked: () => dock.isOpen(), run: () => dock.toggle() },
+      { id: 'new-terminal', label: 'New Terminal', icon: 'terminal', run: () => { void dock.newTerminal(); } },
+      { id: 'claude-code', label: 'Claude Code', icon: 'agent', keys: ['Shift+Mod+`', 'Shift+Mod+~'], run: () => { void dock.show('claude'); } },
+    );
+    void outsideAgents.restore();
+    startAgentBridge({
+      engine, renderer, audio: () => audio,
+      open: openFromLibrary,
+      save: () => save(false, { quiet: true }),
+      commitOpen: () => (paint.isOpen() ? paint.done(true) : Promise.resolve()),
+      importFile: (file, at, row) => importFiles([file], { drop: { where: 'timeline', ...(at === undefined ? {} : { frame: at }), ...(row === undefined ? {} : { index: row }) } }),
+      exportBusy: () => exportDialog.running,
+      listed: () => home.sync(),
+    });
+  }
   for (const [id, keys] of Object.entries(prefs.shortcuts)) if (commands.get(id)) commands.setKeys(id, keys);
   paint.useCommands(commands);
 
@@ -721,7 +755,7 @@ export function startApp(): void {
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'help-web', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {

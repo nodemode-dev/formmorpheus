@@ -1,5 +1,6 @@
 @echo off
 setlocal
+if not defined FORMMORPHEUS_CALLER_DIR set "FORMMORPHEUS_CALLER_DIR=%CD%"
 cd /d "%~dp0"
 set "CMD=%~1"
 if "%CMD%"=="" set "CMD=boot"
@@ -16,6 +17,8 @@ if /i "%CMD%"=="desktop" goto :desktop
 if /i "%CMD%"=="ios" goto :ios
 if /i "%CMD%"=="doctor" goto :doctor
 if /i "%CMD%"=="lint" goto :lint
+if /i "%CMD%"=="agents" goto :agents
+if /i "%CMD%"=="mcp" goto :mcp
 if /i "%CMD%"=="clean" goto :clean
 if /i "%CMD%"=="version" goto :version
 if /i "%CMD%"=="--version" goto :version
@@ -93,6 +96,16 @@ call setup\find_python.bat || exit /b 1
 %FM_PY% setup\lint_text %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
+:agents
+call setup\find_python.bat || exit /b 1
+%FM_PY% setup\agents.py %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+
+:mcp
+call setup\find_python.bat >nul || exit /b 1
+%FM_PY% setup\mcp_stdio.py %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+
 :clean
 call setup\clean.bat %2
 exit /b %errorlevel%
@@ -132,6 +145,9 @@ echo   desktop build       build the desktop installers (same as build_app.bat)
 echo   ios                 macOS only; on Windows it says so and stops
 echo   doctor              check the toolchain, installs and ports
 echo   lint                text lint: no em dash, emoji, attribution trailers or banned names
+echo   agents install      set up Claude Code, Codex, Cursor and Antigravity for FormMorpheus (--dry-run shows what)
+echo   agents sync         mirror the skill pack and write agents\manifest.json (--check: exit 1 when stale)
+echo   mcp                 FormMorpheus as an MCP server on standard input and output (for clients that start one)
 echo   version             the version and build
 echo   clean [--all]       remove build output (--all also venv and node_modules)
 echo   help                this text

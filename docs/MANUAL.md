@@ -240,6 +240,8 @@ Open with Ctrl+, (File or Edit menu). The pages:
 - **General**: show Home at launch and when the last movie closes, What's New, Autosave, the settings and library folders, and Reset All Preferences.
 - **Interface**: theme (29 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
 - **Timeline**: undo steps, scrub speed (Precise, Medium or Fast, which also sets how fast scrubbing the frame strip moves), two and three-finger tap for undo and redo, and ask before deleting.
+- **Pen and Tablet**: the test pad, the pressure curve and what the pen's eraser end and buttons do (see Pen tablets).
+- **Agents** (desktop only): whether outside agents may work on your movies, the address and command that connect a client, and a button that opens the terminal panel (see Agents).
 - **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
 
 ## Languages
@@ -261,6 +263,67 @@ Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for ex
 ## Brush files
 
 Drop a brush file on the brush library, or use its import button, to see what is inside before it lands: a tree of the file's folders with a stroke preview of every brush. Untick what you do not want, choose a new library or the current one, and Import. Brush files with presets (.abr) bring their settings along, not just the tip picture: size, hardness, angle, roundness, spacing, size and angle jitter and what drives them (pressure, tilt, fade, direction), scatter and count, the texture from the file's patterns, color jitter, opacity and flow by pressure, noise and wet edges. A badge marks brushes with settings the brush engine can only approximate; its tooltip lists them. Tips only imports just the tip pictures.
+
+## Agents
+
+An outside agent is a program on your computer, such as Claude Code, Codex, Cursor or Antigravity, that works on your movies through MCP. FormMorpheus has an MCP server for them, and a terminal panel that can run these programs beside the Stage and the Timeline. Agents are for the desktop: on iPad there is no terminal panel and no Agents page in Preferences.
+
+### What an agent can do
+
+- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
+- **Changes to the library** are made by `manage_movie`: create an empty movie, rename, duplicate, delete and restore. Delete moves a movie to Recently Deleted and never erases it. `run_command` also sets a movie's tags and its stack.
+- **Two always ask first**: `export_movie` makes a file in the Exports folder, and `import_file` brings a picture, video, sound or font file into a movie and saves it. Both need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out.
+
+Agents work only on FormMorpheus's own data: your movie library, Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
+
+### Outside agents
+
+Open Preferences (Ctrl+,) and choose **Agents**. **Outside agents** has three choices:
+
+| Choice | What happens |
+|---|---|
+| Ask | The default. Reads work. A change to the library asks you in the FormMorpheus window first. With no window open, the change is refused and the agent is told to ask you to open FormMorpheus. |
+| Allowed | Changes to the library go ahead without asking. An export or an import still asks each time. |
+| Blocked | Every agent is refused, reads included, and so are the agents in the terminal panel. A question that was waiting is answered Deny. |
+
+An agent you open yourself in the terminal panel is treated as yours: under Ask or Allowed it makes library changes without asking, and an export or an import still asks. Where the system has a keychain, FormMorpheus seals the choice with a key kept there. If the setting is changed from outside the app to allow agents, FormMorpheus ignores that change, asks again, and says so in Preferences.
+
+### Connect a client
+
+1. Start FormMorpheus: the app, or `./formmorpheus` from source. An export or an import needs the window to be open.
+2. Open Preferences and choose **Agents**. **Connect a Client** shows two ways in.
+3. A client that connects by address takes the **MCP address**, `http://127.0.0.1:<port>/mcp`. The engine listens on this computer only. The desktop app shows its own port there (it tries 9496 first). From source the engine's port is 9494, so the address is `http://127.0.0.1:9494/mcp`.
+4. A client that starts its own server takes **Standard input and output**: the command `./formmorpheus mcp` (`formmorpheus.bat mcp` on Windows), run in the FormMorpheus folder. It passes each message on to the running engine, which it finds at `FORMMORPHEUS_MCP_URL` or `FORMMORPHEUS_PORT` when you set one, and otherwise on port 9494 or 9496. When no engine answers, it starts the engine of that FormMorpheus folder once; `FORMMORPHEUS_MCP_AUTOSTART=0` turns that off.
+
+`./formmorpheus agents` sets up clients for you:
+
+- `./formmorpheus agents install` writes FormMorpheus's entry for Claude Code (`.mcp.json`), Codex (`.codex/config.toml`) and Cursor (`.cursor/mcp.json`) in the FormMorpheus folder, and in the folder you ran it from when that is another one. It adds Antigravity's entry in `~/.gemini/config/mcp_config.json` and copies the `formmorpheus` skill into the skills folders these programs read. Entries for other servers are kept, and a file it changes is first copied beside itself with `.bak` and the date added to its name. `--dry-run` lists what it would do and writes nothing.
+- `./formmorpheus agents sync` is for people who change FormMorpheus itself: it mirrors the skill pack to `.agents/skills` and writes `agents/manifest.json` from the server's code. `--check` changes nothing and exits with 1 when something is out of date.
+
+After `install`, open the client in your folder, approve the `formmorpheus` server when it asks, and try "List my movies and export the newest as MP4". The export asks you in the window.
+
+### The question in the window
+
+When an agent needs your yes, a box opens in the middle of the FormMorpheus window. It names the agent (or says an outside agent), says what it asked to do, such as "rename the movie Intro to Opening", and reminds you that you can turn this off in Preferences, Agents. When several questions wait, it shows them one at a time.
+
+- **Deny**: nothing is done. For the next 2 minutes the agent's requests that need your yes are refused without asking again. Escape also denies.
+- **Allow once**: this one request goes ahead.
+- **Always allow all outside agents**: sets Outside agents to Allowed. It is not offered for an export or an import, which always ask.
+
+If nobody answers within 2 minutes, the question closes and nothing is done.
+
+### The terminal panel
+
+The terminal panel runs a shell and the agent programs beside the Stage and the Timeline.
+
+- **Open it** from View · Terminal, or press Ctrl+`. Press Ctrl+` again, or the close button, to hide it; the programs in it keep running. View also has New Terminal and Claude Code (Shift+Ctrl+`).
+- **Tabs**: the plus button opens a shell in your home folder, and the Claude Code button opens Claude Code. Codex, Cursor and Antigravity each get a button in the panel's head when they are on this computer, and a row in the More agents menu. Every program has its own tab. **Restart this tab** runs a program again, and **Close this tab** ends it. A tab whose program has ended is struck through.
+- **Ask Claude Code**: type a request in the line at the bottom of the panel and press Enter. Claude Code opens in a tab with your words, the open movie's name, the frame and the ids of the selected content.
+- **Move and resize**: the side button moves the panel to the right of the window, and back to the bottom. The right side needs a window at least 900 pixels wide. Drag the panel's edge to make it larger or smaller. FormMorpheus keeps its side, its size and whether it was open.
+- **Installing**: Claude Code, Codex, Cursor and Antigravity must already be installed on your computer. FormMorpheus neither installs them nor signs you in to them. When one is missing, the panel says so and shows the line to run in your own terminal to install it. Sign in once there too; for Claude Code, run `claude` and type /login.
+- **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
+
+Closing FormMorpheus ends every tab.
 
 ## New in 0.18.0
 

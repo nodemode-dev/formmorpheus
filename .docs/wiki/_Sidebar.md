@@ -7,4 +7,5 @@
 - [[Paint-Core]]
 - [[Media-and-Export]]
 - [[Desktop]]
+- [[Agents]]
 - [[Contributing]]

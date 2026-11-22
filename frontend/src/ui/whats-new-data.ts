@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.22.0', name: 'Agents, with your yes',
+    additions: [
+      { title: 'A terminal panel', text: 'A shell, Claude Code, Codex, Cursor and Antigravity run beside the Stage and the Timeline. View, Terminal opens it.', command: 'view-terminal' },
+      { title: 'Agents ask first', text: 'An AI program on this computer can list, create and rename your movies, and export or import, after you say yes in this window.', command: 'settings' },
+      { title: 'Connect a client', text: 'Preferences, Agents shows the address and the command that connect an MCP client to FormMorpheus.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.21.0', name: 'The family look, in violet',
     additions: [
       { title: 'A violet accent', text: 'FormMorpheus has its own accent color. An accent you picked yourself is kept.', command: 'settings' },

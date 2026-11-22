@@ -1,4 +1,7 @@
 import { capabilities } from '../io/api';
+import { outsideAgents } from '../dock-adapter';
+import type { StoredChoice } from '../dock/adapter';
+import { toast } from './toast';
 import { platform } from '../platform';
 import { Dialog, confirmAction } from './dialogs';
 import { el, q, setClass, setHidden, setText, setValue } from './dom';
@@ -15,7 +18,7 @@ import { THEMES, readChoice, setAccent, setIntensity, setTheme, themeSwatchesHtm
 const RAIL_KEY = 'formmorpheus.prefsRailCollapsed';
 const AUTOSAVE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Off'], ['10', '10 s'], ['30', '30 s'], ['60', '1 min'], ['300', '5 min']];
 const NOTICE_CHOICES: ReadonlyArray<readonly [string, string]> = [['0', 'Automatic'], ['3', '3 seconds'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds']];
-const SECTION_ORDER = ['General', 'Interface', 'Timeline', 'Pen and Tablet'];
+const SECTION_ORDER = ['General', 'Interface', 'Timeline', 'Pen and Tablet', 'Agents'];
 
 export class SettingsDialog extends Dialog {
   private readonly grid = el('<div class="nm-theme-grid" role="group" aria-label="Theme"></div>');
@@ -71,6 +74,10 @@ export class SettingsDialog extends Dialog {
   private readonly snapAlwaysRow = checkRow('Snap Stage drags to the frame without Shift (otherwise only while Shift or a second finger is held)', (v) => this.change({ stageSnapAlways: v }));
   private readonly fingerPaintRow = checkRow('Paint with finger', (v) => setFingerPaints(v));
   private readonly confirmDeleteRow =checkRow('Ask before deleting content', (v) => this.change({ confirmDelete: v }));
+  private readonly agentsRow = selectRow(t('Outside agents'), [['ask', t('Ask')], ['allowed', t('Allowed')], ['blocked', t('Blocked')]], (v) => {
+    void outsideAgents.set(v as StoredChoice).then(() => setHidden(this.agentsChanged, true), () => { toast(t('The engine did not keep the Outside agents setting. Start it with ./formmorpheus, then try again.'), 'error'); void this.loadAgents(); });
+  });
+  private readonly agentsChanged = el(`<p class="cv-note" role="status" hidden>${t('The Outside agents setting was changed outside FormMorpheus, so FormMorpheus asks again.')}</p>`);
 
   constructor(private readonly onPrefs: (p: Prefs) => void) {
     super('Preferences', 620);
@@ -82,7 +89,7 @@ export class SettingsDialog extends Dialog {
     this.grid.append(swatches.content);
     for (const b of Array.from(this.grid.querySelectorAll<HTMLElement>('[data-theme-id]'))) b.style.removeProperty('border-color');
     const pages = el('<div class="cv-prefs-pages"></div>');
-    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory', 'Pen and Tablet': 'shPen' };
+    const railIcons: Record<string, string> = { General: 'pfGeneral', Interface: 'pfInterface', Timeline: 'pfHistory', 'Pen and Tablet': 'shPen', Agents: 'agent' };
     const grp = (label: string, ...content: HTMLElement[]): HTMLElement => {
       const g = el('<section class="cv-prefs-group"><h3 class="cv-prefs-label"></h3></section>');
       const h = q<HTMLElement>(g, '.cv-prefs-label');
@@ -147,6 +154,27 @@ export class SettingsDialog extends Dialog {
       grp('Gestures', this.gesturesRow.el, this.rotatePinchRow.el, this.secondFingerRow.el, this.touchHoldRow.el, this.multiFingerRow.el, this.penHoverRow.el, this.penRollRow.el, this.penPlayRow.el, this.fingerPaintRow.el),
       grp('Editing', this.confirmDeleteRow.el, this.snapAlwaysRow.el, this.showTipsRow.el));
     add('Pen and Tablet', ...this.penPage.groups);
+    const mcpRow = (label: string, value: string): HTMLElement => {
+      const row = el('<div class="cv-field"><span></span><code class="cv-prefs-agents-mcp" translate="no" dir="ltr"></code></div>');
+      const name = q<HTMLElement>(row, 'span');
+      setText(name, t(label));
+      onLanguage(() => setText(name, t(label)));
+      setText(q(row, 'code'), value);
+      return row;
+    };
+    const mcpPort = location.port || (location.protocol === 'https:' ? '443' : '80');
+    const terminalBtn = el<HTMLButtonElement>('<button class="cv-btn" type="button"></button>');
+    const paintTerminalBtn = (): void => setText(terminalBtn, t('Open the Terminal Panel'));
+    paintTerminalBtn();
+    onLanguage(paintTerminalBtn);
+    terminalBtn.addEventListener('click', () => { this.close(); document.dispatchEvent(new CustomEvent('fm:dock-open')); });
+    const terminalRow = el('<div class="cv-prefs-agents-row"></div>');
+    terminalRow.append(terminalBtn);
+    if (platform.kind === 'ipad') terminalRow.hidden = true;
+    if (platform.kind !== 'ipad') add('Agents',
+      grp('Outside Agents', this.agentsRow.el, this.agentsChanged, nt(t('Off by default. Ask: an outside agent such as Claude Code, Codex, Cursor or Antigravity asks you in this window before it changes a movie. Allowed: it works without asking. Blocked: every agent is refused, the ones in the terminal panel included.'))),
+      grp('Connect a Client', mcpRow('MCP address', `http://127.0.0.1:${mcpPort}/mcp`), mcpRow('Standard input and output', './formmorpheus mcp'), nt(t('Give an MCP client the address, or, for a client that starts its own server, the command, run in the FormMorpheus folder.'))),
+      grp('Terminal', terminalRow, nt(t('The terminal panel runs a shell, Claude Code, Codex, Cursor and Antigravity beside the Stage and the Timeline.'))));
     for (const name of SECTION_ORDER) {
       const tab = this.nav.querySelector<HTMLElement>(`[data-section="${name}"]`), card = this.sections.get(name);
       if (tab?.parentElement) tab.parentElement.appendChild(tab);
@@ -241,6 +269,7 @@ export class SettingsDialog extends Dialog {
     this.confirmDeleteRow.set(p.confirmDelete);
     this.snapAlwaysRow.set(p.stageSnapAlways);
     this.penPage.show();
+    void this.loadAgents();
     this.sync();
     if (section && this.sections.has(section)) this.showSection(section);
     this.open();
@@ -268,6 +297,12 @@ export class SettingsDialog extends Dialog {
       const title = `${THEMES[id]?.label ?? id}${fav ? ' (favorite, right-click to remove)' : ' (right-click to add to favorites)'}`;
       if (b.title !== title) b.title = title;
     }
+  }
+
+  private async loadAgents(): Promise<void> {
+    const st = await outsideAgents.get();
+    this.agentsRow.set(st.value);
+    setHidden(this.agentsChanged, !st.changedOutside);
   }
 
   private change(patch: Partial<Prefs>): void {

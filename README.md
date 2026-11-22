@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.21.0" src="https://img.shields.io/badge/version-v0.21.0-eef0f4?style=flat-square">
+  <img alt="version 0.22.0" src="https://img.shields.io/badge/version-v0.22.0-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
   <img alt="macOS, Linux, Windows and iPad" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20iPad-native-2f7bf5?style=flat-square">
@@ -115,6 +115,7 @@
 - **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
 - **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg.
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
+- **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
 - **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is written but not yet built on a Mac, so its first run on an iPad is next.
 
@@ -143,7 +144,7 @@ cd formmorpheus
 
 `./formmorpheus desktop dev` opens the desktop window instead. On Windows use `formmorpheus_oc_install.bat` and `formmorpheus.bat`. On a Mac with Xcode, `./formmorpheus ios` builds the iPad app; see [`docs/ios/BUILD.md`](docs/ios/BUILD.md), with TestFlight and App Store steps beside it.
 
-The interface runs on port 5194 and proxies `/api` to the local engine on 127.0.0.1:9494. `FORMMORPHEUS_DATA_DIR` moves the engine's data and movie library, and `FORMMORPHEUS_PORT` sets the engine port.
+The interface runs on port 5194 and proxies `/api` and `/mcp` to the local engine on 127.0.0.1:9494. `FORMMORPHEUS_DATA_DIR` moves the engine's data and movie library, and `FORMMORPHEUS_PORT` sets the engine port.
 
 > [!IMPORTANT]
 > **Status:** in development. The Linux desktop build is tested; the macOS and Windows builds are configured but untested here.

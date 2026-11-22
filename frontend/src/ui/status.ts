@@ -69,6 +69,7 @@ export class StatusBar {
       if (found) pick = ` · ${t('{name}: frame {a} to {b}, {d}').replace('{name}', contentName(found.name)).replace('{a}', String(found.start)).replace('{b}', String(found.start + found.duration)).replace('{d}', durationLabel(found.duration, m.fps))}`;
     } else if (ids.length > 1) pick = ` · ${tn(ids.length, '{n} selected', '{n} selected')}`;
     setText(this.dims, base + pick);
+    setTitle(this.dims, base + pick);
   }
 
   private find(tracks: Movie['tracks'], id: string): Content | null {

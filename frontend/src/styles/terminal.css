@@ -1,0 +1,3 @@
+:root { --ft-dock-size: 280px; --ft-dock-wsize: 460px; --ft-dock-h: 0px; --ft-dock-w: 0px; }
+:root[data-ft-dock="open"]:not([data-ft-dock-side="right"]) { --ft-dock-h: min(var(--ft-dock-size), 70vh); }
+:root[data-ft-dock="open"][data-ft-dock-side="right"] { --ft-dock-w: min(var(--ft-dock-wsize), 60vw); }
