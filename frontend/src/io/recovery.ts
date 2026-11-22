@@ -7,6 +7,7 @@ import { tf } from '../ui/i18n-fill';
 import { memory } from '../platform/ipad-memory';
 import { platform } from '../platform';
 import { api, serviceReady } from './api';
+import { socketUrl } from './window-key';
 
 export interface RecoveryEntry { session: string; name: string; library: string | null; time: number; alive?: number; idle?: number; size: number; gone?: boolean; wait?: number }
 
@@ -142,11 +143,12 @@ export class Recovery {
   private liveSock: WebSocket | null = null;
 
   /** One open socket; resolves when it closes, with whether it ever opened. A socket holds none of the six HTTP connections per host. */
-  private hold(): Promise<boolean> {
+  private async hold(): Promise<boolean> {
+    const url = await socketUrl(`${base(SESSION)}/live`);
     return new Promise((resolve) => {
       let opened = false;
       let ws: WebSocket;
-      try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base(SESSION)}/live`); } catch { resolve(false); return; }
+      try { ws = new WebSocket(url); } catch { resolve(false); return; }
       this.liveSock = ws;
       ws.onopen = () => { opened = true; };
       ws.onclose = () => resolve(opened);

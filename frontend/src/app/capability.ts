@@ -30,7 +30,9 @@ export function missingCapabilities(): string[] {
 }
 
 /** Shows the one message, built once. Colors and type come from the tokens. */
-export function showUnsupported(missing: string[]): void {
+export const KEY_TAKEN = 'This engine already gave its window key to another window or tab. Close that one, or start the engine again, then reload this page.';
+
+export function showUnsupported(missing: string[], title = 'formmorpheus cannot start on this system.', system = true): void {
   const box = document.createElement('div');
   box.setAttribute('role', 'alert');
   box.style.cssText = 'position:fixed;inset:0;z-index:var(--z-overlay);display:flex;align-items:center;justify-content:center;padding:var(--space-8);box-sizing:border-box;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-ui);text-align:center;';
@@ -38,14 +40,15 @@ export function showUnsupported(missing: string[]): void {
   inner.style.cssText = 'max-width:520px;display:flex;flex-direction:column;gap:var(--space-3);line-height:1.5;';
   const head = document.createElement('div');
   head.style.cssText = 'font-size:18px;font-weight:600;';
-  head.textContent = t('formmorpheus cannot start on this system.');
+  head.textContent = t(title);
   const lines = document.createElement('div');
   lines.style.cssText = 'color:var(--text-secondary);font-size:14px;';
   lines.textContent = missing.map((s) => t(s)).join(' ');
   const need = document.createElement('div');
   need.style.cssText = 'color:var(--text-secondary);font-size:14px;';
   need.textContent = t('formmorpheus needs macOS 13 or later with its built-in browser engine, Windows 10 or 11 with the system web runtime installed, or Linux with a system web component from version 2.46 on.');
-  inner.append(head, lines, need);
+  inner.append(head, lines);
+  if (system) inner.append(need);
   box.append(inner);
   document.body.append(box);
 }

@@ -3,6 +3,7 @@ import { Dialog } from './dialogs';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { t } from './i18n';
 import { drawQr } from './qr';
+import { socketUrl } from '../io/window-key';
 
 /** What Pen Link needs of Draw & Paint. */
 export interface PenLinkPaint {
@@ -170,15 +171,18 @@ export class PenLink extends Dialog {
   // ---------------------------------------------------------------- socket
   private attach(): void {
     if (this.sock && this.sock.readyState <= 1) return;
-    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${API}/desk`);
-    ws.binaryType = 'arraybuffer';
-    this.sock = ws;
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string') this.onText(JSON.parse(ev.data) as Record<string, unknown>);
-      else this.onSamples(ev.data as ArrayBuffer);
-    };
-    ws.onclose = () => { if (this.sock === ws) { this.sock = null; this.release(); window.clearInterval(this.mirrorTimer); this.mirrorTimer = 0; } };
-    ws.onopen = () => { window.clearInterval(this.mirrorTimer); this.mirrorTimer = window.setInterval(() => this.mirror(), 70); };
+    void socketUrl(`${API}/desk`).then((url) => {
+      if (this.sock && this.sock.readyState <= 1) return;
+      const ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
+      this.sock = ws;
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') this.onText(JSON.parse(ev.data) as Record<string, unknown>);
+        else this.onSamples(ev.data as ArrayBuffer);
+      };
+      ws.onclose = () => { if (this.sock === ws) { this.sock = null; this.release(); window.clearInterval(this.mirrorTimer); this.mirrorTimer = 0; } };
+      ws.onopen = () => { window.clearInterval(this.mirrorTimer); this.mirrorTimer = window.setInterval(() => this.mirror(), 70); };
+    });
   }
 
   private detach(): void {

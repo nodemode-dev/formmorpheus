@@ -81,7 +81,7 @@ class PerformState {
     if (patch.rotSpeed !== undefined) this.rotSpeed = clamp(patch.rotSpeed);
     if (patch.preroll !== undefined) this.preroll = Math.min(48, Math.max(0, Math.round(patch.preroll)));
     if (patch.punch !== undefined) this.punch = patch.punch;
-    try { localStorage.setItem(STORE, JSON.stringify({ filtering: this.filtering, roll: this.roll, rotSpeed: this.rotSpeed, preroll: this.preroll, punch: this.punch })); } catch { /* ignore */ }
+    try { localStorage.setItem(STORE, JSON.stringify({ filtering: this.filtering, roll: this.roll, rotSpeed: this.rotSpeed, preroll: this.preroll, punch: this.punch })); } catch { /* storage blocked: the choices last this session */ }
     this.emit();
   }
 
