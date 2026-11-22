@@ -1,4 +1,4 @@
-import { el, setHidden, setText } from './dom';
+import { el, setClass, setHidden, setText } from './dom';
 import { icon } from './icons';
 
 /** A native <select> shown as the target's menu (Phase 21, UI_SPEC.md; s21's blend modes, s23's workspaces): a button
@@ -41,31 +41,59 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { search?: string
   const disabled = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'disabled') as PropertyDescriptor;
   Object.defineProperty(select, 'disabled', { configurable: true, get() { return disabled.get?.call(select); }, set(v) { disabled.set?.call(select, v); label(); } });
   select.addEventListener('change', label);
+  const rows = new Map<string, HTMLButtonElement>(), heads = new Map<string, HTMLElement>();
+  const visible = (): HTMLElement[] => Array.from(list.querySelectorAll<HTMLElement>('.cv-dd-item:not([hidden])'));
+  // .cv-dd-item sets display, so the hidden attribute alone would not hide it.
+  const show = (n: HTMLElement, on: boolean): void => { setHidden(n, !on); const d = on ? '' : 'none'; if (n.style.display !== d) n.style.display = d; };
+  const row = (key: string, o: HTMLOptionElement): HTMLButtonElement => {
+    let item = rows.get(key);
+    if (!item) {
+      const made = el<HTMLButtonElement>(`<button class="cv-dd-item" type="button" role="option"><span></span>${icon('check', 14)}</button>`), v = o.value;
+      made.dataset.value = v;
+      made.addEventListener('click', () => { if (select.value !== v) { select.value = v; select.dispatchEvent(new Event('change', { bubbles: true })); } close(); });
+      made.addEventListener('pointerenter', () => { picked = visible().indexOf(made); mark(); opts.onHover?.(v); });
+      rows.set(key, made);
+      item = made;
+    }
+    setText(item.querySelector('span') as HTMLElement, o.textContent ?? '');
+    return item;
+  };
   const fill = (): void => {
     const q = search?.value.trim().toLowerCase() ?? '';
-    list.textContent = '';
+    const want: HTMLElement[] = [], seen = new Map<string, number>();
+    const keyOf = (k: string): string => { const n = seen.get(k) ?? 0; seen.set(k, n + 1); return n ? `${k}\n${n}` : k; };
     for (const node of Array.from(select.children)) {
-      const group = node instanceof HTMLOptGroupElement ? node : null, options = group ? Array.from(group.children) as HTMLOptionElement[] : [node as HTMLOptionElement];
-      const shown = options.filter((o) => !o.hidden && (!q || (o.textContent ?? '').toLowerCase().includes(q)));
-      if (!shown.length) continue;
-      if (group && !q) list.appendChild(el(`<div class="cv-dd-head">${group.label}</div>`));
-      for (const o of shown) {
-        const item = el<HTMLButtonElement>(`<button class="cv-dd-item" type="button" role="option"><span></span>${icon('check', 14)}</button>`);
-        setText(item.querySelector('span') as HTMLElement, o.textContent ?? '');
-        item.dataset.value = o.value;
-        item.classList.toggle('is-chosen', o.value === select.value);
-        item.setAttribute('aria-selected', String(o.value === select.value));
-        item.addEventListener('click', () => { if (select.value !== o.value) { select.value = o.value; select.dispatchEvent(new Event('change', { bubbles: true })); } close(); });
-        item.addEventListener('pointerenter', () => { picked = Array.from(list.querySelectorAll('.cv-dd-item')).indexOf(item); mark(); opts.onHover?.(o.value); });
-        list.appendChild(item);
+      const group = node instanceof HTMLOptGroupElement ? node : null;
+      if (!group && !(node instanceof HTMLOptionElement)) continue;
+      const options = group ? Array.from(group.children).filter((o): o is HTMLOptionElement => o instanceof HTMLOptionElement) : [node as HTMLOptionElement];
+      let head: HTMLElement | null = null;
+      if (group) {
+        const hk = keyOf(`\0${group.label}`);
+        head = heads.get(hk) ?? null;
+        if (!head) { head = el('<div class="cv-dd-head"></div>'); heads.set(hk, head); }
+        setText(head, group.label);
+        want.push(head);
       }
+      let any = false;
+      for (const o of options) {
+        const item = row(keyOf(o.value), o), shown = !o.hidden && (!q || (o.textContent ?? '').toLowerCase().includes(q)), chosen = shown && o.value === select.value;
+        any ||= shown;
+        show(item, shown);
+        setClass(item, 'is-chosen', chosen);
+        if (item.getAttribute('aria-selected') !== String(chosen)) item.setAttribute('aria-selected', String(chosen));
+        want.push(item);
+      }
+      if (head) show(head, any && !q);
     }
-    const items = Array.from(list.querySelectorAll<HTMLElement>('.cv-dd-item'));
-    picked = Math.max(0, items.findIndex((i) => i.classList.contains('is-chosen')));
+    const keep = new Set(want);
+    let cursor = list.firstElementChild;
+    for (const n of want) { if (n !== cursor) list.insertBefore(n, cursor); else cursor = cursor.nextElementSibling; }
+    for (const map of [rows, heads] as Map<string, HTMLElement>[]) for (const [k, n] of map) if (!keep.has(n)) { n.remove(); map.delete(k); }
+    picked = Math.max(0, visible().findIndex((i) => i.classList.contains('is-chosen')));
     if (q) picked = 0;
     mark();
   };
-  const mark = (): void => { list.querySelectorAll<HTMLElement>('.cv-dd-item').forEach((i, n) => i.classList.toggle('is-picked', n === picked)); };
+  const mark = (): void => { const vis = visible(); list.querySelectorAll<HTMLElement>('.cv-dd-item').forEach((i) => setClass(i, 'is-picked', i === vis[picked])); };
   const escape = (): void => { close(); btn.focus(); };
   const close = (): void => { setHidden(pop, true); btn.setAttribute('aria-expanded', 'false'); opts.onHover?.(null); if (openList === escape) openList = null; };
   const open = (): void => {
@@ -85,7 +113,7 @@ export function enhanceSelect(select: HTMLSelectElement, opts: { search?: string
   search?.addEventListener('input', () => { fill(); opts.onHover?.(null); });
   list.addEventListener('pointerleave', () => opts.onHover?.(null));
   pop.addEventListener('keydown', (e) => {
-    const items = Array.from(list.querySelectorAll<HTMLElement>('.cv-dd-item'));
+    const items = visible();
     if (e.key === 'Escape') { e.preventDefault(); close(); btn.focus(); return; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { picked = (picked + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; mark(); items[picked].scrollIntoView({ block: 'nearest' }); opts.onHover?.(items[picked].dataset.value ?? null); } return; }
     if (e.key === 'Enter') { e.preventDefault(); items[picked]?.click(); }
