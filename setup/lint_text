@@ -2,7 +2,9 @@
 """Text lint: no em dash, no emoji, no commit-attribution trailers, no other vendors' product names.
 
 Scans the tracked text files (git ls-files when git is available, else a walk) and prints file:line hits.
-Exits 1 on any hit. Banned names live in setup/lint_text_banned.txt, one per line, matched as whole words.
+Exits 1 on any hit. Banned names live in setup/lint_text_banned.txt, one per line, matched as whole words in any case.
+A match spelled all in lower case is a file format, not a name, when it follows a dot (`.procreate`,
+`image/vnd.adobe.photoshop`) or is the whole text of a plist `<string>` element (an extension in Info.plist).
 Set FM_LINT_WALK=1 to skip git and walk the tree.
 """
 import os
@@ -24,15 +26,26 @@ EMOJI = re.compile("[☀-➿⭐⭕⬛⬜⌚⌛⏩-⏿⤴⤵〰〽㊗㊙\U0001f00
 ATTRIBUTION = re.compile("co-" + "authored-by", re.I)
 
 
-def banned_names() -> list[re.Pattern]:
+def banned_names() -> list[tuple[str, re.Pattern]]:
     path = ROOT / "setup" / "lint_text_banned.txt"
     names = []
     if path.is_file():
         for line in path.read_text("utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                names.append(re.compile(r"\b" + re.escape(line) + r"\b"))
+                names.append((line, re.compile(r"\b" + re.escape(line) + r"\b", re.I)))
     return names
+
+
+def format_id(line: str, m: re.Match) -> bool:
+    if not m.group().islower():
+        return False
+    a, b = m.start(), m.end()
+    return line[a - 1:a] == "." or (line[max(0, a - 8):a] == "<string>" and line[b:b + 9] == "</string>")
+
+
+def names_in(line: str, names: list[tuple[str, re.Pattern]]) -> list[str]:
+    return [name for name, rx in names if any(not format_id(line, m) for m in rx.finditer(line))]
 
 
 def tracked() -> list[Path]:
@@ -80,9 +93,7 @@ def main() -> int:
             # The agent guides and the wiki state the rule itself, so they may name the trailer.
             if ATTRIBUTION.search(line) and str(rel) not in RULE_DOCS:
                 found.append("commit attribution trailer")
-            for rx in names:
-                if rx.search(line):
-                    found.append(f"banned name {rx.pattern[2:-2]}".replace("\\", ""))
+            found.extend(f"banned name {name}" for name in names_in(line, names))
             for what in found:
                 print(f"{rel}:{n}: {what}")
                 hits += 1

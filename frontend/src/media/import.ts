@@ -14,15 +14,15 @@ import { importScale } from './import-size';
 import { gifFrames, gifInfo, isGif } from './gif-decode';
 import { decodeTiff, isTiff } from './tiff-decode';
 import { decodeTga, isTga } from './tga-decode';
-import { transcodeViaEngine } from './transcode';
+import { showsAlpha, transcodeViaEngine } from './transcode';
 import { tf } from '../ui/i18n-fill';
 import { UndecodableVideo, VideoPool } from './video';
 import { layeredToDrawing } from '../io/layered-import';
 import { isKra, readKra } from '../io/kra-import';
 import { isOra, readOra } from '../io/ora-import';
 import { isPdn, readPdn } from '../io/pdn-import';
-import { isProcreate, readProcreate } from '../io/procreate-import';
 import { isPsd, readPsd } from '../io/psd-import';
+import { isTiledArtwork, readTiledArtwork } from '../io/tiled-artwork-import';
 import { sniffProject } from '../io/project-sniff';
 import { tn } from '../ui/i18n';
 
@@ -35,7 +35,7 @@ export interface ImportResult {
   replaces?: string;
 }
 
-type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'procreate' | 'font' | 'media' | 'unknown';
+type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'tiled-artwork' | 'font' | 'media' | 'unknown';
 
 const EXT: Record<string, Sniff> = {
   png: 'png', apng: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', avif: 'avif', bmp: 'bmp', tif: 'tiff', tiff: 'tiff',
@@ -71,7 +71,7 @@ function sniff(file: File, b: Uint8Array, tail?: Uint8Array): Sniff {
   if (isOra(file.name, b)) return 'ora';
   if (isKra(file.name, b)) return 'kra';
   if (isPdn(file.name, b)) return 'pdn';
-  if (isProcreate(file.name, b)) return 'procreate';
+  if (isTiledArtwork(file.name, b)) return 'tiled-artwork';
   if (ascii(b, 0, 'OTTO') || ascii(b, 0, 'true') || ascii(b, 0, 'wOFF') || ascii(b, 0, 'wOF2') || ascii(b, 0, 'ttcf') || (b[0] === 0 && b[1] === 1 && b[2] === 0 && b[3] === 0)) return 'font';
   if (ascii(b, 4, 'ftyp') || (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) || ascii(b, 0, 'OggS') || ascii(b, 0, 'fLaC') || ascii(b, 0, 'ID3')) return 'media';
   if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return 'media';
@@ -370,6 +370,7 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
   let file = source;
   let info: Awaited<ReturnType<typeof VideoPool.probe>> | null = null;
   const name = baseName(source.name);
+  let lostAlpha = '';
   try { info = await VideoPool.probe(file); } catch (e) {
     if (!(e instanceof UndecodableVideo)) info = null;
     else {
@@ -379,8 +380,9 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
       const out = await transcodeViaEngine(source, 'video', (p) => onProgress?.(p, `Converting ${source.name}`)).catch((er: unknown) => {
         throw new Error(`${source.name}: ${e.message} ${er instanceof Error ? er.message : ''}`.trim());
       });
-      file = new File([out.blob], `${name}.${out.mime === 'video/webm' ? 'webm' : 'mp4'}`, { type: out.mime });
+      file = new File([out.blob], `${name}.${out.mime === 'video/webm' ? 'webm' : out.mime === 'video/quicktime' ? 'mov' : 'mp4'}`, { type: out.mime });
       try { info = await VideoPool.probe(file); } catch { throw new Error(tf('{name} was converted by the engine, but this system still cannot play it. Update the system web component or its media codec packages.', { name: source.name })); }
+      if (out.alpha && (await showsAlpha(file)) === false) lostAlpha = tf('{name} was converted with its transparency, but this device shows its first frame with none, so it may play without transparency here.', { name: source.name });
     }
   }
   // a risky sound is decoded once; the length it gave is reused below
@@ -404,7 +406,7 @@ async function importTimed(source: File, m: Movie, at: number, onProgress?: (p: 
     };
     const room = Math.max(1, m.duration - at);
     const c = content('video', at, Math.max(1, Math.min(frames, room)), { name, asset: asset.id, transform: place(m, info.width, info.height) });
-    return { assets: [{ asset, blob: file }], contents: [c], ownTrack: [false], notice: info.hasAudio ? undefined : 'This video has no sound.' };
+    return { assets: [{ asset, blob: file }], contents: [c], ownTrack: [false], notice: [lostAlpha, info.hasAudio ? '' : 'This video has no sound.'].filter(Boolean).join(' ') || undefined };
   }
   let seconds = info?.duration ?? 0;
   let mime = file.type || info?.mime || 'audio/mpeg';
@@ -580,8 +582,8 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
   const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 26)).arrayBuffer());
   const kind0 = sniff(file, head, tail);
   // layered artwork: each reader gives a neutral document that becomes a Drawing with its layers
-  if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn' || kind0 === 'procreate') {
-    const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : kind0 === 'procreate' ? readProcreate(file) : readPdn(file));
+  if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn' || kind0 === 'tiled-artwork') {
+    const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : kind0 === 'tiled-artwork' ? readTiledArtwork(file) : readPdn(file));
     return layeredToDrawing(doc, file.name, movie, at);
   }
   const trip = await sniffRoundTrip(file, head);

@@ -244,9 +244,9 @@ const GRAINS: [RegExp, string][] = [
 ];
 
 const SET_GRAIN: Record<string, string> = {
-  sketching: 'graphite-tooth', sketch: 'graphite-tooth', charcoals: 'charcoal-grit', chalk: 'chalk-pits',
-  water: 'paper-cold-press', wash: 'paper-cold-press', textures: 'noise-medium', texture: 'noise-medium',
-  noise: 'noise-medium', materials: 'paper-fine',
+  graphite: 'graphite-tooth', pencil: 'graphite-tooth', charcoal: 'charcoal-grit', pastel: 'chalk-pits',
+  'wet media': 'paper-cold-press', watercolor: 'paper-cold-press', grit: 'noise-medium', surfaces: 'noise-medium',
+  grain: 'noise-medium', finishes: 'paper-fine',
 };
 
 /** Weaves and tight patterns need a coarser repeat to read at 100% zoom. */
@@ -283,7 +283,7 @@ export function withMaterials(b0: Brush): Brush {
   // A wider slider range with the default sizes kept: presets shrink by the same factor the maximum grows.
   // Line tools (pens, markers, liners) keep their own range: a pen that reaches 100 px at 45 percent is no pen.
   if (b.maxSize >= 24) {
-    const f = /^(inking|drawing|outline|monoline|script|ink|calligraphy)$/i.test(b.set) ? 1 : 1.6;
+    const f = /^(comic ink|markers|line art|even line|lettering|pens|nibs)$/i.test(b.set) ? 1 : 1.6;
     out.maxSize = Math.round(b.maxSize * f * 10) / 10;
     out.presets = b.presets.map((p) => ({ ...p, size: p.size / f }));
   }

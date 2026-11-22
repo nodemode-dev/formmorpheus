@@ -7,7 +7,7 @@ import { ExamplesRow } from './examples-row';
 import { mountCloudButton, mountStorageButton } from './theater-storage';
 import { Popover, popRow } from './popover';
 import { theaterLayout } from './shell-opts';
-import { platform } from '../platform';
+import { FPS_PRESETS } from '../engine/time';
 import '../styles/theater-wall.css';
 
 export interface HomeDeps {
@@ -125,8 +125,7 @@ export class HomeScreen {
     document.addEventListener('fm:theater-layout', applyLayout);
     document.addEventListener('fm:show-exports', () => { this.show('outputs'); });
     mountStorageButton(this.root.querySelector('[data-storage]') as HTMLElement);
-    if (platform.kind === 'ipad') (this.root.querySelector('[data-cloud]') as HTMLElement).hidden = true;
-    else mountCloudButton(this.root.querySelector('[data-cloud]') as HTMLElement);
+    mountCloudButton(this.root.querySelector('[data-cloud]') as HTMLElement);
     host.appendChild(this.root);
     d.engine.on('projects', () => this.sync());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.forced && d.engine.projects.length) { this.forced = false; this.sync(); } });
@@ -207,13 +206,16 @@ export class HomeScreen {
 
 type Page = 'start' | 'recent' | 'projects' | 'outputs' | 'trash';
 
+/** A size card named after its frame rate takes the rate's label from FPS_PRESETS. */
+const rateName = (fps: number): string => FPS_PRESETS.find((p) => p.fps === fps)?.label ?? `${fps} fps`;
+
 const PRESETS: Array<{ name: string; w: number; h: number; fps: number }> = [
   { name: 'Wide screen 4K', w: 3840, h: 2160, fps: 24 },
   { name: 'Wide screen HD', w: 1920, h: 1080, fps: 24 },
   { name: 'Ultrawide', w: 2560, h: 1097, fps: 24 },
   { name: 'Social', w: 1080, h: 1920, fps: 30 },
   { name: 'Square', w: 1080, h: 1080, fps: 30 },
-  { name: 'Frame by frame', w: 1920, h: 1080, fps: 12 },
-  { name: 'Anime', w: 1920, h: 1080, fps: 15 },
+  { name: rateName(12), w: 1920, h: 1080, fps: 12 },
+  { name: rateName(15), w: 1920, h: 1080, fps: 15 },
   { name: 'Smooth 60', w: 1920, h: 1080, fps: 60 },
 ];

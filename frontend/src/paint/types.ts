@@ -62,7 +62,7 @@ export interface TipImage { w: number; h: number; data: Uint8Array; key: string 
 export interface Brush {
   id: string;
   name: string;
-  /** Brush set it is listed in: Sketch, Ink, Paint, Chalk, Airbrush, Texture, Wash. */
+  /** The name of the brush set it is listed in, as the panel shows it. */
   set: string;
   tip: TipShape;
   /** 0 hard edge to 1 fully soft (round tips). */

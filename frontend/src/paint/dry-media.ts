@@ -28,8 +28,8 @@ export function dryFloor(b: Brush): Floor | undefined {
   const n = b.name.toLowerCase();
   for (const [re, f] of FAMILIES) if (re.test(n)) return f;
   const s = b.set.toLowerCase();
-  if (s === 'charcoals' || s === 'charcoal') return CHARCOAL;
-  if (s === 'chalk') return PASTEL;
+  if (s === 'charcoal') return CHARCOAL;
+  if (s === 'pastel') return PASTEL;
   return undefined;
 }
 

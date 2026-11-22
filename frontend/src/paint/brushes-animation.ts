@@ -23,44 +23,49 @@ const BASE: Omit<Brush, 'id' | 'name' | 'set' | 'presets'> = {
 
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-/** A row maker for one set: tip, softness, max, min, spacing, flow, size at light touch, flow at light touch, extras, opacity. */
-function set(name: string) {
+/** The sets in library order: `id` is the stored set id, `name` what the panel shows. */
+export const ANIMATION_SETS: { id: string; name: string }[] = [];
+
+/**
+ * A row maker for one set: tip, softness, max, min, spacing, flow, size at light touch, flow at light touch, extras, opacity.
+ * `key` is fixed for good (it is in every brush id and the set id saved libraries hold); `name` is free to change.
+ */
+function set(key: string, name: string) {
+  ANIMATION_SETS.push({ id: `anim-${key}`, name });
   return (n: string, tip: TipShape, soft: number, max: number, min: number, sp: number, flow: number, ps0: number, pf0: number, extra: Partial<Brush> = {}, opacity = 1): Brush => ({
     ...BASE, tip, softness: soft, maxSize: max, minSize: min, spacing: sp, flow,
     pressureSize: [ps0, 1], pressureFlow: [pf0, 1], ...extra,
-    id: `an-${slug(name)}-${slug(n)}`, name: n, set: name, lib: 'animation', presets: makePresets(opacity),
+    id: `an-${key}-${slug(n)}`, name: n, set: name, lib: 'animation', presets: makePresets(opacity),
   });
 }
 
-const SKETCH = set('Sketch');
-const OUTLINE = set('Outline');
-const MONO = set('Monoline');
-const WIGGLE = set('Wiggle');
-const SCRIPT = set('Script');
-const CHALK = set('Chalk');
-const INK = set('Ink');
-const PAINT = set('Paint');
-const BRISTLE_ROW = set('Bristle');
-// A leaning pen lays a broader swath of hair, as a brush held on its side does.
-const BRISTLE: typeof BRISTLE_ROW = (n, tip, soft, max, min, sp, flow, ps0, pf0, extra, op) => BRISTLE_ROW(n, tip, soft, max, min, sp, flow, ps0, pf0, { tilt: 0.6, ...extra }, op);
-const WASH_ROW = set('Wash');
+const SKETCH = set('sketch', 'Pencil');
+const CHALK = set('chalk', 'Pastel');
+const OUTLINE = set('outline', 'Line art');
+const MONO = set('monoline', 'Even line');
+const WIGGLE = set('wiggle', 'Boiling line');
+const INK = set('ink', 'Pens');
+const SCRIPT = set('script', 'Lettering');
+const WASH_ROW = set('wash', 'Watercolor');
 // Uniform build-up caps coverage at the strongest dab, so washes need twice the flow to read as paint.
 const WASH: typeof WASH_ROW = (n, tip, soft, max, min, sp, flow, ps0, pf0, extra, op) => WASH_ROW(n, tip, soft, max, min, sp, Math.min(1, flow * 2.2), ps0, pf0, extra, op);
-const SPONGE = set('Sponge');
-const GRAPHIC = set('Graphic');
-const AIR = set('Airbrush');
-const NOISE = set('Noise');
-const TEXTURE = set('Texture');
-const PATTERN = set('Pattern');
-const ENV = set('Environment');
-const METRO = set('Metro');
+const PAINT = set('paint', 'Thick paint');
+const BRISTLE_ROW = set('bristle', 'Rough brush');
+// A leaning pen lays a broader swath of hair, as a brush held on its side does.
+const BRISTLE: typeof BRISTLE_ROW = (n, tip, soft, max, min, sp, flow, ps0, pf0, extra, op) => BRISTLE_ROW(n, tip, soft, max, min, sp, flow, ps0, pf0, { tilt: 0.6, ...extra }, op);
+const AIR = set('airbrush', 'Spray');
+const SPONGE = set('sponge', 'Dabbing');
+const NOISE = set('noise', 'Grain');
+const TEXTURE = set('texture', 'Surfaces');
+const GRAPHIC = set('graphic', 'Stamps');
+const PATTERN = set('pattern', 'Motifs');
+const METRO = set('metro', 'Geometric');
+const ENV = set('environment', 'Scenery');
 
 const Q = Math.PI / 4;
 
-export const ANIMATION_SETS: string[] = ['Sketch', 'Outline', 'Monoline', 'Wiggle', 'Script', 'Chalk', 'Ink', 'Paint', 'Bristle', 'Wash', 'Sponge', 'Graphic', 'Airbrush', 'Noise', 'Texture', 'Pattern', 'Environment', 'Metro'];
-
 export const ANIMATION_BRUSHES: Brush[] = [
-  // Sketch: rough construction lines
+  // Pencil: rough construction lines
   SKETCH('Lead stub', 'grain-round', 0.2, 22, 4.5, 0.05, 0.95, 0.7, 0.6, { tilt: 0.8, grain: 0.55, smoothing: 0.1 }, 1),
   SKETCH('Soft lead', 'grain-round', 0.55, 28, 3, 0.05, 0.3, 0.5, 0.15, { tilt: 1, grain: 0.65, smoothing: 0.1 }, 0.85),
   SKETCH('Scribble', 'grain-round', 0.15, 14, 2, 0.08, 0.6, 0.6, 0.3, { scatter: 0.12, grain: 0.6, jitterOpacity: 0.4, smoothing: 0.05 }, 0.9),
@@ -72,7 +77,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   SKETCH('Napkin pen', 'round', 0.18, 8, 1.2, 0.05, 0.85, 0.7, 0.6, { speedSize: -0.5, grain: 0.15, smoothing: 0.3 }),
   SKETCH('Cross-hatcher', 'comb', 0.05, 22, 5, 0.18, 0.7, 0.7, 0.5, { followStroke: true, grain: 0.3, rotationJitter: 0.05 }),
 
-  // Outline: clean contour work for inking over roughs
+  // Line art: clean contour work for inking over roughs
   OUTLINE('Clean outline', 'round', 0.02, 10, 1.5, 0.04, 1, 0.5, 1, { smoothing: 0.5, stabilization: 35, taper: 0.35 }),
   OUTLINE('Heavy outline', 'round', 0.02, 22, 3, 0.04, 1, 0.45, 1, { smoothing: 0.5, stabilization: 40, taper: 0.25 }),
   OUTLINE('Tapered line', 'round', 0.02, 14, 1, 0.04, 1, 0.1, 1, { smoothing: 0.5, taper: 0.9, taperEnd: 0.9, stabilization: 40 }),
@@ -84,7 +89,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   OUTLINE('Dry-edge outline', 'round', 0.05, 16, 2, 0.04, 1, 0.3, 0.9, { grain: 0.8, grainScale: 0.6, smoothing: 0.45, taper: 0.3, stabilization: 30 }),
   OUTLINE('Inner line', 'round', 0.1, 7, 1, 0.04, 0.9, 0.3, 0.6, { taper: 0.8, taperEnd: 0.8, smoothing: 0.5, stabilization: 40 }, 0.9),
 
-  // Monoline: one weight, no pressure change
+  // Even line: one weight, no pressure change
   MONO('Mono fine', 'round', 0, 5, 1, 0.03, 1, 1, 1, { smoothing: 0.45, stabilization: 35 }),
   MONO('Mono medium', 'round', 0, 11, 2, 0.03, 1, 1, 1, { smoothing: 0.45, stabilization: 35 }),
   MONO('Mono bold', 'round', 0, 26, 5, 0.03, 1, 1, 1, { smoothing: 0.45, stabilization: 35 }),
@@ -96,7 +101,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   MONO('Twin line', 'ring', 0, 18, 6, 0.05, 1, 1, 1, { smoothing: 0.4, stabilization: 30 }),
   MONO('Neon line', 'round', 0.55, 16, 4, 0.04, 0.9, 1, 1, { smoothing: 0.4, bump: 0 }, 0.9),
 
-  // Wiggle: lines that boil and wander
+  // Boiling line: lines that boil and wander
   WIGGLE('Boil fine', 'round', 0.05, 6, 1.2, 0.05, 1, 0.6, 1, { wiggle: 0.9, smoothing: 0.3 }),
   WIGGLE('Boil bold', 'round', 0.05, 18, 3, 0.05, 1, 0.6, 1, { wiggle: 0.8, smoothing: 0.3 }),
   WIGGLE('Shaky pencil', 'grain-round', 0.2, 12, 1.5, 0.06, 0.7, 0.6, 0.3, { wiggle: 0.4, grain: 0.7, tilt: 0.6 }, 0.9),
@@ -108,7 +113,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   WIGGLE('Wave', 'round', 0.04, 14, 2, 0.05, 1, 0.8, 1, { wiggle: 0.9, smoothing: 0.6 }),
   WIGGLE('Jelly', 'round', 0.3, 30, 6, 0.05, 0.95, 0.8, 0.9, { wiggle: 0.7, colorDyn: { strokeHue: 0.2 } }, 0.9),
 
-  // Script: pens with a nib
+  // Lettering: pens with a nib
   SCRIPT('Copperplate', 'chisel', 0.04, 14, 2, 0.04, 1, 0.15, 1, { roundness: 0.28, baseRot: 0.5, smoothing: 0.5, stabilization: 45 }),
   SCRIPT('Brush script', 'round', 0.05, 26, 2, 0.04, 1, 0.1, 1, { taper: 0.7, taperEnd: 0.8, smoothing: 0.55, pressureGamma: 1.2, stabilization: 50 }),
   SCRIPT('Italic nib', 'chisel', 0.03, 18, 3, 0.04, 1, 0.8, 1, { roundness: 0.22, baseRot: 0.7, smoothing: 0.4 }),
@@ -120,7 +125,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   SCRIPT('Hand letter', 'round', 0.04, 18, 3, 0.04, 1, 0.5, 1, { smoothing: 0.5, wiggle: 0.12, stabilization: 40 }),
   SCRIPT('Quill', 'chisel', 0.04, 14, 2, 0.04, 1, 0.3, 1, { roundness: 0.3, baseRot: 0.5, smoothing: 0.45, speedSize: -0.3, taper: 0.3 }),
 
-  // Chalk
+  // Pastel: chalks and pastels
   CHALK('Stick chalk', 'chalk', 0.05, 38, 8, 0.07, 0.9, 0.75, 0.5, { grain: 0.8, rotationJitter: 1, tilt: 0.85, tiltCompress: true }),
   CHALK('Soft pastel', 'chalk', 0.3, 50, 12, 0.06, 0.55, 0.6, 0.3, { grain: 0.75, grainScale: 1.3, tilt: 1, bump: 0.2, rotationJitter: 1, tiltCompress: true }, 0.9),
   CHALK('Blackboard', 'chalk', 0.08, 30, 6, 0.06, 0.95, 0.8, 0.5, { grain: 0.9, grainScale: 0.9, jitterOpacity: 0.25, rotationJitter: 1 }),
@@ -132,7 +137,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   CHALK('Conte', 'grain-round', 0.12, 26, 5, 0.05, 0.75, 0.6, 0.3, { grain: 0.85, tilt: 0.8, tiltCompress: true }, 0.9),
   CHALK('Sidewalk', 'chalk', 0.1, 64, 16, 0.08, 0.9, 0.8, 0.6, { grain: 1, grainScale: 2, rotationJitter: 1, grainMode: 'moving' }),
 
-  // Ink
+  // Pens: dip, fountain, reed and ink brushes
   INK('Dip pen', 'round', 0.02, 12, 1.5, 0.04, 1, 0.1, 1, { smoothing: 0.5, taper: 0.4, speedSize: -0.35, stabilization: 40 }),
   INK('Fountain', 'round', 0.03, 14, 2, 0.04, 1, 0.3, 1, { smoothing: 0.5, taper: 0.2, wetEdges: 0.3 }),
   INK('Reed ink', 'chisel', 0.04, 26, 4, 0.04, 1, 0.5, 1, { roundness: 0.35, baseRot: 0.6, grain: 0.3, smoothing: 0.4 }),
@@ -144,7 +149,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   INK('Rollerball', 'round', 0.05, 7, 1, 0.04, 0.95, 0.9, 0.7, { smoothing: 0.4, wetEdges: 0.2, burnout: 0.2 }),
   INK('Ink wash line', 'round', 0.3, 24, 4, 0.04, 0.55, 0.4, 0.4, { render: 'light-glaze', wetEdges: 0.6, wet: { dilution: 0.5, charge: 0.8, attack: 0.2, pull: 0.3, grade: 0.6 } }, 0.8),
 
-  // Paint
+  // Thick paint
   // opaque paints share the Classic recipe (paint/fam-paint-tips.ts): solid body, combed grainy rim, load that thins with light pressure
   // v0.17.2: same recipe as the Classic rows (hair lanes in stroke space, pressure drives width and coverage)
   PAINT('Flat paint', 'chisel', 0, 48, 8, 0.05, 0.8, 0.3, 0.25, { roundness: 1, followStroke: true, pressureOpacity: 0.55, grain: 0.5, grainScale: 0.5, grainAlign: true, grainDepthMin: 0.08, scatterPos: 0.006, burnout: 0.35, edgeBreak: 0.6 }),
@@ -158,7 +163,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   PAINT('Glaze', 'round', 0.25, 56, 12, 0.05, 0.6, 0.6, 0.3, { render: 'light-glaze', grain: 0.3, grainScale: 1.3, pressureOpacity: 0.6, wet: { dilution: 0.5, charge: 0.9, attack: 0.1, pull: 0.2, grade: 0.7 } }, 0.7),
   PAINT('Mixed color', 'bristle', 0.06, 44, 8, 0.07, 0.9, 0.5, 0.6, { tilt: 0.6, bristle: { count: 0, lenVar: 0.4, tone: 0.3, clump: 0.5 }, grain: 0.4, colorDyn: { stampHue: 0.1, stampSat: 0.15, stampBri: 0.2, strokeHue: 0.1, pressureBri: 0.4 }, render: 'intense-glaze' }),
 
-  // Bristle
+  // Rough brush: bristles and combs
   BRISTLE('Fan', 'bristle', 0.04, 54, 12, 0.05, 0.8, 0.8, 0.6, { followStroke: true, roundness: 0.8, grain: 0.4, rotationJitter: 0.02 }),
   BRISTLE('Hog hair', 'bristle', 0.05, 46, 8, 0.05, 0.95, 0.5, 0.6, { bristle: { count: 0, lenVar: 0.4, tone: 0.3, clump: 0.5 }, followStroke: true, roundness: 0.7, grain: 0.5, bump: 0.3 }),
   BRISTLE('Dry brush', 'bristle', 0.04, 50, 10, 0.06, 0.75, 0.5, 0.4, { bristle: { count: 0, lenVar: 0.6, tone: 0.2, clump: 0.3 }, followStroke: true, roundness: 0.75, grain: 0.95, grainScale: 0.7, burnout: 0.5 }, 0.9),
@@ -170,7 +175,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   BRISTLE('Toothbrush', 'speckle', 0.1, 40, 8, 0.4, 0.9, 0.8, 0.7, { shapeCount: 6, scatter: 0.8, jitterSize: 0.6, rotationJitter: 1 }),
   BRISTLE('Worn comb', 'comb', 0.04, 38, 8, 0.05, 0.85, 0.6, 0.5, { bristle: { count: 0, lenVar: 0.6, tone: 0.3, clump: 0.2 }, followStroke: true, grain: 0.7, burnout: 0.3, jitterOpacity: 0.3 }),
 
-  // Wash
+  // Watercolor
   WASH('Watercolor', 'round', 0.45, 56, 12, 0.05, 0.5, 0.4, 0.35, { render: 'uniform-glaze', wetEdges: 0.9, grain: 0.25, grainScale: 1.4, wet: { dilution: 0.6, charge: 0.45, attack: 0.05, pull: 0.1, grade: 0.5, wetJitter: 0.15 } }, 0.92),
   WASH('Light wash', 'round', 0.6, 64, 16, 0.05, 0.3, 0.45, 0.2, { render: 'light-glaze', grain: 0.3, wetEdges: 0.45 }, 0.6),
   WASH('Bleed', 'round', 0.5, 50, 10, 0.05, 0.45, 0.6, 0.3, { render: 'uniform-blending', wetEdges: 0.4, wet: { dilution: 0.4, charge: 0.6, attack: 0.5, pull: 0.8, grade: 0.4 } }, 0.7),
@@ -182,7 +187,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   WASH('Dilute', 'round', 0.5, 44, 8, 0.05, 0.5, 0.6, 0.3, { wet: { dilution: 0.9, charge: 0.3, attack: 0.5, pull: 0.7, grade: 0.5 }, render: 'uniform-blending' }, 0.75),
   WASH('Salt wash', 'round', 0.45, 56, 12, 0.05, 0.4, 0.6, 0.3, { render: 'uniform-glaze', wetEdges: 0.6, grain: 1, grainScale: 0.4, bump: 0.2 }, 0.65),
 
-  // Sponge
+  // Dabbing: sponges and pads
   SPONGE('Natural', 'sponge', 0.1, 50, 12, 0.18, 0.8, 0.8, 0.6, { rotationJitter: 1, scatter: 0.1, grain: 0.4 }),
   SPONGE('Sea sponge', 'sponge', 0.1, 64, 18, 0.25, 0.85, 0.8, 0.6, { rotationJitter: 1, scatter: 0.15, jitterSize: 0.3, bump: 0.3 }),
   SPONGE('Foam', 'sponge', 0.3, 56, 14, 0.2, 0.55, 0.7, 0.4, { rotationJitter: 1, render: 'light-glaze', grain: 0.2 }, 0.8),
@@ -194,7 +199,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   SPONGE('Dab sponge', 'blob', 0.1, 44, 10, 0.5, 0.9, 0.8, 0.6, { rotationJitter: 1, scatter: 0.2, grain: 0.5, jitterOpacity: 0.3 }),
   SPONGE('Rough pad', 'grunge', 0.1, 60, 16, 0.2, 0.8, 0.8, 0.5, { rotationJitter: 1, grain: 0.8, grainMode: 'moving', bump: 0.2 }),
 
-  // Graphic: stamps and flat shapes
+  // Stamps: stamps and flat shapes
   GRAPHIC('Square stamp', 'square', 0, 40, 6, 0.9, 1, 1, 1, { followStroke: true }),
   GRAPHIC('Star stamp', 'star', 0, 40, 8, 0.9, 1, 1, 1, { rotationJitter: 0.2 }),
   GRAPHIC('Cross stamp', 'cross', 0, 36, 8, 0.9, 1, 1, 1, { followStroke: true }),
@@ -206,7 +211,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   GRAPHIC('Halftone', 'dots', 0, 36, 8, 0.18, 1, 0.8, 0.8, { rotationJitter: 0, grain: 0 }),
   GRAPHIC('Confetti', 'star', 0, 34, 8, 0.8, 1, 0.9, 1, { shapeCount: 6, scatter: 0.7, rotationJitter: 1, jitterSize: 0.5, colorDyn: { stampHue: 1, stampSat: 0.2, stampBri: 0.2 } }),
 
-  // Airbrush
+  // Spray: airbrushes and mists
   AIR('Soft airbrush', 'round', 1, 90, 12, 0.06, 0.25, 0.6, 0.15, { smoothing: 0.35 }, 0.9),
   AIR('Medium airbrush', 'round', 0.7, 70, 10, 0.06, 0.3, 0.6, 0.15, { smoothing: 0.35 }, 0.9),
   AIR('Hard airbrush', 'round', 0.35, 56, 8, 0.05, 0.35, 0.6, 0.2, { smoothing: 0.3 }, 0.95),
@@ -218,7 +223,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   AIR('Fade tip', 'round', 0.8, 70, 10, 0.06, 0.45, 0.6, 0.2, { burnout: 0.7, fallOff: 0.5 }, 0.9),
   AIR('Spatter mist', 'dots', 0.4, 70, 10, 0.2, 0.5, 0.8, 0.3, { scatter: 0.8, shapeCount: 6, jitterSize: 0.7 }),
 
-  // Noise
+  // Grain: specks and noise
   NOISE('Grain', 'speckle', 0.1, 46, 8, 0.1, 0.7, 0.8, 0.5, { scatter: 0.3, rotationJitter: 1, grain: 0.5 }),
   NOISE('Static', 'pixel', 0, 40, 6, 0.2, 1, 1, 1, { scatter: 0.4, shapeCount: 5, jitterOpacity: 0.7, jitterSize: 0.6 }),
   NOISE('Film grain', 'speckle', 0.1, 58, 12, 0.08, 0.5, 0.8, 0.3, { scatter: 0.4, grain: 0.8, grainMode: 'moving', rotationJitter: 1 }, 0.8),
@@ -230,7 +235,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   NOISE('Rough', 'grunge', 0.1, 50, 10, 0.1, 0.8, 0.8, 0.6, { grain: 1, grainScale: 0.5, rotationJitter: 1, bump: 0.2 }),
   NOISE('Cloud noise', 'blob', 0.8, 70, 16, 0.12, 0.25, 0.7, 0.2, { grain: 0.8, grainScale: 1.6, scatter: 0.3, jitterOpacity: 0.5 }, 0.8),
 
-  // Texture: surfaces and materials
+  // Surfaces: papers, cloths and materials
   // texture brushes lay one continuous band: a plain body, the surface is the grain (paint/fam-paint-grains.ts)
   TEXTURE('Paper tooth', 'round', 0.3, 44, 8, 0.05, 0.75, 0.6, 0.4, { grain: 0.85, grainScale: 1.8, grainDepthMin: 0.1, bump: 0.15 }, 0.9),
   TEXTURE('Canvas', 'round', 0.12, 50, 10, 0.05, 0.9, 0.6, 0.5, { grain: 1, grainScale: 1, grainDepthMin: 0.3, bump: 0.3 }),
@@ -243,7 +248,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   TEXTURE('Burlap', 'round', 0.1, 44, 10, 0.05, 0.9, 0.6, 0.5, { grain: 0.95, grainScale: 0.8, grainDepthMin: 0.2, bump: 0.5 }),
   TEXTURE('Weathered', 'round', 0.2, 58, 12, 0.05, 0.8, 0.6, 0.4, { grain: 1, grainScale: 1.5, grainDepthMin: 0.15, burnout: 0.3, bump: 0.2 }, 0.9),
 
-  // Pattern: repeated motifs along the stroke
+  // Motifs: repeated motifs along the stroke
   PATTERN('Dot row', 'dots', 0, 30, 8, 0.9, 1, 1, 1, { followStroke: true }),
   PATTERN('Cross row', 'cross', 0, 28, 8, 0.9, 1, 1, 1, { followStroke: true }),
   PATTERN('Hatch row', 'hatch', 0, 34, 10, 0.5, 1, 0.9, 1, { followStroke: true }),
@@ -255,7 +260,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   PATTERN('Rain of dots', 'dots', 0, 36, 8, 0.4, 1, 0.9, 1, { shapeCount: 4, scatter: 0.9, jitterSize: 0.6 }),
   PATTERN('Colour row', 'square', 0, 28, 8, 1, 1, 1, 1, { followStroke: true, colorDyn: { stampHue: 1, stampSat: 0.1 } }),
 
-  // Environment
+  // Scenery: plants, weather and sky
   ENV('Grass', 'blade', 0.05, 46, 12, 0.35, 1, 0.8, 1, { shapeCount: 5, scatter: 0.5, rotationJitter: 0.15, jitterSize: 0.5, colorDyn: { stampBri: 0.2, stampHue: 0.04 } }),
   ENV('Leaves', 'leaf', 0.05, 40, 10, 0.6, 1, 0.8, 1, { shapeCount: 3, scatter: 0.8, rotationJitter: 1, jitterSize: 0.4, colorDyn: { stampHue: 0.06, stampBri: 0.25 } }),
   ENV('Rain', 'hatch', 0, 36, 8, 0.7, 0.7, 0.9, 0.8, { shapeCount: 6, scatter: 0.9, baseRot: 0.4, roundness: 0.2, jitterOpacity: 0.5 }, 0.8),
@@ -267,7 +272,7 @@ export const ANIMATION_BRUSHES: Brush[] = [
   ENV('Sparks', 'speckle', 0.3, 40, 6, 0.4, 0.9, 0.8, 0.8, { shapeCount: 5, scatter: 0.9, jitterSize: 0.8, colorDyn: { stampHue: 0.05, stampBri: 0.3 } }),
   ENV('Haze', 'round', 0.95, 100, 28, 0.08, 0.15, 0.7, 0.1, { grain: 0.5, grainScale: 2, jitterOpacity: 0.4 }, 0.7),
 
-  // Metro: geometric, flat, hard-edged
+  // Geometric: flat, hard-edged
   METRO('Grid line', 'square', 0, 8, 2, 0.03, 1, 1, 1, { smoothing: 0.5, stabilization: 60 }),
   METRO('Tile', 'square', 0, 40, 8, 1, 1, 1, 1, { followStroke: true, colorDyn: { stampBri: 0.12 } }),
   METRO('Mosaic', 'square', 0, 34, 8, 0.9, 1, 1, 1, { scatter: 0.05, rotationJitter: 0.1, colorDyn: { stampHue: 0.12, stampSat: 0.2, stampBri: 0.25 } }),

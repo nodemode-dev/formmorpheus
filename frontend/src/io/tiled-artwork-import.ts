@@ -16,7 +16,7 @@ const BLEND: Record<number, BlendMode> = {
   25: 'darker-color', 26: 'divide',
 };
 
-export const isProcreate = (name: string, head: Uint8Array): boolean => /\.procreate$/i.test(name) && head[0] === 0x50 && head[1] === 0x4b;
+export const isTiledArtwork = (name: string, head: Uint8Array): boolean => /\.procreate$/i.test(name) && head[0] === 0x50 && head[1] === 0x4b;
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => !!x && typeof x === 'object' && !Array.isArray(x) && !(x instanceof Uint8Array);
@@ -78,7 +78,7 @@ function layerRaster(tiles: Map<string, Uint8Array>, W: number, H: number, tile:
   return any || bad ? { raster: { rgba, w: W, h: H, x: 0, y: 0 }, bad } : null;
 }
 
-export async function readProcreate(file: File): Promise<LayeredDoc> {
+export async function readTiledArtwork(file: File): Promise<LayeredDoc> {
   const parts = safeUnzipOr(new Uint8Array(await file.arrayBuffer()), `${file.name} is not a readable .procreate artwork file.`);
   const arch = parts['Document.archive'];
   const notes = noteSet();

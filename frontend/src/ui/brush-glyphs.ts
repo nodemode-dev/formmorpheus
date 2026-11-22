@@ -36,12 +36,13 @@ type Key = keyof typeof G;
 
 const BY_NAME: Record<string, Key> = {
   // Animation sets
-  sketch: 'pencil', outline: 'ring', monoline: 'line', wiggle: 'wave', script: 'script', chalk: 'triangle', ink: 'nib', paint: 'brush', bristle: 'comb',
-  wash: 'drop', sponge: 'sponge', graphic: 'grid', airbrush: 'spray', noise: 'grain', texture: 'hatch', pattern: 'diamonds', environment: 'leaf', metro: 'skyline',
+  pencil: 'pencil', pastel: 'triangle', 'line art': 'ring', 'even line': 'line', 'boiling line': 'wave', pens: 'nib', lettering: 'script', watercolor: 'drop',
+  'thick paint': 'brush', 'rough brush': 'comb', spray: 'spray', dabbing: 'sponge', grain: 'grain', surfaces: 'hatch', stamps: 'grid', motifs: 'diamonds',
+  geometric: 'skyline', scenery: 'leaf',
   // Classic sets
-  sketching: 'pencil', drawing: 'line', inking: 'nib', painting: 'brush', artistic: 'star', calligraphy: 'script', airbrushing: 'spray', textures: 'hatch',
-  abstract: 'diamonds', charcoals: 'triangle', elements: 'flame', spraypaints: 'spray', materials: 'cube', vintage: 'clock', luminance: 'sun', industrial: 'gear',
-  organic: 'leaf', water: 'drop',
+  graphite: 'pencil', markers: 'line', 'comic ink': 'nib', 'studio paint': 'brush', 'mark making': 'star', nibs: 'script', mist: 'spray', grit: 'hatch',
+  shapes: 'diamonds', charcoal: 'triangle', atmosphere: 'flame', graffiti: 'spray', finishes: 'cube', printmaking: 'clock', light: 'sun', metalwork: 'gear',
+  nature: 'leaf', 'wet media': 'drop',
 };
 
 /** The glyph for a set by its name; the recent list has its own clock, sets of the person's own the tray. */
