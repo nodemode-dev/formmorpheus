@@ -10,7 +10,7 @@ if [ -n "${FORMMORPHEUS_DEV_URL:-}" ]; then
   mkdir -p "$FM_ROOT/src-tauri/binaries" "$FM_ROOT/src-tauri/engine"
   stub="$FM_ROOT/src-tauri/binaries/formmorpheus-engine-${triple}${ext}"
   [ -e "$stub" ] || { printf '#!/bin/sh\n' > "$stub"; chmod +x "$stub"; }
-elif [ ! -x "$FM_ROOT/src-tauri/binaries/formmorpheus-engine-${triple}${ext}" ] && [ ! -x "$FM_ROOT/src-tauri/engine/formmorpheus-engine" ]; then
+elif [ ! -x "$FM_ROOT/src-tauri/binaries/formmorpheus-engine-${triple}${ext}" ] && [ ! -x "$FM_ROOT/src-tauri/engine/formmorpheus-engine${ext}" ]; then
   "$FM_ROOT/setup/freeze_backend"
 fi
 cd "$FM_ROOT"
