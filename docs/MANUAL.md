@@ -238,7 +238,7 @@ Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Th
 Open with Ctrl+, (File or Edit menu). The pages:
 
 - **General**: show Home at launch and when the last movie closes, What's New, Autosave, the settings and library folders, and Reset All Preferences.
-- **Interface**: theme (28 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
+- **Interface**: theme (29 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
 - **Timeline**: undo steps, scrub speed (Precise, Medium or Fast, which also sets how fast scrubbing the frame strip moves), two and three-finger tap for undo and redo, and ask before deleting.
 - **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
 

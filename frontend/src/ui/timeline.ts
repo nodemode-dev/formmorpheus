@@ -692,7 +692,7 @@ export class TimelineView {
     const v = (n: string, d: string): string => s.getPropertyValue(n).trim() || d;
     this.pal = {
       lane: v('--fm-lane', '#1b1b1f'), laneAlt: v('--fm-lane-alt', '#202026'), block: v('--fm-block', '#2c2c33'), blockLine: v('--fm-block-line', '#3a3a44'),
-      text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#f97316'), select: v('--fm-tl-select', v('--accent-color', '#f97316')), playhead: v('--fm-playhead', '#f2f2f2'),
+      text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#857cf3'), select: v('--fm-tl-select', v('--accent-color', '#f97316')), playhead: v('--fm-playhead', '#f2f2f2'),
       keyBar: v('--fm-key-bar', '#1e1e22'), keyRow: v('--fm-key-row', '#1a1a1e'), onAccent: v('--text-on-accent', '#ffffff'),
       ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-chip', 'rgba(10,10,12,.72)'),
       hl: {

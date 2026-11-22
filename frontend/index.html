@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     html, body { background: #0a0a0a; margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    html[data-oled] body { background: #000000; }
     #app { visibility: hidden; }
     body.app-ready #app { visibility: visible; }
     .hidden { display: none !important; }
@@ -22,14 +23,15 @@
    and accent are on documentElement before the first paint. That is the
    entire mechanism behind "no theme flash on hard reload".
 
-   Keep the PROFILES table in sync with themes.ts (same 14 ids). Only the
+   Keep the PROFILES table in sync with themes.ts (the same 29 ids). Only the
    surface-visible vars are needed here; themes.ts re-applies everything
    once the bundle loads. The body class for light profiles is applied by a
    MutationObserver the instant body appears, still before paint. */
 (function () {
   var KEY = 'nodemode_ui_settings';
   var DEFAULT_THEME = 'studio';
-  var DEFAULT_ACCENT = '#f97316';
+  var DEFAULT_ACCENT = '#857cf3';
+  var OLED = { 'amoled': 1 };
   var LIGHT = { 'light': 1, 'sand': 1, 'nineties': 1, 'duck': 1, 'pro-light-grey': 1, 'pro-light': 1, 'classic': 1, 'adwaita-light': 1, 'soft-light': 1 };
   var PROFILES = {
     'studio':        ['#111111', '#17151b', '#222127', '#2a2a2a', '#34333a', '#f7f7f7', '#a4a4a4', '#717072', '#1c1b1d', '#5e5e60', '#191919'],
@@ -47,6 +49,7 @@
     'rose':          ['#170b10', '#211117', '#301a22', '#4d2b38', '#653a49', '#f5e7ec', '#cfa5b3', '#966b7b', '#170b10', 'rgba(255,190,215,0.05)'],
     'terminal':      ['#050d05', '#0a140a', '#102010', '#1f3d1f', '#2b522b', '#d8f5d8', '#8fce8f', '#568a56', '#050d05', 'rgba(120,255,120,0.06)'],
     'contrast':      ['#000000', '#0a0a0a', '#161616', '#555555', '#777777', '#ffffff', '#d8d8d8', '#9a9a9a', '#000000', 'rgba(255,255,255,0.10)'],
+    'amoled':        ['#000000', '#000000', '#141414', '#262626', '#3a3a3a', '#ededed', '#a6a6a6', '#858585', '#000000', '#262626', '#000000'],
     'nineties':      ['#c0c0c0', '#d4d0c8', '#b4b0a8', '#808080', '#ffffff', '#000000', '#202020', '#585858', '#008080', 'rgba(0,0,0,0.12)', '#d4d0c8'],
     'duck':          ['#e9e4f7', '#f4f1fc', '#d9d2ef', '#c7bde6', '#b3a6dc', '#2b2540', '#4f4770', '#7a7299', '#e2dcf2', 'rgba(90,70,150,0.10)', '#f4f1fc'],
     'pro-dark':        ['#1f1f1f', '#2b2b2b', '#363636', '#4a4a4a', '#818181', '#ececec', '#bdbdbd', '#a0a0a0', '#181818', 'rgba(255,255,255,0.05)'],
@@ -66,8 +69,9 @@
   try {
     var raw = /[?&]no-skin(?:[=&]|$)/.test(location.search) ? null : localStorage.getItem(KEY);
     /* A choice saved before the Studio Dark redesign is set aside once; from generation 2, the theme and any accent chosen
-       on purpose are kept, the old lavender default becoming orange (generation 3); themes.ts agrees. */
-    if (raw) { var s = JSON.parse(raw); try { var uc = JSON.parse(localStorage.getItem('formmorpheus_user_skin') || 'null'); if (uc && uc.id === s.theme && uc.p && uc.p.length > 9) { PROFILES[uc.id] = uc.p; if (uc.light) LIGHT[uc.id] = 1; } } catch (e2) { /* the skin shows after the bundle loads */ } if (s.appearance === 3 || s.appearance === 2) { if (s.theme && PROFILES[s.theme]) theme = s.theme; if (s.accentColor && !(s.appearance === 2 && s.accentColor === '#aba0d3')) accent = s.accentColor; if (s.appearance === 3 && typeof s.intensity === 'number') intensity = Math.min(1.5, Math.max(0, s.intensity)); } }
+       on purpose are kept, and an accent that was only the default of its day (lavender, then orange) becomes the app's
+       own violet (generation 4); themes.ts agrees. */
+    if (raw) { var s = JSON.parse(raw); try { var uc = JSON.parse(localStorage.getItem('formmorpheus_user_skin') || 'null'); if (uc && uc.id === s.theme && uc.p && uc.p.length > 9) { PROFILES[uc.id] = uc.p; if (uc.light) LIGHT[uc.id] = 1; } } catch (e2) { /* the skin shows after the bundle loads */ } if (s.appearance === 4 || s.appearance === 3 || s.appearance === 2) { if (s.theme && PROFILES[s.theme]) theme = s.theme; if (s.accentColor && !(s.appearance !== 4 && (s.accentColor === '#aba0d3' || s.accentColor === '#f97316'))) accent = s.accentColor; if (s.appearance !== 2 && typeof s.intensity === 'number') intensity = Math.min(1.5, Math.max(0, s.intensity)); } }
   } catch (e) { /* private mode or blocked storage: defaults are correct */ }
   var p = PROFILES[theme], root = document.documentElement, i;
   for (i = 0; i < NAMES.length; i++) root.style.setProperty(NAMES[i], p[i]);
@@ -79,6 +83,7 @@
   root.style.setProperty('--accent-intensity', String(intensity));
   /* the critical inline style paints html with the profile background */
   root.style.background = p[0];
+  if (OLED[theme]) root.setAttribute('data-oled', '');
   if (LIGHT[theme]) {
     root.classList.add('theme-light-pending');
     var apply = function () { if (document.body) { document.body.classList.add('theme-light'); root.classList.remove('theme-light-pending'); return true; } return false; };

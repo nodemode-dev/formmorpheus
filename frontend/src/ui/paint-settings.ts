@@ -665,7 +665,7 @@ export class PaintSettings {
     const g = this.ctx;
     if (!g || !this.curveOpen) return;
     const cs = getComputedStyle(this.root);
-    const accent = cs.getPropertyValue('--accent-color').trim() || '#f97316';
+    const accent = cs.getPropertyValue('--accent-color').trim() || '#857cf3';
     const line = cs.getPropertyValue('--line-2').trim() || '#555';
     const muted = cs.getPropertyValue('--text-muted').trim() || '#888';
     const s = CURVE - PAD * 2;
