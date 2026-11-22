@@ -101,6 +101,7 @@ case "$os" in
         esac
         for f in $(dpkg -L "$p" | grep '/gstreamer-1\.0/libgst[^/]*\.so$' || true); do cp "$f" "$gst/"; done
       done
+      rm -f "$gst/libgstaasink.so" "$gst/libgstcacasink.so"
       [ -n "$(ls -A "$gst")" ] || fm_die "no GStreamer plug-ins found: install gstreamer1.0-plugins-base and gstreamer1.0-plugins-good"
       export GSTREAMER_PLUGINS_DIR="$gst"
       fm_say "AppImage: LGPL GStreamer plug-ins only, from the core, base, good and gl sets that are installed ($(ls "$gst" | wc -l) files, LGPL-2.1-or-later); GSTREAMER_PLUGINS_DIR chooses another set"
