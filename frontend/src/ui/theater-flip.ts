@@ -18,7 +18,7 @@ function setHome(dir: string): void {
 }
 
 async function point(dir: string | null): Promise<string | null> {
-  if (!(await serviceReady())) { toast(t('The formmorpheus engine service is not running. Start it with ./formmorpheus.'), 'error'); return null; }
+  if (!(await serviceReady())) { toast(t('The FormMorpheus engine service is not running. Start it with ./formmorpheus.'), 'error'); return null; }
   try {
     const res = await fetch('/api/system/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir, copyMovies: false }) });
     if (!res.ok) {

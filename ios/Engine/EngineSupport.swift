@@ -45,7 +45,7 @@ enum EngineConfig {
         if let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, !v.isEmpty {
             return v
         }
-        return "0.23.0"
+        return "0.23.1"
     }
 
     static var dataDir: URL {
@@ -600,7 +600,7 @@ enum EngineFolders {
             try Data().write(to: probe)
             EngineFS.remove(probe)
         } catch {
-            throw EngineError(400, "formmorpheus cannot write to that folder.")
+            throw EngineError(400, "FormMorpheus cannot write to that folder.")
         }
         return url
     }

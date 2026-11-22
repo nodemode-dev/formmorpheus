@@ -11,7 +11,7 @@ export interface Transcoded { blob: Blob; mime: string; alpha: boolean }
 
 interface JobState { id: string; state: string; progress: number; error: string; mime: string; alpha: boolean }
 
-const DOWN = 'The formmorpheus engine service is not running, and this file needs it to be converted. Start it with ./formmorpheus.';
+const DOWN = 'The FormMorpheus engine service is not running, and this file needs it to be converted. Start it with ./formmorpheus.';
 
 async function detail(res: Response, fallback: string): Promise<string> {
   try { const b = (await res.json()) as { detail?: unknown }; if (typeof b?.detail === 'string') return b.detail; } catch { /* not JSON */ }

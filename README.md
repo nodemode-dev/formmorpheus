@@ -11,10 +11,11 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.23.0" src="https://img.shields.io/badge/version-v0.23.0-eef0f4?style=flat-square">
+  <img alt="version 0.23.1" src="https://img.shields.io/badge/version-v0.23.1-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
-  <img alt="macOS, Linux, Windows and iPad" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20%C2%B7%20iPad-native-2f7bf5?style=flat-square">
+  <img alt="macOS, Linux and Windows" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-native-2f7bf5?style=flat-square">
+  <img alt="iPad: written, not yet built" src="https://img.shields.io/badge/iPad-not%20yet%20built-6b6b6b?style=flat-square">
   <img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-3a3a3a?style=flat-square">
   <img alt="Status: in development" src="https://img.shields.io/badge/status-in%20development-d69e2e?style=flat-square">
 </p>
@@ -115,7 +116,7 @@
 
 - **Stack:** a vanilla TypeScript and Vite interface, a Python and FastAPI engine and a Tauri 2 desktop shell.
 - **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
-- **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg.
+- **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg, or the family's LGPL build that Preferences, Video Tools downloads on request.
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.

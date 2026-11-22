@@ -161,7 +161,7 @@ async def write_snapshot(session: str, request: Request, name: str = "Untitled",
     fmo, side = _paths(_session(session))
     body = await read_limited(request, config.MAX_PROJECT_BYTES, "The movie is too large to snapshot.")
     if body[:4] != b"PK\x03\x04":
-        raise HTTPException(400, "That is not a formmorpheus project.")
+        raise HTTPException(400, "That is not a FormMorpheus project.")
     now = time.time()
     meta = {"name": name[:180], "library": library[:180] if library else None, "time": now, "alive": now}
     with _lock:

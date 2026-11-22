@@ -147,7 +147,7 @@ export async function formvisToDrawing(file: File, movie: Movie, at: number): Pr
     }
     layers.push(d);
   }
-  if (!layers.length) throw new Error(`${file.name} has no layers formmorpheus can read.`);
+  if (!layers.length) throw new Error(`${file.name} has no layers FormMorpheus can read.`);
   const c = makeContent('drawing', at, Math.max(1, movie.duration - at), { name: doc.name, layers });
   let replaces: string | undefined;
   const mine = doc.documentId && /^fm-/.test(doc.documentId) ? doc.documentId.slice(3) : null;

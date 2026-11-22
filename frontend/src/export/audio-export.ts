@@ -35,7 +35,7 @@ async function encodeMp3(buf: AudioBuffer, kbps: number): Promise<{ bytes: Uint8
   let res: Response;
   try {
     res = await fetch(`/api/audio-encode/mp3?kbps=${kbps}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: new Blob([wav.slice()], { type: 'audio/wav' }) });
-  } catch (e) { throw new Error('MP3 needs the formmorpheus engine and its ffmpeg, and the engine is not answering.', { cause: e }); }
+  } catch (e) { throw new Error('MP3 needs the FormMorpheus engine and its ffmpeg, and the engine is not answering.', { cause: e }); }
   if (!res.ok) {
     let detail = '';
     try { const b = (await res.json()) as { detail?: unknown }; if (typeof b?.detail === 'string') detail = b.detail; } catch { /* not JSON */ }
@@ -52,7 +52,7 @@ async function encodeLossyViaEngine(buf: AudioBuffer, kind: 'opus-webm' | 'opus-
   let res: Response;
   try {
     res = await fetch(`/api/audio-encode/lossy?kind=${kind}&kbps=${kbps}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: new Blob([wav.slice()], { type: 'audio/wav' }) });
-  } catch (e) { throw new Error(tf('This system cannot encode {what} sound itself, and the formmorpheus engine, whose ffmpeg could, is not answering. Start it with ./formmorpheus, or export WAV.', { what }), { cause: e }); }
+  } catch (e) { throw new Error(tf('This system cannot encode {what} sound itself, and the FormMorpheus engine, whose ffmpeg could, is not answering. Start it with ./formmorpheus, or export WAV.', { what }), { cause: e }); }
   if (!res.ok) {
     let detail = '';
     try { const b = (await res.json()) as { detail?: unknown }; if (typeof b?.detail === 'string') detail = b.detail; } catch { /* not JSON */ }

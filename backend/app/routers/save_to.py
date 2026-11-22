@@ -66,7 +66,7 @@ async def _body(request: Request, folder: Path) -> Path:
                 out.write(chunk)
     except OSError:
         tmp.unlink(missing_ok=True)
-        raise HTTPException(400, "formmorpheus could not write there.")
+        raise HTTPException(400, "FormMorpheus could not write there.")
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -88,7 +88,7 @@ async def save_file(request: Request, dir: str, name: str) -> dict:
             except FileExistsError:
                 n += 1
             except OSError:
-                raise HTTPException(400, "formmorpheus could not write there.")
+                raise HTTPException(400, "FormMorpheus could not write there.")
     finally:
         tmp.unlink(missing_ok=True)
     return {"path": str(dst), "name": dst.name}
@@ -119,7 +119,7 @@ async def save_frames(request: Request, dir: str, folder: str) -> dict:
                 except FileExistsError:
                     n += 1
                 except OSError:
-                    raise HTTPException(400, "formmorpheus could not write there.")
+                    raise HTTPException(400, "FormMorpheus could not write there.")
             written = 0
             total = 0
             made: list[Path] = []
@@ -142,7 +142,7 @@ async def save_frames(request: Request, dir: str, folder: str) -> dict:
                     dst.rmdir()
                 except OSError:
                     pass
-                raise HTTPException(400, "formmorpheus could not write all the frames there.")
+                raise HTTPException(400, "FormMorpheus could not write all the frames there.")
     finally:
         tmp.unlink(missing_ok=True)
     return {"path": str(dst), "name": dst.name, "files": written}

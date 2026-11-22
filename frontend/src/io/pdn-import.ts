@@ -228,7 +228,7 @@ async function readLayers(body: Uint8Array, notes: { add(s: string): void }): Pr
     const ev = isObj ? r.num(bv as Obj, 'value__') : typeof bv === 'number' ? bv : null;
     const bn = ev !== null ? ENUM[ev] ?? 'Normal' : typeof bv === 'string' ? bv : isObj ? (bv as Obj).cls : 'Normal';
     const hit = BLENDS.find(([re]) => re.test(bn));
-    if (hit && hit[1] === null) notes.add(`${bn.replace(/^.*[.+]/, '').replace(/BlendOp$/, '')} is not a blend mode formmorpheus has; those layers open as Normal.`);
+    if (hit && hit[1] === null) notes.add(`${bn.replace(/^.*[.+]/, '').replace(/BlendOp$/, '')} is not a blend mode FormMorpheus has; those layers open as Normal.`);
     layers.push({
       name: typeof nameV === 'string' && nameV ? nameV : `Layer ${layers.length + 1}`,
       visible: typeof visV === 'boolean' ? visV : typeof hidV === 'boolean' ? !hidV : true,

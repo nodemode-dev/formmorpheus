@@ -51,7 +51,7 @@ fn checked(raw: &str) -> Result<PathBuf, String> {
     if inside {
         Ok(real)
     } else {
-        Err("Only folders inside the formmorpheus data folder can be opened.".into())
+        Err("Only folders inside the FormMorpheus data folder can be opened.".into())
     }
 }
 

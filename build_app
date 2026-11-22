@@ -90,6 +90,16 @@ case "$os" in
     if [ -z "$bundles" ]; then
       bundles="deb,appimage"
       command -v rpmbuild >/dev/null 2>&1 && bundles="$bundles,rpm" || fm_say "rpmbuild not found: skipping the rpm bundle"
+    fi
+    if [[ ",$bundles," == *,appimage,* ]] && [ -z "${GSTREAMER_PLUGINS_DIR:-}" ]; then
+      command -v dpkg >/dev/null 2>&1 || fm_die "the AppImage carries GStreamer plug-ins: set GSTREAMER_PLUGINS_DIR to a folder of LGPL plug-ins (core, base, good, gl) on a system without dpkg"
+      gst="$(mktemp -d)"
+      for p in libgstreamer1.0-0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-gl; do
+        dpkg -L "$p" 2>/dev/null | grep '/gstreamer-1\.0/libgst[^/]*\.so$' | while read -r f; do cp "$f" "$gst/"; done
+      done
+      [ -n "$(ls -A "$gst")" ] || fm_die "no GStreamer plug-ins found: install gstreamer1.0-plugins-base and gstreamer1.0-plugins-good"
+      export GSTREAMER_PLUGINS_DIR="$gst"
+      fm_say "AppImage: GStreamer core, base, good and gl plug-ins only ($(ls "$gst" | wc -l) files, LGPL-2.1-or-later); GSTREAMER_PLUGINS_DIR chooses another set"
     fi ;;
 esac
 args+=(--bundles "$bundles")

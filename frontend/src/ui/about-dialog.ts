@@ -17,12 +17,12 @@ export class AboutDialog extends Dialog {
   private drawn = false;
 
   constructor() {
-    super('About formmorpheus', 520);
+    super('About FormMorpheus', 520);
     q(this.scrim, '.cv-dialog').classList.add('fm-about-dlg');
     const root = el(`<div class="fm-about">
       <div class="fm-about-head">
         <img class="fm-about-mark" src="/mark.png" width="52" height="52" alt="" decoding="sync">
-        <div><div class="fm-about-name">formmorpheus</div><div class="fm-about-by">by NodeMode</div></div>
+        <div><div class="fm-about-name">formmorpheus</div><div class="fm-about-by" translate="no">by nodemode.ai</div></div>
       </div>
       <dl class="fm-about-facts">
         <dt>Version</dt><dd class="fm-about-ver"></dd>

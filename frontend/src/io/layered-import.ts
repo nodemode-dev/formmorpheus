@@ -88,7 +88,7 @@ export async function layeredToDrawing(doc: LayeredDoc, fileName: string, movie:
     }
     out.push(d);
   }
-  if (!out.length) throw new Error(`${fileName} has no layers formmorpheus can read.`);
+  if (!out.length) throw new Error(`${fileName} has no layers FormMorpheus can read.`);
   const c = makeContent('drawing', at, Math.max(1, movie.duration - at), { name: doc.name, layers: out });
   const n = doc.layers.filter((l) => !l.group).length;
   const notes = doc.notes.length ? ` ${doc.notes.join(' ')}` : '';

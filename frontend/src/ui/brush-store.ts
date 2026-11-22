@@ -598,7 +598,7 @@ class BrushStore {
     }
     // Starter sets still under the name their id was made from take the current name; the next save renames the folder.
     for (const a of [...ANIMATION_SETS, ...CLASSIC_SETS]) {
-      const old = sets.find((x) => x.id === a.id && (`anim-${slug(x.name)}` === a.id || slug(x.name) === a.id));
+      const old = sets.find((x) => x.id === a.id && (`anim-${slug(x.name)}` === a.id || slug(x.name) === a.id || (a.id === 'drawing' && x.name === 'Markers') || (a.id === 'luminance' && x.name === 'Light')));
       if (old) old.name = a.name;
     }
     // Libraries: a file from before libraries has none, so its sets stay in Classic and Animation is added.

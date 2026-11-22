@@ -130,7 +130,7 @@ export class SettingsDialog extends Dialog {
     };
     const reset = el<HTMLButtonElement>('<button class="cv-btn cv-btn-danger" type="button">Reset All Preferences...</button>');
     reset.addEventListener('click', () => {
-      void confirmAction('Reset all preferences?', 'Every preference and the theme go back to how formmorpheus comes; your movies and library are kept. formmorpheus reloads.', 'Reset', true).then((ok) => {
+      void confirmAction('Reset all preferences?', 'Every preference and the theme go back to how FormMorpheus comes; your movies and library are kept. FormMorpheus reloads.', 'Reset', true).then((ok) => {
         if (!ok) return;
         try {
           for (const k of Object.keys(localStorage)) if (k.startsWith('formmorpheus.') || k.startsWith('formmorpheus_') || k === 'nodemode_ui_settings') localStorage.removeItem(k);

@@ -40,7 +40,7 @@ final class FilesRoutes: APIRoutes {
         // Files staged for import (opened from Files, or picked and kept) may have any extension; anywhere else only movies.
         let staged = stagedRoots().contains { EngineConfig.isInside(target, $0) }
         if !staged && !path.lowercased().hasSuffix(EngineConfig.projectExt) {
-            throw EngineError(400, "Only formmorpheus movie files can be opened by path.")
+            throw EngineError(400, "Only FormMorpheus movie files can be opened by path.")
         }
         if !EngineFS.isFile(target) { throw EngineError(404, "No file at that path.") }
         var allowed = staged

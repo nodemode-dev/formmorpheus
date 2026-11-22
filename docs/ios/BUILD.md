@@ -1,4 +1,4 @@
-# Build formmorpheus for iPad
+# Build FormMorpheus for iPad
 
 This is the first-run guide for the Mac that builds the iPad app. You need a Mac with Xcode 26 or later (iPadOS 26 SDK), an Apple developer account signed in to Xcode, Node.js, and an iPad on iPadOS 16.4 or later.
 
@@ -22,11 +22,11 @@ If the build stops with "ios/Resources/web/index.html is missing", the interface
 
 ## Web Inspector
 
-Debug builds let Safari inspect the web view. On the iPad turn on Settings > Apps > Safari > Advanced > Web Inspector. On the Mac open Safari, Settings > Advanced, tick Show features for web developers, then use the Develop menu to pick the iPad and the formmorpheus page.
+Debug builds let Safari inspect the web view. On the iPad turn on Settings > Apps > Safari > Advanced > Web Inspector. On the Mac open Safari, Settings > Advanced, tick Show features for web developers, then use the Develop menu to pick the iPad and the FormMorpheus page.
 
 ## Run Diagnostics and send the file
 
-1. In the app open Help > About formmorpheus, then Diagnostics... . Do the Pencil test first (draw, hover and twist the Pencil on the pad), then Run Diagnostics.
+1. In the app open Help > About FormMorpheus, then Diagnostics... . Do the Pencil test first (draw, hover and twist the Pencil on the pad), then Run Diagnostics.
 2. The app saves one file, `diagnostics-[date].json`, and shows the share sheet. Send it with AirDrop, Mail or Messages.
 3. The same file stays in the Files app under On My iPad > FormMorpheus > Diagnostics.
 4. Send that file together with any Xcode build errors.
@@ -37,7 +37,7 @@ Nothing in this list has been tried on a device yet; the Swift code has never be
 
 1. ProRes 4444 with transparency: import a ProRes 4444 .mov that has an alpha channel into an open movie. A progress line says "Converting ..."; the clip lands on the Stage. Put a color under it and check that the see-through parts stay see-through. If a notice says the first frame shows no transparency, the iPad's video decoder drops it: note the iPad model and iPadOS version.
 2. ProRes 422 without transparency: import a ProRes 422 .mov. It should be converted and play.
-3. HEVC with transparency: import an HEVC .mov with alpha (for example one exported from formmorpheus on the iPad with HEVC and transparency). It should open without converting. Check the same see-through parts over a color.
+3. HEVC with transparency: import an HEVC .mov with alpha (for example one exported from FormMorpheus on the iPad with HEVC and transparency). It should open without converting. Check the same see-through parts over a color.
 4. iCloud Drive library on two iPads signed in to the same Apple Account: on the first iPad, on Home, tap iCloud Drive, make a movie and save it. In the Files app it is under iCloud Drive > FormMorpheus > Library. On the second iPad, tap iCloud Drive on Home: the movie appears once iCloud has brought it over (reopen Home if it is not there yet); open it, change it, save. Back on the first iPad, open it again and check the change. Also try iCloud Drive with iCloud signed out and check the message.
 5. Handwriting in the text card: add a text, open its card and write into the text field with the Pencil (the iPad's handwriting-to-text, Settings > Apple Pencil). Also try writing on the Stage while editing a text in place.
 

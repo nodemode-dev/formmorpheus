@@ -2,6 +2,28 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.23.1 · 2026-11-22
+
+FormMorpheus is called by its name, in every language, and says plainly what it ships.
+
+### Changed
+- Messages, Help, About, the menus and the Pen Link page write the app's name as FormMorpheus. The title bar, Home and the About wordmark keep the lower-case "formmorpheus", as the family writes its wordmarks.
+- About says who made it: by nodemode.ai.
+- All 30 languages have every string, including the terminal and agents, Video Tools, the new frame rate and brush names and What's New. Nothing falls back to English. What's New says so.
+- The installers name the publisher, NodeAgentc, Inc., and the file type "FormMorpheus Movie".
+- Two Classic brush sets have names that read right in every language, where the old ones were also the words for other things (a theme, a font weight, the brush size markers): Markers is Pens and markers, Light is Glow. A set you renamed keeps your name.
+
+### Fixed
+- The Linux AppImage carries only GStreamer's core, base, good and gl plug-ins (LGPL), whatever else is installed on the computer that builds it.
+- The Linux engine no longer carries GNU Readline, which it never used.
+- The manual and the wiki said 17 blend modes; there are 26.
+
+### Documents
+- `SECURITY.md`: how to report a security problem privately, and what the app guards.
+- `NOTICE.md` lists every third-party part the app carries, with its version and licence, including the Rust crates, the Python runtime and the Linux bundle's libraries.
+- `docs/api-contract.json` is written from the engine itself, and CI fails when it is stale.
+- CI opens the built app in a headless browser and fails if the window does not draw or the page reports an error.
+
 ## 0.23.0 · 2026-11-22
 
 The iPad catches up, ffmpeg is one click away, and FormMorpheus uses its own names.

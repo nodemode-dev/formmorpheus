@@ -13,4 +13,8 @@ export const frCA: Record<string, string> = {
   'Use headphones when the movie’s sound plays, or the microphone hears it too. Takes are saved as WAV sound in the movie file.': "Utilisez des écouteurs quand le son du film est lu, sinon le microphone l'entend aussi. Les prises sont enregistrées en son WAV dans le fichier du film.",
   'This page cannot reach a microphone. Recording needs the desktop app or a secure (https or localhost) page.': "Cette page ne peut pas accéder à un microphone. L'enregistrement nécessite l'application de bureau ou une page sécurisée (https ou localhost).",
   'Email-friendly under 25 MB': "Adapté au courriel, moins de 25 Mo", 'Frame sequence by timecode': "Séquence d\'images par code temporel", 'Media Bin': "Bac de médias",
+  'Settings that stay': "Des paramètres qui restent",
+  'The Outside agents setting was changed outside FormMorpheus, so FormMorpheus asks again.': "Le paramètre « Agents externes » a été modifié en dehors de FormMorpheus ; FormMorpheus pose donc de nouveau la question.",
+  'The Outside agents setting was changed outside {app}, so {app} asks again.': "Le paramètre « Agents externes » a été modifié en dehors de {app} ; {app} pose donc de nouveau la question.",
+  'The engine did not keep the Outside agents setting. Start it with ./formmorpheus, then try again.': "Le moteur n'a pas conservé le paramètre « Agents externes ». Lancez-le avec ./formmorpheus, puis réessayez.",
 };

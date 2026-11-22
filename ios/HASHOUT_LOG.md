@@ -2,6 +2,16 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.23.1 · the product's name in what iPadOS shows
+
+- refers-to: App/Info.plist (CFBundleTypeName, UTTypeDescription, the two usage descriptions); App/*.lproj/InfoPlist.strings (30 languages); Engine/EngineSupport.swift, FilesRoutes.swift, LibraryRoutes.swift, RecoveryRoutes.swift, SaveToRoutes.swift; Export/JobsRoutes.swift; UX/SceneState.swift
+- kind: decision
+- logged: v0.23.1 · 2026-11-22
+
+- The microphone and photo library questions iPadOS asks, in all 30 languages, the file type ("FormMorpheus Movie", as on the desktop) and the scene title in the app switcher when no movie is open say FormMorpheus, matching `CFBundleDisplayName`. The engine's error sentences match the desktop engine's word for word.
+- Kept lower case, because a program reads them: `EngineConfig.appName` (the `app` field of `/api/system/health`, the same value the desktop engine sends from `config.APP_NAME`), the background task's name, the type identifier `ai.nodemode.formmorpheus.movie` and the `application/x-formmorpheus` type.
+- Nothing here was compiled (no Swift toolchain in this workspace); the edits are inside string literals and the plist parses.
+
 ## v0.23.0 · iPadOS floor, ProRes import, iCloud Drive library
 
 Nothing here was compiled: there is no Swift toolchain in the workspace. Availability was read from Apple's documentation (the JSON behind developer.apple.com/documentation, `metadata.platforms`).

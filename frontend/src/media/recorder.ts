@@ -17,7 +17,7 @@ export function micError(e: unknown): MicError {
   const name = e instanceof DOMException || e instanceof Error ? e.name : '';
   if (!navigator.mediaDevices?.getUserMedia) return new MicError('insecure', 'This page cannot reach a microphone. Recording needs the desktop app or a secure (https or localhost) page.');
   if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
-    return new MicError('denied', 'formmorpheus is not allowed to use the microphone. Allow microphone access for formmorpheus in your system settings (or the browser’s site settings), then press Try again.');
+    return new MicError('denied', 'FormMorpheus is not allowed to use the microphone. Allow microphone access for FormMorpheus in your system settings (or the browser’s site settings), then press Try again.');
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') return new MicError('none', 'No microphone was found. Plug one in or pick another input, then press Try again.');
   if (name === 'NotReadableError' || name === 'AbortError' || name === 'TrackStartError') return new MicError('busy', 'The microphone is busy or unavailable: another app may be using it. Close it, then press Try again.');

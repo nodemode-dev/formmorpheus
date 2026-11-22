@@ -39,7 +39,7 @@ final class SceneState {
         records[scene.session.persistentIdentifier] = record
         // The window's title shows in the window switcher and in Stage Manager.
         let title = record.title ?? ""
-        scene.title = title.isEmpty ? "formmorpheus" : title
+        scene.title = title.isEmpty ? "FormMorpheus" : title
     }
 
     // MARK: Called by the scene delegate

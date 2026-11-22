@@ -24,7 +24,7 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>formmorpheus Movie</string>
+			<string>FormMorpheus Movie</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
@@ -128,9 +128,9 @@
 		<string>ai.nodemode.formmorpheus.activity.movie</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>formmorpheus uses the microphone only when you record narration or sound into a movie.</string>
+	<string>FormMorpheus uses the microphone only when you record narration or sound into a movie.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>formmorpheus saves the movies and images you export to your photo library when you choose to.</string>
+	<string>FormMorpheus saves the movies and images you export to your photo library when you choose to.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -160,7 +160,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>ai.nodemode.formmorpheus.movie</string>
 			<key>UTTypeDescription</key>
-			<string>formmorpheus Movie</string>
+			<string>FormMorpheus Movie</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

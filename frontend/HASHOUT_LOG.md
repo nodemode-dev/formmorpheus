@@ -2,10 +2,23 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.14.0
-Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still open, second review round)
+Current build version: v0.23.1
+Last updated: 2026-11-22 · the product's name in every sentence, every language table complete
 
 ---
+
+## v0.23.1 · the product's name, and every table complete
+
+- refers-to: app/app.ts (Help and About labels); app/capability.ts; export/audio-export.ts, route.ts, engine-jobs.ts; io/api.ts :: NOT_RUNNING; io/fmo.ts (two errors); io/formvis-doc.ts, kra-import.ts, ora-import.ts, pdn-import.ts, psd-import.ts, layered-import.ts, round-trip.ts, tiled-artwork-import.ts, recovery.ts; media/import.ts, transcode.ts, recorder.ts; ui/about-dialog.ts, help-center.ts, help-view.ts, home.ts :: brandRows, library-folder.ts, native-menu.ts, settings-dialog.ts, theater-flip.ts, whats-new-data.ts; ui/i18n/*.ts (all 29 tables beside English)
+- kind: decision
+- logged: v0.23.1 · 2026-11-22
+
+- **Sentences say FormMorpheus.** Every English source string that named the product in a sentence (errors, notices, Help, About, the native menu, What's New) now writes it the way the family writes product names in prose: FormMorpheus. The keys changed with them, so each table's entry was renamed and its value written with the new name in that language.
+- **Wordmarks stay lower case.** The title bar (`cv-tb-app`), the About wordmark (`fm-about-name`) and the Home brand button keep "formmorpheus", the way FormVis writes "formvis" in the same places. They are marked `translate="no"` or carry no key, so no table holds them.
+- **About says who made it.** Under the wordmark, "by nodemode.ai" (lower case, `translate="no"`), as FormVis's About does. The copyright and publisher (NodeAgentc, Inc.) are in the bundle metadata, not in the window.
+- **What stays lower case on purpose.** The `.fmo` manifest's `app` field is still checked against `formmorpheus`; it is a file format value, not a sentence, and changing it would refuse every movie already saved. The command `./formmorpheus`, the data folder name and the MCP server name are names a person types or a program reads.
+- **Two set names that were already other words.** The tables are keyed by the English text, so one English word has one translation. "Markers" (the Classic set id `drawing`) was also the paint HUD's brush size markers, and "Light" (`luminance`) was also the light theme, font weight 300 and a colour group; in several languages the set showed as "labels" or "light colour". They are now "Pens and markers" and "Glow" (`paint/brushes.ts` CLASSIC_SETS). `brush-store.ts` treats a stored `drawing` set still called "Markers" and a `luminance` set still called "Light" as unrenamed, so they take the new names; any other name is the person's and is kept. The other set names were checked against every string the interface translates: Charcoal, Grain and Pencil also name a tip or a setting, with the same meaning, so they stay.
+- **Tables.** Before this version each of the 29 tables beside English was missing about 246 entries (the dock and agents strings from v0.22.0, Video Tools, the new frame rate and brush names, What's New, and the renamed sentences); a missing key fell back to English. All are filled now. Rules the translators followed: FormMorpheus, FormVis, FFmpeg, ffmpeg, MCP, ProRes, HEVC, H.264, MP3, GIF, PNG, iCloud Drive, Claude Code, Codex, Cursor, Antigravity and other names stay as written; placeholders such as `{version}` stay exactly; the dock strings already translated in FormVis's tables were taken from there so the family reads the same; Arabic is written for right to left with no direction marks added.
 
 ## v0.23.0 · iPad: video conversion and the iCloud Drive library
 

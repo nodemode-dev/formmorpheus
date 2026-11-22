@@ -33,7 +33,7 @@ export async function readOra(file: File): Promise<LayeredDoc> {
     for (const e of [...stack.children]) {
       const op = e.getAttribute('composite-op') ?? 'svg:src-over';
       const blend = FROM_ORA.get(op) ?? 'normal';
-      if (!FROM_ORA.has(op)) notes.add(`${op} is not a blend mode formmorpheus has; those layers open as Normal.`);
+      if (!FROM_ORA.has(op)) notes.add(`${op} is not a blend mode FormMorpheus has; those layers open as Normal.`);
       const base = {
         visible: e.getAttribute('visibility') !== 'hidden', opacity: Math.min(1, Math.max(0, num(e, 'opacity', 1))), blend, parent, clipping: false,
         alphaLock: e.getAttribute('alpha-locked') === 'true' || e.getAttribute('alpha-preserve') === 'true', mask: null,

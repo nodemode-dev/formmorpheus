@@ -179,7 +179,7 @@ final class RecoveryRoutes: APIRoutes {
         let library = c.query("library")
         let body = try c.limited(EngineConfig.maxProjectBytes, "The movie is too large to snapshot.")
         if body.count < 4 || Array(body.prefix(4)) != [0x50, 0x4B, 0x03, 0x04] {
-            throw EngineError(400, "That is not a formmorpheus project.")
+            throw EngineError(400, "That is not a FormMorpheus project.")
         }
         let now = Date().timeIntervalSince1970
         var meta: [String: Any] = ["name": EngineText.prefix(name, 180), "time": now, "alive": now]

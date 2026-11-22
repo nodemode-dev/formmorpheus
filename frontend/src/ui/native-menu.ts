@@ -77,7 +77,7 @@ export class NativeMenus {
       };
       const top = [];
       top.push(await api.Submenu.new({ text: 'formmorpheus', items: [
-        await api.PredefinedMenuItem.new({ item: { About: { name: 'formmorpheus' } }, text: t('About formmorpheus') }),
+        await api.PredefinedMenuItem.new({ item: { About: { name: 'FormMorpheus' } }, text: t('About FormMorpheus') }),
         await api.PredefinedMenuItem.new({ item: 'Separator' }),
         ...(this.commands.get('settings') ? [await make('settings')] : []),
         await api.PredefinedMenuItem.new({ item: 'Separator' }),

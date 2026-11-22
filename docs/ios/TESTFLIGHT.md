@@ -1,4 +1,4 @@
-# TestFlight for formmorpheus
+# TestFlight for FormMorpheus
 
 Steps to put a build of the iPad app on TestFlight for internal testing. Needs a paid Apple developer account.
 

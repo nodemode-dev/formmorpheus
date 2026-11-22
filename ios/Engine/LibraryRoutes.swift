@@ -496,7 +496,7 @@ final class LibraryRoutes: APIRoutes {
         let path = try store.projectPath(c.param("name"))
         let body = try c.limited(EngineConfig.maxProjectBytes, "The project is too large to save.")
         if body.count < 4 || Array(body.prefix(4)) != [0x50, 0x4B, 0x03, 0x04] {
-            throw EngineError(400, "That is not a formmorpheus project.")
+            throw EngineError(400, "That is not a FormMorpheus project.")
         }
         // a part file per request, flushed to disk before the rename: a kill or a power cut leaves the old movie or the whole new one
         let tmp = EngineFS.tempBeside(path)
@@ -549,7 +549,7 @@ final class LibraryRoutes: APIRoutes {
             } catch EngineFSError.exists {
                 continue   // the name was taken a moment ago: take the next one
             } catch {
-                throw EngineError(400, "formmorpheus could not duplicate the movie.")
+                throw EngineError(400, "FormMorpheus could not duplicate the movie.")
             }
         }
         throw EngineError(409, "No free name for the copy.")
@@ -603,7 +603,7 @@ final class LibraryRoutes: APIRoutes {
                 }
             }
         } catch {
-            throw EngineError(400, "formmorpheus could not copy the movie there.")
+            throw EngineError(400, "FormMorpheus could not copy the movie there.")
         }
     }
 

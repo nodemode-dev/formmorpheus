@@ -5,6 +5,12 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.23.1', name: 'Every language, complete',
+    additions: [
+      { title: 'In your language', text: 'Every menu, notice and panel is translated into all 30 languages. Preferences, Interface sets the language.', command: 'settings' },
+    ],
+  },
+  {
     version: '0.23.0', name: 'Video Tools, and names of our own',
     additions: [
       { title: 'Video Tools', text: 'Preferences shows where ffmpeg is and what it can make, and can download the family build for ProRes and HEVC.', command: 'settings' },
@@ -51,9 +57,9 @@ export const RELEASES: readonly Release[] = [
     ],
   },
   {
-    version: '0.18.0', name: 'A new icon, and formmorpheus on iPad',
+    version: '0.18.0', name: 'A new icon, and FormMorpheus on iPad',
     additions: [
-      { title: 'A new icon', text: 'formmorpheus has a new app icon everywhere it appears.', command: 'about' },
+      { title: 'A new icon', text: 'FormMorpheus has a new app icon everywhere it appears.', command: 'about' },
       { title: 'On iPad', text: 'The iPad app keeps movies in Files, works with the menu bar and Apple Pencil Pro, and exports with the iPad\'s own encoders.', command: 'help' },
     ],
   },

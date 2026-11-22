@@ -666,8 +666,8 @@ export function startApp(): void {
     { id: 'recovery', label: 'Restore Last Recovery Point', enabled: () => engine.history.recovery.length > 0, run: () => { const r = engine.history.recovery[0]; if (r) engine.restoreRecovery(r.id); } },
     { id: 'menus-in-window', label: 'Menus in Window', enabled: () => '__TAURI_INTERNALS__' in window && /Mac/.test(navigator.platform), checked: menusInWindow, run: () => { const on = !menusInWindow(); store(MENUS_IN_WINDOW_KEY, on ? '1' : '0'); toast(on ? 'The menus stay in the window from the next start.' : 'The menus go to the menu bar from the next start.'); } },
     { id: 'custom-title-bar', label: 'Custom Title Bar', enabled: wantsCustomTitleBar, checked: () => stored(CUSTOM_TITLE_KEY) === '1', run: () => { store(CUSTOM_TITLE_KEY, stored(CUSTOM_TITLE_KEY) === '1' ? '0' : '1'); captions.sync(); } },
-    { id: 'help', label: 'formmorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView((c) => { commands.run(c); }); helpView.show(); } },
-    { id: 'about', label: 'About formmorpheus', run: () => aboutDialog.show() },
+    { id: 'help', label: 'FormMorpheus Manual', keys: ['F1'], run: () => { helpView ??= new HelpView((c) => { commands.run(c); }); helpView.show(); } },
+    { id: 'about', label: 'About FormMorpheus', run: () => aboutDialog.show() },
   ];
   const groupOfCommand = (id: string): string => {
     const find = (items: ReadonlyArray<unknown>, path: string): string => {

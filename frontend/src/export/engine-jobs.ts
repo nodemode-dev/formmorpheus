@@ -103,7 +103,7 @@ export function startEngineExport(deps: Deps, opts: ExportOptions & { target: En
     let res: Response;
     try { res = await fetch(`${BASE}${path}`, { ...init, signal: abort.signal }); } catch (e) {
       if (cancelled) throw abortError();
-      throw new Error('The formmorpheus engine is not answering.', { cause: e });
+      throw new Error('The FormMorpheus engine is not answering.', { cause: e });
     }
     if (!res.ok) {
       let detail = '';
