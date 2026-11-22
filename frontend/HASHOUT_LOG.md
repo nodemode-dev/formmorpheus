@@ -7,6 +7,10 @@ Last updated: 2026-10-30 · phases 29 to 31 (performance second wave, rows still
 
 ---
 
+## v0.18.3 · tauri packages
+
+`src-tauri/Cargo.lock` resolves the `tauri` crate to 2.12.5, and Tauri's build stops when the crate and `@tauri-apps/api` differ in minor version, so `package.json` now pins `@tauri-apps/api` 2.12.5 and `@tauri-apps/cli` 2.12.5 (were 2.11.1 and 2.11.4), the same minor line as the crate. There is no `@tauri-apps/plugin-*` package here: the interface reaches the dialog and shell plugins through `invoke` from `@tauri-apps/api/core`, so only these two needed to move. `package-lock.json` was refreshed by `npm install`. When `Cargo.lock` moves to another minor line, move both packages with it.
+
 ## v0.18.0 · review
 
 Files: `platform/bridge.ts`, `platform/index.ts`, `platform/ipad-menu.ts`, `platform/ipad-pencil.ts`, `platform/ipad-shell.ts`, `ui/diagnostics-dialog.ts`, `styles/ipad-window.css`.
