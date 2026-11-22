@@ -178,7 +178,7 @@ Use Import (Ctrl+I) or drop files on the window.
 
 | Kind | Formats | Notes |
 |---|---|---|
-| Video | MP4, WebM and what the browser can decode | frame-accurate; a video the browser cannot decode is refused |
+| Video | MP4, MOV, WebM and what the window can decode | frame-accurate; on the desktop, a video the window cannot decode (ProRes, some HEVC) is converted by ffmpeg, and without ffmpeg it is refused with the reason |
 | Sound | WAV, MP3, AAC, FLAC, Ogg and Opus where decodable | waveform on the block |
 | Pictures | PNG, JPEG, WebP, AVIF, BMP | placed as a picture block |
 | Animated GIF | GIF | becomes a Flipbook, holds taken from the frame delays |
@@ -189,6 +189,15 @@ Use Import (Ctrl+I) or drop files on the window.
 Video blocks show a filmstrip. Sound shows its waveform. Choose **Separate audio and video** on a video block to split the sound onto its own block. **Volume** is on the block's menu, and a Volume lane lets you key it.
 
 Sound is the clock during playback, so picture and sound stay together. A sound can sit a frame or two behind the Playhead readout because of the speaker delay.
+
+### Coming from another animation app
+
+- **Layered artwork** in a `.procreate` file opens as a Drawing with its layers, blend modes and groups.
+- **A movie project from another app** cannot be opened: its file format is not public, so its timeline, keyframes and drawings cannot be read. Bring the movie over as what that app exports instead:
+  - a **video** (MP4 or MOV, in H.264, HEVC or ProRes). Transparency is kept when the video has it. On the desktop, HEVC and ProRes that the window cannot play are converted by ffmpeg (see Engine formats).
+  - a folder of **numbered PNG frames**, which becomes one Flipbook at the frame rate you choose.
+  - an **animated GIF**, which becomes a Flipbook with its holds.
+- Fonts and sound files come over as they are.
 
 ## Text
 
@@ -216,7 +225,7 @@ Open Export with Ctrl+E (File · Export). The dialog has **Quick share** tiles a
 
 ### Engine formats
 
-ProRes, ProRes 4444 (with alpha) and HEVC (in an MP4 or a MOV) cannot be encoded by the browser. The desktop engine makes them with **your own ffmpeg**, which it runs as a separate program. Install ffmpeg yourself and the engine finds it; formmorpheus never ships or links it. If ffmpeg is not found, those formats are listed as unavailable with a note on what is missing. The window renders each frame, the engine encodes them, and the result appears on the Exports page.
+ProRes, ProRes 4444 (with alpha) and HEVC (in an MP4 or a MOV) cannot be encoded by the browser. The desktop engine makes them with **ffmpeg**, which it runs as a separate program. When there is no ffmpeg on your computer, those formats are listed as unavailable and the Export dialog says: "ProRes and HEVC need ffmpeg, which is not on this computer. Get it in Preferences, Video Tools." Click that notice, or open **Preferences, Video Tools**, and choose **Download ffmpeg**. It downloads ffmpeg 7.1.5 (about 12 MB) from the formai-binaries releases on GitHub into FormMorpheus's data folder, and every file is checked against its recorded SHA-256 before it is used. Its licence is LGPL-2.1-or-later. It is a separate program that FormMorpheus runs, not a part of FormMorpheus, and **Remove** takes it away again. That build makes ProRes, and HEVC where the computer has a hardware encoder FormMorpheus can use (on Windows, only some graphics cards); it has no MP3 or H.264 encoder. An ffmpeg you installed yourself is always used first, so for MP3, or HEVC on a computer without such an encoder, install your own. When you choose MP3 in Export sound and no ffmpeg with an MP3 encoder is found, the dialog says: "MP3 needs an ffmpeg with an MP3 encoder, which is not on this computer. The downloadable build has none, so install your own. See Preferences, Video Tools." Video Tools shows which ffmpeg is used and what it can encode. Nothing needs restarting. The window renders each frame, the engine encodes them, and the result appears on the Exports page.
 
 ### Where exports go
 
@@ -241,6 +250,7 @@ Open with Ctrl+, (File or Edit menu). The pages:
 - **Interface**: theme (29 themes, light and dark, or match the system), accent color and intensity, language, text size, interface scale, animations, notice time.
 - **Timeline**: undo steps, scrub speed (Precise, Medium or Fast, which also sets how fast scrubbing the frame strip moves), two and three-finger tap for undo and redo, and ask before deleting.
 - **Pen and Tablet**: the test pad, the pressure curve and what the pen's eraser end and buttons do (see Pen tablets).
+- **Video Tools** (desktop only): which ffmpeg FormMorpheus uses and what it can encode, and Download ffmpeg and Remove for the family's build (see Engine formats).
 - **Agents** (desktop only): whether outside agents may work on your movies, the address and command that connect a client, and a button that opens the terminal panel (see Agents).
 - **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
 
@@ -330,6 +340,8 @@ Closing FormMorpheus ends every tab.
 **A new icon.** formmorpheus has a new app icon on the desktop, in the browser tab and in About.
 
 **On iPad.** formmorpheus is coming to iPad. On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About formmorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
+
+**On iPad, from 0.23.0.** The iPad app runs on iPadOS 16.4 or later; squeeze, barrel roll and the Pencil haptics need iPadOS 17.5. A ProRes video (422 or 4444) now imports: the iPad converts it with its own encoders, ProRes 4444 with transparency to HEVC with transparency and everything else to H.264, which takes a moment for a long clip. HEVC with transparency imports as it is. Whether the transparency shows depends on the iPad's video decoder: if the first frame comes out with none, a notice says so. A video the iPad cannot read at all, a video over 2 GB, and sounds or pictures the iPad cannot decode are still refused with the reason. On Home, the second place under Library is iCloud Drive: tap it to keep the library in iCloud Drive > FormMorpheus (On This iPad takes it back). Nothing is copied when you switch, so use Copy to iCloud Drive in the Theater to bring movies across. Movies saved there appear on your other iPads signed in to the same Apple Account; one that has not arrived yet downloads when you open it, or shows once iCloud has brought it over. When iCloud Drive is off or no one is signed in, Home says so.
 
 ## New in 0.17.2
 
@@ -594,7 +606,7 @@ Everything can be done without a mouse. Tab and Shift+Tab move through the contr
 
 **Export has no sound in QuickTime.** MP4 sound falls back to Opus when the browser has no AAC encoder, and QuickTime does not play Opus. Export MOV, or use a browser with AAC.
 
-**ProRes or HEVC are greyed out.** Install ffmpeg on your computer and restart the engine. See Engine formats.
+**ProRes or HEVC are greyed out.** FormMorpheus found no ffmpeg. Open Preferences, Video Tools and choose Download ffmpeg, or install your own. See Engine formats.
 
 **A GIF is huge.** Lower the colors, the size or the frame rate in the Export dialog. Very large animated GIFs are decoded whole on import, so a long 4K GIF needs a lot of memory.
 

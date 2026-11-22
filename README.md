@@ -109,6 +109,8 @@
   </tr>
 </table>
 
+**Coming from another animation app?** Layered `.procreate` artwork opens as a Drawing with its layers, blend modes and groups. Another app's movie project file cannot be read, so bring the movie over as what that app exports: a video (MP4 or MOV, in H.264, HEVC or ProRes, with its transparency), a folder of numbered PNG frames, which becomes one Flipbook, or an animated GIF, which becomes a Flipbook with its holds. See "Coming from another animation app" in [`docs/MANUAL.md`](docs/MANUAL.md).
+
 ## Under the hood
 
 - **Stack:** a vanilla TypeScript and Vite interface, a Python and FastAPI engine and a Tauri 2 desktop shell.
