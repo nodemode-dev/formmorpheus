@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+export FORMMORPHEUS_CALLER_DIR="${FORMMORPHEUS_CALLER_DIR:-$PWD}"
 cd "$(dirname "$0")"
 source setup/lib.sh
 usage() {
@@ -21,6 +22,9 @@ usage: ./formmorpheus [command]
   ios [--no-open]     build the iPad app project (macOS only): interface, XcodeGen, Xcode
   doctor              check the toolchain, installs and ports
   lint               text lint: no em dash, emoji, attribution trailers or banned names
+  agents install      set up Claude Code, Codex, Cursor and Antigravity for FormMorpheus (--dry-run shows what)
+  agents sync         mirror the skill pack and write agents/manifest.json (--check: exit 1 when stale)
+  mcp                 FormMorpheus as an MCP server on standard input and output (for clients that start one)
   version             the version and build
   clean [--all]       remove build output (--all also venv and node_modules)
   help                this text
@@ -48,6 +52,8 @@ case "$cmd" in
   ios) exec setup/ios "$@" ;;
   doctor) exec setup/doctor "$@" ;;
   lint) exec python3 setup/lint_text "$@" ;;
+  agents) exec python3 setup/agents.py "$@" ;;
+  mcp) exec python3 setup/mcp_stdio.py "$@" ;;
   clean) exec setup/clean "$@" ;;
   version|--version|-V)
     printf 'formmorpheus %s' "$(fm_version)"
