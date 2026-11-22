@@ -5,6 +5,13 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.18.4', name: 'Help that always opens, and ffmpeg found on a Mac',
+    additions: [
+      { title: 'Help', text: 'Every button in the Help Center opens something: the Manual and Send an idea inside the app, and the FormMorpheus page in your browser.', command: 'help-center' },
+      { title: 'ffmpeg on a Mac', text: 'Opened from Finder or the Dock, the app finds an ffmpeg installed with Homebrew or MacPorts, so ProRes, HEVC and MP3 export are offered.', command: 'export' },
+    ],
+  },
+  {
     version: '0.18.0', name: 'A new icon, and formmorpheus on iPad',
     additions: [
       { title: 'A new icon', text: 'formmorpheus has a new app icon everywhere it appears.', command: 'about' },
