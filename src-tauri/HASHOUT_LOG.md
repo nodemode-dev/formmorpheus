@@ -2,10 +2,22 @@
 
 Living log for the desktop shell (Tauri 2). Source stays comment-free; rationale lives here. The splash and reveal reproduce the owner's formvis splash and boot map exactly.
 
-Current build version: v0.14.0
-Last updated: 2026-10-30 · reveal_folder for Show brush folder
+Current build version: v0.23.1
+Last updated: 2026-11-22 · what the Linux bundle and the frozen engine carry, two CI checks
 
 ---
+
+## v0.23.1 · what ships, said plainly, and two checks for CI
+
+- refers-to: ../build_app (the Linux AppImage branch); ../setup/freeze_backend and freeze_backend.bat (--exclude-module readline); tauri.conf.json (longDescription, copyright, publisher, fileAssociations); Cargo.toml (description, authors); entitlements.plist (comment); src/folder.rs (message); ../setup/window_check; ../setup/api_contract_dump; ../.github/workflows/ci.yml (contract and window jobs)
+- kind: decision
+- logged: v0.23.1 · 2026-11-22
+
+- **The AppImage carries only LGPL GStreamer plug-ins.** Tauri's `bundleMediaFramework` runs linuxdeploy's GStreamer plug-in, which copies every file in the build machine's `gstreamer-1.0` folder, with no exclusions. Installing the webkit2gtk development packages with their recommendations brings in the bad plug-ins and gstreamer1.0-libav, and on Ubuntu those include plug-ins built on GPL libraries (faad, dtsdec, the FFmpeg the distribution builds with GPL parts). `build_app` now points `GSTREAMER_PLUGINS_DIR` at a temporary folder holding only the plug-ins of libgstreamer1.0-0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good and gstreamer1.0-gl (106 files on Ubuntu 24.04), unless the caller set the variable; without dpkg it stops and asks for one. This follows formcompiler's own choice for the media apps (base and good only, its log v0.6.1), and makes it hold whatever else the runner has installed.
+- **The frozen engine leaves GNU Readline out.** The Linux freeze listed `libreadline.so.8` (GPL-3.0) and `libtinfo`, pulled in by the standard library's `readline` module, which nothing in the engine imports. `--exclude-module readline` removes both; the engine's self check passes and the remaining native libraries are the ones NOTICE lists.
+- **Names.** The bundle's description, copyright and publisher say FormMorpheus and NodeAgentc, Inc.; the file type is "FormMorpheus Movie". The entitlements comment no longer cites another app's version. The Home, title bar and About wordmarks stay lower case, as the family writes its wordmarks.
+- **The window check** (`setup/window_check`) is the one browser check CI runs: the engine on a free loopback port with an empty data folder and the built page, headless Chrome or Chromium driven over `--remote-debugging-pipe` (no debugging port is opened), 15 seconds, then it fails if the app did not draw its window or if the browser reported an uncaught error, a console error or a policy refusal. Dumping the DOM from the command line did not work: the page's long polls keep virtual time from advancing, and without virtual time the DOM is read before the app has drawn. Seen here: it passes on the built page and fails on a page with an injected console error, a thrown error and an image from another origin.
+- **The contract dump** (`setup/api_contract_dump`) writes `docs/api-contract.json` from `app.openapi()` and the engine's socket routes, one path and one schema per line, so a diff shows exactly what changed; `--check` fails CI when the file is stale. Socket routes are found by walking FastAPI 0.141's included routers (`original_router`, `include_context.prefix`). The contract check now counts the window key routes and `/mcp` as desktop only.
 
 ## v0.19.0 · the engine starts and leaves the family way
 

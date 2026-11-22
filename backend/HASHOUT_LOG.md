@@ -2,10 +2,21 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.14.0
-Last updated: 2026-10-30 · brush libraries as files, recovery presence over a WebSocket, streamed duplicates
+Current build version: v0.23.1
+Last updated: 2026-11-22 · the product's name in the engine's sentences, the contract written from the code
 
 ---
+
+## v0.23.1 · the product's name, and the contract from the code
+
+- refers-to: app/routers/files.py, library.py, recovery.py, save_to.py, system.py (messages); app/penlink_static/i18n.js, index.html; ../setup/api_contract_dump (new); ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json
+- kind: decision
+- logged: v0.23.1 · 2026-11-22
+
+- **Messages.** Every engine sentence a person can read (a refused save, a library folder that cannot be used, a recovery that is not there, a system answer) says FormMorpheus. The Pen Link page's title and its sentence in all 28 of its languages say it too; the page's own language file was checked by parsing it with node after the edit.
+- **What does not change.** Route paths, the `formmorpheus` MCP server name, the data folder name and the `.fmo` manifest value stay lower case: a program reads them.
+- **The contract file is written, not kept by hand.** `setup/api_contract_dump` imports `app.main` with an empty temporary data folder and writes `docs/api-contract.json`: the OpenAPI document with one path and one schema per line, and an `x-websockets` list of the socket routes (FastAPI 0.141 keeps included routers behind `_IncludedRouter`, so the walk follows `original_router` and adds `include_context.prefix`). `--check` compares and exits 1 when the file is stale, which CI runs. The file before this was last written at 0.17.2 and had none of the window, agents, terminal, Video Tools or MCP routes.
+- **Desktop only.** `api_contract_check` compares the interface's calls with what the iPad engine answers. The window key routes (`/api/window/*`) and `/mcp` are now listed as desktop only, with the agents, terminal and Video Tools routes; with them, no required route is missing on iPad and 31 of 101 are desktop only.
 
 ## v0.23.0 · ffmpeg from the family's builds
 

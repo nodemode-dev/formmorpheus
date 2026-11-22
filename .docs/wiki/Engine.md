@@ -32,7 +32,7 @@ Distort is a projective map of the content's own rectangle. Warp is a Catmull-Ro
 
 ## The GPU compositor
 
-The processor path is the reference and the fallback. The GPU path walks the tracks the same way, with all 17 blend modes and the live filters as shader passes; content drawn through Warp, Distort, layer groups, layer masks or row masks is rendered by the processor and uploaded as one picture. Auto mode turns the GPU on only when WebGL 2 exists, a probe frame matches the processor and a heavy frame is no slower. `?gpu=force` skips the speed test. The Performance page of Preferences has the switch.
+The processor path is the reference and the fallback. The GPU path walks the tracks the same way, with all 26 blend modes and the live filters as shader passes; content drawn through Warp, Distort, layer groups, layer masks or row masks is rendered by the processor and uploaded as one picture. Auto mode turns the GPU on only when WebGL 2 exists, a probe frame matches the processor and a heavy frame is no slower. `?gpu=force` skips the speed test. The Performance page of Preferences has the switch.
 
 ## Keys
 

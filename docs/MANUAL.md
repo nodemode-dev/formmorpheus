@@ -1,6 +1,6 @@
-# formmorpheus Manual
+# FormMorpheus Manual
 
-formmorpheus is an animation studio: a **Stage** on top, a **Timeline** below. You arrange blocks of content on tracks, draw frame by frame, animate with keyframes, or perform a move live and let the app record it. This manual covers the whole app in short sections. In the app, open it from Help · formmorpheus Manual, or press F1.
+FormMorpheus is an animation studio: a **Stage** on top, a **Timeline** below. You arrange blocks of content on tracks, draw frame by frame, animate with keyframes, or perform a move live and let the app record it. This manual covers the whole app in short sections. In the app, open it from Help · FormMorpheus Manual, or press F1.
 
 On macOS use Cmd where this manual says Ctrl. The table of keys is under Keyboard shortcuts.
 
@@ -65,7 +65,7 @@ In Compose you build the structure of the movie.
 
 On the Stage, drag a selected block to move it, drag a corner handle to scale, and drag the rotate handle to turn it. Shift snaps rotation to 15 degrees. Moves snap to the centre and quarter lines.
 
-**Content options**: opacity, 17 blend modes (and passthrough for groups), clipping, alpha and luminance masks with invert, and highlight colors for finding blocks.
+**Content options**: opacity, 26 blend modes (and passthrough for groups), clipping, alpha and luminance masks with invert, and highlight colors for finding blocks.
 
 **Undo** (Ctrl+Z) and **Redo** (Shift+Ctrl+Z or Ctrl+Y) step through your edits. A drag counts as one step. The depth is set in Preferences · Timeline, from 10 to unlimited.
 
@@ -260,7 +260,7 @@ The interface comes in 29 languages besides English: Spanish (and Mexican), Braz
 
 ## Crash recovery
 
-formmorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
+FormMorpheus keeps a recovery copy of the open movie while you work. Each window keeps its own copy and marks it alive every minute. After a crash, the next start offers only the copies of windows that stopped, never one that is still open in another window. Choose to restore it, or discard it. If a movie cannot be recovered, the app says so and keeps the copy for the next start. Edit · Restore Last Recovery Point is a different thing: it returns to an automatic point saved when you made a new edit after three or more undos. Edit · Recovery Points... lists every kept point (the last three, saved inside the movie) and restores any of them; Undo takes the restore back.
 
 ## Pen tablets
 
@@ -268,7 +268,7 @@ Any drawing tablet whose driver passes pen pressure to apps works in Draw and Pa
 
 ## Pen Link: a tablet as a drawing tablet
 
-Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for example) into a pressure-sensitive drawing tablet for formmorpheus over your local network. Turn it on, open the address it shows in the tablet's browser, and type the six-digit code (it lasts two minutes and allows five tries). The tablet shows your canvas and draws on it with the pen's pressure and tilt; its toolbar switches brush and eraser, undoes and redoes, and sets size and opacity. One tablet pairs at a time. Pen Link is off until you turn it on, it listens on your network only while it is on, and it serves nothing but its own page: the rest of formmorpheus stays private to your computer. The connection is not encrypted, so use it on a network you trust.
+Edit · Pen Link... turns a tablet with a pen and a web browser (an iPad, for example) into a pressure-sensitive drawing tablet for FormMorpheus over your local network. Turn it on, open the address it shows in the tablet's browser, and type the six-digit code (it lasts two minutes and allows five tries). The tablet shows your canvas and draws on it with the pen's pressure and tilt; its toolbar switches brush and eraser, undoes and redoes, and sets size and opacity. One tablet pairs at a time. Pen Link is off until you turn it on, it listens on your network only while it is on, and it serves nothing but its own page: the rest of FormMorpheus stays private to your computer. The connection is not encrypted, so use it on a network you trust.
 
 ## Brush files
 
@@ -337,9 +337,9 @@ Closing FormMorpheus ends every tab.
 
 ## New in 0.18.0
 
-**A new icon.** formmorpheus has a new app icon on the desktop, in the browser tab and in About.
+**A new icon.** FormMorpheus has a new app icon on the desktop, in the browser tab and in About.
 
-**On iPad.** formmorpheus is coming to iPad. On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About formmorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
+**On iPad.** FormMorpheus is coming to iPad. On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About FormMorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
 
 **On iPad, from 0.23.0.** The iPad app runs on iPadOS 16.4 or later; squeeze, barrel roll and the Pencil haptics need iPadOS 17.5. A ProRes video (422 or 4444) now imports: the iPad converts it with its own encoders, ProRes 4444 with transparency to HEVC with transparency and everything else to H.264, which takes a moment for a long clip. HEVC with transparency imports as it is. Whether the transparency shows depends on the iPad's video decoder: if the first frame comes out with none, a notice says so. A video the iPad cannot read at all, a video over 2 GB, and sounds or pictures the iPad cannot decode are still refused with the reason. On Home, the second place under Library is iCloud Drive: tap it to keep the library in iCloud Drive > FormMorpheus (On This iPad takes it back). Nothing is copied when you switch, so use Copy to iCloud Drive in the Theater to bring movies across. Movies saved there appear on your other iPads signed in to the same Apple Account; one that has not arrived yet downloads when you open it, or shows once iCloud has brought it over. When iCloud Drive is off or no one is signed in, Home says so.
 
@@ -351,7 +351,7 @@ Closing FormMorpheus ends every tab.
 
 **Pens and tablets.** A stroke is kept when the system interrupts the pen, a pen resting still never opens the color picker mid-stroke, and a palm on the screen gives way to the pen. A tablet that reports pressure as a mouse can turn on Use pressure from the mouse in Pen and Tablet. Pen Link lifts cleanly when the tablet's page is hidden or the connection drops.
 
-**Systems.** On a system that cannot encode a video or sound format itself, export hands it to the engine. Text spacing, animated pictures and previews have fallbacks on older systems, and the graphics card path falls back to drawing without it when a movie is too large for it or the card resets. If the system is too old to run formmorpheus at all, one message says what it needs.
+**Systems.** On a system that cannot encode a video or sound format itself, export hands it to the engine. Text spacing, animated pictures and previews have fallbacks on older systems, and the graphics card path falls back to drawing without it when a movie is too large for it or the card resets. If the system is too old to run FormMorpheus at all, one message says what it needs.
 
 ## New in 0.17.1
 
@@ -467,11 +467,11 @@ Closing FormMorpheus ends every tab.
 
 **Timeline.** Content · Push Content moves a block one frame earlier or later w/ what it touches; Extend and Push and Contract and Pull change a block's length and move the rest of the track. Flip Content Order reverses two or more selected blocks. Set Loop Start and Set Loop End at the Playhead make playback loop inside a range (Clear Loop Range ends it). Preferences can make the pen button play and pause, and turn rotation from a twisting pen in Perform on or off. A four-finger tap toggles full-screen preview.
 
-**Safety.** Edit · Recover Lost Movies... offers recovery snapshots again at any time. The engine accepts requests only from this computer and from formmorpheus's own windows, moves files safely between drives, and checks the size of what it unpacks. Movies saved by older versions open cleanly.
+**Safety.** Edit · Recover Lost Movies... offers recovery snapshots again at any time. The engine accepts requests only from this computer and from FormMorpheus's own windows, moves files safely between drives, and checks the size of what it unpacks. Movies saved by older versions open cleanly.
 
 ## New in 0.9.0
 
-**Start.** formmorpheus opens on the Movies grid (the Theater). The brand name at the top of Home opens About, What's New, Help and Reset Examples. Three example movies are built at first run, and Help · Take the Tour points out the Stage, Timeline, modes, Create menu and Stage Options. Hover a movie to preview it; Share offers the movie w/ its full undo history or a smaller file. Preferences · Change Library Folder... moves the library.
+**Start.** FormMorpheus opens on the Movies grid (the Theater). The brand name at the top of Home opens About, What's New, Help and Reset Examples. Three example movies are built at first run, and Help · Take the Tour points out the Stage, Timeline, modes, Create menu and Stage Options. Hover a movie to preview it; Share offers the movie w/ its full undo history or a smaller file. Preferences · Change Library Folder... moves the library.
 
 **Text.** Create · Text places dark text ready to type on the Stage; double-click text to edit it in place. The Text card has Fonts (built in, in this movie, on this computer, and Import font...) and Format (bold, italic, underline, strikethrough, case, size, tracking, leading, baseline, kerning, alignment incl. justify, outline, vertical text, wrap). In Compose, the side nodes of a text box set its wrap width.
 

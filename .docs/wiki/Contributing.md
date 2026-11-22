@@ -17,7 +17,14 @@
 ```shell
 cd frontend && npx tsc --noEmit
 cd frontend && npm run build
+python3 setup/lint_text                            # no em dash, emoji, trailers or other vendors' names
+backend/venv/bin/python setup/window_check         # the built page opens in Chrome with no error
+backend/venv/bin/python setup/api_contract_dump    # docs/api-contract.json from the engine's routes (--check in CI)
+python3 setup/api_contract_check                   # the routes the iPad engine serves against that contract
+./formmorpheus agents sync --check                 # the shared dock, the finder and the skill pack are in step
 ```
+
+CI runs the same: the frontend, backend, Tauri, lint, contract and window jobs in `.github/workflows/ci.yml`. The window check starts the engine on a free loopback port with an empty data folder, opens the page in headless Chrome or Chromium through the DevTools protocol, and fails on an uncaught error, a console error or anything the page policy refuses.
 
 Then run `./formmorpheus`, open http://localhost:5194 and look at the change in dark and light themes, at a narrow window, and with a movie open.
 
