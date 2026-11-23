@@ -2,6 +2,23 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.24.0 · 2026-11-23
+
+FormMorpheus has a test suite. Nothing in the app changes.
+
+### Tests
+- Interface: unit tests in `frontend/tests/unit`, run by vitest with happy-dom. They cover the animation engine, its effects and GPU bookkeeping, the paint engine, file input and output, export, media, the platform layer, the agent dock, the app shell, the interface's own logic and the translation tables.
+- Engine: tests in `backend/tests`, run by pytest against the FastAPI app in process. They cover the loopback and origin guard, the window key, the page policy, start-up, the library, export jobs, the MCP surface, agents, brushes, fonts, ideas, Pen Link, ffmpeg handling, the remaining routes and the repository's own scripts.
+- One test holds every version site to the same version.
+
+### Running them
+- `./formmorpheus test` runs both layers; `./formmorpheus test interface` and `./formmorpheus test engine` run one.
+- CI runs both on every push and pull request, in a new `tests` job.
+- `docs/TESTING.md` says how to run the tests and what a test must do.
+
+### Not covered
+- The desktop shell (Rust) and the iPad app (Swift) have no tests yet. Code that needs a real GPU, real codecs or a real browser is left to the window check.
+
 ## 0.23.3 · 2026-11-22
 
 The repository has the family's community files. Nothing in the app changes.
