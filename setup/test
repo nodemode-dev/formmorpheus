@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+source "$(dirname "$0")/lib.sh"
+layer="${1:-all}"
+[ $# -gt 0 ] && shift
+run_interface() {
+  fm_say "interface tests (vitest)"
+  (cd "$FM_ROOT/frontend" && npx vitest run "$@")
+}
+run_engine() {
+  fm_venv
+  python -c 'import pytest, httpx' 2>/dev/null || python -m pip install -q -r "$FM_ROOT/backend/requirements-test.txt"
+  fm_say "engine tests (pytest)"
+  (cd "$FM_ROOT/backend" && python -m pytest "$@")
+}
+case "$layer" in
+  interface) run_interface "$@" ;;
+  engine) run_engine "$@" ;;
+  all) run_interface; run_engine ;;
+  *) fm_die "unknown layer: $layer (interface, engine, or nothing for both)" ;;
+esac
