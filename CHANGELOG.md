@@ -2,6 +2,16 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.23.3 · 2026-11-22
+
+The repository has the family's community files. Nothing in the app changes.
+
+### Documents
+- `CODE_OF_CONDUCT.md`: how people in the project treat each other, and where to report.
+- `CONTRIBUTING.md`: how to set up, the checks to run before a pull request, how changes land, and the rules on licences and other people's IP.
+- `SECURITY.md` names the latest release as the supported one, as the other Form apps do, so it does not go stale with each version.
+- The README points to all three.
+
 ## 0.23.2 · 2026-11-22
 
 A fix release for the builds: the Mac and Linux apps finish building, so this is the version that gets published.

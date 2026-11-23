@@ -152,7 +152,7 @@ The interface runs on port 5194 and proxies `/api` and `/mcp` to the local engin
 > [!IMPORTANT]
 > **Status:** in development. The Linux desktop build is tested; the macOS and Windows builds are configured but untested here.
 
-**Contributing:** branch from `main`, keep changes to source here, and leave packaging and releases to formcompiler. See [`.docs/wiki/Contributing.md`](.docs/wiki/Contributing.md) and [`AGENTS.md`](AGENTS.md).
+**Contributing:** branch from `main`, keep changes to source here, and leave packaging and releases to formcompiler. See [`CONTRIBUTING.md`](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and [`AGENTS.md`](AGENTS.md); security problems go through [`SECURITY.md`](SECURITY.md).
 
 ## Repository
 
