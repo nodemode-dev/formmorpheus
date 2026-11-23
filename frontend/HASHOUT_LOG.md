@@ -2,10 +2,25 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.23.1
-Last updated: 2026-11-22 · the product's name in every sentence, every language table complete
+Current build version: v0.24.0
+Last updated: 2026-11-23 · the interface's test suite
 
 ---
+
+## v0.24.0 · the interface's test suite
+
+- refers-to: vitest.config.ts (new); tests/unit/** (new); tests/unit/_support/* (new); tests/unit/version.test.ts (new); package.json :: scripts.test, devDependencies; ../setup/test (new); ../docs/TESTING.md (new)
+- kind: decision
+- logged: v0.24.0 · 2026-11-23
+
+- **Asked for by the owner.** The rule that tests are written only when the maintainers ask still stands; this version is that ask. `docs/TESTING.md` says what a test must do.
+- **Runner.** vitest 5.0.5 with happy-dom 21.0.4, both MIT, both development only and never shipped. `vitest.config.ts` stands alone: it does not load `vite.config.ts`, so no dev server and no proxy are involved, and `npm test` is `vitest run`, which listens on nothing.
+- **Layout.** A test mirrors its source path under `tests/unit` and imports through the `@src` alias. Stand-ins shared by several tests of one area live in `tests/unit/_support`, one file per area.
+- **No `new URL(x, import.meta.url)` in a test.** Vite treats it as an asset import and refuses a file outside the root (the first run of `version.test.ts` failed that way on `AGENTS.md`). Tests that read a repository file build the path with `node:path` from `fileURLToPath(import.meta.url)`.
+- **What happy-dom lacks.** No canvas context, WebGL, WebGPU, AudioContext, OffscreenCanvas, ImageBitmap or codecs. Tests stub only what the code under test touches; code that is only those calls is left to `setup/window_check`.
+- **Version sites.** `tests/unit/version.test.ts` reads every site (interface, package and lock files, engine, desktop shell, iPad project, API contract, changelog, README badge) and holds them equal, so a bump that misses one goes red.
+- **The lock file** was written with `--legacy-peer-deps`: npm 10.9.9 fails in its peer set loader when vitest is added to this tree without it. `npm ci` from the written lock file was run in an empty folder and installs cleanly.
+- **Type check.** `tsconfig.json` still includes `src` only, so `tsc --noEmit` does not read the tests.
 
 ## v0.23.1 · the product's name, and every table complete
 
