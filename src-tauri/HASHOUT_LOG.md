@@ -2,10 +2,26 @@
 
 Living log for the desktop shell (Tauri 2). Source stays comment-free; rationale lives here. The splash and reveal reproduce the owner's formvis splash and boot map exactly.
 
-Current build version: v0.23.1
-Last updated: 2026-11-22 · what the Linux bundle and the frozen engine carry, two CI checks
+Current build version: v0.23.2
+Last updated: 2026-11-22 · the release builds for macOS and Linux finish
 
 ---
+
+## v0.23.2 · the release builds for macOS and Linux finish
+
+- refers-to: ../build_app (the Linux AppImage plug-in step); ../setup/freeze_backend :: plain_framework_libraries, sign_engine (new, macOS only)
+- kind: decision
+- logged: v0.23.2 · 2026-11-22
+
+- **Fault, Linux (formcompiler's release run for 0.23.1, linux-x64):** the build stopped with exit 1 right after "sidecar ready", with no message. formcompiler installs the app's `linux_packages` with `--no-install-recommends`, and that list names gstreamer1.0-plugins-base and -good but not gstreamer1.0-gl. `dpkg -L gstreamer1.0-gl` failed inside a pipeline under `set -euo pipefail`, and the script ended there.
+- **Now, Linux:** each of the four packages is checked with `dpkg-query -W -f='${Status}'` first; one that is not installed is named in the log and skipped, and a package with no plug-in files no longer fails the step. The build stops only when no plug-in at all was found. Seen here: a full `./formmorpheus desktop build --bundles deb,appimage` from a fresh clone on Ubuntu 24.04, with a stand-in `dpkg-query` that reports gstreamer1.0-gl as not installed, the way the build machine has it.
+- **Also Linux: two sinks left out.** Reading the AppImage this build made showed S-Lang and GPM (both GPL-2.0-or-later) and ncurses inside it, pulled in only by `libgstaasink.so` and `libgstcacasink.so` from the good set, which draw video as text in a terminal. `build_app` removes those two files from the plug-in folder; the rebuilt AppImage (103 plug-ins) has none of those libraries, started under a virtual display, showed Home with the three example movies, and its engine ended when the app closed.
+- **Still open, Linux:** the AppImage carries `libjbig.so.0` (JBIG-KIT, GPL-2.0-or-later). The AppImage tool's GTK step copies every GDK image loader, the TIFF loader links libtiff, and Ubuntu's libtiff links JBIG-KIT. Tauri gives no hook between that step and the packing, so removing it needs formcompiler (a `post_build` step that repacks) or a build machine whose libtiff is built without JBIG. The deb and rpm bundle no libraries and are not affected. It was in the 0.18.x AppImages too.
+- **Fault, macOS (the same run, macos-arm64 and macos-x64):** the app was built and signed, then Apple's notary answered `Invalid`, "The signature of the binary is invalid", for `FormMorpheus.app/Contents/Resources/engine/_internal/Python.framework/Versions/3.12/Python`, on both architectures. No release was made.
+- **Cause:** the build machine's Python is a framework build, so PyInstaller puts the library at `_internal/Python.framework/Versions/3.12/Python` and makes `_internal/Python` a link to it. The app bundle carries the engine's links as plain files, so the library sits in two places, and a signature bound to the framework does not hold for the plain copy, nor a plain one inside the framework. FormTools met exactly this (its 0.8.0, then 0.9.0, the same notary sentence at the same path) and fixed it in 0.9.1, which was released for macOS with notarization on; FormTools has since released up to 0.13.0 for macOS, Windows and Linux.
+- **Now, macOS:** FormTools' two functions, taken as they are (Apache-2.0, the same owner) with this repository's names. `plain_framework_libraries` turns a link outside a framework that points at a Mach-O inside a `*.framework/` folder of the engine into the file itself, removes its old signature and deletes that framework folder; the engine then holds the library once, as `_internal/Python`, the file PyInstaller's program loads. `sign_engine` signs every Mach-O file, deepest first, with the Developer ID, a timestamp, the hardened runtime and `entitlements.plist`, except a file PyInstaller already signed that way (and the engine program only when it carries `disable-library-validation`). It then checks every file where it sits and every link as the plain copy the bundle makes, and stops the build, before the long Rust compile and the upload to Apple, if one would not hold. `--selfcheck` runs afterwards on the very layout the app carries.
+- **One change from FormTools:** a build without `APPLE_SIGNING_IDENTITY` also gets the plain layout, with the library signed ad hoc, so a local Mac build loads the same files a release does. FormTools leaves unsigned builds as PyInstaller made them.
+- **Checked here:** `bash -n`, and both functions run against stand-in engine folders with stub `codesign` and `file` in which a signature holds only in the kind of place it was made for (bound to a framework, or plain). The folder as 0.23.1 shipped it leaves `_internal/Python` invalid as the bundle's plain copy; after `sign_engine` there is no framework folder, `_internal/Python` is a file signed for where it sits, an ordinary library link stays a link, and every Mach-O holds where it sits and as a plain copy; an unsigned run leaves the plain layout signed ad hoc; a framework nothing links to stops the build with its sentence. Not run: a Mac, the real `codesign`, Apple's notary. The next formcompiler run is the test (TEST_PLAN 8.1).
 
 ## v0.23.1 · what ships, said plainly, and two checks for CI
 

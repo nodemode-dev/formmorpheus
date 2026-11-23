@@ -2,6 +2,16 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.23.2 · 2026-11-22
+
+A fix release for the builds: the Mac and Linux apps finish building, so this is the version that gets published.
+
+### Fixed
+- macOS: Apple accepts the app for notarization. The engine now carries its Python library once, as a plain file signed for where it sits. Before, a second copy inside a framework folder had a signature that did not hold there, and Apple refused the app.
+- macOS: a build stops early, with the reason, if a file in the engine would not pass Apple's check where it sits.
+- Linux: the build goes on when one of the GStreamer plug-in sets is not installed on the computer that builds it; that set is left out of the AppImage and the build log names it. Before, the build stopped right after freezing the engine, without a message.
+- Linux: the AppImage no longer carries GStreamer's two text-art video outputs, nor the S-Lang, GPM and ncurses libraries they brought with them.
+
 ## 0.23.1 · 2026-11-22
 
 FormMorpheus is called by its name, in every language, and says plainly what it ships.
