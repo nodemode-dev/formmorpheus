@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.23.2" src="https://img.shields.io/badge/version-v0.23.2-eef0f4?style=flat-square">
+  <img alt="version 0.23.3" src="https://img.shields.io/badge/version-v0.23.3-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
   <img alt="macOS, Linux and Windows" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-native-2f7bf5?style=flat-square">
@@ -152,7 +152,7 @@ The interface runs on port 5194 and proxies `/api` and `/mcp` to the local engin
 > [!IMPORTANT]
 > **Status:** in development. The Linux desktop build is tested; the macOS and Windows builds are configured but untested here.
 
-**Contributing:** branch from `main`, keep changes to source here, and leave packaging and releases to formcompiler. See [`.docs/wiki/Contributing.md`](.docs/wiki/Contributing.md) and [`AGENTS.md`](AGENTS.md).
+**Contributing:** branch from `main`, keep changes to source here, and leave packaging and releases to formcompiler. See [`CONTRIBUTING.md`](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and [`AGENTS.md`](AGENTS.md); security problems go through [`SECURITY.md`](SECURITY.md).
 
 ## Repository
 

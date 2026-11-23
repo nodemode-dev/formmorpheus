@@ -6,7 +6,7 @@ Security fixes go into the newest release. Please update before reporting, and c
 
 | Version | Supported |
 | --- | --- |
-| 0.23.x (latest release) | Yes |
+| Latest release | Yes |
 | Anything older | No |
 
 ## Reporting a vulnerability
