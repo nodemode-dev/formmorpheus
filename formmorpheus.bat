@@ -17,6 +17,7 @@ if /i "%CMD%"=="desktop" goto :desktop
 if /i "%CMD%"=="ios" goto :ios
 if /i "%CMD%"=="doctor" goto :doctor
 if /i "%CMD%"=="lint" goto :lint
+if /i "%CMD%"=="test" goto :test
 if /i "%CMD%"=="agents" goto :agents
 if /i "%CMD%"=="mcp" goto :mcp
 if /i "%CMD%"=="clean" goto :clean
@@ -96,6 +97,10 @@ call setup\find_python.bat || exit /b 1
 %FM_PY% setup\lint_text %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
+:test
+call setup\test.bat %2
+exit /b %errorlevel%
+
 :agents
 call setup\find_python.bat || exit /b 1
 %FM_PY% setup\agents.py %2 %3 %4 %5 %6 %7 %8 %9
@@ -145,6 +150,7 @@ echo   desktop build       build the desktop installers (same as build_app.bat)
 echo   ios                 macOS only; on Windows it says so and stops
 echo   doctor              check the toolchain, installs and ports
 echo   lint                text lint: no em dash, emoji, attribution trailers or banned names
+echo   test [layer]        run the tests: interface (vitest), engine (pytest), or both when no layer is given
 echo   agents install      set up Claude Code, Codex, Cursor and Antigravity for FormMorpheus (--dry-run shows what)
 echo   agents sync         mirror the skill pack and write agents\manifest.json (--check: exit 1 when stale)
 echo   mcp                 FormMorpheus as an MCP server on standard input and output (for clients that start one)

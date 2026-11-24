@@ -1,5 +1,5 @@
 {
-"info":{"title":"formmorpheus","version":"0.23.3"},
+"info":{"title":"formmorpheus","version":"0.24.0"},
 "openapi":"3.1.0",
 "paths":{
 "/api/agent/claude/open":{"post":{"operationId":"claude_open_api_agent_claude_open_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ClaudeBody"}}},"required":true},"responses":{"200":{"content":{"application/json":{"schema":{"additionalProperties":true,"title":"Response Claude Open Api Agent Claude Open Post","type":"object"}}},"description":"Successful Response"},"422":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}},"description":"Validation Error"}},"summary":"Claude Open","tags":["terminal"]}},

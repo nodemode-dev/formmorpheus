@@ -2,10 +2,23 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.23.1
-Last updated: 2026-11-22 · the product's name in the engine's sentences, the contract written from the code
+Current build version: v0.24.0
+Last updated: 2026-11-23 · the engine's test suite
 
 ---
+
+## v0.24.0 · the engine's test suite
+
+- refers-to: pytest.ini (new); requirements-test.txt (new); tests/conftest.py (new); tests/core, library, jobs, mcp, agents, assets, penlink, media, routes, scripts (new); ../setup/test (new); ../.github/workflows/ci.yml :: tests
+- kind: decision
+- logged: v0.24.0 · 2026-11-23
+
+- **Asked for by the owner.** Tests are still written only when the maintainers ask; this version is that ask.
+- **Runner.** pytest 9.2.0 and httpx 0.28.1 (for FastAPI's TestClient), pinned with their own dependencies in `requirements-test.txt`, which starts from `requirements.txt`. Neither is frozen into the desktop engine: `freeze_backend` installs from `requirements.txt` and `requirements_desktop.txt` only.
+- **Isolation.** `tests/conftest.py` sets `FORMMORPHEUS_DATA_DIR` to a temporary folder before `app.main` is imported and points `FORMMORPHEUS_DIST` at a folder that does not exist, so no test reads the real data folder and the built interface is never mounted over the routes. The `data_dir` fixture gives each test its own folder.
+- **Clients.** `client` carries the window key and a loopback base address, so it passes both the guard and the window key check; `anon_client` has no key, for the refusals. Neither runs the start-up events (the sweeps and their tasks); a test that needs them enters `TestClient` as a context manager itself.
+- **Never real.** No real ffmpeg, download, terminal, child program, keyring or home folder: tests replace them with `monkeypatch` and files in `tmp_path`.
+- **`pythonpath = .`** in `pytest.ini` is why `from app...` imports work without installing the engine.
 
 ## v0.23.1 · the product's name, and the contract from the code
 
