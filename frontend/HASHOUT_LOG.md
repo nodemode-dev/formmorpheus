@@ -7,6 +7,18 @@ Last updated: 2026-11-25 · labels that translate cleanly
 
 ---
 
+## v0.26.0 · the character generator in the engine
+
+- refers-to: engine/cast/ (new) :: palettes, prims, metrics, body, outfits, hair, head, build (build, mkSpec), svg (rigToSvg, solveRest), visemes, presets (STUDIO_PRESETS), index
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **A faithful port.** The owner's character studio generator is ported as typed engine code with the same numbers, shapes, names and draw order: prims, metrics, garments and limbs, the 13 outfits, the 13 hair styles, the four species heads, the bone and slot build, `mkSpec` (the studio's `mkChar`) and the rest-pose SVG. No DOM. Only unused locals were dropped (the sundress and athletic torso length and waist, the head's mouth line), which changes no output. The monster's two fangs moved into `monsterFangs` so the mouth shapes can reuse them; the closed mouth is unchanged.
+- **rigToSvg.** The studio's static SVG with no animation: `solveRest` is its solve with no tracks and no deltas, from the identity root, so `W` matches the studio's per bone. `opts.mode` 'head' gives the studio's head close-up box.
+- **Mouth shapes** (`visemes`). Eight shapes in the lip-sync VISEMES order, in the mouth bone's space. Rest is the studio's closed mouth exactly. AI is the studio's closed mouth with its open mouth over it, what the studio shows at full open. The other six are drawn in each species' own style and line weight: people use the face's lip colour for strokes and the studio's open-mouth inside and tongue colours, MBP a pressed line, E wide, O and U rounded lips, FV upper teeth on the lower lip, L the tongue raised; robots use eye-coloured rounded bars on the screen, aliens small shapes in the darker skin shade, monsters keep their fangs except on the small round O and U.
+- **Presets.** `STUDIO_PRESETS` holds the studio's 13 inputs verbatim, except its Kofi is Karl (id `karl`), for the starters in 0.28.0.
+- Checked headlessly (a throwaway node script outside the tree running the studio's own functions): `rigToSvg(build(mkSpec(p)))` equals the studio's static SVG for all 13 presets (Karl compared under the studio's name) and 200 random recipes (every outfit, hair -1 to 12, all species, both frames, random sliders, face options and colour overrides); the head close-up, `solveRest` and the palettes, outfit and hair lists match too. `spec.ts` needed no change.
+
 ## v0.25.0 · characters added to any movie each take their own spot
 
 - refers-to: engine/starter-scene.ts :: spotX (new), standOnFloor; ui/characters-panel.ts :: placeCharacter
