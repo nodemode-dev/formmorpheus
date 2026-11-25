@@ -317,7 +317,7 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ## v0.25.0 · a character as SVG for a vector app
 
-- refers-to: io/svg-export.ts (new) :: characterToSvg; app/app.ts :: characterOut, selectedCharacter, command export-char-svg, File > Round Trips
+- refers-to: io/svg-export.ts (new) :: characterToSvg; app/app.ts :: characterOut, selectedCharacter, command export-char-svg, File > Round Trips; ui/export-where.ts :: pickDestination, saveFileTo; engine/source-merge.ts :: setSourceLink
 - kind: decision
 - logged: v0.25.0 · 2026-11-25
 
@@ -329,7 +329,7 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Pictures.** Embedded as `data:` PNG on `xlink:href` (what vector apps read most widely). A non-PNG picture is redrawn as PNG when the browser can. A Drawing's leaf layers go bottom first, each at the content's canvas, with its own and its layer groups' opacity; blend modes and layer masks are not written. A Flipbook writes the first drawing of each plain row.
 - **Pivots.** `<circle id="pivot-<part>" data-role="pivot" r="4">` as the last child of each part's group, in the part's own space, so it sits at the pivot after the transform. Thin outline in a magenta that art rarely uses; the importer removes it from the art.
 - **Left out.** Text, video and sound parts are written as empty groups with their pivot, so the part names survive, and the toast names them.
-- **Saving.** Through `platform.files.download`, as `roundTripOut` does: a download on the desktop, the export picker on iPad. A download has no path, so the export does not set `source`; linking is Relink Source... (C1).
+- **Saving.** In the desktop app the folder dialog comes first (`ui/export-where.ts` `pickDestination`, as other exports to a folder), the engine writes the file there without replacing one (`saveFileTo`, `/api/save-to/file`, "Name 2" when taken) and answers its absolute path; the window asks `/api/files/stat` for it and links the character to it as one undo step, "Link Source", so later saves in the vector app update the character. Cancel in the dialog exports nothing. Everywhere else (a browser, iPad) it goes through `platform.files.download` as before: a download or the export picker gives no path, so the character is not linked and Relink Source... (desktop app) or Update from Source... does it. First version: always a download, never linked.
 
 ## v0.25.0 · Update from Source: the merge by part name
 

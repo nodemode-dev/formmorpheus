@@ -12,7 +12,9 @@ import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { characterToSvg } from '../io/svg-export';
-import { sourceApi } from '../io/source-api';
+import { canLinkPaths, sourceApi } from '../io/source-api';
+import { setSourceLink } from '../engine/source-merge';
+import { pickDestination, saveFileTo } from '../ui/export-where';
 import { AudioEngine } from '../media/audio';
 import { evictFonts, loadTextFonts, registerFont, registerFonts } from '../media/fonts';
 import { loadLibrary } from '../io/fonts-library';
@@ -581,10 +583,21 @@ export function startApp(): void {
   async function characterOut(): Promise<void> {
     const m = engine.movie, c = selectedCharacter();
     if (!m || !c) return;
+    // the desktop app's folder dialog gives a real path, so the saved file becomes the character's source
+    const dest = canLinkPaths() ? await pickDestination() : 'unavailable';
+    if (dest === null) return;
     const job = engine.startJob('Character as SVG', 1);
     try {
       const out = await characterToSvg(m, c.id, (id) => engine.assets.get(id));
-      platform.files.download(out.blob, out.name);
+      if (dest !== 'unavailable') {
+        const path = await saveFileTo(dest, out.blob, out.name);
+        if (dest.kind === 'engine') {
+          const link = await sourceApi.stat(path);
+          engine.run('Link Source', (mv) => setSourceLink(mv, c.id, link));
+          toast(`${tf('{file} saved with {n} parts and linked. Edit it in a vector app, keep one group per part, and save: the character updates when you come back.', { file: path, n: out.parts })}${out.note ? ` ${out.note}` : ''}`);
+          return;
+        }
+      } else platform.files.download(out.blob, out.name);
       toast(`${out.name} saved with ${out.parts} parts. Edit it in a vector app, keep one group per part, then choose Update from Source... on the character.${out.note ? ` ${out.note}` : ''}`);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'The export failed.', 'error');
