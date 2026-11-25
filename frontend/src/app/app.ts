@@ -11,6 +11,7 @@ import { api, capabilities, onServiceChange, serviceReady } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
+import { characterToSvg } from '../io/svg-export';
 import { AudioEngine } from '../media/audio';
 import { evictFonts, loadTextFonts, registerFont, registerFonts } from '../media/fonts';
 import { loadLibrary } from '../io/fonts-library';
@@ -564,6 +565,21 @@ export function startApp(): void {
       engine.endJob(job);
     }
   }
+  const selectedCharacter = (): Content | undefined => engine.selected.find((c) => c.kind === 'group' && !!c.character);
+  async function characterOut(): Promise<void> {
+    const m = engine.movie, c = selectedCharacter();
+    if (!m || !c) return;
+    const job = engine.startJob('Character as SVG', 1);
+    try {
+      const out = await characterToSvg(m, c.id, (id) => engine.assets.get(id));
+      platform.files.download(out.blob, out.name);
+      toast(`${out.name} saved with ${out.parts} parts. Edit it in a vector app, keep one group per part, then choose Update from Source... on the character.${out.note ? ` ${out.note}` : ''}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The export failed.', 'error');
+    } finally {
+      engine.endJob(job);
+    }
+  }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
   const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm,.fmact';
@@ -606,6 +622,7 @@ export function startApp(): void {
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
     { id: 'export-fvd', label: 'Current frame as formvis document...', enabled: has, run: () => { void roundTripOut('frame'); } },
     { id: 'export-fvfx', label: 'Movie as formvfx composition...', enabled: has, run: () => { void roundTripOut('movie'); } },
+    { id: 'export-char-svg', label: 'Character as SVG for Vector App...', enabled: () => !!selectedCharacter(), run: () => { void characterOut(); } },
     { id: 'import-fvd', label: 'Import formvis document...', enabled: has, run: () => pickFor('.fvd,application/zip') },
     { id: 'import-fvfx', label: 'Import formvfx composition...', enabled: has, run: () => pickFor('.fvxproj,.zip,application/zip') },
     { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },
@@ -773,7 +790,7 @@ export function startApp(): void {
   setupOnboarding({ commands, engine, openMovie: openFromLibrary, closeHome: () => home.hide() });
   setupHelpCenter({ commands, engine, askToKeep, closeHome: () => home.hide() });
   menus.push(
-    { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
+    { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', 'export-char-svg', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', { label: 'Actions', items: ACTION_MENU_ITEMS }] },

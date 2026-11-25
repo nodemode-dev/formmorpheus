@@ -301,6 +301,21 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Removing an action** drops its spans; their keys stay as plain keys.
 - **Old files.** A character saved without `actions` is given `[]` on load in `normalize.ts`, so the field is required in the type and no code reads it with a fallback.
 
+## v0.25.0 · a character as SVG for a vector app
+
+- refers-to: io/svg-export.ts (new) :: characterToSvg; app/app.ts :: characterOut, selectedCharacter, command export-char-svg, File > Round Trips
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Layout.** One `<g id="part name">` per part, nested by `parent` (a parent that is not a part of the character leaves the part at the top), bottom track first so the painter's order matches the Stage. Inside a part its own art and its child parts are ordered by their tracks; a sibling between a parent and its child cannot sit between them in a nested file, so it ends up above or below both.
+- **Space.** Each part's art is written in its own content space (movie pixels, the movie centre is the content centre, as `shape-draw.ts` translates), and the part's rest transform (its `transform` and `pivot`, keys left out) is the group's `transform="matrix(...)"`, so nesting reproduces the parent chain. A part with the identity transform gets no attribute.
+- **Round trip with the merge.** The importer is expected to bake group transforms into the art. A part imported from SVG has the identity transform, so export, edit and Update from Source give back the same art. A part moved in the app without keys has a rest transform; the merge keeps that transform and takes the baked art, so such a part would be moved twice. Left for the orchestrator to decide against the importer (see the report).
+- **Shapes.** A `path` is written as cubic segments straight from its BezNodes (lossless); an ellipse as two arcs; every other type as the polyline `outline()` gives, the outline the renderer fills. Fill only when the outline is closed, as the renderer does. Linear and radial gradients are `userSpaceOnUse` with the endpoints, centre and radius `shape-draw.ts` computes from the outline's box. Stroke alignment inside and outside, and trim path, have no SVG form: the stroke is centred and the outline whole. Values are the saved ones; Shape lane keys are animation and stay in the app.
+- **Pictures.** Embedded as `data:` PNG on `xlink:href` (what vector apps read most widely). A non-PNG picture is redrawn as PNG when the browser can. A Drawing's leaf layers go bottom first, each at the content's canvas, with its own and its layer groups' opacity; blend modes and layer masks are not written. A Flipbook writes the first drawing of each plain row.
+- **Pivots.** `<circle id="pivot-<part>" data-role="pivot" r="4">` as the last child of each part's group, in the part's own space, so it sits at the pivot after the transform. Thin outline in a magenta that art rarely uses; the importer removes it from the art.
+- **Left out.** Text, video, sound and group parts are written as empty groups with their pivot, so the part names survive, and the toast names them.
+- **Saving.** Through `platform.files.download`, as `roundTripOut` does: a download on the desktop, the export picker on iPad. A download has no path, so the export does not set `source`; linking is Relink Source... (C1).
+
 ## v0.25.0 · Update from Source: the merge by part name
 
 - refers-to: engine/types.ts :: SourceLink, CharacterInfo.source; engine/source-merge.ts (new) :: mergeFromSource, MISSING_HIGHLIGHT
