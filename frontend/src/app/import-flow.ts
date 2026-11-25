@@ -37,6 +37,8 @@ export interface ImportDeps {
   video: VideoPool;
   /** Opens a movie file given among the files. */
   openMovie(f: File): Promise<void>;
+  /** Adds an action file (`.fmact`) to the selected character. */
+  importAction?(f: File): Promise<void>;
 }
 
 interface Done { file: File; r: ImportResult }
@@ -50,6 +52,12 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
     const movie = files.find((f) => /\.fmo$/i.test(f.name));
     if (movie) { await d.openMovie(movie); return; }
     let list = files;
+    const actionFiles = list.filter((f) => /\.fmact$/i.test(f.name));
+    if (actionFiles.length && d.importAction) {
+      for (const f of actionFiles) await d.importAction(f);
+      list = list.filter((f) => !actionFiles.includes(f));
+      if (!list.length) return;
+    }
     if (opts.preview) {
       // every sound among the picked files is heard first; Cancel leaves that one out
       const kept: File[] = [];

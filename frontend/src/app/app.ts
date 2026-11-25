@@ -79,7 +79,7 @@ import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
 import { pushCommands } from './push-commands';
 import { loopCommands } from './loop-commands';
-import { ACTION_MENU_ITEMS, actionCommands } from './action-commands';
+import { ACTION_MENU_ITEMS, actionCommands, importActionFile } from './action-commands';
 import { ActionPicker } from '../ui/action-picker';
 import { deleteChosenKeys, keyCommands } from './key-commands';
 import { edCommands } from './ed-commands';
@@ -529,7 +529,7 @@ export function startApp(): void {
   void recovery.offer();
 
   /** Pictures, layered artwork, video, sound and fonts: decoded in media/import, placed by app/import-flow as one undo step. */
-  const importer = createImporter({ engine, renderer, video, openMovie: (f) => openFile(f) });
+  const importer = createImporter({ engine, renderer, video, openMovie: (f) => openFile(f), importAction: (f) => importActionFile(engine, f) });
   const importFiles = (files: File[], opts?: ImportOptions): Promise<void> => importer.importFiles(files, opts);
 
   /** Round trips with formvis and formvfx (io/round-trip): a file goes out as a download, and comes back through Import or a drop. */
@@ -555,7 +555,7 @@ export function startApp(): void {
   }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm,.fmact';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
@@ -696,7 +696,7 @@ export function startApp(): void {
   document.addEventListener('fm:open-settings', (e) => settings.show(String((e as CustomEvent<{ section?: string }>).detail?.section ?? '') || undefined));
   document.addEventListener('fm:command', (e) => { const id = (e as CustomEvent<string>).detail; if (typeof id === 'string') commands.run(id); });
   const mid = (): { x: number; y: number } => { const r = q(root, '.fm-stage-wrap').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
-  const actions = actionCommands({ engine, picker: new ActionPicker(), note: (text) => status.note(text), anchor: mid });
+  const actions = actionCommands({ engine, picker: new ActionPicker(), note: (text) => status.note(text), anchor: mid, download: (blob, name) => platform.files.download(blob, name), pickFile: (accept) => pickFor(accept) });
   commands.add(
     ...add,
     ...actions.commands,

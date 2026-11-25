@@ -140,6 +140,18 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
 - **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
 
+## v0.25.0 · action files (.fmact)
+
+- refers-to: io/fmact.ts (new) :: fmactBlob, fmactName, parseFmact, readFmact, FMACT_MAX_BYTES; app/action-commands.ts :: importActionFile, action-export, action-import; app/import-flow.ts :: ImportDeps.importAction, importFiles; app/app.ts :: MEDIA_ACCEPT, createImporter, actionCommands deps
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The file** is `[name].fmact`, JSON `{format: 1, action: ActionDef}`, written with one space of indent so it reads in a text editor. The name is the action's, with the characters no file system takes turned into `_`.
+- **Export** is Content, Actions, Export Action...: the picker lists the character's own and the starter actions; the chosen one is handed over through the platform's download (the share sheet on iPad). A starter action exports like any other; imported, it becomes one of the character's own.
+- **Import** is Import Action... (the file picker for `.fmact`), Import with any `.fmact` among the files, or a drop: `importFiles` takes `.fmact` files out first and adds each to the selected character under a fresh id, one undo step each, then imports the rest as before. With no character selected it says "Select a character, then import the action onto it."
+- **The 1 MB refusal is in the window**, checked on `File.size` before the text is read, since no engine route ever sees an action file. A real action is a few kilobytes.
+- **Read checks every field** (name, length, loop, lanes, each key's frame, value and ease, custom handles) and keeps only Move and Bones lanes; anything else is "That is not an action file.", a format above 1 is "This action file was made by a newer version of FormMorpheus." `.fmact` joined `MEDIA_ACCEPT`.
+
 ## v0.25.0 · actions on the Timeline: commands, strips, the picker
 
 - refers-to: app/action-commands.ts (new) :: actionCommands, selectedCharacter, ACTION_MENU_ITEMS; ui/action-picker.ts (new) :: ActionPicker; ui/act-strips.ts (new) :: actPick, drawActStrips, actStripAt, actLabel; ui/timeline.ts :: TimelineHooks.actStrip, drawBlock, tracksDown; ui/status.ts :: StatusBar.note; app/app.ts (commands, Content menu, Timeline hook)

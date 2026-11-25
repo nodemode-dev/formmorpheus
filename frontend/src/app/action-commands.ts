@@ -1,7 +1,8 @@
 // Actions on the selected character: save its keys as an action, apply one at the Playhead or over the loop range,
 // swap or clear a placed one (its strip on the Timeline), delete one of its own. Each change is one undo step.
 import type { Engine } from '../engine/engine';
-import { actionFromKeys, applyAction, characterOf, charFrame, clearAction, findAction, removeAction, swapAction } from '../engine/action-ops';
+import { actionFromKeys, addAction, applyAction, characterOf, charFrame, clearAction, findAction, removeAction, swapAction } from '../engine/action-ops';
+import { fmactBlob, fmactName, readFmact } from '../io/fmact';
 import { groupCtx } from '../engine/group-ctx';
 import { srcFrame } from '../engine/retime';
 import { findContent } from '../engine/transform';
@@ -18,6 +19,19 @@ export interface ActionDeps {
   /** A sentence for the status line (translated here). */
   note(text: string): void;
   anchor(): { x: number; y: number };
+  /** Hands a file to the person (a download, or the share sheet on iPad). */
+  download(blob: Blob, name: string): void;
+  /** Opens the file picker for these types; picked files go through Import. */
+  pickFile(accept: string): void;
+}
+
+/** Adds the action in an `.fmact` file to the selected character (Import, or a drop). */
+export async function importActionFile(engine: Engine, file: File): Promise<void> {
+  const g = selectedCharacter(engine);
+  if (!g) { engine.notice('Select a character, then import the action onto it.', 'error'); return; }
+  const def = await readFmact(file).catch((e: unknown) => { engine.notice(e instanceof Error ? e.message : 'That is not an action file.', 'error'); return null; });
+  if (!def) return;
+  engine.run('Import Action', (m) => addAction(m, g.id, def).movie);
 }
 
 /** The character being worked on: the one picked inside an open group, else the one selected block. */
@@ -123,9 +137,25 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
       description: "Removes one of the character's own actions; where it was placed, its keys stay as plain keys.",
       run: () => { const g = selectedCharacter(engine); if (g?.character) { const p = at(); picker.open(p.x, p.y, g.character, 'delete', null, (id) => { engine.run('Delete Action', (mv) => removeAction(mv, g.id, id)); }); } },
     },
+    {
+      id: 'action-export', label: 'Export Action...', enabled: char, group: 'Content',
+      description: 'Saves one action as an .fmact file, to bring into another movie or share.',
+      run: () => {
+        const g = selectedCharacter(engine);
+        const ch = g?.character;
+        if (!ch) return;
+        const p = at();
+        picker.open(p.x, p.y, ch, 'export', null, (id) => { const a = findAction(ch, id); if (a) d.download(fmactBlob(a), fmactName(a)); });
+      },
+    },
+    {
+      id: 'action-import', label: 'Import Action...', enabled: char, mutates: true, group: 'Content',
+      description: 'Adds the action in an .fmact file to the selected character.',
+      run: () => d.pickFile('.fmact'),
+    },
   ];
   return { commands, openStrip };
 }
 
 /** The items of the Actions submenu. */
-export const ACTION_MENU_ITEMS: string[] = ['action-apply', 'action-swap', 'action-clear', '-', 'action-save', 'action-delete'];
+export const ACTION_MENU_ITEMS: string[] = ['action-apply', 'action-swap', 'action-clear', '-', 'action-save', 'action-delete', '-', 'action-import', 'action-export'];
