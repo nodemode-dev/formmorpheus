@@ -1,0 +1,46 @@
+{
+  "id": "stage",
+  "name": "Stage",
+  "folder": "stage",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "duration": 240,
+  "background": "#2a2238",
+  "floorY": 950,
+  "layers": [
+    {
+      "name": "Background",
+      "file": "background.svg",
+      "x": 960,
+      "y": 540,
+      "scale": 1.0
+    },
+    {
+      "name": "Speaker",
+      "file": "speaker.svg",
+      "x": 1520,
+      "y": 800,
+      "scale": 1.0
+    },
+    {
+      "name": "Stool",
+      "file": "stool.svg",
+      "x": 1240,
+      "y": 820,
+      "scale": 1.0
+    },
+    {
+      "name": "Microphone Stand",
+      "file": "mic-stand.svg",
+      "x": 820,
+      "y": 676,
+      "scale": 1.0
+    }
+  ],
+  "camera": {
+    "panX": 0,
+    "panY": 40,
+    "zoom": 1.1
+  }
+}

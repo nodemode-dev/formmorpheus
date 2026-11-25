@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="720" viewBox="0 0 520 720">
+  <path d="M240 720 L240 380 Q240 330 220 300 L260 300 Q280 330 278 380 L290 720 Z" fill="#8a5a3a"/>
+  <path d="M262 720 L262 380 Q264 330 250 300 L260 300 Q280 330 278 380 L290 720 Z" fill="#6f4529"/>
+  <path d="M250 420 Q200 380 170 330" fill="none" stroke="#8a5a3a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="140" cy="260" r="124" fill="#5f9150"/>
+  <circle cx="360" cy="254" r="128" fill="#5f9150"/>
+  <circle cx="250" cy="160" r="144" fill="#5f9150"/>
+  <circle cx="200" cy="300" r="120" fill="#5f9150"/>
+  <circle cx="310" cy="306" r="116" fill="#5f9150"/>
+  <circle cx="126" cy="244" r="111.6" fill="#7fb069"/>
+  <circle cx="346" cy="238" r="115.2" fill="#7fb069"/>
+  <circle cx="236" cy="144" r="129.6" fill="#7fb069"/>
+  <circle cx="186" cy="284" r="108" fill="#7fb069"/>
+  <circle cx="296" cy="290" r="104.4" fill="#7fb069"/>
+  <circle cx="180" cy="200" r="12" fill="#ef6c5c"/>
+  <circle cx="320" cy="160" r="12" fill="#ef6c5c"/>
+  <circle cx="300" cy="290" r="12" fill="#ef6c5c"/>
+  <circle cx="160" cy="300" r="12" fill="#ef6c5c"/>
+</svg>

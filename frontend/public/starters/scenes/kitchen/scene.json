@@ -1,0 +1,53 @@
+{
+  "id": "kitchen",
+  "name": "Kitchen",
+  "folder": "kitchen",
+  "width": 1920,
+  "height": 1080,
+  "fps": 24,
+  "duration": 240,
+  "background": "#f6e7cf",
+  "floorY": 1000,
+  "layers": [
+    {
+      "name": "Background",
+      "file": "background.svg",
+      "x": 960,
+      "y": 540,
+      "scale": 1.0
+    },
+    {
+      "name": "Plant",
+      "file": "plant.svg",
+      "x": 560,
+      "y": 488,
+      "scale": 1.0
+    },
+    {
+      "name": "Chair",
+      "file": "chair.svg",
+      "x": 1500,
+      "y": 830,
+      "scale": 1.0
+    },
+    {
+      "name": "Table",
+      "file": "table.svg",
+      "x": 1040,
+      "y": 855,
+      "scale": 1.0
+    },
+    {
+      "name": "Kettle",
+      "file": "kettle.svg",
+      "x": 1160,
+      "y": 646,
+      "scale": 0.9
+    }
+  ],
+  "camera": {
+    "panX": 0,
+    "panY": 0,
+    "zoom": 1
+  }
+}
