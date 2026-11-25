@@ -33,6 +33,29 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 3. The same file stays in the Files app under On My iPad > FormMorpheus > Diagnostics.
 4. Send that file together with any Xcode build errors.
 
+## Check on the iPad (0.31.0)
+
+Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./formmorpheus ios`, then Run. The Character Builder, the built characters and the new actions are all in the interface, so this build has no Swift change of its own; check them on the device all the same, with a finger and with the Pencil. For step 7 put a short sound with speech in the Files app. Write what happened under each step, in your own words.
+
+1. Open the builder: open a movie, View > Characters, then Build a character. Expected: the Character Builder fills the window in three columns (presets, preview, Look, Hair and Outfit), nothing is cut off in portrait or landscape, and the preview shows the first preset standing on its floor.
+   Result:
+2. Sliders with a finger and with the Pencil: on Look, drag Height, Build, Shoulders and Head size with a finger, then with the Pencil. Expected: each slider follows the touch from where it lands, the preview changes as you drag, the page does not scroll or zoom while a slider moves, and the value beside it updates. Hovering the Pencil over a slider does not move it.
+   Result:
+3. Swatches and tiles: tap skin and eye color swatches, then a custom color swatch (the system color picker opens; pick a color), then hair style tiles on Hair and outfit tiles on Outfit, with a finger and with the Pencil. Expected: one tap picks, the picked one is outlined, the preview redraws once, and a long press does not open a menu. Choose the kind Fox, then Dino: the dimmed face options and hair styles do not respond, and the note beside the last hair style appears without moving the tiles.
+   Result:
+4. Add a built starter: in View > Characters, Starter, tap Add to Movie on Karl, then on Pip. Expected: both stand on the Stage at the playhead side by side without overlapping, each on its own track with the person glyph, and their posters show in the panel. Then Open in Character Builder on Sprig's row, change her outfit and tap Add to Movie: a third character is added in one undo step.
+   Result:
+5. Edit in Character Builder: select Karl, choose Edit in Character Builder... on his menu, change his hair to None and his outfit, then Apply. Expected: Karl changes in place, a notice names the hidden parts, and Undo brings the old look back in one step.
+   Result:
+6. The new actions: apply Run, then Dance, Talk and Cheer to Pip (Content > Actions > Apply Action..., or a strip). Expected: each plays in place with the forearms, shins and tail moving, Talk moves the mouth through its shapes, the looping ones ease in and out at the ends of their strip, and Clear Action puts the mouth back to rest.
+   Result:
+7. Lip-sync on a built character: put the speech sound on a track, then Lip-sync from Sound... and choose Karl at the top of the list. Expected: Karl's mouth changes shape while the voice speaks and rests outside it, with no setup.
+   Result:
+8. Save and reopen: Save to Characters from the builder, close the app from the app switcher and open it again. Expected: the character is under Mine and in On My iPad > FormMorpheus > Characters, and Edit in Character Builder on a copy added from Mine opens with its recipe.
+   Result:
+9. Another language: Preferences > Interface > Language, choose Deutsch, then العربية (Arabic), and open the builder each time. Expected: every label is translated (Sundress's colors read Kleid, Besatz, Schuhe), and in Arabic the builder is mirrored with the presets on the right and nothing overlapping.
+   Result:
+
 ## Check on the iPad (0.25.0)
 
 Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./formmorpheus ios`, then Run. For step 1 put an SVG in the Files app that has one group per body part (`head`, `body`, `arm-l`, `arm-r`, `leg-l`, `leg-r`, with a `mouth` group inside `head` and an `arm-l` that holds a `hand-l` group), and for step 5 a short sound with speech. Write what happened under each step, in your own words.
