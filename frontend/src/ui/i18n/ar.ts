@@ -941,4 +941,10 @@ export const ar: Record<string, string> = {
   'Friendly monster': 'Friendly monster', 'Open in Character Builder': 'Open in Character Builder', 'The athlete': 'The athlete', 'The chef': 'The chef',
   'The executive': 'The executive', 'The foreman': 'The foreman', 'The hero': 'The hero', 'The host': 'The host', 'The optimist': 'The optimist',
   'The scientist': 'The scientist', 'The student': 'The student', 'The tinkerer': 'The tinkerer', 'Visitor': 'Visitor',
+  'A dino draws no hair style: the hair color paints its crest and the spikes on its tail.': 'A dino draws no hair style: the hair color paints its crest and the spikes on its tail.',
+  'A fox draws no hair style: any style but None gives a tuft between the ears in the hair color.': 'A fox draws no hair style: any style but None gives a tuft between the ears in the hair color.',
+  'A sprout draws no hair style: the hair color paints its leaves and petals.': 'A sprout draws no hair style: the hair color paints its leaves and petals.',
+  'Badge': 'Badge', 'Cardigan': 'Cardigan', 'Dino': 'Dino', 'Fox': 'Fox', 'Garden sprite': 'Garden sprite', 'Little dino': 'Little dino', 'Long Braid': 'Long Braid',
+  'Mohawk': 'Mohawk', 'Scrubs': 'Scrubs', 'Short Curls': 'Short Curls', 'Slacks': 'Slacks', 'Sleeves': 'Sleeves', 'Sprout': 'Sprout', 'The drummer': 'The drummer',
+  'The gamer': 'The gamer', 'The grandpa': 'The grandpa', 'The librarian': 'The librarian', 'The medic': 'The medic', 'Varsity Jacket': 'Varsity Jacket', 'Woodland fox': 'Woodland fox',
 };

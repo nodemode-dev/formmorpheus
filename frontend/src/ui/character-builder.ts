@@ -4,7 +4,7 @@
 import '../styles/character-builder.css';
 import {
   build, castToCharacterGroup, mergeRebuild, mkSpec, prepareRebuild, solveRest,
-  EYECOL, HAIRCOL, HAIRS, OUTFITS, SKINS, SPECIES, STUDIO_PRESETS,
+  CAST_PRESETS, EYECOL, HAIRCOL, HAIRS, OUTFITS, SKINS, SPECIES,
   type CastInput, type CastPrepared, type CastPrim, type CastRig, type CastSpec, type Mat,
 } from '../engine/cast';
 import { hex2rgb, rgb2hex } from '../engine/cast/prims';
@@ -32,9 +32,18 @@ export interface BuilderDeps {
 }
 
 const GROUPS: ReadonlyArray<readonly [Group, string]> = [['F', 'Women'], ['M', 'Men'], ['S', 'Specials']];
-const SPECIES_LABEL: Record<string, string> = { human: 'Human', robot: 'Robot', alien: 'Alien', monster: 'Monster' };
+const SPECIES_LABEL: Record<string, string> = { human: 'Human', robot: 'Robot', alien: 'Alien', monster: 'Monster', fox: 'Fox', dino: 'Dino', sprout: 'Sprout' };
 const BODY: ReadonlyArray<readonly [BodyKey, string, number, number]> = [['h', 'Height', 0.82, 1.18], ['build', 'Build', 0.75, 1.5], ['shoulders', 'Shoulders', 0.8, 1.25], ['head', 'Head size', 0.85, 1.25]];
-const FLAGS: ReadonlyArray<readonly [FaceFlag, string, boolean]> = [['lashes', 'Lashes', true], ['blush', 'Blush', true], ['freckles', 'Freckles', true], ['earrings', 'Earrings', true], ['glasses', 'Glasses', false]];
+/** The species whose face draws each option; null for every species. */
+const HUMAN: readonly string[] = ['human'];
+const FLAGS: ReadonlyArray<readonly [FaceFlag, string, readonly string[] | null]> = [['lashes', 'Lashes', ['human', 'fox', 'sprout']], ['blush', 'Blush', ['human', 'fox', 'dino', 'sprout']], ['freckles', 'Freckles', ['human', 'sprout']], ['earrings', 'Earrings', HUMAN], ['glasses', 'Glasses', null]];
+/** Species that draw their own piece in the hair color instead of the hair style. */
+const HAIR_NOTE: Record<string, string> = {
+  fox: 'A fox draws no hair style: any style but None gives a tuft between the ears in the hair color.',
+  dino: 'A dino draws no hair style: the hair color paints its crest and the spikes on its tail.',
+  sprout: 'A sprout draws no hair style: the hair color paints its leaves and petals.',
+};
+const STYLE_FREE = new Set(['dino', 'sprout']);
 const BEARDS: ReadonlyArray<readonly [Beard, string]> = [['none', 'None'], ['stubble', 'Stubble'], ['mustache', 'Mustache'], ['goatee', 'Goatee'], ['full', 'Full']];
 const LIPS: readonly string[] = ['#b5485a', '#8a4a3c', '#8a2f45', '#c46a6a', '#6b3a3a'];
 
@@ -149,9 +158,11 @@ export class CharacterBuilder {
   private readonly addBtn: HTMLButtonElement;
   private readonly saveBtn: HTMLButtonElement;
   private readonly applyBtn: HTMLButtonElement;
-  private readonly humanOnly: Array<HTMLButtonElement | HTMLInputElement> = [];
+  /** Controls a species' face may not draw, with the species that do. */
+  private readonly faceOnly: Array<readonly [HTMLButtonElement | HTMLInputElement, readonly string[]]> = [];
+  private readonly hairNote: HTMLElement;
 
-  constructor(private readonly engine: Engine, private readonly deps: BuilderDeps, presets: readonly CastInput[] = STUDIO_PRESETS) {
+  constructor(private readonly engine: Engine, private readonly deps: BuilderDeps, presets: readonly CastInput[] = CAST_PRESETS) {
     q<HTMLElement>(this.dlg.scrim, '.cv-dialog').classList.add('fm-cb-dlg');
     this.dlg.scrim.addEventListener('keydown', (e) => {
       if ((e.key !== 'z' && e.key !== 'Z') || !(e.ctrlKey || e.metaKey) || e.altKey) return;
@@ -210,7 +221,7 @@ export class CharacterBuilder {
     this.nameIn.addEventListener('input', () => { this.spec.name = this.nameIn.value.trim() || t('Unnamed'); this.syncName(); });
     look.appendChild(who);
     look.appendChild(this.head('Species'));
-    const sp = el<HTMLElement>('<div class="fm-cb-seg" role="group"></div>');
+    const sp = el<HTMLElement>('<div class="fm-cb-seg is-wrap" role="group"></div>');
     this.lab(sp, 'Species', 'aria-label');
     for (const s of SPECIES) {
       const b = el<HTMLButtonElement>('<button type="button" aria-pressed="false"></button>');
@@ -240,16 +251,16 @@ export class CharacterBuilder {
     this.eye = this.swatches(EYECOL, 'Eye color', (c) => { this.spec.face.eyeColor = c; });
     look.appendChild(this.eye.root);
     const jaw = this.slider('face.jaw', 'Jaw', 0.55, 1.05, (v) => { this.spec.face.jaw = v; });
-    this.humanOnly.push(q<HTMLInputElement>(jaw, 'input'));
+    this.faceOnly.push([q<HTMLInputElement>(jaw, 'input'), HUMAN]);
     look.appendChild(jaw);
     const chips = el<HTMLElement>('<div class="fm-cb-chips"></div>');
-    for (const [k, name, human] of FLAGS) {
+    for (const [k, name, drawn] of FLAGS) {
       const b = el<HTMLButtonElement>('<button type="button" class="fm-cb-chip" aria-pressed="false"></button>');
       this.lab(b, name);
       b.addEventListener('click', () => { this.spec.face[k] = !this.spec.face[k]; this.changed(); });
       chips.appendChild(b);
       this.flags.set(k, b);
-      if (human) this.humanOnly.push(b);
+      if (drawn) this.faceOnly.push([b, drawn]);
     }
     look.appendChild(chips);
     look.appendChild(this.sub('Facial hair'));
@@ -261,12 +272,12 @@ export class CharacterBuilder {
       b.addEventListener('click', () => { this.spec.face.beard = k; this.changed(); });
       beards.appendChild(b);
       this.beards.set(k, b);
-      this.humanOnly.push(b);
+      this.faceOnly.push([b, HUMAN]);
     }
     look.appendChild(beards);
     look.appendChild(this.sub('Lip color'));
     this.lip = this.swatches(LIPS, 'Lip color', (c) => { this.spec.face.lip = c; });
-    this.humanOnly.push(...this.lip.buttons, this.lip.custom);
+    for (const n of [...this.lip.buttons, this.lip.custom]) this.faceOnly.push([n, HUMAN]);
     look.appendChild(this.lip.root);
     const row = el<HTMLElement>('<div class="fm-cb-row"><button type="button" class="cv-btn" data-act="random"></button><button type="button" class="cv-btn fm-cb-ghost" data-act="reset"></button></div>');
     const rnd = q<HTMLButtonElement>(row, '[data-act="random"]');
@@ -290,6 +301,10 @@ export class CharacterBuilder {
       hg.appendChild(tile.btn);
       this.hairTiles.push(tile);
     }
+    // in the grid's last row beside the last tile, so showing it moves nothing
+    this.hairNote = el<HTMLElement>('<p class="fm-cb-note" hidden></p>');
+    this.hairNote.style.gridColumn = `span ${4 - ((HAIRS.length + 1) % 4 || 4) || 4}`;
+    hg.appendChild(this.hairNote);
     hair.appendChild(hg);
     hair.appendChild(this.head('Color'));
     this.hairCol = this.swatches(HAIRCOL, 'Hair color', (c) => { this.spec.hair.color = c; });
@@ -337,7 +352,7 @@ export class CharacterBuilder {
     new ResizeObserver(() => this.fitCanvas()).observe(this.wrap);
 
     this.setPresets(presets);
-    this.base = clone(this.presetSpecs[0] ?? mkSpec(STUDIO_PRESETS[0]));
+    this.base = clone(this.presetSpecs[0] ?? mkSpec(CAST_PRESETS[0]));
     this.spec = clone(this.base);
     this.presetAt = this.presetSpecs.length ? 0 : -1;
   }
@@ -492,12 +507,15 @@ export class CharacterBuilder {
   }
 
   /** The studio's Randomize: hair, its colour and the outfit at random, a human's skin from the human tones, and the
-   *  outfit's colours with each channel's red, green and blue turned round at random. */
+   *  outfit's colours with each channel's red, green and blue turned round at random. A species that paints its own piece
+   *  in the hair color (fox, dino, sprout) keeps its hair as it is. */
   private randomize(): void {
     const r = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
     const c = this.spec;
-    c.hair.style = Math.floor(Math.random() * HAIRS.length);
-    c.hair.color = r(HAIRCOL);
+    if (!HAIR_NOTE[c.species]) {
+      c.hair.style = Math.floor(Math.random() * HAIRS.length);
+      c.hair.color = r(HAIRCOL);
+    }
     c.outfit = Math.floor(Math.random() * OUTFITS.length);
     if (c.species === 'human') c.skin = r(SKINS.slice(0, 10));
     c.colors[c.outfit] = OUTFITS[c.outfit].def.map((h) => { const [rr, g, b] = hex2rgb(h), k = Math.floor(Math.random() * 3); return k === 0 ? h : k === 1 ? rgb2hex(g, b, rr) : rgb2hex(b, rr, g); });
@@ -524,7 +542,7 @@ export class CharacterBuilder {
 
   /** Every control shows the recipe: classes, values and text only. */
   private sync(): void {
-    const c = this.spec, f = c.face, human = c.species === 'human';
+    const c = this.spec, f = c.face, note = HAIR_NOTE[c.species] ?? '', styled = !STYLE_FREE.has(c.species);
     setValue(this.nameIn, c.name);
     setText(this.tagOut, c.tag);
     this.syncName();
@@ -534,12 +552,14 @@ export class CharacterBuilder {
     this.slide('face.jaw', f.jaw);
     for (const [k, b] of this.flags) this.press(b, !!f[k]);
     for (const [k, b] of this.beards) this.press(b, f.beard === k);
-    for (const n of this.humanOnly) setDisabled(n, !human);
+    for (const [n, drawn] of this.faceOnly) setDisabled(n, !drawn.includes(c.species));
     this.swatch(this.skin, c.skin);
     this.swatch(this.eye, f.eyeColor);
     this.swatch(this.lip, f.lip);
     this.swatch(this.hairCol, c.hair.color);
-    this.hairTiles.forEach((tl, i) => this.press(tl.btn, c.hair.style === i - 1));
+    this.hairTiles.forEach((tl, i) => { this.press(tl.btn, c.hair.style === i - 1); setDisabled(tl.btn, !styled); });
+    if (note) setText(this.hairNote, t(note));
+    setHidden(this.hairNote, !note);
     this.outfitTiles.forEach((tl, i) => this.press(tl.btn, c.outfit === i));
     for (const [id, tl] of this.rosterTiles) this.press(tl.btn, this.presetAt >= 0 && this.presets[this.presetAt]?.id === id);
     const of = OUTFITS[c.outfit], col = c.colors[c.outfit] ?? of.def;

@@ -1,7 +1,7 @@
 // Characters panel (View, Characters): Starter characters that ship with the app (read-only, made on use from their SVG
-// or, for the studio's cast, from their recipe) and the person's own, saved in the Characters library on the engine. Add to Movie, or a drag onto the Stage or
+// or, for the built cast, from their recipe) and the person's own, saved in the Characters library on the engine. Add to Movie, or a drag onto the Stage or
 // the Timeline, places a copy with fresh ids at the Playhead. Built once; rows are patched in place.
-import { build, castToCharacterGroup, mkSpec, rigToSvg, STUDIO_PRESETS, type CastInput } from '../engine/cast';
+import { build, castToCharacterGroup, CAST_PRESETS, mkSpec, rigToSvg, type CastInput } from '../engine/cast';
 import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
@@ -288,7 +288,7 @@ export class CharactersPanel {
 
   private paint(): void {
     const starters = this.starters ?? [];
-    setHidden(this.starterSec, !starters.length && !STUDIO_PRESETS.length);
+    setHidden(this.starterSec, !starters.length && !CAST_PRESETS.length);
     const rows = (list: HTMLElement, items: RowItem[]): void => patchList(list, items, {
       key: (r) => r.key,
       create: (r) => { const n = this.createRow(r); this.updateRow(n, r); return n; },
@@ -296,7 +296,7 @@ export class CharactersPanel {
     });
     rows(this.starterList, [
       ...starters.map((s): RowItem => ({ key: `starter:${s.id}`, name: s.name, meta: t('Starter character'), poster: s.poster ? `${STARTERS}${s.poster}` : '', mine: false })),
-      ...STUDIO_PRESETS.map((p): RowItem => ({ key: `cast:${p.id}`, name: p.name, meta: t(p.tag), poster: this.shown ? castPoster(p) : '', mine: false, cast: true })),
+      ...CAST_PRESETS.map((p): RowItem => ({ key: `cast:${p.id}`, name: p.name, meta: t(p.tag), poster: this.shown ? castPoster(p) : '', mine: false, cast: true })),
     ]);
     rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: `${c.name}\n${c.modified}`, v: c.modified, mine: true })));
     const keys = new Set(this.mine.map((c) => `mine:${c.name}`));
@@ -384,7 +384,7 @@ export class CharactersPanel {
       let src: CharacterSource;
       const starter = key.startsWith('starter:') || key.startsWith('cast:');
       if (key.startsWith('cast:')) {
-        const p = STUDIO_PRESETS.find((c) => `cast:${c.id}` === key);
+        const p = CAST_PRESETS.find((c) => `cast:${c.id}` === key);
         if (!p) return;
         src = await castStarter(p, m);
       } else if (starter) {

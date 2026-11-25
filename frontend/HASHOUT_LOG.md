@@ -7,6 +7,20 @@ Last updated: 2026-11-25 · the studio cast as starters
 
 ---
 
+## v0.29.0 · the eight new characters as starters and in the Character Builder
+
+- refers-to: engine/cast/presets.ts :: CAST_PRESETS (new); engine/cast/index.ts; ui/characters-panel.ts :: paint, add; ui/character-builder.ts :: SPECIES_LABEL, FLAGS, HAIR_NOTE (new), STYLE_FREE (new), faceOnly (was humanOnly), hairNote (new), sync, randomize; styles/character-builder.css :: .fm-cb-seg.is-wrap, .fm-cb-tc:disabled, .fm-cb-note; ui/i18n/* (27 tables)
+- kind: decision
+- logged: v0.29.0 · 2026-11-25
+
+- **One list.** `CAST_PRESETS` is the studio's 13 then the 8 new, and both the Characters panel and the builder read it, so the Starter section is the 5 drawn, the 13 and the 8 (26), each built starter with its poster, tag and Open in Character Builder, and the builder's roster shows Amara and Jade after the studio's women, Dev, Walt and Sami after its men, and Pip, Rex and Sprig after Bolt, Zib and Moss.
+- **Species chips.** All seven, labelled Human, Robot, Alien, Monster, Fox, Dino, Sprout; the row wraps to two lines in the 356 wide column rather than overflow.
+- **Dimmed by what the face draws.** `humanOnly` became `faceOnly`, each control with the species whose face draws it, read from `headBuild`: jaw, earrings, facial hair and lip color stay human only (the new heads have a fixed jaw and their own mouth line); lashes for human, fox and sprout; blush for human, fox, dino and sprout; freckles for human and sprout; glasses for all. Robot, alien and monster get exactly the 0.27.0 dimming.
+- **Hair tab and `speciesHair`.** For dino and sprout the style is never drawn, so the style tiles are dimmed and the color stays live (it paints the dino's crest and tail spikes, the sprout's leaves and petals). For a fox the tiles stay live: any style but None gives the tuft. A note says so for the three species; it sits in the empty cells of the style grid's last row beside Mohawk, so showing or hiding it moves nothing.
+- **Randomize.** The studio's logic, whose ranges are `HAIRS.length` and `OUTFITS.length`, so it already reaches the new hairs and outfits for every species the studio would randomize. For fox, dino and sprout it leaves the hair style and color alone: the color is the species' accent and a random one gave brown leaves or a black tuft. Skin stays the studio's (human tones for humans only).
+- **Labels.** The species names, the new outfit and channel names (Varsity Jacket, Cardigan, Scrubs, Sleeves, Slacks, Badge), the new hair names, the eight tags and the three notes are in the 27 full tables in English; es-MX and fr-CA are left out as in 0.27.0.
+- **Tails and actions.** The tail follows `hip`. The 0.25.0 starters on this branch (Idle, Nod, Shake head, Wave Hello, Point, Walk in place, Jump, Sit) never key `hip`, so the tail stays on the pelvis in every frame (contact sheets for Pip and Rex). The built versions of Idle, Walk, Run and Dance belong to 0.30.0 and are not on this branch, so no `tail` lane was added here.
+
 ## v0.28.0 · Character Builder review fixes
 
 - refers-to: ui/character-builder.ts :: CharacterBuilder constructor (Ctrl+Z listener), thumbs, thumbsFor, add; styles/character-builder.css :: .fm-cb

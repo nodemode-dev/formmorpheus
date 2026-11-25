@@ -26,3 +26,6 @@ export const NEW_PRESETS: readonly CastInput[] = [
   { id: 'rex', name: 'Rex', group: 'S', tag: 'Little dino', species: 'dino', skin: '#6fbf5a', hair: [-1, '#2f8a4a'], outfit: 4, colors: { 4: ['#d94a3a', '#f4f1ea', '#1c1a22'] }, body: { h: .88, build: 1.18, head: 1.12 } },
   { id: 'sprig', name: 'Sprig', group: 'S', tag: 'Garden sprite', species: 'sprout', frame: 'f', skin: '#a6d98a', hair: [-1, '#3fae8c'], outfit: 3, colors: { 3: ['#f3d24a', '#f4f1ea', '#e85d9c'] }, body: { h: .86, head: 1.14 } },
 ];
+
+/** Every built starter in the order the Characters panel lists them and the Character Builder groups them. */
+export const CAST_PRESETS: readonly CastInput[] = [...STUDIO_PRESETS, ...NEW_PRESETS];
