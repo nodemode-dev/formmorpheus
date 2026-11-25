@@ -42,7 +42,7 @@ export interface CharactersDeps {
 const CLOSE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 const TEMPLATE = `<section class="fm-bin fm-chars" role="dialog" hidden>
-  <div class="fm-bin-head"><span class="fm-bin-title"></span><button class="fm-bin-btn fm-bin-x" type="button" data-act="close">${CLOSE}</button></div>
+  <div class="fm-bin-head"><span class="fm-bin-title"></span><button class="fm-bin-btn fm-chars-build" type="button" data-act="build"></button><button class="fm-bin-btn fm-bin-x" type="button" data-act="close">${CLOSE}</button></div>
   <div class="fm-chars-scroll">
     <div class="fm-chars-sec" data-sec="starter" hidden><div class="fm-chars-sub"></div><div class="fm-bin-list fm-chars-list" role="list"></div></div>
     <div class="fm-chars-sec" data-sec="mine"><div class="fm-chars-sub"></div><div class="fm-bin-list fm-chars-list" role="list"></div><div class="fm-bin-empty"></div></div>
@@ -57,13 +57,15 @@ const ROW = `<div class="fm-bin-row" role="listitem">
 type Where = 'playhead' | 'stage' | { frame: number; index: number };
 
 /** The character group and its pictures packed as a small movie of the current movie's size: what the library keeps. */
-export async function packCharacter(engine: Engine, renderer: Renderer, g: Content): Promise<Blob> {
-  const m = engine.movie as Movie;
+export async function packCharacter(engine: Engine, renderer: Renderer, g: Content, made?: Omit<CharacterSource, 'group'>): Promise<Blob> {
+  const m: Movie = made
+    ? { ...newMovie({ width: made.width, height: made.height, fps: engine.movie?.fps ?? 24 }), tracks: [makeTrack('character', [g])], assets: Object.fromEntries([...made.assets].map(([id, a]) => [id, a.asset])) }
+    : engine.movie as Movie;
   const name = g.character?.name ?? g.name;
   const table: Record<string, Asset> = {};
   const blobs = new Map<string, Blob>();
   for (const id of usedAssetIds([], [g])) {
-    const a = m.assets[id], b = engine.assets.get(id);
+    const a = m.assets[id], b = engine.assets.get(id) ?? made?.assets.get(id)?.blob;
     if (a && b) { table[id] = a; blobs.set(id, b); }
   }
   const own = new Set<string>();
@@ -84,7 +86,7 @@ export async function packCharacter(engine: Engine, renderer: Renderer, g: Conte
     cv.width = pw; cv.height = ph;
     const ctx = cv.getContext('2d');
     if (ctx) {
-      renderer.thumb(ctx, m, g, Math.max(0, Math.min(g.duration - 1, engine.frame - g.start)), pw, ph);
+      renderer.thumb(ctx, m, g, made ? 0 : Math.max(0, Math.min(g.duration - 1, engine.frame - g.start)), pw, ph);
       poster = await new Promise<Blob | null>((ok) => cv.toBlob(ok, 'image/png'));
     }
   } catch { poster = null; }
@@ -170,12 +172,15 @@ export class CharactersPanel {
   /** A saved character's poster per row: the version asked for and the object URL showing it. */
   private readonly posters = new Map<string, { want: string; url: string }>();
   private opener: HTMLElement | null = null;
+  /** Build a character: opens the Character Builder. */
+  onBuild: (() => void) | null = null;
 
   constructor(private readonly engine: Engine, private readonly deps: CharactersDeps) {
     this.root = el(TEMPLATE);
     this.root.setAttribute('aria-label', t('Characters'));
     setText(q(this.root, '.fm-bin-title'), t('Characters'));
     q(this.root, '[data-act="close"]').setAttribute('aria-label', t('Close'));
+    setText(q(this.root, '[data-act="build"]'), t('Build a character'));
     this.starterSec = q(this.root, '[data-sec="starter"]');
     const mineSec = q(this.root, '[data-sec="mine"]');
     setText(q(this.starterSec, '.fm-chars-sub'), t('Starter'));
@@ -324,6 +329,7 @@ export class CharactersPanel {
 
   private async act(act: string, key: string): Promise<void> {
     if (act === 'close') { this.hide(); return; }
+    if (act === 'build') { this.onBuild?.(); return; }
     if (act === 'add') { await this.add(key, 'playhead'); return; }
     const name = key.startsWith('mine:') ? key.slice(5) : '';
     if (!name) return;
@@ -364,7 +370,7 @@ export class CharactersPanel {
   }
 
   /** Save to Characters: the selected character into the library, under a free name unless the person replaces one. */
-  async save(g: Content): Promise<void> {
+  async save(g: Content, made?: Omit<CharacterSource, 'group'>): Promise<void> {
     if (!g.character) return;
     const base = freeName(g.character.name || g.name, []);
     let taken: CharacterItem[];
@@ -376,7 +382,7 @@ export class CharactersPanel {
       if (!replace) name = freeName(base, taken.map((c) => c.name));
     }
     try {
-      const data = await packCharacter(this.engine, this.deps.renderer, g);
+      const data = await packCharacter(this.engine, this.deps.renderer, g, made);
       await charactersApi.write(name, data);
       toast(tf('{name} saved to Characters.', { name }));
     } catch (e) {

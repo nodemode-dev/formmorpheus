@@ -63,6 +63,7 @@ export class ContentMenu {
   private readonly makeChar: PopRow;
   private readonly saveChar: PopRow;
   private readonly mouthChar: PopRow;
+  private readonly buildChar: PopRow;
   private readonly srcUpdate: PopRow;
   private readonly srcUnlink: PopRow;
   private readonly srcRelink: PopRow;
@@ -217,6 +218,8 @@ export class ContentMenu {
     this.saveChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.save' })); });
     this.mouthChar = popRow('character', 'Use as Mouth Chart...');
     this.mouthChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.mouth' })); });
+    this.buildChar = popRow('character', 'Edit in Character Builder...');
+    this.buildChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.builder-edit' })); });
     const cmdRow = (ico: string, label: string, id: string): PopRow => {
       const r = popRow(ico, label);
       r.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: id })); });
@@ -268,7 +271,7 @@ export class ContentMenu {
     const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
       sTransform, sTime, sConvert, sMore, popSep(),
-      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, this.srcUpdate.el, this.srcUnlink.el, this.srcRelink.el, trackRow.el, popSep(), this.del.el);
+      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, this.buildChar.el, this.srcUpdate.el, this.srcUnlink.el, this.srcRelink.el, trackRow.el, popSep(), this.del.el);
   }
 
   private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
@@ -416,6 +419,7 @@ export class ContentMenu {
     const isChar = sel.length === 1 && first.kind === 'group' && !!first.character;
     setClass(this.saveChar.el, 'is-gone', !isChar);
     setClass(this.mouthChar.el, 'is-gone', !isChar);
+    setClass(this.buildChar.el, 'is-gone', !(isChar && !!first.character?.build));
     setClass(this.srcUpdate.el, 'is-gone', !isChar);
     setClass(this.srcUnlink.el, 'is-gone', !(isChar && canLinkPaths() && !!first.character?.source));
     setClass(this.srcRelink.el, 'is-gone', !(isChar && canLinkPaths()));
