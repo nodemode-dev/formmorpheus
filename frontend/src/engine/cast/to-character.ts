@@ -375,8 +375,14 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
         const a = fr.name ? art.get(fr.name) : undefined;
         return a ? { ...fr, layers: a.layers.map((l) => ({ ...l, id: uid('l') })) } : fr;
       }) }));
-      if (oldMouth.flip.some((row) => row.frames.some((fr) => fr.name && art.has(fr.name)))) {
-        tracks = tracks.map((t) => (t.content.some((x) => x.id === mouthId) ? { ...t, content: t.content.map((x) => (x.id === mouthId ? { ...x, flip } : x)) } : t));
+      const own = oldMouth.flip.some((row) => row.frames.some((fr) => !(fr.name && art.has(fr.name)) && fr.layers.some((l) => l.pixels)));
+      const put = (x: Content): Content => {
+        if (!own) return { ...x, flip };
+        const { canvas: _c, pivot: _p, ...rest } = x;
+        return { ...rest, flip: oldMouth.flip, ...(oldMouth.canvas ? { canvas: oldMouth.canvas } : {}), ...(oldMouth.pivot ? { pivot: oldMouth.pivot } : {}) };
+      };
+      if (own || oldMouth.flip.some((row) => row.frames.some((fr) => fr.name && art.has(fr.name)))) {
+        tracks = tracks.map((t) => (t.content.some((x) => x.id === mouthId) ? { ...t, content: t.content.map((x) => (x.id === mouthId ? put(x) : x)) } : t));
       }
     }
     const mouthC = mouthId ? tracks.flatMap((t) => t.content).find((x) => x.id === mouthId) : undefined;
