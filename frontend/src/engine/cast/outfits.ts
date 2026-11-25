@@ -123,4 +123,34 @@ export const OUTFITS: readonly Outfit[] = [
       R(-W * .36, -T * .5, W * .72, T * .24, 3, shade(k.B, -.14)), ...mirror((s) => [E(s * W * .56, -T * .6, 3.2, 3.2, '#e9c46a')])],
       pelvis: [P(pelvisPath(M), k.B)], ...limbs(M, k, { sleeve: 1.55, sleeveCol: k.A, legs: 2, legCol: k.B, hem: shade(k.B, .22), shoe: 'boot', shoeCol: k.C }) };
   } },
+  { id: 'varsity', name: 'Varsity Jacket', labels: ['Jacket', 'Sleeves', 'Trim'], def: ['#2d4a8a', '#f4f1ea', '#e0a526'], fn(M, k) {
+    const T = M.torsoLen, nh = M.neckW / 2 + 3, S = M.shoulderW / 2, W = M.waistW / 2, Hp = M.hipW / 2, hy = M.pelvisH * .55, d = shade(k.A, -.22), jn = '#3d5a8c', fl = M.foreLen, aw = M.armW;
+    const lp = limbs(M, k, { sleeve: 2, sleeveCol: k.B, legs: 2, legCol: jn, hem: shade(jn, .28), shoe: 'sneaker', shoeCol: '#f4f1ea' });
+    const rib = (y: number, x: number, w: number): CastPrim[] => [L(-x, y, x, y, w, d, 'butt'), L(-x, y - w * .22, x, y - w * .22, 1.6, k.C, 'butt'), L(-x, y + w * .22, x, y + w * .22, 1.6, k.C, 'butt')];
+    const px = -S * .36, py = -T * .6;
+    return { torso: [P(torsoPath(M, { hem: 'hip', hemY: .55 }), k.A), P(D`M${-nh} ${-T}Q0 ${-T + 12} ${nh} ${-T}`, null, { stroke: d, sw: 6 }), P(D`M${-nh + 1} ${-T + 3}Q0 ${-T + 14} ${nh - 1} ${-T + 3}`, null, { stroke: k.C, sw: 1.6 }),
+      L(0, -T + 9, 0, hy, 1.6, d, 'butt'), ...[.66, .46, .26, .06].map((y) => E(1.8, -T * y, 2, 2, shade(k.B, -.1))),
+      ...rib(hy - 4, Hp + 1.5, 8),
+      P(D`M${px - 8} ${py - 8}L${px - 3} ${py - 8}L${px} ${py + 2}L${px + 3} ${py - 8}L${px + 8} ${py - 8}L${px + 2.5} ${py + 8}L${px - 2.5} ${py + 8}Z`, k.C, { stroke: k.B, sw: 1.6 }),
+      R(W * .3, -T * .32, W * .44, T * .2, 3, d)],
+      pelvis: [P(pelvisPath(M), jn)], ...lp,
+      armF: (s) => [...lp.armF(s), L(0, fl - 9, 0, fl, aw + 4, k.A, 'butt'), L(-aw / 2 - 2, fl - 6.5, aw / 2 + 2, fl - 6.5, 1.6, k.C, 'butt'), L(-aw / 2 - 2, fl - 3, aw / 2 + 2, fl - 3, 1.6, k.C, 'butt')] };
+  } },
+  { id: 'cardigan', name: 'Cardigan', labels: ['Cardigan', 'Shirt', 'Slacks'], def: ['#8a5a3c', '#e9e2d0', '#4a4a52'], fn(M, k) {
+    const T = M.torsoLen, nh = M.neckW / 2 + 3, W = M.waistW / 2, hy = M.pelvisH * .75, d = shade(k.A, -.2), vy = -T * .38;
+    return { torso: [P(torsoPath(M, { hem: 'hip', hemY: .75 }), k.A), P(D`M${-nh - 5} ${-T}L${nh + 5} ${-T}L0 ${vy}Z`, k.B),
+      ...mirror((s) => [P(D`M${s * 1} ${-T + 12}L${s * (nh + 2)} ${-T - 3}L${s * (nh + 8)} ${-T + 7}Z`, shade(k.B, -.1)), P(D`M${s * (nh + 4)} ${-T - 1}L0 ${vy}`, null, { stroke: d, sw: 5, cap: 'butt' }),
+        R(s > 0 ? W * .32 : -W * .32 - W * .46, -T * .2, W * .46, T * .19, 3, d)]),
+      L(0, vy - 2, 0, hy + 2, 5, d, 'butt'), E(0, -T * .26, 2.8, 2.8, shade(k.A, .38)), E(0, -T * .06, 2.8, 2.8, shade(k.A, .38))],
+      pelvis: [P(pelvisPath(M), k.C)], ...limbs(M, k, { sleeve: 2, sleeveCol: k.A, cuff: d, legs: 2, legCol: k.C, shoe: 'dress', shoeCol: '#4a3226' }) };
+  } },
+  { id: 'scrubs', name: 'Scrubs', labels: ['Scrubs', 'Badge', 'Shoes'], def: ['#3fae8c', '#f4f1ea', '#f4f1ea'], fn(M, k) {
+    const T = M.torsoLen, nh = M.neckW / 2 + 3, S = M.shoulderW / 2, dv = 22, d = shade(k.A, -.18), tr = shade(k.A, -.26);
+    return { torso: [P(torsoPath(M, { dip: 0 }), k.skin), P(torsoPath(M, { v: true, dip: dv, nh: nh + 2, hem: 'hip', hemY: .5 }), k.A),
+      P(D`M${-nh - 2} ${-T}L0 ${-T + dv}L${nh + 2} ${-T}`, null, { stroke: d, sw: 3.5 }),
+      R(-S * .66, -T * .6, S * .42, S * .38, 2.5, d), L(-S * .56, -T * .66, -S * .56, -T * .54, 2.4, k.B), L(-S * .44, -T * .64, -S * .44, -T * .54, 2.4, shade(k.A, .45)),
+      L(S * .43, -T * .74, S * .43, -T * .66, 1.6, shade(k.B, -.35)), R(S * .26, -T * .66, S * .34, S * .44, 2.5, k.B), R(S * .3, -T * .62, S * .12, S * .14, 1.5, shade(k.A, -.1)),
+      L(S * .3, -T * .45, S * .54, -T * .45, 1.6, shade(k.B, -.3), 'butt')],
+      pelvis: [P(pelvisPath(M), tr)], ...limbs(M, k, { sleeve: .55, sleeveCol: k.A, legs: 2, legCol: tr, hem: shade(tr, -.14), shoe: 'sneaker', shoeCol: k.C }) };
+  } },
 ];

@@ -5,7 +5,8 @@ import { mirror } from './body';
 export interface HairStyle { id: string; name: string }
 
 export const HAIRS: readonly HairStyle[] = ([['crop', 'Short Crop'], ['side', 'Side Part'], ['buzz', 'Buzz Cut'], ['afro', 'Afro'], ['bob', 'Bob'], ['long', 'Long Straight'], ['wavy', 'Long Wavy'],
-  ['pony', 'Ponytail'], ['bun', 'Top Bun'], ['pigtails', 'Pigtails'], ['spiky', 'Spiky'], ['quiff', 'Quiff'], ['locs', 'Locs']] as const).map(([id, name]) => ({ id, name }));
+  ['pony', 'Ponytail'], ['bun', 'Top Bun'], ['pigtails', 'Pigtails'], ['spiky', 'Spiky'], ['quiff', 'Quiff'], ['locs', 'Locs'],
+  ['curls', 'Short Curls'], ['braid', 'Long Braid'], ['mohawk', 'Mohawk']] as const).map(([id, name]) => ({ id, name }));
 
 export const CAPS: Readonly<Record<'crop' | 'back' | 'buzz' | 'part' | 'bangs' | 'side', readonly Pt[]>> = {
   crop: [[-1.06, .5], [-1.09, .8], [-.72, 1.07], [0, 1.13], [.72, 1.07], [1.09, .8], [1.06, .5], [.93, .6], [.84, .78], [.35, .85], [-.3, .81], [-.82, .75], [-.94, .6]],
@@ -49,6 +50,31 @@ export function hairBuild(style: number, W: number, H: number, c: string): HairP
       [-.6, -.3, 0, .3, .6].forEach((u, i) => out.sway.push(L(X(u), Y(.5), X(u * 1.05), Y(-.14 + (i % 2) * .06), w, i % 2 ? c : cs)));
       [-1.1, -.9, .9, 1.1].forEach((u, i) => out.sway.push(L(X(u), Y(.82), X(u * 1.07), Y(-.06 + (i % 2) * .1), w, i % 2 ? cs : c)));
       out.front = [cap('back'), ...mirror((s) => [L(X(.35 * s), Y(1.05), X(.84 * s), Y(.7), w, c), L(X(.66 * s), Y(1.0), X(1.0 * s), Y(.58), w, cs)]), L(X(-.1), Y(1.08), X(.1), Y(1.08), w, c)]; break;
+    }
+    case 'curls': {
+      const r = W * .14, ring = (pts: readonly Pt[], col: (i: number) => string, k: number) => pts.map((p, i) => E(X(p[0]), Y(p[1]), r * k, r * k, col(i)));
+      out.front = [cap('buzz'),
+        ...ring([[-.92, .74], [-.74, .94], [-.46, 1.08], [-.15, 1.14], [.16, 1.14], [.47, 1.08], [.75, .94], [.93, .74]], (i) => i % 2 ? c : cs, 1),
+        ...ring([[-.62, .9], [-.32, .98], [0, 1.0], [.32, .98], [.62, .9]], () => c, .9),
+        ...[[-.46, 1.08], [.16, 1.14], [.75, .94], [-.32, .98], [.32, .98]].map((p) => P(D`M${X(p[0]) - r * .5} ${Y(p[1]) - r * .1}Q${X(p[0])} ${Y(p[1]) - r * .75} ${X(p[0]) + r * .5} ${Y(p[1]) - r * .1}`, null, { stroke: ch, sw: n(W * .03), op: .5 }))];
+      break;
+    }
+    case 'braid': {
+      const at = (t: number): Pt => [(1 - t) * (1 - t) * .62 + 2 * (1 - t) * t * 1.42 + t * t * 1.3, (1 - t) * (1 - t) * .5 + 2 * (1 - t) * t * .2 + t * t * -.78];
+      for (let i = 0; i < 7; i++) {
+        const t = i / 7, [u, v] = at(t), [u2, v2] = at(t + .02), rot = Math.atan2(Y(v2) - Y(v), X(u2) - X(u)) * 180 / Math.PI, w = W * (.17 - t * .05), side = i % 2 ? 1 : -1;
+        out.sway.push(E(X(u), Y(v), w * .95, w * .62, i % 2 ? c : cs, { rot: n(rot + side * 28) }));
+      }
+      const [eu, ev] = at(.96);
+      out.sway.push(P(m([[eu - .1, ev], [eu + .12, ev - .02], [eu + .08, ev - .2], [eu - .02, ev - .28], [eu - .12, ev - .16]], .6), cs), E(X(eu), Y(ev), W * .085, W * .06, band));
+      out.front = [cap('side'), hl([[-.2, 1.04], [.3, 1.02], [.7, .92]])]; break;
+    }
+    case 'mohawk': {
+      out.front = [P(m(CAPS.buzz), cs, { op: .42 }),
+        P(m([[-.2, .88], [-.3, 1.06], [-.36, 1.26], [-.14, 1.2], [-.04, 1.4], [.1, 1.22], [.32, 1.3], [.28, 1.06], [.2, .88], [0, .93]], .4), c),
+        hl([[-.12, 1.0], [-.08, 1.14], [-.04, 1.26]])];
+      out.sway = [P(m([[-.3, 1.0], [-.5, 1.28], [-.24, 1.3], [-.12, 1.52], [.06, 1.34], [.26, 1.48], [.32, 1.26], [.5, 1.2], [.3, 1.0]], .4), cs)];
+      break;
     }
   }
   return out;
