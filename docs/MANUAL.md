@@ -69,6 +69,20 @@ On the Stage, drag a selected block to move it, drag a corner handle to scale, a
 
 **Undo** (Ctrl+Z) and **Redo** (Shift+Ctrl+Z or Ctrl+Y) step through your edits. A drag counts as one step. The depth is set in Preferences · Timeline, from 10 to unlimited.
 
+### Transitions
+
+A transition mixes one block into the next where two blocks touch on one track: the first block must end on the frame where the second begins. It is centred on that cut, with half of its length before the cut and half after. In the half before the cut, the first block keeps playing while the second waits on its first frame. In the half after the cut, the second block plays while the first holds its last frame.
+
+- **Add one:** select the second block, right-click it, and choose **Time**, then **Transition**. The row is greyed out unless the block follows another block that touches it. Choose **None** to remove it.
+- **The four kinds:**
+  - **Crossfade** blends the first block into the second.
+  - **Dip to Color** fades the first block to a color and then from that color into the second. The **Color** field in the same menu sets the color; the default is black.
+  - **Wipe** uncovers the second block over the first from one side.
+  - **Push** slides the second block in from one side while it pushes the first block out the other way.
+- **Direction** (Wipe and Push only): **From left** (the default), **From right**, **From top** or **From bottom** is the side the second block comes from.
+- **Length:** the **Frames** field in the Transition menu sets it. The shortest is 2 frames; a new transition is half a second long at the movie's frame rate. On the Timeline a band marks the transition over the cut, with a handle at its right end: drag it to change the length. Dragging cannot make it longer than twice the shorter of the two blocks. The Frames field takes any whole number of 2 or more.
+- **Inside a group:** the commands **Group Transition: Crossfade**, **Group Transition: Dip to Color**, **Group Transition: Wipe**, **Group Transition: Push** and **Group Transition: None** act on the cut nearest the Playhead between two touching blocks inside the selected group.
+
 ## Draw and Paint
 
 Add a **Drawing** and open it (double-click it, or use the Edit pill that appears on the Timeline) to enter the full-area canvas. Press Enter or Escape to finish and return to the Stage.
@@ -198,6 +212,8 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
   - a folder of **numbered PNG frames**, which becomes one Flipbook at the frame rate you choose.
   - an **animated GIF**, which becomes a Flipbook with its holds.
 - Fonts and sound files come over as they are.
+
+**From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: a **PNG** opens as a picture, and a **PSD** opens as a Drawing with its layers. The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
 
 ## Text
 
@@ -339,7 +355,7 @@ Closing FormMorpheus ends every tab.
 
 **A new icon.** FormMorpheus has a new app icon on the desktop, in the browser tab and in About.
 
-**On iPad.** FormMorpheus is coming to iPad. On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About FormMorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
+**On iPad.** The iPad app is a beta that you build yourself on a Mac with Xcode and an Apple developer account (a free one works, but then it needs the iCloud step in the build guide, and the library stays on the iPad instead of iCloud Drive); the steps are in [Build FormMorpheus for iPad](https://github.com/nodemode-dev/formmorpheus/blob/main/docs/ios/BUILD.md). On iPad, movies live in the FormMorpheus folder of the Files app, and movies, pictures, video and sound open from Files (a movie from elsewhere is copied into your Library, so the original is never changed). The menu bar and keyboard shortcuts work with a hardware keyboard. Apple Pencil Pro squeeze and double tap can switch to the eraser, show the color picker, undo, or follow the choice made in the iPad Settings app, and barrel roll turns brushes that follow the Pencil's angle. Draw with Pencil only keeps fingers for panning, zooming and gestures. Export uses the iPad's own video encoders, including HEVC with transparency where the iPad supports it. If iPadOS closes the app's drawing area to free memory, your latest snapshot opens again. Help > About FormMorpheus > Diagnostics checks the iPad and saves a report to send with any problem.
 
 **On iPad, from 0.23.0.** The iPad app runs on iPadOS 16.4 or later; squeeze, barrel roll and the Pencil haptics need iPadOS 17.5. A ProRes video (422 or 4444) now imports: the iPad converts it with its own encoders, ProRes 4444 with transparency to HEVC with transparency and everything else to H.264, which takes a moment for a long clip. HEVC with transparency imports as it is. Whether the transparency shows depends on the iPad's video decoder: if the first frame comes out with none, a notice says so. A video the iPad cannot read at all, a video over 2 GB, and sounds or pictures the iPad cannot decode are still refused with the reason. On Home, the second place under Library is iCloud Drive: tap it to keep the library in iCloud Drive > FormMorpheus (On This iPad takes it back). Nothing is copied when you switch, so use Copy to iCloud Drive in the Theater to bring movies across. Movies saved there appear on your other iPads signed in to the same Apple Account; one that has not arrived yet downloads when you open it, or shows once iCloud has brought it over. When iCloud Drive is off or no one is signed in, Home says so.
 

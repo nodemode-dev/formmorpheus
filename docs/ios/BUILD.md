@@ -1,5 +1,7 @@
 # Build FormMorpheus for iPad
 
+The iPad app is a beta that you build yourself. It has been built and run on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked with the Pencil Pro.
+
 This is the first-run guide for the Mac that builds the iPad app. You need a Mac with Xcode 26 or later (iPadOS 26 SDK), an Apple developer account signed in to Xcode, Node.js, and an iPad on iPadOS 16.4 or later.
 
 The app runs from iPadOS 16.4 because its interface decodes video with the web view's video decoder (Web Codecs) and draws with 2D OffscreenCanvas, which WebKit has from Safari 16.4, the version iPadOS 16.4 carries. On iPadOS 16.4 to 17.4 squeeze, barrel roll, the Pencil's position sent with a double tap and the canvas haptics are not there (they came with iPadOS 17.5); double tap and hover still work. Before iPadOS 17 the Stage draws without the GPU compositor (WebGL in OffscreenCanvas came with Safari 17), so large movies play slower. ProRes 4444 XQ export needs iPadOS 18; before that it falls back to ProRes 4444 with a note.
@@ -33,7 +35,7 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 
 ## Check on the iPad (0.23.0)
 
-Nothing in this list has been tried on a device yet; the Swift code has never been compiled.
+Not yet run on a device; the app itself is built and runs (see the top of this guide).
 
 1. ProRes 4444 with transparency: import a ProRes 4444 .mov that has an alpha channel into an open movie. A progress line says "Converting ..."; the clip lands on the Stage. Put a color under it and check that the see-through parts stay see-through. If a notice says the first frame shows no transparency, the iPad's video decoder drops it: note the iPad model and iPadOS version.
 2. ProRes 422 without transparency: import a ProRes 422 .mov. It should be converted and play.
