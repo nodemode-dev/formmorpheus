@@ -11,6 +11,7 @@ FRONTEND_PORT = 5194
 BACKEND_PORT = 9494
 PROJECT_EXT = ".fmo"
 MAX_PROJECT_BYTES = 4 * 1024 * 1024 * 1024
+MAX_CHARACTER_BYTES = 512 * 1024 * 1024
 MAX_EXPORT_BYTES = 2 * 1024 * 1024 * 1024
 MAX_JOB_FRAMES = 36000
 MAX_JOB_SIDE = 8192
@@ -100,6 +101,10 @@ def library_dir() -> Path:
         except OSError:
             pass   # a folder that went away (an unplugged drive): fall back to the default
     return _ensure(default_library_dir())
+
+
+def characters_dir() -> Path:
+    return _ensure(data_dir() / "Characters")
 
 
 def exports_dir() -> Path:

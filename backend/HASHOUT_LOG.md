@@ -7,6 +7,20 @@ Last updated: 2026-11-23 · the engine's test suite
 
 ---
 
+## v0.25.0 · the Characters library routes
+
+- refers-to: app/routers/characters.py (new); app/main.py (router at /api/characters); app/core/config.py :: characters_dir, MAX_CHARACTER_BYTES; app/routers/trash.py :: _meta, restore; ../docs/api-contract.json (written by ../setup/api_contract_dump)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One file per character.** `<data folder>/Characters/<name>.fmo`, a movie the size of its source holding one track with the one character group, made by the window with `packMovie` and no history. The folder sits in the data folder, not the library folder, so a library moved to another drive leaves the characters where the Starter and the iPad expect them, and the hourly part-file sweep already covers it. It is made on first use.
+- **Modelled on the library, with less.** Same name cleaning (`clean_name`, message says character), same `entry()` shape without `stack`, same zip magic check, part file with fsync and `os.replace` under a lock, same `read_limited` (512 MB here, not 4 GB: a character is a few parts, and a bigger file is a mistake), same rename with a 409 on a taken name (a change of letter case is allowed), same poster read (`library._picture`: 204 when the file has none). Left out on purpose: stacks, tags, order, duplicate, copy-to, the poster write route and preview. A character never needs them, and each is a route the iPad would have to copy.
+- **Window key.** Nothing to add: `WindowKeyGuard` covers every path under `/api/`, reads as well as writes, and `GuardMiddleware` refuses a foreign origin on writes, so `/api/characters` is covered exactly as `/api/library` is. There is no allow or deny list by path.
+- **Delete goes to Recently Deleted** as `<name> <stamp>.fmo` with kind `character` in the trash index; a second delete in the same second takes a number instead of replacing the first (the library's delete would replace). `trash.restore` puts a `character` back in Characters under a free name (`Name 2`), and `_meta` gives it the plain name like a movie. The window's Recently Deleted list must show the kind (it treats every kind but `movie` as an export today).
+- **Contract file.** `docs/api-contract.json` was regenerated with `setup/api_contract_dump`, not edited. The iPad check now lists the five new routes as not served until the Swift routes land.
+
+---
+
 ## v0.24.0 · the engine's test suite
 
 - refers-to: pytest.ini (new); requirements-test.txt (new); tests/conftest.py (new); tests/core, library, jobs, mcp, agents, assets, penlink, media, routes, scripts (new); ../setup/test (new); ../.github/workflows/ci.yml :: tests
