@@ -76,7 +76,9 @@ export function parseFmact(text: string): ActionDef {
       .filter((m): m is Obj => isObj(m) && num(m.frame) && typeof m.shape === 'string' && SHAPES.has(m.shape))
       .map((m) => ({ frame: Math.round(m.frame as number), shape: m.shape as Viseme }))
       .filter((m) => m.frame >= 0 && m.frame <= length)
-      .sort((p, q) => p.frame - q.frame);
+      .sort((p, q) => p.frame - q.frame)
+      .filter((m, i, all) => i === all.length - 1 || all[i + 1].frame !== m.frame)
+      .slice(0, length + 1);
     if (mouth.length) def.mouth = mouth;
   }
   return def;
