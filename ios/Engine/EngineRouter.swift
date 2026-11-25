@@ -22,8 +22,8 @@
 //   AudioEncodeRoutes /audio-encode (ios/Export) sound encoders
 //   TranscodeRoutes  /transcode    video the window cannot decode, converted with AVFoundation
 // Not ported, on purpose: /proxy (a desktop-only ffmpeg and network helper), /penlink
-// (Pen Link is hidden on iPad) and /files/stat (the source link's automatic update; the window offers
-// Update from Source... instead). Those requests answer 404, as the desktop does for an unknown route.
+// (Pen Link is hidden on iPad), /files/stat and /files/source (the source link's automatic update; the
+// window offers Update from Source... instead). Those requests answer 404, as the desktop does for an unknown route.
 //
 // Storage root: EngineConfig.dataDir, the Documents folder, so the Files app shows
 // Library, Characters, Brushes, Fonts, Ideas, Recently Deleted, Recovery and Exports like the desktop data folder.

@@ -13,6 +13,26 @@ Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN
 - Rename: the name-taken check runs inside the store lock, before the move, as `characters.py` checks inside its lock.
 - Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used was already called in this file.
 
+## v0.25.0 · the device check
+
+- refers-to: docs/ios/BUILD.md (`## Check on the iPad (0.25.0)`, Where things are)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- Eight numbered checks, newest section first, above the 0.23.0 one, on the owner's iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3: SVG character from Files, save to Characters and Recently Deleted, a Starter Scene and a Starter Character, Wave swapped to Nod, Lip-sync from Sound, Update from Source..., drawing on a Flipbook with squeeze and barrel roll, MP4 export. Each has the expected result and an empty `Result:` line for the owner's own words; nothing there was written from a guess.
+
+## v0.25.0 · SVG characters and actions from Files
+
+- refers-to: App/Info.plist (CFBundleDocumentTypes, UTExportedTypeDeclarations); UX/DocumentOpening.swift (comment)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- New exported type `ai.nodemode.formmorpheus.action` for `.fmact`, conforming to `public.json`, with no MIME tag (an `application/json` tag would make `UTType(mimeType:)` ambiguous with `public.json`). A document type "FormMorpheus Action" claims it as Viewer, rank Owner, so Files opens a `.fmact` in FormMorpheus with a tap.
+- SVG: `public.svg-image` gets its own document type ("SVG drawing", Viewer, Alternate). `public.image` already covered it; the explicit entry keeps SVG in Open With even if the picture entry changes.
+- No Swift path changed: `DocumentOpening.stage` sends every file that is not a `.fmo` to the page as `openURL {kind: "import", path, name}` from `<tmp>/Opened`, `FilesRoutes` reads any extension from there, and the page hands it to the same importer as Import..., which picks the SVG character importer or the action importer by extension. As with pictures, a movie must be open first. The file picker already maps `.fmact` and `.svg` in an accept string through `UTType(filenameExtension:)`, which now finds the declared type.
+- No new iPad strings: the document type names are not translated in `*.lproj/InfoPlist.strings` (only the two usage questions are), as "FormMorpheus Movie" is not.
+- The plist parses (`plistlib`). Whether Files lists FormMorpheus under Open With for an SVG is for the device check (`docs/ios/BUILD.md`, 0.25.0).
+
 ## v0.25.0 · the Characters library on iPad
 
 - refers-to: Engine/CharactersRoutes.swift (new), Engine/EngineRouter.swift, Engine/EngineSupport.swift (`EngineConfig.charactersDir`, `ensureTree`), Engine/TrashRoutes.swift
@@ -23,8 +43,7 @@ Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN
 - Storage: `Documents/Characters`, made at launch with the other folders so the Files app shows it from the first run. Not in iCloud Drive: only the movie library can live there. The hourly part sweep already covers the folder.
 - Restore from Recently Deleted puts a `character` back in Characters under the first free name (`name 2.fmo` ...), and the trash list shows its name without `.fmo`, as for movies.
 - No window key here: the iPad has no `/api/window` and no key on any route; the scheme handler only answers its own web view and the router's Origin guard refuses a foreign origin on PUT, POST and DELETE, which covers the new prefix like every other.
-- Not ported: `/api/files/stat`. It answers 404 (FilesRoutes has only `/files/read`), and the window then hides the automatic source update and keeps Update from Source....
-- The error sentences say "character" where the library's say "project"; align them with `characters.py` word for word if that file says otherwise.
+- Not ported: `/api/files/stat` and `/api/files/source`. They answer 404 (FilesRoutes has only `/files/read`). The window never calls them here: it gates the automatic source update on the platform kind (`canWatchSources` in `frontend/src/io/source-api.ts`, true only on desktop), so the iPad never polls and offers Update from Source... instead.
 - Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used is one the library and trash routes already call.
 
 ## v0.23.1 · the product's name in what iPadOS shows

@@ -36,6 +36,30 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>FormMorpheus Action</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>ai.nodemode.formmorpheus.action</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>SVG drawing</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.svg-image</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Picture, video, sound and font</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -175,6 +199,23 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/x-formmorpheus</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>ai.nodemode.formmorpheus.action</string>
+			<key>UTTypeDescription</key>
+			<string>FormMorpheus Action</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fmact</string>
 				</array>
 			</dict>
 		</dict>
