@@ -3,7 +3,7 @@
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-25 · the Characters library and its MCP tools
+Last updated: 2026-11-25 · the linked SVG routes read one checked descriptor
 
 ---
 
@@ -14,6 +14,18 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 - logged: v0.25.0 · 2026-11-25
 
 - **A movie and a character of the same name deleted in the same second** both went to `<name> <stamp>.fmo`, and the movie's move replaced the character's file and its trash index entry (kind `character` became `movie`). The library's delete now takes the same free-name loop as the characters route (`<name> <stamp> 2.fmo` and on), so each keeps its own file and its own kind in the index. The two routes still hold their own locks; two deletes landing in the very same instant from different routes could still pick one name, which the window never does (each delete is one request after a question).
+
+## v0.25.0 · the linked SVG routes read one checked descriptor
+
+- refers-to: app/routers/files.py :: _source_path, _read_source, stat_source, read_source (was _source_file); ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Why.** `_source_file` checked the path (`is_symlink`, `is_file`, `stat`) and then opened it again by name, so a file swapped for a link, a FIFO or a bigger file between the check and the open was read anyway, and `/stat` hashed the whole file whatever its size.
+- **One descriptor.** Both routes go through `_read_source`: `os.open` with `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` (and `O_BINARY` where it exists), `fstat` of that descriptor must be a regular file of at most 20 MB, then at most 20 MB plus one byte is read from it and more is 413. `/stat` hashes exactly those bytes and answers their length; the change time is the `fstat`'s. `O_NONBLOCK` keeps a FIFO named `.svg` from hanging the open; it is then refused as not a regular file (404).
+- **Without `O_NOFOLLOW` (Windows).** An `os.lstat` is taken first and must not be a link; the opened descriptor's `(st_dev, st_ino)` must equal it, so a link put in its place between the two is refused (404).
+- **Paths refused with 400.** After backslashes become slashes: anything starting with `//` (network shares and device paths, as `save_to._folder`), a colon past the drive letter (alternate data streams), a `..` segment, a relative path, a name not ending in `.svg`. A hard link is a regular file and is read.
+- **`/source`** also sends `X-Content-Type-Options: nosniff`.
 
 ## v0.25.0 · the Characters library routes
 
