@@ -341,6 +341,8 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
   const r = mergeFromSource(movie, charId, g, table);
   const hidden = r.missing.filter(isCastPart);
   const back = Object.keys(g.character?.parts ?? {}).filter((n) => isCastPart(n) && before && !before.has(n));
+  const freshName = new Map(Object.entries(g.character?.parts ?? {}).map(([n, id]) => [id, n]));
+  const freshOrder = g.tracks.map((t) => freshName.get(t.content[0]?.id ?? '') ?? '').filter(Boolean).reverse();
   const freshMouth = g.character?.parts.mouth ? g.tracks.flatMap((t) => t.content).find((c) => c.id === g.character?.parts.mouth) : undefined;
   const next = updateDeep(r.movie, charId, (c) => {
     const ch0 = c.character;
@@ -352,6 +354,7 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
       if (showIds.has(x.id) && x.hidden) { const { hidden: _h, ...rest } = x; return rest as Content; }
       return x;
     }) } : t));
+    tracks = placeAdded(tracks, freshOrder, r.added, ch0.parts);
     const { missing: m0, missingWas: w0, ...base } = ch0;
     const missing = (m0 ?? []).filter((n) => !hidden.includes(n));
     const was = Object.fromEntries(Object.entries(w0 ?? {}).filter(([n]) => !hidden.includes(n)));
@@ -372,6 +375,22 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
     return { ...c, tracks, character: { ...ch, build: spec, ...(mouthC?.kind === 'flipbook' ? { mouth: mouthId } : {}) } };
   });
   return { ...r, movie: next, missing: r.missing.filter((n) => !isCastPart(n)), hidden };
+}
+
+/** Moves each added part's track (top first list) directly above the nearest part under it in the fresh draw order. */
+function placeAdded(tracks: Track[], order: string[], added: string[], parts: Record<string, string>): Track[] {
+  const out = [...tracks];
+  const at = (name: string): number => (parts[name] ? out.findIndex((t) => t.content.some((x) => x.id === parts[name])) : -1);
+  order.forEach((name, i) => {
+    if (!added.includes(name)) return;
+    const from = at(name);
+    if (from < 0) return;
+    const [t] = out.splice(from, 1);
+    let to = out.length;
+    for (let j = i - 1; j >= 0; j--) { const k = at(order[j]); if (k >= 0) { to = k; break; } }
+    out.splice(to, 0, t);
+  });
+  return out;
 }
 
 const CAST_PARTS = new Set(Object.values(PART));

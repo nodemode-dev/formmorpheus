@@ -14,6 +14,7 @@ Last updated: 2026-11-25 · characters built from a recipe
 - logged: v0.26.0 · 2026-11-25
 
 - **Prepare, then merge.** A rebuild awaited its mouth PNGs and then merged into the movie it was handed, so an edit made while the pictures were encoding was lost when the caller stored the result. It is now split as Update from Source splits it (app/source-link.ts): `prepareRebuild(spec, movie, rig?, mouthShapes?)` is async and builds against an empty copy of the movie (its size only), answering `{ fresh, assets, spec }`; `mergeRebuild(movie, charId, prepared)` is synchronous and runs inside the caller's `engine.run` against the current movie. The caller stores the asset blobs (and preloads them) before the edit. `rebuildCharacter` and `rebuildFromSpec` are removed: as one async call they invite the stale merge. `CastRebuild` no longer carries assets.
+- **New parts in draw order.** `mergeFromSource` puts every new part on the top track, so a first cape, hair back or hair sway covered the face. After the merge `placeAdded` walks the fresh build's draw order bottom first and moves each added part's track directly above the track of the nearest part below it in that order (to the bottom when none is). Matched parts and the person's own parts are not moved. Checked: Leo in outfit 10 changing to hair 3, 4, 5, 6, 7, 9 and 12 for the first time keeps hair back under the head and hair front over it, and the drawn parts follow the fresh order exactly; a first cape lands just over the shadow.
 
 ## v0.26.0 · cast comments moved here
 
