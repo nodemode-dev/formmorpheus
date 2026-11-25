@@ -69,6 +69,20 @@ On the Stage, drag a selected block to move it, drag a corner handle to scale, a
 
 **Undo** (Ctrl+Z) and **Redo** (Shift+Ctrl+Z or Ctrl+Y) step through your edits. A drag counts as one step. The depth is set in Preferences · Timeline, from 10 to unlimited.
 
+### Transitions
+
+A transition mixes one block into the next where two blocks touch on one track: the first block must end on the frame where the second begins. It is centred on that cut, with half of its length before the cut and half after. While it runs, the first block holds its last frame and the second shows its first frame.
+
+- **Add one:** select the second block, right-click it, and choose **Time**, then **Transition**. The row is greyed out unless the block follows another block that touches it. Choose **None** to remove it.
+- **The four kinds:**
+  - **Crossfade** blends the first block into the second.
+  - **Dip to Color** fades the first block to a color and then from that color into the second. The **Color** field in the same menu sets the color; the default is black.
+  - **Wipe** uncovers the second block over the first from one side.
+  - **Push** slides the second block in from one side while it pushes the first block out the other way.
+- **Direction** (Wipe and Push only): **From left** (the default), **From right**, **From top** or **From bottom** is the side the second block comes from.
+- **Length:** the **Frames** field in the Transition menu sets it. The shortest is 2 frames; a new transition is half a second long at the movie's frame rate. On the Timeline a band marks the transition over the cut, with a handle at its right end: drag it to change the length. Its length cannot go beyond twice the length of the shorter of the two blocks.
+- **Inside a group:** the commands **Group Transition: Crossfade**, **Group Transition: Dip to Color**, **Group Transition: Wipe**, **Group Transition: Push** and **Group Transition: None** act on the cut nearest the Playhead between two touching blocks inside the selected group.
+
 ## Draw and Paint
 
 Add a **Drawing** and open it (double-click it, or use the Edit pill that appears on the Timeline) to enter the full-area canvas. Press Enter or Escape to finish and return to the Stage.
