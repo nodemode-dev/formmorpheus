@@ -7,6 +7,14 @@ Last updated: 2026-11-25 · the Character Builder
 
 ---
 
+## v0.28.0 · Update from Source drops the recipe
+
+- refers-to: engine/source-merge.ts :: mergeFromSource
+- kind: fix
+- logged: v0.28.0 · 2026-11-25
+
+- **A source merge is not a build.** Update from Source over a built character kept `character.build`, so Edit in Character Builder stayed offered and Apply would paint the recipe over the SVG's parts. `mergeFromSource` now drops `build` and `builtHidden` with `missing` and `missingWas`. `mergeRebuild` reads the old `builtHidden` before it calls `mergeFromSource` and writes `build` back after, so a rebuild keeps both (checked in the browser: Karl after an Update from Source has neither; after `mergeRebuild` his build is back).
+
 ## v0.28.0 · the studio's cast as starters
 
 - refers-to: ui/characters-panel.ts :: castStarter (new), castPoster (new), onOpenPreset (new), CharactersPanel.paint, updateRow, act, add; ui/character-builder.ts :: CharacterBuilder.openPreset (new); app/app.ts; ui/i18n/* (27 tables)
