@@ -103,18 +103,31 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
 
   const gone = new Set(missing.map((n) => oldParts[n]).filter((id) => !have.get(id)?.track.locked));
   const partIds = new Set(Object.values(oldParts));
+  const nameOf = new Map(Object.entries(oldParts).map(([n, id]) => [id, n]));
+  const wasMissing = new Set(g.character.missing ?? []), prevWas = g.character.missingWas ?? {};
+  // the red is the merge's mark, not the person's: a part that returns gets back what it had, one going missing has its own highlight kept
+  const was: Record<string, Highlight> = {};
+  for (const n of missing) if (prevWas[n]) was[n] = prevWas[n];
   const tracks = [...newTracks, ...mapIn(g.tracks, (c) => {
     const f = matched.get(c.id);
-    if (f) return takeArt(c, f, partIds);
-    if (gone.has(c.id)) return { ...c, highlight: MISSING_HIGHLIGHT };
+    const name = nameOf.get(c.id) ?? '';
+    if (f) {
+      const art = takeArt(c, f, partIds);
+      return wasMissing.has(name) && art.highlight === MISSING_HIGHLIGHT ? { ...art, highlight: prevWas[name] ?? 'none' } : art;
+    }
+    if (gone.has(c.id)) {
+      if (c.highlight !== MISSING_HIGHLIGHT && c.highlight !== 'none') was[name] = c.highlight;
+      return { ...c, highlight: MISSING_HIGHLIGHT };
+    }
     return c;
   })];
 
   const taken = [...matched.values(), ...born.map((b) => b.c)];
   const table: Record<string, Asset> = {};
   for (const id of usedAssetIds([], taken)) if (assets[id] && !movie.assets[id]) table[id] = assets[id];
-  const { missing: _was, ...info } = g.character;
-  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing } : {}) } });
+  const { missing: _was, missingWas: _wasHl, ...info } = g.character;
+  const kept = Object.keys(was).length ? { missingWas: was } : {};
+  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing, ...kept } : {}) } });
   const withAssets: Movie = Object.keys(table).length ? { ...movie, assets: { ...movie.assets, ...table } } : movie;
   return { movie: editCharacter(withAssets, charId, next), added, missing };
 }

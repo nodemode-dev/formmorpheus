@@ -1,7 +1,7 @@
 // Load-time normalisation: fills the fields older files lack (a v0.3 movie has no keys, no onion, a flipbook's
 // `frames` instead of rows) so no code path meets undefined. Runs on a freshly parsed movie, in memory only: the
 // file on disk stays as it was until the person saves. Pure, no DOM.
-import { ACTION_MAX_FRAMES, FORMAT_VERSION, type Movie } from './types';
+import { ACTION_MAX_FRAMES, FORMAT_VERSION, HIGHLIGHTS, type Movie } from './types';
 import { hasKind } from './keys';
 import { tidyGuides, type Guides } from './guides';
 import './fx/index'; // registers the effect lane kinds before lanes are checked
@@ -125,6 +125,10 @@ function character(c: Obj, kind: string): void {
   if (s !== undefined && !(isObj(s) && typeof s.path === 'string' && /\.svg$/i.test(s.path) && finite(s.size) && finite(s.mtime) && typeof s.sha256 === 'string')) delete ch.source;
   if (Array.isArray(ch.missing)) ch.missing = ch.missing.filter((n): n is string => typeof n === 'string' && n in parts);
   if (!Array.isArray(ch.missing) || !ch.missing.length) delete ch.missing;
+  const lost = Array.isArray(ch.missing) ? (ch.missing as string[]) : [];
+  const was: Obj = {};
+  if (isObj(ch.missingWas)) for (const [k, v] of Object.entries(ch.missingWas)) if (lost.includes(k) && typeof v === 'string' && (HIGHLIGHTS as readonly string[]).includes(v)) was[k] = v;
+  if (Object.keys(was).length) ch.missingWas = was; else delete ch.missingWas;
   characterDef(ch);
 }
 

@@ -165,6 +165,14 @@ Last updated: 2026-11-25 · the source link is followed only where this computer
 - **Desktop app only.** Polling and Unlink Source are gated on `canLinkPaths()` (the desktop app, where a dialog gives a real path); `canWatchSources()` (any desktop engine, a browser included) is removed, since a browser can never make a trusted link. Update from Source... (pick the file again) stays everywhere.
 - **Character as SVG.** The stat-and-link step has its own `try`: when it fails the export still says saved, with the platform-neutral sentence, and adds "Saved, not linked: larger than 20 MB." for 413 or "Saved, not linked: {reason}" otherwise. Its texts, the job label and the note "Written without their art: {names}." (`io/svg-export.ts`) go through `t` and `tf`. The local `selectedCharacter` (first selected group that is a character) is replaced by the shared one in `ui/character-commands.ts` (exactly one selected character).
 
+## v0.25.0 · a part's own highlight survives going missing from the source
+
+- refers-to: engine/source-merge.ts :: mergeFromSource; engine/types.ts :: CharacterInfo.missingWas; engine/normalize.ts :: character
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Before.** A part gone from the file was set red, overwriting a highlight the person gave it, and stayed red after it came back.
+- **Now.** Going missing (not on a locked track): a highlight other than none and red is kept in `character.missingWas[name]`, then the part is set red; entries of parts still missing carry over. Coming back: a part that was in `missing` and is still red gets `missingWas[name]`, or none. A part the person gave another highlight while missing keeps it. `missingWas` is written only beside `missing`, and `normalize.ts` keeps only entries for names in `missing` with a known highlight.
 
 ## v0.25.0 · characters in Recently Deleted
 
