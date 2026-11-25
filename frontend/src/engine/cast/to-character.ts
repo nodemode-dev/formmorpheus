@@ -13,7 +13,9 @@ import { apply, IDENT, mul, type Mat } from '../transform';
 import type { Asset, CanvasRect, Content, FlipbookFrame, Movie, Track } from '../types';
 import type { ImportResult } from '../../media/import';
 import { VISEMES, VISEME_NAMES } from '../../media/lipsync';
+import { build } from './build';
 import type { CastPrim, CastRig, CastSpec, CastSlot } from './spec';
+import { visemes } from './visemes';
 
 /** The 1080 character space of the SVG starters: feet on y 1012, centred on x 540. */
 export const CAST_SPACE = 1080;
@@ -22,7 +24,7 @@ export const CAST_FLOOR = 1012;
 export const CAST_UNIT = 2.25;
 
 const PART: Record<string, string> = {
-  shadow: 'shadow', pelvis: 'hip', skirt: 'skirt',
+  shadow: 'shadow', pelvis: 'hip', skirt: 'skirt', tail: 'tail',
   thigh_R: 'leg-l', thigh_L: 'leg-r', shin_R: 'shin-l', shin_L: 'shin-r', foot_R: 'foot-l', foot_L: 'foot-r',
   torso: 'body', neck: 'neck', cape: 'cape', hoodBack: 'hood-back',
   arm_R_upper: 'arm-l', arm_L_upper: 'arm-r', arm_R_fore: 'forearm-l', arm_L_fore: 'forearm-r', hand_R: 'hand-l', hand_L: 'hand-r',
@@ -31,7 +33,7 @@ const PART: Record<string, string> = {
 };
 
 const FOLLOWS: Record<string, string> = {
-  skirt: 'hip', 'leg-l': 'hip', 'leg-r': 'hip', 'shin-l': 'leg-l', 'shin-r': 'leg-r', 'foot-l': 'shin-l', 'foot-r': 'shin-r',
+  skirt: 'hip', tail: 'hip', 'leg-l': 'hip', 'leg-r': 'hip', 'shin-l': 'leg-l', 'shin-r': 'leg-r', 'foot-l': 'shin-l', 'foot-r': 'shin-r',
   body: 'hip', neck: 'body', cape: 'body', 'hood-back': 'body',
   'arm-l': 'body', 'arm-r': 'body', 'forearm-l': 'arm-l', 'forearm-r': 'arm-r', 'hand-l': 'forearm-l', 'hand-r': 'forearm-r',
   head: 'body', 'head-behind': 'head', 'hair-back': 'head', 'hair-front': 'head', 'head-acc': 'head',
@@ -347,4 +349,16 @@ export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRi
     return { ...c, tracks, character: { ...ch, build: spec, ...(mouthC?.kind === 'flipbook' ? { mouth: mouthId } : {}) } };
   });
   return { ...r, movie: next, assets: fresh.assets };
+}
+
+/** A recipe built and made a character at frame `at`, its mouth chart from the recipe's own mouth shapes. */
+export function castToCharacterGroup(spec: CastSpec, movie: Movie, at = 0): Promise<ImportResult> {
+  const rig = build(spec);
+  return rigToCharacterGroup(rig, spec, visemes(spec, rig), movie, at);
+}
+
+/** Rebuilds the character `charId` from a recipe (see rebuildCharacter). */
+export function rebuildFromSpec(movie: Movie, charId: string, spec: CastSpec): Promise<SourceMerge & { assets: ImportResult['assets'] }> {
+  const rig = build(spec);
+  return rebuildCharacter(movie, charId, rig, spec, visemes(spec, rig));
 }

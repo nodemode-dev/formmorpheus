@@ -6,6 +6,7 @@ export type { HairStyle } from './hair';
 export { mkSpec, build } from './build';
 export { rigToSvg, solveRest } from './svg';
 export { visemes } from './visemes';
+export { castToCharacterGroup, rebuildFromSpec, rigToCharacterGroup, rebuildCharacter, castPartName, CAST_UNIT } from './to-character';
 export { OUTFITS } from './outfits';
 export { HAIRS } from './hair';
 export { SPECIES } from './head';
