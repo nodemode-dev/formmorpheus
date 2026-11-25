@@ -195,11 +195,15 @@ A character is a Group whose inner blocks are named parts: a head, a body, arms,
 Draw the character in a vector app with **one group per part**, and open the SVG with Import (Ctrl+I) or drop it on the window. It arrives as one Group named after the file, already a character, with one part on its own inner track for each group.
 
 - **Names.** A part is named by its label in the editor, then its `data-name`, then its `id`, then Part 1, Part 2 and so on. A name used twice gets a number.
-- **Parts inside parts.** A group inside a group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A layer group of an editor, and a lone wrapper group that holds only groups, are opened and not made parts. A loose shape outside any group is a part of its own.
+- **Parts inside parts.** A group inside a group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A layer group of an editor, and a lone wrapper group that holds only groups, are opened and not made parts.
+- **Loose shapes.** An SVG with no groups does not become a track for every shape. Shapes outside any group that sit side by side (paths, rectangles, circles, ellipses, lines, polygons and polylines) are read as one part; a group, text or a picture between them ends the run and starts another. A single run is named after the file, several are Part 1, Part 2 and so on, and a run of one shape is a part named by its label.
+- **Hidden groups.** A group hidden in the file (`visibility="hidden"` or `collapse`) arrives as a part that is hidden, with its art inside, so showing it brings the drawing back instead of an empty block.
 - **Pivots.** A part turns about its pivot, so put it where the joint is: the shoulder for an arm, the hip for a leg, the neck for a head, the wrist for a hand. Draw a small mark inside the part's own art and give it the id `pivot`, an id that starts with `pivot-`, or `data-role="pivot"`; its centre becomes the pivot and the mark is left out of the art. A part with no mark turns about the middle of its box.
 - **Shapes and pictures.** Paths, rectangles, circles, ellipses, lines, polygons and polylines with solid, linear or radial paint open as Shapes you can still edit. A part that holds text, pictures, reused elements, filters, masks, clipping, patterns or markers, or a filled shape that cuts a hole in another, opens as a picture (a Drawing you can touch up in Draw and Paint). The notice after the import names each such part and says why.
-- **Size.** The art keeps its pixel size. It is shrunk only when it is larger than the movie, and is centered.
+- **Size.** The art keeps its pixel size. It is shrunk only when it is larger than the movie, and is centered. When the file's `viewBox` and its width and height are not the same shape, its `preserveAspectRatio` decides where the drawing sits: aligned to a side of the size (`xMin`, `xMid`, `xMax` with `YMin`, `YMid`, `YMax`), or filling the size with `slice`. `none` stretches it, and a file that says nothing is centered.
 - **A mouth chart.** An SVG whose top-level groups are named for the mouth shapes (Rest, MBP, AI, E, O, U, FV and L / th, at least six of them) opens as one Flipbook with a drawing for each shape, named as Lip-sync expects.
+- **A mouth chart inside a character.** A part whose own groups are named for the mouth shapes the same way (at least six, and no more than ten) opens as one Flipbook with a drawing for each shape, keeping the part's name, pivot and parent, and it becomes the character's mouth, so Lip-sync from Sound works on it at once.
+- **A mouth rests.** A character's mouth, a starter character's included, shows its Rest drawing for the whole block and stays there until Lip-sync from Sound writes shapes. It does not run through the eight drawings by itself.
 
 An SVG that holds nothing FormMorpheus can read is refused with its name.
 
@@ -207,24 +211,41 @@ An SVG that holds nothing FormMorpheus can read is refused with its name.
 
 For a Group you built by hand, select it and choose Content · **Make Character...** (also on the block's menu, in the Action menu as **Character**, and in command search). Type a name. The group's inner blocks become the parts, named as they are named on the Timeline, and the first inner Flipbook that holds a mouth chart becomes its mouth. It is one undo step. On a block that already is a character, Make Character names the parts again and keeps its actions.
 
+### Picking one part
+
+To move, turn or key one part of a character, such as an arm, pick that part.
+
+- **Pick.** Double-click the character on the Stage (not in Perform mode) and the part under the pointer is picked. A part is found where one of its drawn pieces is, not by a box around it. On the Timeline in Compose, double-click the character's block to open its parts in place, then press a part's bar.
+- **Pick another.** With a part picked, a click on another part of the same character picks that one. A press on the picked part keeps it.
+- **Go back.** A press on the character away from every part goes back to the whole character. Escape leaves the part and keeps the character selected; a second Escape deselects.
+- **What it changes.** While a part is picked, Move, rotate, scale, the pivot (Edit anchor, or dragging it), motion path nodes and the keys written in Keyframe mode apply to that part only, and the character's other parts do not move. A part on a locked track is not grabbed.
+- **Its lanes.** In Keyframe mode the Timeline shows the picked part's own lanes under the character's block, in place of the character's, and a key you drag there belongs to the part.
+- **Not yet.** Flip, Reset and Warp in the box menu, Bones and the effect tools on the Stage still act on the whole character.
+
 ### The Characters panel
 
 View · **Characters** opens a panel beside the Stage with two lists. It sits on the left, so the Media Bin can stay open too.
 
 - **Starter** holds five original characters: Kofi, Ines, Marisol, Bram and Noor. Each has the same part names and a pivot at every joint, plus a mouth chart of eight drawings, so every action and Lip-sync from Sound works on it at once. Starter rows cannot be renamed or deleted.
-- **Mine** holds the characters you saved. Each row has **Add to Movie**, **Rename** and **Delete**. Delete moves the character to Recently Deleted.
+- **Mine** holds the characters you saved, each with its picture. A row shows a person glyph for a moment and then its picture, and the panel opens with both lists in place. Each row has **Add to Movie**, **Rename** and **Delete**. Delete moves the character to Recently Deleted.
 
 **Add to Movie**, or dragging a row onto the Stage or onto the Timeline, puts an independent copy at the Playhead (or where you dropped it) on a new track named for it. Every part is new, so two copies of the same character move apart. A character saved from a larger movie is scaled down to fit. It is one undo step. A starter character added to a movie made from a starter scene stands on that scene's floor (see Starter scenes).
 
 ### Save to Characters
 
-Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. When the name is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". The saved character is a copy: later changes in the movie do not change it. Its actions go with it.
+Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. The name is cleaned first, as a file name is (a slash becomes a space, so `A/B` is saved as `A B`), and it is that cleaned name that is compared with the saved ones. When it is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". Closing the question (Escape, the close button or a click outside) saves nothing. The saved character is a copy: later changes in the movie do not change it. Its actions go with it. A part's link to something outside the character, such as a hand parented to a prop on another track, is not kept in the copy; the links between the character's own parts are.
 
 Deleted characters stay in Recently Deleted on Home for 30 days. Restoring one puts it back in Characters.
 
 ### Lip-sync onto a character's mouth
 
-Choose **Lip-sync from Sound...** on a sound block's menu, or on a character that has a mouth. In the dialog, the **Mouth flipbook** list starts with your characters, written as "Kofi (character)", and then the other Flipbooks. The default is the selected character's mouth. Choose **Lip-sync**, and the mouth inside the character takes the shape of the sound, in one undo step. The range is cut to the room on the mouth's own track and to the end of its character.
+Choose **Lip-sync from Sound...** on a sound block's menu, or on a character that has a mouth. In the dialog, the **Mouth flipbook** list starts with your characters, written as "Kofi (character)", and then the other Flipbooks. The default is the selected character's mouth. Choose **Lip-sync**, and the mouth inside the character takes the shape of the sound, in one undo step. The range is cut to the room on the mouth's own track and to the end of its character. Two copies of one character are told apart in the list, the second written "Kofi (character) 2".
+
+Until you lip-sync, the mouth rests on its Rest drawing for the whole block; it does not cycle through the shapes.
+
+### Use as Mouth Chart
+
+A character with no mouth chart, or one you want to give another, can take one from an SVG. Select the character and choose Content · **Use as Mouth Chart...** (also on the block's menu). Pick an SVG of the eight mouth shapes (one top-level group for each shape, named as in "A mouth chart" above). The shapes become a Flipbook that replaces the character's `mouth` part, or, when it has none, a new inner track on top following `head`, and it is the character's mouth. It is one undo step, and Lip-sync from Sound then writes into it. A file that cannot be read says so and changes nothing; closing the file dialog does nothing. This works for any character, one that came from an SVG included.
 
 ## Actions
 
@@ -232,19 +253,21 @@ An action is a named piece of motion for a character: Move and Bones keys for so
 
 ### Apply an action
 
-Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the **Starter actions**: Idle, Nod, Shake head, Wave, Point, Walk in place, Jump and Sit. A looping action is marked **Loop**.
+Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the **Starter actions**: Idle, Nod, Shake head, Wave Hello, Point, Walk in place, Jump and Sit. A looping action is marked **Loop**.
 
 - With no loop range set, the action goes in once, from the Playhead.
 - With a loop range (Alt+I sets its start and Alt+O its end), the action starts at the range's start, and a looping action repeats as many times as fit.
-- The starter actions are written for a character that faces you, with parts named `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r`. They never key the `mouth`, which Lip-sync owns. If your character draws its right arm on the other side, they are mirrored as they go in. They are written at 24 frames a second and keep their speed in a movie at another rate.
+- The starter actions are written for a character that faces you, with parts named `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r`. They never key the `mouth`, which Lip-sync owns. If your character draws its right arm on the other side, they are mirrored as they go in. Their moves are scaled to the character's own size, measured from its right leg (or from everything it draws), so Sit and Jump keep a small character's feet on the floor. Walk in place swings each arm against the leg on its own side. They are written at 24 frames a second and keep their speed in a movie at another rate. Your own actions are not scaled: they keep the pixels they were made with.
+- An action starts from each part's rest pose, the move, turn and pivot the part has with no keys, not from what the part's keys show at the first frame.
 - A part the character does not have is skipped, and the status line names it: "This character has no leg-r, so that part of the action was skipped."
-- Keys outside the span the action takes are never touched.
+- Keys outside the span the action takes are never touched. With a loop range the span ends at Out at the latest: a looping action repeats as many whole passes as fit and then one more cut at Out. Where a span is cut short, it gets a key at that frame with the action's own value there, so the motion stops cleanly instead of sliding toward the next key.
+- Where two actions touch, they share one frame and each keeps its own keys: the frame belongs to the later action on the parts it moves. Clearing one keeps the other's keys and removes its own.
 
 Each apply is one undo step.
 
 ### The strips
 
-An applied action shows as a labelled **strip** along the lower edge of the character's block, counted in the character's own frames, so moving or trimming the block keeps the strip and its keys together. Press a strip: the block is selected, the strip is marked, and the same card opens. Choose another action to **swap** it over the same frames, or **Clear Action** to remove it. **Swap Action...** and **Clear Action** in Content · Actions work on the strip you pressed last. A swap is one undo step, and undo brings the first action back with its exact keys.
+An applied action shows as a labelled **strip** along the lower edge of the character's block, counted in the character's own frames, so moving or trimming the block keeps the strip and its keys together. Press a strip: the block is selected, the strip is marked, and the same card opens. Choose another action to **swap** it over the same frames, or **Clear Action** to remove it. A swap stays inside the strip: a longer action is cut at the strip's end, so an action that follows keeps every key it had. **Swap Action...** and **Clear Action** in Content · Actions work on the strip you pressed last. A swap is one undo step, and undo brings the first action back with its exact keys.
 
 ### Your own actions
 
@@ -268,7 +291,9 @@ File · **New from Starter Scene...** shows five original scenes as cards, each 
 - A **floor guide** is a horizontal guide line across the Stage where feet rest. It is shown and snapped to like any guide (Stage Options · Guides, **Show guides**), it is never exported, and you can drag it or remove it.
 - The starter files themselves are never changed.
 
-A starter character added to this movie from the Characters panel stands on the floor guide at half its size, centered on the frame. Without a floor guide, and for a character from Mine, it is placed as usual.
+The props and rooms are drawn to the starter characters' scale: a character at half size is about as tall as an adult, so a bench, a table, a desk and a doorway are the size they should be beside it, every prop stands on the floor, and each background has depth.
+
+A starter character added to this movie from the Characters panel stands on the floor guide at half its size, and each one has its own spot so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left. Without a floor guide, and for a character from Mine, it is placed as usual.
 
 ## Working with a vector app
 
@@ -287,14 +312,17 @@ In the vector app, change the art, keep **one group per part** and keep each par
 
 ### The source link and Update from Source...
 
-A linked character follows its SVG file on the desktop. While the FormMorpheus window has focus, it looks at the file about every two seconds, and at once when you come back to the window. When the file has changed, the character is read again as one undo step named **Update from Source**, and a notice says "Updated from [file]." with the names of any new or missing parts.
+A linked character follows its SVG file in the desktop app, and only when this computer made the link: by Character as SVG for Vector App..., by Update from Source... or Relink Source... with the file you chose, or by opening the SVG through the desktop app. A link that came in a movie, a saved character, a paste, a `.fmo` file or from an agent was made on another computer, so it is never followed by itself. Once for each movie in a session, a notice says "[file] was linked on another computer: choose Relink Source... to follow it." Choose **Relink Source...** and pick the file once, and from then on it is followed as usual. In a browser, links are never followed; Update from Source... still reads a file you pick.
+
+While the FormMorpheus window has focus, it looks at the file about every two seconds, and at once when you come back to the window. When the file has changed, the character is read again as one undo step named **Update from Source**, and a notice says "Updated from [file]." with the names of any new or missing parts.
 
 Parts are matched by name:
 
 - **A part that is in both** takes the new art and the new pivot. It keeps its keys, parent, bones, move and turn, opacity, blend mode, timing and name, and the character keeps its actions and strips. A part that is a Flipbook, such as a mouth chart you drew in FormMorpheus, keeps its drawings.
 - **A part that is new** in the file is added on top, on its own inner track, parented as the file says.
-- **A part that is gone** from the file stays. It gets the red highlight, and when it is selected the status bar adds "Not in the source file". The red stays when the part comes back, since you may have chosen it yourself.
-- A part on a locked track refuses the update and names the part.
+- **A part that is gone** from the file stays. It gets the red highlight, and when it is selected the status bar adds "Not in the source file". A highlight you gave the part yourself is kept while it is missing, and is put back when the part comes back; a part you highlighted another way while it was missing keeps that.
+- **A part that comes back** to the file loses the red mark, since the red was only a sign that it was missing.
+- A part on a locked track refuses the update: "A part of this character is on a locked track. Unlock it, then update again."
 
 An undo of an update is not put back by the next look at the file. Save the file again, choose Update from Source..., or Redo, to bring it back. If the file cannot be found, a notice says "Source file not found" once and the link is kept, so it is picked up when the file is back. Only SVG files up to 20 MB that are plain files, not links to other files, are read.
 
@@ -383,7 +411,7 @@ Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Th
 - **Recent**: the movies you opened lately.
 - **Movies**: the whole library, as thumbnails or a list, with a filter box and sorting. Rename, duplicate and delete are on each item.
 - **Exports**: everything you exported. Open, save a copy or delete.
-- **Recently Deleted**: deleted movies, characters and exports stay here for 30 days. A character is marked with the person glyph, and restoring it puts it back in Characters. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
+- **Recently Deleted**: deleted movies, characters and exports stay here for 30 days. A character is marked with the person glyph, and restoring it puts it back in Characters. A movie and a character of the same name, deleted at the same moment, each keep their own place, and each restores as what it is. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
 - **Preferences** and **Help** at the foot.
 
 ## Preferences
@@ -481,13 +509,13 @@ Closing FormMorpheus ends every tab.
 
 ## New in 0.25.0
 
-**Characters.** An SVG with one group per body part opens as a character, with parts, pivots and parenting. Make Character does the same for a Group you built. View · Characters lists five starter characters and the ones you save with Save to Characters; Add to Movie puts an independent copy in any movie. Lip-sync from Sound... can fill a character's mouth. Recently Deleted keeps deleted characters, and outside agents have `list_characters` and `add_character`.
+**Characters.** An SVG with one group per body part opens as a character, with parts, pivots and parenting. Make Character does the same for a Group you built. View · Characters lists five starter characters and the ones you save with Save to Characters; Add to Movie puts an independent copy in any movie. Lip-sync from Sound... can fill a character's mouth, and Use as Mouth Chart... gives any character a mouth from an SVG of the eight shapes. Double-click a character to pick one part and move, turn or key it alone. Recently Deleted keeps deleted characters, and outside agents have `list_characters` and `add_character`. An SVG with no groups opens as one part for each run of loose shapes, a hidden group arrives hidden with its art, and `preserveAspectRatio` is honoured.
 
-**Actions.** Apply, swap, clear and save named motions on a character, shown as strips on its block. Eight starter actions ship, and an action travels as a `.fmact` file.
+**Actions.** Apply, swap, clear and save named motions on a character, shown as strips on its block. Eight starter actions ship (Idle, Nod, Shake head, Wave Hello, Point, Walk in place, Jump and Sit), they fit each character's size and facing, and an action travels as a `.fmact` file.
 
-**Starter scenes.** File · New from Starter Scene... opens one of five original scenes as a new movie, with a floor guide for starter characters.
+**Starter scenes.** File · New from Starter Scene... opens one of five original scenes (Corner Street, Park, Kitchen, Classroom and Stage) as a new movie, with a floor guide. The props are drawn to the starter characters' scale, and each starter character you add stands at its own spot on the floor.
 
-**Vector app.** File · Round Trips · Character as SVG for Vector App... sends a character out and links it. When the file is saved in the vector app, the character updates by part name and keeps its animation. Update from Source..., Unlink Source and Relink Source... are on the character's menu.
+**Vector app.** File · Round Trips · Character as SVG for Vector App... sends a character out and links it. When the file is saved in the vector app, the character updates by part name and keeps its animation, in the desktop app and for a link this computer made; a link that came in a movie from elsewhere waits for Relink Source... once. Update from Source..., Unlink Source and Relink Source... are on the character's menu.
 
 **On iPad.** The iPad keeps a Characters library in the Files app, and SVG and `.fmact` files open from Files. The iPad app is a beta you build yourself; it was built and run on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3.
 

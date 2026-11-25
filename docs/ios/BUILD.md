@@ -43,17 +43,17 @@ Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./form
    Result:
 3. A Starter Character and a Starter Scene: File > New from Starter Scene..., pick one, then add a Starter Character from View > Characters, Starter. Expected: a new untitled movie with the scene's background and props, and the character on the Stage at the playhead with its poster in the panel.
    Result:
-4. Wave then swap to Nod: apply Wave to the starter character at frame 0, select its strip on the Timeline and choose Nod. Expected: the strip reads Nod, the character nods in playback, and Undo brings Wave back with the same motion. Nothing flashes while the strip changes.
+4. Wave Hello then swap to Nod: apply Wave Hello to the starter character at frame 0, select its strip on the Timeline and choose Nod. Expected: the strip reads Nod, the character nods in playback, and Undo brings Wave Hello back with the same motion. Nothing flashes while the strip changes.
    Result:
 5. Lip-sync from Sound: put the speech sound on a track, then Lip-sync from Sound... and choose the character's mouth at the top of the list. Expected: the mouth changes shape while the voice speaks and rests outside it.
    Result:
-6. Update from Source...: apply Wave to the step 1 character first. Then change the color of one part of the step 1 SVG in a vector app and save it to Files. On the character's menu choose Update from Source... and pick the file again. Expected: the part has the new color and keeps its keys and its action. There is no automatic update on iPad, and no message about one.
+6. Update from Source...: apply Wave Hello to the step 1 character first. Then change the color of one part of the step 1 SVG in a vector app and save it to Files. On the character's menu choose Update from Source... and pick the file again. Expected: the part has the new color and keeps its keys and its action. There is no automatic update on iPad, and no message about one.
    Result:
 7. Draw on a Flipbook with Apple Pencil Pro: add a Flipbook, draw a few frames. Squeeze and double tap do what Settings > Apple Pencil (or Preferences) says, as in 0.23.0, and barrel roll turns a brush that follows the Pencil's angle. Expected: pressure and tilt shape the stroke, the squeeze palette or the chosen action appears, and the haptic plays.
    Result:
 8. Export MP4: export the movie from step 3 to 5 as MP4. Expected: the export finishes, plays in the Photos app or the Files app with the sound, and shows the character, its action and the lip-sync as on the Stage.
    Result:
-9. Action file from Files: on a character that has Wave, choose Export Action... from its action menu and pick Wave, then put the Wave.fmact file in the Files app. Select a different character, then open the file from Files (tap it, or long-press it, Share, FormMorpheus). Expected: Wave is added to that character. Then select nothing, or a block that is not a character, and open the file again. Expected: a notice in the window says "Select a character, then import the action onto it." and nothing is added.
+9. Action file from Files: on a character that has Wave Hello, choose Export Action... from its action menu and pick Wave Hello, then put the Wave Hello.fmact file in the Files app. Select a different character, then open the file from Files (tap it, or long-press it, Share, FormMorpheus). Expected: Wave Hello is added to that character. Then select nothing, or a block that is not a character, and open the file again. Expected: a notice in the window says "Select a character, then import the action onto it." and nothing is added.
    Result:
 
 ## Check on the iPad (0.23.0)
