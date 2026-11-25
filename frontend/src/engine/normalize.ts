@@ -3,6 +3,7 @@
 // file on disk stays as it was until the person saves. Pure, no DOM.
 import { ACTION_MAX_FRAMES, FORMAT_VERSION, type Movie } from './types';
 import { hasKind } from './keys';
+import { tidyGuides, type Guides } from './guides';
 import './fx/index'; // registers the effect lane kinds before lanes are checked
 
 type Obj = Record<string, unknown>;
@@ -214,6 +215,10 @@ export function normalizeMovie(raw: unknown): Movie {
   m.assets = isObj(m.assets) ? m.assets : {};
   if (isObj(m.camera)) { const cam: Obj = { ...m.camera }; laneSplit(cam); m.camera = cam; }
   else delete m.camera;
+  // a guide line's role comes from the file: only the floor is known
+  const guides = tidyGuides(isObj(m.guides) ? (m.guides as Guides) : null);
+  if (guides) m.guides = guides;
+  else delete m.guides;
   let last = 0;
   const walk = (ts: Obj[]): void => { for (const t of ts) for (const c of t.content as Obj[]) { last = Math.max(last, (c.start as number) + (c.duration as number)); walk(c.tracks as Obj[]); } };
   walk(m.tracks as Obj[]);

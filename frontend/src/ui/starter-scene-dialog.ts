@@ -11,16 +11,18 @@ import '../styles/starter-scenes.css';
 
 const THUMB_W = 320, THUMB_H = 180;
 
-const CARD = `<button class="fm-ss-card" type="button" role="listitem"><span class="fm-ss-thumb"><canvas width="${THUMB_W}" height="${THUMB_H}" aria-hidden="true"></canvas></span><span class="fm-ss-name"></span><span class="fm-ss-meta"></span></button>`;
+const CARD = `<button class="fm-ss-card" type="button"><span class="fm-ss-thumb"><canvas width="${THUMB_W}" height="${THUMB_H}" aria-hidden="true"></canvas></span><span class="fm-ss-name"></span><span class="fm-ss-meta"></span></button>`;
 
 export class StarterSceneDialog extends Dialog {
-  private readonly grid = el<HTMLElement>('<div class="fm-ss-grid" role="list"></div>');
+  private readonly grid = el<HTMLElement>('<div class="fm-ss-grid"></div>');
   private readonly empty = el<HTMLElement>('<p class="fm-ss-empty" hidden></p>');
   private scenes: SceneEntry[] | null = null;
+  private loading: Promise<void> | null = null;
   private busy: string | null = null;
   private readonly drawn = new Set<string>();
 
-  constructor(private readonly make: (entry: SceneEntry) => Promise<void>) {
+  /** `make` opens the scene and says whether it did; when the person stays with the current movie the dialog stays open. */
+  constructor(private readonly make: (entry: SceneEntry) => Promise<boolean>) {
     super('New from Starter Scene', 560);
     this.body.append(this.grid, this.empty);
     this.button('Cancel', 'ghost', () => this.close());
@@ -29,14 +31,23 @@ export class StarterSceneDialog extends Dialog {
       const entry = this.scenes?.find((s) => s.id === key);
       if (entry) void this.choose(entry);
     });
+    void this.load();
+  }
+
+  /** Reads the manifest and builds the cards while the dialog is hidden; a read that failed is tried again on the next show. */
+  private load(): Promise<void> {
+    if (this.scenes?.length) return Promise.resolve();
+    this.loading ??= readSceneManifest().then((list) => {
+      this.loading = null;
+      this.scenes = list;
+      this.paint();
+    });
+    return this.loading;
   }
 
   async show(): Promise<void> {
+    await this.load();
     this.open();
-    if (!this.scenes) {
-      this.scenes = await readSceneManifest();
-      this.paint();
-    } else this.paint();
   }
 
   private paint(): void {
@@ -60,10 +71,10 @@ export class StarterSceneDialog extends Dialog {
     setDisabled(n as HTMLButtonElement, this.busy !== null);
   }
 
-  /** The scene drawn small, every layer in its place; a layer that cannot be drawn is left out. */
+  /** The scene drawn small off screen, every layer in its place (one that cannot be drawn is left out), then shown in one copy. */
   private async thumb(s: SceneEntry): Promise<void> {
-    const cv = this.grid.querySelector<HTMLElement>(`[data-key="${CSS.escape(s.id)}"]`)?.querySelector('canvas');
-    const ctx = cv?.getContext('2d');
+    const off = new OffscreenCanvas(THUMB_W, THUMB_H);
+    const ctx = off.getContext('2d');
     if (!ctx) return;
     const k = Math.min(THUMB_W / s.width, THUMB_H / s.height);
     ctx.fillStyle = s.background;
@@ -78,6 +89,7 @@ export class StarterSceneDialog extends Dialog {
         });
       } catch { /* left out */ }
     }
+    this.grid.querySelector<HTMLElement>(`[data-key="${CSS.escape(s.id)}"]`)?.querySelector('canvas')?.getContext('2d')?.drawImage(off, 0, 0);
   }
 
   private async choose(entry: SceneEntry): Promise<void> {
@@ -85,8 +97,7 @@ export class StarterSceneDialog extends Dialog {
     this.busy = entry.id;
     this.paint();
     try {
-      await this.make(entry);
-      this.close();
+      if (await this.make(entry)) this.close();
     } catch (e) {
       toast(e instanceof Error ? e.message : t('The scene could not be opened.'), 'error');
     } finally {

@@ -97,7 +97,11 @@ export function tidyGuides(g: Guides | null | undefined): Guides | null {
   if (g.titleSafe) out.titleSafe = true;
   if (g.actionSafe) out.actionSafe = true;
   if (g.verticalSafe) out.verticalSafe = true;
-  const lines = (g.lines ?? []).filter((l) => (l.axis === 'x' || l.axis === 'y') && Number.isFinite(l.at)).slice(0, 200);
+  if (g.squareFrame) out.squareFrame = true;
+  if (g.portraitFrame) out.portraitFrame = true;
+  const lines = (Array.isArray(g.lines) ? g.lines : [])
+    .filter((l) => !!l && (l.axis === 'x' || l.axis === 'y') && Number.isFinite(l.at)).slice(0, 200)
+    .map((l): GuideLine => (l.role === 'floor' ? { axis: l.axis, at: l.at, role: 'floor' } : { axis: l.axis, at: l.at }));
   if (lines.length) out.lines = lines;
   if (g.snap === false) out.snap = false;
   if (g.hide) out.hide = true;

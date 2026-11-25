@@ -187,11 +187,12 @@ export function startApp(): void {
   const newMovie = new NewMovieDialog(engine);
   // like New: the movie opens unnamed and the library adopts it under a free "Untitled Movie" name
   const starterScenes = new StarterSceneDialog(async (entry) => {
-    const { movie, assets } = await buildSceneMovie(entry);
-    if (!(await askToKeep())) return;
-    await renderer.preload(assets, true);
-    engine.open(movie, null, assets);
+    const data = await buildSceneMovie(entry);
+    if (!(await askToKeep())) return false;
+    await prepareOpen(data);
+    engine.open(data.movie, null, data.assets);
     home.hide();
+    return true;
   });
   const createMenu = new CreateMenu(commands, CREATE_MORE);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
@@ -300,7 +301,7 @@ export function startApp(): void {
   };
 
   /** Everything the first picture needs (fonts, pictures, each visible video's first frame) is decoded while the old movie or Home stays shown; then the old movie's media is dropped. */
-  async function prepareOpen(data: Awaited<ReturnType<typeof unpackMovie>>): Promise<void> {
+  async function prepareOpen(data: Pick<Awaited<ReturnType<typeof unpackMovie>>, 'movie' | 'assets'>): Promise<void> {
     engine.stop();
     await registerFonts(data.movie, (id) => data.assets.get(id));
     await loadTextFonts(data.movie);

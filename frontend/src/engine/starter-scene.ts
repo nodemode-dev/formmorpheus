@@ -33,9 +33,9 @@ export function isSceneEntry(v: unknown): v is SceneEntry {
     && e.layers.every((l) => !!l && typeof l.name === 'string' && typeof l.file === 'string' && fin(l.x) && fin(l.y) && fin(l.scale));
 }
 
-/** How much larger than its own size a layer is drawn: twice for crispness when that still fits the movie, else its own size (whole steps keep its shape exact). */
-export function rasterScale(w: number, h: number, movieW: number, movieH: number): number {
-  return 2 * w <= Math.min(movieW, MAX_SIDE) && 2 * h <= Math.min(movieH, MAX_SIDE) ? 2 : 1;
+/** How much larger than its own size a layer is drawn: twice, so a camera zoom stays sharp, while that stays within the largest movie side; else its own size (whole steps keep its shape exact). */
+export function rasterScale(w: number, h: number, _movieW: number, _movieH: number): number {
+  return 2 * w <= MAX_SIDE && 2 * h <= MAX_SIDE ? 2 : 1;
 }
 
 /** The movie a scene opens as: one picture track per layer (the first layer at the bottom), the camera preset as its first key, the floor as a guide. */
@@ -65,11 +65,19 @@ export function sceneMovie(entry: SceneEntry, pics: ScenePicture[]): { movie: Mo
 /** A starter character's drawing size, where its feet rest in it, and the scale it takes in a scene. */
 export const STARTER_ART = { w: 1080, h: 1080, feet: 1012, scale: 0.5 };
 
-/** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size, mid-frame. */
+/** Where the n-th character stands across the frame, in steps of STEP (at 1920 wide): mid-frame, then right, left, further right, further left. */
+const SPOTS = [0, 1, -1, 2, -2];
+const STEP = 280;
+
+/** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size; each character already in the movie moves it one spot along so two never land on each other. */
 export function standOnFloor(group: Content, movie: Movie, floorY: number): Transform {
   const W = movie.width, H = movie.height;
   const s = STARTER_ART.scale / Math.min(1, W / STARTER_ART.w, H / STARTER_ART.h);
   const px = W / 2 + (group.pivot?.x ?? 0), py = H / 2 + (group.pivot?.y ?? 0);
-  const tx = W / 2, ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale;
+  let n = 0;
+  for (const t of movie.tracks) for (const c of t.content) if (c.character) n++;
+  const margin = Math.min(W / 2, (STARTER_ART.w * STARTER_ART.scale) / 4);
+  const tx = Math.min(W - margin, Math.max(margin, W / 2 + SPOTS[n % SPOTS.length] * STEP * (W / 1920)));
+  const ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale;
   return { ...group.transform, rotation: 0, scale: s, x: tx - px - s * (W / 2 - px), y: ty - py - s * (H / 2 - py) };
 }

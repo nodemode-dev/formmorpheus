@@ -114,6 +114,19 @@ Last updated: 2026-11-23 · the interface's test suite
 - **An action starts from each part's unkeyed rest pose.** Values are offsets from the part's transform and pivot as set, not from whatever keys the part shows at the span's first frame. For the release notes.
 - **Removed.** `mirrored(g, a)` returned false for anything but a starter action; it now takes the character only. The old `write` loop moved into `eachChannel`, shared with `seal`.
 
+## v0.25.0 · Starter scenes: review fixes
+
+- refers-to: app/app.ts :: starterScenes, prepareOpen; engine/starter-scene.ts :: rasterScale, standOnFloor, SPOTS, STEP; ui/starter-scene-dialog.ts :: StarterSceneDialog.load, show, thumb, choose; engine/guides.ts :: tidyGuides; engine/normalize.ts :: normalizeMovie
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Opening a scene is a normal open.** New from Starter Scene goes through `prepareOpen` like a library or file open, so playback stops, fonts and first frames are ready before the switch, and the previous movie's pictures, video, sound and fonts are let go. `prepareOpen` now takes only `movie` and `assets`, all it ever read. When the person stays with the current movie (`askToKeep` false) the dialog stays open; `make` answers whether it opened.
+- **Sharp under a zoom.** A scene layer is drawn at twice its own size whenever twice fits within `MAX_SIDE` on both sides (before: only when twice fitted the movie, so a 1920 x 1080 background was drawn at 1x and went soft under a camera zoom). A 1920 x 1080 background is 3840 x 2160, about 33 MB decoded; props are small. Whole steps only, as before.
+- **No empty-then-filled dialog.** The manifest is read when the dialog is made (at start-up), and `show` waits for it before opening, so the cards are there when it appears. A read that failed (an empty list) is tried again on the next show. Each thumbnail is drawn off screen into an `OffscreenCanvas` and copied to the card's canvas once all its layers are in. The second `paint()` after a first read is gone. The cards are plain buttons in a plain grid: the list roles are dropped (`role="listitem"` on a button hid it as a button).
+- **Spots along the floor.** `standOnFloor` counts the characters already in the movie's top-level tracks and moves the next one along: mid-frame, then 280 px right, 280 left, 560 right, 560 left (scaled by width / 1920), round again after five, clamped to a quarter of a starter's drawn width inside the frame. Feet stay on the floor.
+- **Guide roles.** `tidyGuides` writes each line as `{axis, at}` and keeps `role` only when it is `'floor'`; it also keeps `squareFrame` and `portraitFrame`, which it dropped (the 1:1 and 4:5 frame switches did not stay on). `normalizeMovie` now tidies `guides` on load, so a file's line roles are checked on open like the rest of the movie.
+- **Scene layers are pictures (removed plan).** The DEV_PLAN said starter scenes would reuse the SVG importer. They do not: each layer is rasterized into a picture block. The backgrounds use linear and radial gradients in `defs` and soft shadows, which the part importer does not keep, and the props are scenery, not rigged parts, so there is nothing to pose. A person edits one by opening the layer's SVG in their vector app (or bringing it in as a character, when it should move in parts) and putting the result in with Replace the picture or video....
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
