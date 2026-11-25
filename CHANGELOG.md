@@ -2,6 +2,18 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.28.0 · 2026-11-25
+
+Thirteen more starter characters, ready to add or to change in the Character Builder.
+
+### New
+- Starter characters Maya, Ingrid, Zuri, Mei, Rosa, Leo, Karl, Arjun, Finn, Otto, Bolt (a robot), Zib (a visitor from space) and Moss (a friendly monster) join Kofi, Ines, Marisol, Bram and Noor in View, Characters. Each row shows the character's figure and what they are (The optimist, The executive, ...). Add to Movie, a drag onto the Stage or the Timeline, and a starter scene's floor and spots work for them as for the drawn starters.
+- Open in Character Builder on their row starts the builder from that character. A placed one opens in the builder from its menu too.
+
+### Fixed
+- Update from Source on a character made in the Character Builder drops its recipe, so the builder no longer offers to paint the recipe over the parts from your file.
+- In the Character Builder, Ctrl+Z no longer mixes two looks, a colour change redraws only its own picture, the dialog fits a window 560 tall, and the note after Add to Movie names the character added.
+
 ## 0.27.0 · 2026-11-25
 
 The Character Builder: make a character by choosing, not drawing.
