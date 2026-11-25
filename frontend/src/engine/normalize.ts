@@ -119,6 +119,25 @@ function character(c: Obj, kind: string): void {
   if (isObj(ch.parts)) for (const [k, v] of Object.entries(ch.parts)) if (typeof v === 'string' && v) parts[k] = v;
   ch.parts = parts;
   if (typeof ch.mouth !== 'string' || !ch.mouth) delete ch.mouth;
+  characterDef(ch);
+}
+
+/** A character saved before actions existed reads as one with none; malformed actions and spans are dropped. */
+function characterDef(ch: Obj): void {
+  ch.actions = arr(ch.actions).filter(isObj).filter((a) => typeof a.id === 'string' && a.id !== '').map((a) => {
+    a.name = str(a.name, 'Action');
+    a.length = Math.max(1, Math.round(num(a.length, 1)));
+    a.loop = bool(a.loop, false);
+    a.lanes = arr(a.lanes).filter(isObj).filter((l) => typeof l.part === 'string').map((l) => { l.keys = arr(l.keys).map(lane).filter((k): k is Obj => k !== null); return l; });
+    if (a.fps !== undefined) a.fps = Math.max(1, num(a.fps, 24));
+    return a;
+  });
+  if (ch.acts === undefined) return;
+  ch.acts = arr(ch.acts).filter(isObj).filter((s) => typeof s.action === 'string').map((s) => {
+    s.from = Math.round(num(s.from, 0));
+    s.to = Math.max(s.from as number, Math.round(num(s.to, s.from as number)));
+    return s;
+  });
 }
 
 /** Shape and Solid always carry a valid outline; an Adjustment's mask is optional; other kinds drop a stray one. */

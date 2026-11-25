@@ -140,6 +140,22 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
 - **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
 
+## v0.25.0 · actions: the model and the engine ops
+
+- refers-to: engine/types.ts :: ActionDef, ActSpan, CharacterInfo.actions, CharacterInfo.acts; engine/normalize.ts :: characterDef; engine/action-ops.ts (new)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Values are relative to each part's rest.** An action is reused on characters drawn at other places and sizes, so Move keys are stored as offsets: x, y, rotation, px and py are added to the part's transform (and pivot), scaleX and scaleY multiply its scale. Bone channels are degrees from rest already and apply only to a part whose rig has a bone of that id. Other lane kinds are not carried. Applying turns them into the same absolute keys the Keyframe mode writes, on the same `move` and `bones` lanes, so the Graph, the key drag and Perform see ordinary keys.
+- **`fps` on ActionDef.** Not in the plan's shape: an action made at 24 fps and applied to a 30 fps movie would otherwise play faster. `atRate` spaces the key frames by the ratio and rounds; a loop's first and last key both scale exactly, so it still closes. Absent means the movie's own rate. A saved action records its movie's rate.
+- **Spans count the frames the character's tracks see** (`srcFrame` of the group), not movie frames and not block frames, because that is where the parts' keys live: moving or trimming the block leaves span and keys together. A part's key frame is that frame minus the part's `start`, through any group between the character and the part. `to` is inclusive. `charFrame` turns the Playhead into it; `blockFrame` turns it back for drawing (a Time Remap lane on the character is not inverted).
+- **Keys outside the span are never touched.** Applying clears the span on the channels the action keys and on the channels of any span it lands on, then writes. A span it lands on keeps only what lies outside it (cut to one or two pieces). Clearing keeps keys at frames inside the other spans, so two spans that touch at one frame do not take each other's shared key.
+- **Repeats** apply to loops only; each pass's first key replaces the last pass's closing key, so the ease that leaves it is the action's own first ease.
+- **Keys past the part's block** are dropped; a part block shorter than the action shows the part of it that fits.
+- **Saving** (`actionFromKeys`) takes every Move and Bones channel with a key in the range, adds keys at both ends at the values shown there, and marks the action a loop when every channel ends where it starts. It does not place a span; the keys it came from stay plain keys.
+- **Removing an action** drops its spans; their keys stay as plain keys.
+- **Old files.** A character saved without `actions` is given `[]` on load in `normalize.ts`, so the field is required in the type and no code reads it with a fallback.
+
 ## v0.24.0 · the interface's test suite
 
 - refers-to: vitest.config.ts (new); tests/unit/** (new); tests/unit/_support/* (new); tests/unit/version.test.ts (new); package.json :: scripts.test, devDependencies; ../setup/test (new); ../docs/TESTING.md (new)

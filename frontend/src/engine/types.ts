@@ -298,6 +298,32 @@ export interface CharacterInfo {
   parts: Record<string, string>;
   /** Id of the inner Flipbook that is the mouth chart (lip-sync target). Absent: none. */
   mouth?: string;
+  /** The character's own actions (engine/action-ops.ts). A file saved without them reads as none. */
+  actions: ActionDef[];
+  /** Where actions sit on the character's block. Absent: none. */
+  acts?: ActSpan[];
+}
+
+/**
+ * A named, reusable motion over part names. Key frames count from 0. Move values are relative to each part's rest:
+ * x, y, rotation, px and py are added to it, scaleX and scaleY multiply it; bone channels apply only to a part whose rig has that bone.
+ */
+export interface ActionDef {
+  id: string;
+  name: string;
+  /** Frames of one pass (a loop's last key, at `length`, equals its first). */
+  length: number;
+  loop: boolean;
+  lanes: { part: string; keys: KeyLane[] }[];
+  /** The frame rate its frames count at; applied to a movie at another rate the keys are spaced to keep its speed. Absent: the movie's. */
+  fps?: number;
+}
+
+/** An action placed on a character: `from` and `to` (inclusive) count the frames the character's own tracks see. */
+export interface ActSpan {
+  action: string;
+  from: number;
+  to: number;
 }
 
 export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';
