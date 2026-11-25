@@ -12,6 +12,7 @@ import { ApiError } from '../io/api';
 import { charactersApi, freeName, type CharacterItem } from '../io/characters-api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { svgToCharacterGroup, svgToMouthChart } from '../io/svg-import';
+import { platform } from '../platform';
 import { PERSON_SVG } from './character-glyph';
 import { chooseOrCancel, confirmAction, promptName } from './dialogs';
 import { el, patchList, q, setClass, setDisabled, setHidden, setText } from './dom';
@@ -340,5 +341,24 @@ export class CharactersPanel {
       toast(e instanceof Error ? e.message : t('The character could not be saved.'), 'error');
     }
     if (this.isOpen) await this.refresh();
+  }
+
+  /** Use as Mouth Chart: a mouth chart SVG the person picks becomes the character's mouth, in one undo step. */
+  async useMouthChart(g: Content): Promise<void> {
+    const m = this.engine.movie;
+    if (!m || !g.character) return;
+    const [file] = await platform.files.pick({ accept: '.svg,image/svg+xml' });
+    if (!file) return;
+    let chart: Awaited<ReturnType<typeof svgToMouthChart>>;
+    try { chart = await svgToMouthChart(await file.text(), m, 0, file.name); } catch (e) { toast(e instanceof Error ? e.message : t('This SVG file could not be read.'), 'error'); return; }
+    const table: Record<string, Asset> = {};
+    const pics = new Map<string, Blob>();
+    for (const { asset, blob } of chart.assets) {
+      table[asset.id] = asset;
+      if (!this.engine.assets.has(asset.id)) this.engine.assets.set(asset.id, blob);
+      pics.set(asset.id, blob);
+    }
+    await this.deps.renderer.preload(pics);
+    this.engine.run('Use as Mouth Chart', (mv) => ({ movie: attachMouthChart({ ...mv, assets: { ...mv.assets, ...table } }, g.id, chart.content), select: [g.id] }));
   }
 }

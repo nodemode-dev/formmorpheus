@@ -61,6 +61,7 @@ export class ContentMenu {
   private readonly ungroup: PopRow;
   private readonly makeChar: PopRow;
   private readonly saveChar: PopRow;
+  private readonly mouthChar: PopRow;
   private readonly flipOrder: PopRow;
   private readonly del: PopRow;
   private readonly track: TrackMenu;
@@ -210,6 +211,8 @@ export class ContentMenu {
     this.makeChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.make' })); });
     this.saveChar = popRow('character', 'Save to Characters');
     this.saveChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.save' })); });
+    this.mouthChar = popRow('character', 'Use as Mouth Chart...');
+    this.mouthChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.mouth' })); });
     this.flipOrder = popRow(null, 'Flip Content');
     this.flipOrder.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'flip-order' })); });
     const trackRow = popRow('track', 'Track options', { sub: true });
@@ -253,7 +256,7 @@ export class ContentMenu {
     const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
       sTransform, sTime, sConvert, sMore, popSep(),
-      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, trackRow.el, popSep(), this.del.el);
+      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, trackRow.el, popSep(), this.del.el);
   }
 
   private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
@@ -399,6 +402,7 @@ export class ContentMenu {
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     setClass(this.makeChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group'));
     setClass(this.saveChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group' && !!first.character));
+    setClass(this.mouthChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group' && !!first.character));
     this.del.setDisabled(none);
     this.syncSections();
   }

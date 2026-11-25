@@ -41,6 +41,11 @@ export function characterCommands(engine: Engine, panel: CharactersPanel): Comma
       run: () => { const g = selectedCharacter(engine); if (g) void panel.save(g); },
     },
     {
+      id: 'character.mouth', label: 'Use as Mouth Chart...', icon: 'character', mutates: true, enabled: () => !!selectedCharacter(engine),
+      group: 'Content', description: 'Picks a mouth chart SVG (a group per mouth shape) and makes it the selected character\'s mouth, ready for Lip-sync from Sound.',
+      run: () => { const g = selectedCharacter(engine); if (g) void panel.useMouthChart(g); },
+    },
+    {
       id: 'character.make', label: 'Make Character...', icon: 'character', mutates: true, enabled: () => !!selectedGroup(engine),
       group: 'Content', description: 'Makes the selected group a character: its inner contents become named parts, and a mouth chart Flipbook among them becomes its mouth.',
       when: 'Use when a group of body parts should be animated, saved and lip-synced as one character.',
