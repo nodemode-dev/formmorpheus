@@ -865,6 +865,7 @@ export const nb: Record<string, string> = {
   'Use as Mouth Chart': "Bruk som munnskjema",
   'Walk in place': "Gå på stedet",
   'Wave Hello': "Vinke hei",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Skrevet uten grafikken sin: {names}.",
   'a clipping path': "en utklippsbane",
   'a complex style rule': "en kompleks stilregel",

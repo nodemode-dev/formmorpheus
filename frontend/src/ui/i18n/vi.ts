@@ -878,6 +878,7 @@ export const vi: Record<string, string> = {
   "Use as Mouth Chart": "Dùng làm bảng hình miệng",
   "Walk in place": "Đi tại chỗ",
   "Wave Hello": "Vẫy tay chào",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Đã ghi mà không có hình của chúng: {names}.",
   "a clipping path": "đường cắt xén",
   "a complex style rule": "quy tắc kiểu phức tạp",

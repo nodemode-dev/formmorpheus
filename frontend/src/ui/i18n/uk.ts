@@ -702,6 +702,7 @@ export const uk: Record<string, string> = {
   "Use as Mouth Chart": "Використати як таблицю ротів",
   "Walk in place": "Йти на місці",
   "Wave Hello": "Помахати рукою",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Записано без малюнка: {names}.",
   "a clipping path": "обтравлювальний контур",
   "a complex style rule": "складне правило стилю",

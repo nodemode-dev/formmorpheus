@@ -1,8 +1,10 @@
-// Action files: `[name].fmact`, a small JSON document `{format: 1, action: ActionDef}`. Read is checked field by field
+// Action files: `[name].fmact`, a small JSON document `{format: 1, action: ActionDef}` (blend and mouth optional). Read is checked field by field
 // and refused past 1 MB, so a stray file never reaches the movie half-formed.
 import { ACTION_MAX_FRAMES, EASES, type ActionDef, type Ease, type Key, type KeyLane } from '../engine/types';
+import { VISEMES, type Viseme } from '../media/lipsync';
 
 const EASE_IDS = new Set<string>([...EASES.map((e) => e.id), 'custom']);
+const SHAPES = new Set<string>(VISEMES);
 
 export const FMACT_FORMAT = 1;
 export const FMACT_MAX_BYTES = 1024 * 1024;
@@ -66,6 +68,17 @@ export function parseFmact(text: string): ActionDef {
   if (!lanes.length) bad();
   const def: ActionDef = { id: typeof a.id === 'string' ? a.id : 'act', name: a.name.trim().slice(0, 120) || 'Action', length, loop: a.loop, lanes };
   if (num(a.fps) && a.fps > 0) def.fps = Math.min(240, Math.max(1, a.fps));
+  // optional and new in 0.30.0: a file without it reads as before, and an older reader passes it by
+  const blend = def.loop && num(a.blend) ? Math.min(Math.floor(length / 2), Math.round(a.blend)) : 0;
+  if (blend >= 1) def.blend = blend;
+  if (Array.isArray(a.mouth)) {
+    const mouth = a.mouth
+      .filter((m): m is Obj => isObj(m) && num(m.frame) && typeof m.shape === 'string' && SHAPES.has(m.shape))
+      .map((m) => ({ frame: Math.round(m.frame as number), shape: m.shape as Viseme }))
+      .filter((m) => m.frame >= 0 && m.frame <= length)
+      .sort((p, q) => p.frame - q.frame);
+    if (mouth.length) def.mouth = mouth;
+  }
   return def;
 }
 

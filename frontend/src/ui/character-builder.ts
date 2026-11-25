@@ -301,7 +301,6 @@ export class CharacterBuilder {
       hg.appendChild(tile.btn);
       this.hairTiles.push(tile);
     }
-    // in the grid's last row beside the last tile, so showing it moves nothing
     this.hairNote = el<HTMLElement>('<p class="fm-cb-note" hidden></p>');
     this.hairNote.style.gridColumn = `span ${4 - ((HAIRS.length + 1) % 4 || 4) || 4}`;
     hg.appendChild(this.hairNote);

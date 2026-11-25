@@ -702,6 +702,7 @@ export const cs: Record<string, string> = {
   "Use as Mouth Chart": "Použít jako tabulku úst",
   "Walk in place": "Chůze na místě",
   "Wave Hello": "Mávnutí na pozdrav",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Zapsáno bez jejich grafiky: {names}.",
   "a clipping path": "ořezová cesta",
   "a complex style rule": "složité pravidlo stylu",

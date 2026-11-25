@@ -883,6 +883,7 @@ export const id: Record<string, string> = {
   "Use as Mouth Chart": "Gunakan sebagai bagan mulut",
   "Walk in place": "Jalan di tempat",
   "Wave Hello": "Melambai",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Ditulis tanpa gambarnya: {names}.",
   "a clipping path": "jalur kliping",
   "a complex style rule": "aturan gaya yang kompleks",

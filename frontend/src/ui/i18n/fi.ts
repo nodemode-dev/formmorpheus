@@ -865,6 +865,7 @@ export const fi: Record<string, string> = {
   'Use as Mouth Chart': "Käytä suukaaviona",
   'Walk in place': "Kävele paikallaan",
   'Wave Hello': "Vilkuta",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Kirjoitettu ilman niiden grafiikkaa: {names}.",
   'a clipping path': "leikkauspolku",
   'a complex style rule': "monimutkainen tyylisääntö",

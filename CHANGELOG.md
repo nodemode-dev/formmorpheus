@@ -2,6 +2,19 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.30.0 · 2026-11-25
+
+Characters made in the Character Builder move the way they were designed to, and four new starter actions.
+
+### New
+- Starter actions Run, Dance, Talk and Cheer. Talk moves the head, brows and a hand and steps the mouth through its shapes; Run, Dance, Cheer, Wave Hello and Jump open the mouth too.
+- On a character made in the Character Builder, the starter actions use its forearms, shins, feet, eyes, brows, hair and shadow: Idle breathes and blinks, Walk in place lifts each leg, Wave Hello waves from the elbow and wrist, Jump crouches and reaches. A fox's or dino's tail swings with the hips. Sit lowers the character with its feet on the floor, and Nod, Shake head and Point move the head and arms once.
+- Looping actions (Idle, Run, Dance, Cheer) ease in from the rest pose at the start of their span and back out at the end.
+- An action's ease and its mouth shapes travel with it through Export Action, Import Action and Save as Action.
+
+### Improved
+- The starter actions on Kofi, Ines, Marisol, Bram and Noor and on your own SVG characters are unchanged, and a starter no longer notes a part such as a forearm or hair that a character does not have.
+
 ## 0.29.0 · 2026-11-25
 
 Eight new starter characters and the pieces they wear, for 26 starters in all.

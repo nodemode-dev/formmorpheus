@@ -952,6 +952,7 @@ export const ptBR: Record<string, string> = {
   'Use as Mouth Chart': "Usar como tabela de bocas",
   'Walk in place': "Andar no lugar",
   'Wave Hello': "Acenar",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Gravadas sem o desenho: {names}.",
   'a clipping path': "um traçado de recorte",
   'a complex style rule': "uma regra de estilo complexa",

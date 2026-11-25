@@ -882,6 +882,7 @@ export const hi: Record<string, string> = {
   "Use as Mouth Chart": "माउथ चार्ट के रूप में उपयोग करें",
   "Walk in place": "जगह पर चलना",
   "Wave Hello": "हाथ हिलाकर नमस्ते",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "उनकी आर्ट के बिना लिखे गए: {names}।",
   "a clipping path": "क्लिपिंग पाथ",
   "a complex style rule": "जटिल स्टाइल नियम",

@@ -9,7 +9,9 @@ import { OpError } from './ops';
 import { srcFrame } from './retime';
 import { bounds, outline, shapeBase } from './shape';
 import { findContent, levelFrameOf } from './transform';
-import { BUILTIN_ACTIONS } from './actions-builtin';
+import { BUILTIN_ACTIONS, builtinFor } from './actions-builtin';
+import { applyLipsync, guessMapping, looksLikeMouth } from './lipsync-ops';
+import type { Viseme } from '../media/lipsync';
 
 /** The kinds of lane an action carries. */
 const KINDS: ReadonlySet<KeyKind> = new Set<KeyKind>(['move', 'bones']);
@@ -19,6 +21,9 @@ const PIXELS = new Set(['x', 'y', 'px', 'py']);
 /** The starter actions' pixel values are drawn for a leg this long from hip to sole, or a figure this tall. */
 const REF_LEG = 344;
 const REF_HEIGHT = 900;
+const SOLE = ['shin-r', 'foot-r'];
+/** Parts a built character may lack (CAST_CONTRACT): a starter moving them says nothing when they are missing. */
+const OPTIONAL = new Set(['hip', 'forearm-l', 'forearm-r', 'shin-l', 'shin-r', 'foot-l', 'foot-r', 'hand-l', 'hand-r', 'eyes', 'brows', 'hair-sway', 'shadow', 'tail']);
 
 export interface ActResult { movie: Movie; skipped: string[] }
 
@@ -50,7 +55,7 @@ export function characterOf(movie: Movie, id: string): Content & { character: Ch
 /** The character's own action with this id, else a built-in one. */
 export function findAction(ch: CharacterInfo, id: string): ActionDef | null {
   for (let i = 0; i < ch.actions.length; i++) if (ch.actions[i].id === id) return ch.actions[i];
-  for (let i = 0; i < BUILTIN_ACTIONS.length; i++) if (BUILTIN_ACTIONS[i].id === id) return BUILTIN_ACTIONS[i];
+  for (let i = 0; i < BUILTIN_ACTIONS.length; i++) if (BUILTIN_ACTIONS[i].id === id) return builtinFor(BUILTIN_ACTIONS[i], ch.parts);
   return null;
 }
 
@@ -126,7 +131,9 @@ function atRate(a: ActionDef, fps: number): ActionDef {
       return { ...k, channels };
     }),
   }));
-  return { ...a, length: Math.max(1, Math.round(a.length * r)), lanes, fps };
+  const mouth = a.mouth?.map((m) => ({ ...m, frame: Math.round(m.frame * r) }));
+  const blend = a.blend ? Math.max(1, Math.round(a.blend * r)) : 0;
+  return { ...a, length: Math.max(1, Math.round(a.length * r)), lanes, fps, ...(mouth ? { mouth } : {}), ...(blend ? { blend } : {}) };
 }
 
 /** Lane kind and channel ids each part of an action keys; null for an action no longer known (everything it could key). */
@@ -273,6 +280,8 @@ function reach(c: Content, h: number, out: { lo: number; hi: number } | null = n
 function sizeOf(g: Content, h: number): number {
   const leg = partRef(g, 'leg-r');
   const lr = leg?.c.pivot ? reach(leg.c, h) : null;
+  // a leg in two parts and a foot (a built character): the sole is the lowest of them
+  for (const name of SOLE) { const p = lr ? partRef(g, name) : null; const r = p ? reach(p.c, h) : null; if (lr && r) lr.hi = Math.max(lr.hi, r.hi); }
   if (leg && lr && leg.c.pivot) {
     const len = (lr.hi - leg.c.pivot.y) * Math.abs(leg.c.transform.scale);
     if (len > 1) return Math.min(20, Math.max(0.05, len / REF_LEG));
@@ -323,9 +332,30 @@ function write(g: Content, a: ActionDef, from: number, reps: number, fit: Fit, l
         at.set(f, { ...key, frame: f, value: absolute(p.c, kind, id, key.value, fit) });
       }
     }
+    if (a.loop && a.blend) blendEnds(at, p, a, kind, id, src, from, Math.min(from + reps * a.length, limit), fit);
     return putChannel(pc, kind, id, [...at.values()].sort((x, y) => x.frame - y.frame));
   });
   return { g: out, skipped };
+}
+
+/** The channel's value at rest, as an action counts it. */
+const restValue = (kind: KeyKind, id: string): number => (kind === 'move' && SCALES.has(id) ? 1 : 0);
+
+/**
+ * A loop whose first pose is not the rest pose: the span's first `blend` frames ease from rest into the loop as it
+ * runs there, and its last `blend` frames ease back to rest, so nothing snaps or stays raised. Too short a span is left as is.
+ */
+function blendEnds(at: Map<number, Key>, p: PartRef, a: ActionDef, kind: KeyKind, id: string, src: Key[], from: number, end: number, fit: Fit): void {
+  const b = a.blend ?? 0;
+  if (end - from < 2 * b + 2) return;
+  const lo = keyFrame(p, from), hi = keyFrame(p, end), inA = keyFrame(p, from + b), outA = keyFrame(p, end - b);
+  for (const f of [...at.keys()]) if ((f > lo && f < inA) || (f > outA && f < hi)) at.delete(f);
+  const rest = restValue(kind, id);
+  const put = (f: number, k: Key): void => { if (f >= 0 && f <= p.c.duration - 1) at.set(f, { ...k, frame: f, value: absolute(p.c, kind, id, k.value, fit) }); };
+  put(lo, { frame: 0, value: rest, ease: 'inout' });
+  put(inA, keyAt(src, b % a.length));
+  put(outA, { frame: 0, value: keyAt(src, (end - b - from) % a.length).value, ease: 'inout' });
+  put(hi, { frame: 0, value: rest, ease: 'inout' });
 }
 
 /** The action's key at frame `t` of a pass: its own key there, else the value shown there with the ease that runs on. */
@@ -353,15 +383,59 @@ function seal(g: Content, spans: readonly ActSpan[], frames: readonly number[], 
       const m = local % a.length;
       const t = !a.loop ? Math.min(local, a.length) : !head && m === 0 && local > 0 ? a.length : m;
       const fit = fitFor(out, a, h);
+      // a blended loop rests where it truly starts and wherever it ends
+      const rests = !!(a.loop && a.blend) && (!head || s.start === undefined);
       out = eachChannel(out, a, null, (pc, p, part, kind, id, src) => {
         if (!head && starts.some((o) => moves(o, part, kind, id))) return pc;
         const k = keyAt(src, t), at = keyFrame(p, f);
         if (at < 0 || at > pc.duration - 1) return pc;
-        return putChannel(pc, kind, id, [{ ...k, frame: at, value: absolute(p.c, kind, id, k.value, fit) }]);
+        const v = rests ? restValue(kind, id) : k.value;
+        return putChannel(pc, kind, id, [{ ...k, frame: at, value: absolute(p.c, kind, id, v, fit) }]);
       });
     }
   }
   return out;
+}
+
+/** A part named mouth that is a mouth chart: the row lip-sync shows (the top row shown) and the row of its drawings. */
+function mouthChart(g: Content): { p: PartRef; row: number; chart: number } | null {
+  const p = partRef(g, 'mouth');
+  if (!p || p.c.kind !== 'flipbook' || !p.c.flip?.length) return null;
+  const rows = p.c.flip;
+  const row = Math.max(0, rows.findIndex((r) => !r.hidden));
+  const kept = rows.findIndex((r, i) => i !== row && r.hidden && looksLikeMouth(r));
+  const chart = kept >= 0 ? kept : row;
+  return looksLikeMouth(rows[chart]) ? { p, row, chart } : null;
+}
+
+/**
+ * Writes the action's mouth shapes over `from` up to `to` (frames of the character's tracks) into its mouth chart the way
+ * lip-sync does, a loop's passes repeated; with no action the span shows Rest. Any other mouth is left alone.
+ */
+function speak(movie: Movie, g: Content, a: ActionDef | null, from: number, to: number): Content {
+  const m = mouthChart(g);
+  if (!m) return g;
+  const p = m.p, at = keyFrame(p, from);
+  const lo = Math.max(0, at), hi = Math.min(p.c.duration, keyFrame(p, to));
+  if (hi <= lo) return g;
+  const say = a?.mouth ?? [];
+  const shapes: Viseme[] = [];
+  for (let f = lo; f < hi; f++) {
+    const t = !a ? 0 : a.loop ? (f - at) % a.length : Math.min(f - at, a.length);
+    let s: Viseme = 'rest';
+    for (const k of say) { if (k.frame <= t) s = k.shape; else break; }
+    shapes.push(s);
+  }
+  const host = p.chain.length ? p.chain[p.chain.length - 1] : g;
+  try {
+    const out = applyLipsync({ ...movie, tracks: host.tracks }, {
+      content: p.c.id, row: m.row, chartRow: m.chart === m.row ? -1 : m.chart, from: lo + p.c.start, shapes, map: guessMapping(p.c.flip[m.chart]),
+    });
+    return host === g ? { ...g, tracks: out.tracks } : { ...g, tracks: mapDeep(g.tracks, host.id, (x) => ({ ...x, tracks: out.tracks })) };
+  } catch (e) {
+    if (e instanceof OpError) return g;
+    throw e;
+  }
 }
 
 /**
@@ -395,7 +469,11 @@ export function applyAction(movie: Movie, charId: string, actionId: string, at: 
   kept.push({ action: def.id, from, to });
   kept.sort((p, q) => p.from - q.from);
   const sealed = seal(written, kept, [from, to], movie.height, movie.fps);
-  return { movie: put(movie, withChar(sealed, { acts: kept })), skipped };
+  // a mouth an earlier action set inside the span goes back to Rest unless this one sets it
+  const spoke = a.mouth || acts.some((s) => hit(s) && findAction(ch, s.action)?.mouth);
+  const said = spoke ? speak(movie, sealed, a.mouth ? a : null, from, to) : sealed;
+  // a built character without hair or a shadow is complete, so its optional parts are never named
+  return { movie: put(movie, withChar(said, { acts: kept })), skipped: def.id.startsWith('builtin:') ? skipped.filter((n) => !OPTIONAL.has(n)) : skipped };
 }
 
 /** Removes the keys of one placed action (inside its span, on the parts and channels it moves) and the span. */
@@ -408,7 +486,8 @@ export function clearAction(movie: Movie, charId: string, spanIndex: number): Mo
   const others = acts.filter((_, i) => i !== spanIndex);
   const cleared = clearRange(g, owned(findAction(ch, s.action), ch), s.from, s.to, others);
   const sealed = seal(cleared, others, [s.from, s.to], movie.height, movie.fps);
-  return put(movie, withChar(sealed, { acts: others }));
+  const said = findAction(ch, s.action)?.mouth ? speak(movie, sealed, null, s.from, s.to) : sealed;
+  return put(movie, withChar(said, { acts: others }));
 }
 
 /** Puts another action over a placed one: its keys go, the new action fills the same span and never runs past it. */
@@ -468,6 +547,21 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   }
   if (!lanes.length) throw new OpError('The character has no keys between those frames.');
   const action: ActionDef = { id: uid('act'), name: name.trim() || 'Action', length, loop, lanes, fps: movie.fps };
+  // saved from inside one placed span of a blended loop: it keeps easing in and out where it is placed
+  const span = (g.character.acts ?? []).find((s) => s.from <= lo && hi <= s.to);
+  const src = span ? findAction(g.character, span.action) : null;
+  if (loop && src?.loop && src.blend) action.blend = atRate(src, movie.fps).blend;
+  // and the mouth shapes that span set over the range, as runs from the range's first frame
+  if (span && src?.mouth?.length) {
+    const a = atRate(src, movie.fps), say = a.mouth ?? [], first = span.start ?? span.from, mouth: NonNullable<ActionDef['mouth']> = [];
+    for (let f = 0; f <= length; f++) {
+      const local = lo + f - first, t = a.loop ? local % a.length : Math.min(local, a.length);
+      let s: Viseme = 'rest';
+      for (const k of say) { if (k.frame <= t) s = k.shape; else break; }
+      if (!mouth.length || mouth[mouth.length - 1].shape !== s) mouth.push({ frame: f, shape: s });
+    }
+    action.mouth = mouth;
+  }
   return { movie: put(movie, withChar(g, { actions: [...g.character.actions, action] })), action };
 }
 

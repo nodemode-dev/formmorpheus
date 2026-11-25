@@ -807,6 +807,7 @@ export const tr: Record<string, string> = {
   "Use as Mouth Chart": "Ağız Tablosu Olarak Kullan",
   "Walk in place": "Yerinde yürüme",
   "Wave Hello": "El sallama",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Çizimleri olmadan yazıldı: {names}.",
   "a clipping path": "bir kırpma yolu",
   "a complex style rule": "karmaşık bir stil kuralı",

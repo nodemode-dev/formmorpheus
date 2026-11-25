@@ -703,6 +703,7 @@ export const ru: Record<string, string> = {
   "Use as Mouth Chart": "Использовать как таблицу ртов",
   "Walk in place": "Идти на месте",
   "Wave Hello": "Помахать рукой",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Записаны без рисунка: {names}.",
   "a clipping path": "обтравочный контур",
   "a complex style rule": "сложное правило стиля",

@@ -335,6 +335,10 @@ export interface ActionDef {
   lanes: { part: string; keys: KeyLane[] }[];
   /** The frame rate its frames count at; applied to a movie at another rate the keys are spaced to keep its speed. Absent: the movie's. */
   fps?: number;
+  /** Mouth shapes for a part named mouth that is a mouth chart: each holds from its frame to the next. Absent: the mouth is left alone. */
+  mouth?: { frame: number; shape: import('../media/lipsync').Viseme }[];
+  /** A loop only: frames over which a placed span eases in from the rest pose at its start and back to rest at its end. */
+  blend?: number;
 }
 
 /** The longest action a file or a movie may carry, in frames (ten minutes at 24 fps). */

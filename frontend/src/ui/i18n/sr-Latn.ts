@@ -702,6 +702,7 @@ export const srLatn: Record<string, string> = {
   "Use as Mouth Chart": "Koristi kao tabelu usta",
   "Walk in place": "Hodaj u mestu",
   "Wave Hello": "Mahni u pozdrav",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Upisano bez crteža: {names}.",
   "a clipping path": "putanju isecanja",
   "a complex style rule": "složeno pravilo stila",

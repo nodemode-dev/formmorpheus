@@ -807,6 +807,7 @@ export const el: Record<string, string> = {
   "Use as Mouth Chart": "Χρήση ως πίνακα στόματος",
   "Walk in place": "Περπάτημα στη θέση του",
   "Wave Hello": "Χαιρετισμός με το χέρι",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Γράφτηκαν χωρίς το σχέδιό τους: {names}.",
   "a clipping path": "μια διαδρομή αποκοπής",
   "a complex style rule": "έναν σύνθετο κανόνα στυλ",

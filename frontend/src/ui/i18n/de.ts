@@ -865,6 +865,7 @@ export const de: Record<string, string> = {
   'Use as Mouth Chart': "Als Mundtafel verwenden",
   'Walk in place': "Auf der Stelle gehen",
   'Wave Hello': "Hallo winken",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Ohne ihre Grafik geschrieben: {names}.",
   'a clipping path': "einen Beschneidungspfad",
   'a complex style rule': "eine komplexe Stilregel",

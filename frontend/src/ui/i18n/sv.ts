@@ -793,6 +793,7 @@ export const sv: Record<string, string> = {
   "Use as Mouth Chart": "Använd som munschema",
   "Walk in place": "Gå på stället",
   "Wave Hello": "Vinka",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Skrivna utan sin grafik: {names}.",
   "a clipping path": "en beskärningsbana",
   "a complex style rule": "en komplex stilregel",
