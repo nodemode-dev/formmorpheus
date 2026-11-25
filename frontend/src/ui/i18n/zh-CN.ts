@@ -878,6 +878,7 @@ export const zhCN: Record<string, string> = {
   "Use as Mouth Chart": "用作口型图",
   "Walk in place": "原地行走",
   "Wave Hello": "挥手问好",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "已写入但不含图稿：{names}。",
   "a clipping path": "剪贴路径",
   "a complex style rule": "复杂的样式规则",

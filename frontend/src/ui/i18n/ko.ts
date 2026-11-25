@@ -878,6 +878,7 @@ export const ko: Record<string, string> = {
   "Use as Mouth Chart": "입 차트로 사용",
   "Walk in place": "제자리 걷기",
   "Wave Hello": "손 흔들기",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "아트워크 없이 기록됨: {names}.",
   "a clipping path": "클리핑 패스",
   "a complex style rule": "복잡한 스타일 규칙",

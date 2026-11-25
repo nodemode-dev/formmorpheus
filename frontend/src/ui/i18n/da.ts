@@ -865,6 +865,7 @@ export const da: Record<string, string> = {
   'Use as Mouth Chart': "Brug som mundskema",
   'Walk in place': "Gå på stedet",
   'Wave Hello': "Vinke hej",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Skrevet uden deres grafik: {names}.",
   'a clipping path': "en beskæringssti",
   'a complex style rule': "en kompleks stilregel",

@@ -700,6 +700,7 @@ export const hu: Record<string, string> = {
   "Use as Mouth Chart": "Használat száj-táblázatként",
   "Walk in place": "Járás helyben",
   "Wave Hello": "Köszönő integetés",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "Grafikájuk nélkül kiírva: {names}.",
   "a clipping path": "vágóútvonal",
   "a complex style rule": "összetett stílusszabály",

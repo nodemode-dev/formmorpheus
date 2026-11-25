@@ -883,6 +883,7 @@ export const th: Record<string, string> = {
   "Use as Mouth Chart": "ใช้เป็นแผนภูมิปาก",
   "Walk in place": "เดินอยู่กับที่",
   "Wave Hello": "โบกมือทักทาย",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "เขียนโดยไม่มีงานภาพของส่วนเหล่านี้: {names}",
   "a clipping path": "คลิปปิงพาธ",
   "a complex style rule": "กฎสไตล์ที่ซับซ้อน",

@@ -878,6 +878,7 @@ export const zhTW: Record<string, string> = {
   "Use as Mouth Chart": "用作口型圖",
   "Walk in place": "原地走路",
   "Wave Hello": "揮手問好",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "已寫入但不含圖稿：{names}。",
   "a clipping path": "剪裁路徑",
   "a complex style rule": "複雜的樣式規則",

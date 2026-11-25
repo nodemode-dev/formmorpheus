@@ -878,6 +878,7 @@ export const ja: Record<string, string> = {
   "Use as Mouth Chart": "口チャートとして使用",
   "Walk in place": "その場で歩く",
   "Wave Hello": "手を振る",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "アートなしで書き込まれました: {names}。",
   "a clipping path": "クリッピングパス",
   "a complex style rule": "複雑なスタイルルール",

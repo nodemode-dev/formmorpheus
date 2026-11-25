@@ -865,6 +865,7 @@ export const nl: Record<string, string> = {
   'Use as Mouth Chart': "Gebruiken als mondschema",
   'Walk in place': "Ter plaatse lopen",
   'Wave Hello': "Hallo zwaaien",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Zonder hun tekenwerk geschreven: {names}.",
   'a clipping path': "een uitknippad",
   'a complex style rule': "een complexe stijlregel",

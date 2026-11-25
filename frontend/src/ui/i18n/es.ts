@@ -950,6 +950,7 @@ export const es: Record<string, string> = {
   'Use as Mouth Chart': "Usar como tabla de bocas",
   'Walk in place': "Caminar en el sitio",
   'Wave Hello': "Saludar",
+  'Run': "Run", 'Dance': "Dance", 'Talk': "Talk", 'Cheer': "Cheer",
   'Written without their art: {names}.': "Escritas sin su dibujo: {names}.",
   'a clipping path': "una ruta de recorte",
   'a complex style rule': "una regla de estilo compleja",

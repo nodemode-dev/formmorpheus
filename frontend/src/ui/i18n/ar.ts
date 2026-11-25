@@ -887,6 +887,7 @@ export const ar: Record<string, string> = {
   "Use as Mouth Chart": "استخدام كمخطط للفم",
   "Walk in place": "مشي في المكان",
   "Wave Hello": "تلويح بالتحية",
+  "Run": "Run", "Dance": "Dance", "Talk": "Talk", "Cheer": "Cheer",
   "Written without their art: {names}.": "كُتبت دون رسومها: {names}.",
   "a clipping path": "مسار قص",
   "a complex style rule": "قاعدة نمط معقدة",
