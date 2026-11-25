@@ -288,7 +288,6 @@ function reach(c: Content, h: number, out: { lo: number; hi: number } | null = n
 function sizeOf(g: Content, h: number): number {
   const leg = partRef(g, 'leg-r');
   const lr = leg?.c.pivot ? reach(leg.c, h) : null;
-  // a leg in two parts and a foot (a built character): the sole is the lowest of them
   for (const name of g.character && rigged(g.character.parts) ? SOLE : []) { const p = lr ? partRef(g, name) : null; const r = p ? reach(p.c, h) : null; if (lr && r) lr.hi = Math.max(lr.hi, r.hi); }
   if (leg && lr && leg.c.pivot) {
     const len = (lr.hi - leg.c.pivot.y) * Math.abs(leg.c.transform.scale);
@@ -533,7 +532,6 @@ export function applyAction(movie: Movie, charId: string, actionId: string, at: 
     if (sd?.mouth) said = speak(movie, said, atRate(sd, movie.fps), s.start ?? s.from, Math.max(s.from, from), Math.min(s.to, to), false, s.said).g;
   }
   if (a.mouth) { const r = speak(movie, said, a, from, from, to, true); said = r.g; placed.said = r.said; }
-  // a built character without hair or a shadow is complete, so its optional parts are never named
   return { movie: put(movie, withChar(said, { acts: kept })), skipped: def.id.startsWith('builtin:') ? skipped.filter((n) => !OPTIONAL.has(n)) : skipped };
 }
 
@@ -609,12 +607,10 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   }
   if (!lanes.length) throw new OpError('The character has no keys between those frames.');
   const action: ActionDef = { id: uid('act'), name: name.trim() || 'Action', length, loop, lanes, fps: movie.fps };
-  // saved from inside one placed span of a blended loop: it keeps easing in and out where it is placed
   const span = (g.character.acts ?? []).find((s) => s.from <= lo && hi <= s.to);
   const src = span ? spanAction(g.character, span) : null;
   const blend = loop && src?.loop && src.blend ? Math.min(Math.floor(length / 2), atRate(src, movie.fps).blend ?? 0) : 0;
   if (blend >= 1) action.blend = blend;
-  // and the mouth shapes that span set over the range, as runs from the range's first frame
   if (span && src?.mouth?.length) {
     const a = atRate(src, movie.fps), first = span.start ?? span.from, mouth: NonNullable<ActionDef['mouth']> = [];
     for (let f = 0; f <= length; f++) {

@@ -644,7 +644,6 @@ export class CharacterBuilder {
   private async run(job: () => Promise<void>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    // marked busy rather than disabled, so the focused button keeps focus and Escape still reaches the dialog
     const btns = [this.addBtn, this.saveBtn, this.applyBtn];
     for (const b of btns) { b.setAttribute('aria-disabled', 'true'); setClass(b, 'is-busy', true); }
     try { await job(); } catch (e) { toast(e instanceof Error ? e.message : t('The character could not be built.'), 'error'); } finally {

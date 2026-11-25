@@ -7,6 +7,21 @@ Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
 
+## v0.31.0 · line comments moved here
+
+- refers-to: engine/actions-builtin.ts :: S_IDLE to S_CHEER (above them), rigSit, RIG_ACTIONS (S_WAVE); engine/action-ops.ts :: sizeOf, applyAction (end), actionFromKeys; io/fmact.ts :: parseFmact (blend); ui/character-builder.ts :: apply (busy)
+- kind: removed-comment
+- logged: v0.31.0 · 2026-11-25
+
+- Above the studio data: the character builder's own animations, as its studio wrote them. Times are fractions of one pass of `dur` seconds; r in degrees (clockwise on screen, as here); x and y in rig pixels at body height 1; sx and sy scale. A key's letter is the ease leaving it (s, o, i, l). L is the Stage's left.
+- rigSit: keyed every frame, because the shin's scale must undo the thigh's on each frame shown, or the feet leave the floor between keys.
+- Wave in RIG_ACTIONS: our Wave Hello lifts arm-r; the studio waves with its R arm, so it plays mirrored.
+- sizeOf: on a built character the leg is in two parts and a foot, so the sole is the lowest of them.
+- applyAction, end: a built character without hair or a shadow is complete, so its optional parts are never named.
+- actionFromKeys: saved from inside one placed span of a blended loop, it keeps easing in and out where it is placed, and keeps the mouth shapes that span set over the range, as runs from the range's first frame.
+- parseFmact: `blend` is optional and new in 0.30.0; a file without it reads as before, and an older reader passes it by.
+- character-builder apply: the Apply button is marked busy rather than disabled, so the focused button keeps focus and Escape still reaches the dialog.
+
 ## v0.31.0 · starter actions: old spans, the person's lip-sync, cut loops
 
 - refers-to: engine/action-ops.ts :: spanAction, plain, blends, easeCut, shapeAt, SHAPE_OF (new), speak, seal, clearRange, sizeOf, applyAction, clearAction, actionFromKeys; engine/actions-builtin.ts :: rigged (new), builtinFor; engine/types.ts :: ActSpan.rig, ActSpan.said (new); engine/normalize.ts :: character acts; io/fmact.ts :: parseFmact
