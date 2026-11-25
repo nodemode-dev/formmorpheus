@@ -303,9 +303,12 @@ function chained(a: ActionDef): ActionDef {
   return { ...a, lanes };
 }
 
+/** A character with the builder's parts: a hip and a forearm. */
+export const rigged = (parts: Readonly<Record<string, string>>): boolean => !!parts.hip && !!(parts['forearm-r'] || parts['forearm-l']);
+
 /** The starter to play for `id` on a character with these parts: the builder's version when it has a hip and a forearm. */
 export function builtinFor(def: ActionDef, parts: Readonly<Record<string, string>>): ActionDef {
-  if (!parts.hip || !(parts['forearm-r'] || parts['forearm-l'])) return def;
+  if (!rigged(parts)) return def;
   return RIG_ACTIONS.get(def.id) ?? CHAINED.get(def.id) ?? def;
 }
 

@@ -4,14 +4,14 @@
 import type { ActionDef, ActSpan, CharacterInfo, Content, Ease, Key, KeyKind, KeyLane, Movie, Track } from './types';
 import { hasCanvas } from './canvas';
 import { evalChannel, kindSpec, laneRank } from './keys';
-import { uid } from './model';
+import { flipIndexAt, uid } from './model';
 import { OpError } from './ops';
 import { srcFrame } from './retime';
 import { bounds, outline, shapeBase } from './shape';
 import { findContent, levelFrameOf } from './transform';
-import { BUILTIN_ACTIONS, builtinFor } from './actions-builtin';
+import { BUILTIN_ACTIONS, builtinFor, rigged } from './actions-builtin';
 import { applyLipsync, guessMapping, looksLikeMouth } from './lipsync-ops';
-import type { Viseme } from '../media/lipsync';
+import { VISEME_NAMES, type Viseme } from '../media/lipsync';
 
 /** The kinds of lane an action carries. */
 const KINDS: ReadonlySet<KeyKind> = new Set<KeyKind>(['move', 'bones']);
@@ -57,6 +57,14 @@ export function findAction(ch: CharacterInfo, id: string): ActionDef | null {
   for (let i = 0; i < ch.actions.length; i++) if (ch.actions[i].id === id) return ch.actions[i];
   for (let i = 0; i < BUILTIN_ACTIONS.length; i++) if (BUILTIN_ACTIONS[i].id === id) return builtinFor(BUILTIN_ACTIONS[i], ch.parts);
   return null;
+}
+
+const plain = (id: string): ActionDef | undefined => BUILTIN_ACTIONS.find((b) => b.id === id);
+
+/** What a placed span was written with: a starter span not marked `rig` holds the starter's plain lanes. */
+function spanAction(ch: CharacterInfo, s: ActSpan): ActionDef | null {
+  const a = findAction(ch, s.action);
+  return a && !s.rig && s.action.startsWith('builtin:') ? plain(s.action) ?? a : a;
 }
 
 /** The frame the character's tracks see at a movie frame (the Playhead). */
@@ -204,7 +212,7 @@ function dropRange(c: Content, kinds: Map<KeyKind, Set<string> | null>, lo: numb
 function clearRange(g: Content, who: Own, from: number, to: number, keep: readonly ActSpan[]): Content {
   let out = g;
   const ch = g.character as CharacterInfo;
-  const owns = keep.map((s) => owned(findAction(ch, s.action), ch));
+  const owns = keep.map((s) => owned(spanAction(ch, s), ch));
   for (const [name, kinds] of who) {
     const p = partRef(out, name);
     if (!p) continue;
@@ -281,7 +289,7 @@ function sizeOf(g: Content, h: number): number {
   const leg = partRef(g, 'leg-r');
   const lr = leg?.c.pivot ? reach(leg.c, h) : null;
   // a leg in two parts and a foot (a built character): the sole is the lowest of them
-  for (const name of SOLE) { const p = lr ? partRef(g, name) : null; const r = p ? reach(p.c, h) : null; if (lr && r) lr.hi = Math.max(lr.hi, r.hi); }
+  for (const name of g.character && rigged(g.character.parts) ? SOLE : []) { const p = lr ? partRef(g, name) : null; const r = p ? reach(p.c, h) : null; if (lr && r) lr.hi = Math.max(lr.hi, r.hi); }
   if (leg && lr && leg.c.pivot) {
     const len = (lr.hi - leg.c.pivot.y) * Math.abs(leg.c.transform.scale);
     if (len > 1) return Math.min(20, Math.max(0.05, len / REF_LEG));
@@ -338,6 +346,30 @@ function write(g: Content, a: ActionDef, from: number, reps: number, fit: Fit, l
   return { g: out, skipped };
 }
 
+/** A blended loop over `from` to `to` eases at its ends, and rests there, only with room for both eases and a frame between. */
+const blends = (a: ActionDef, from: number, to: number): boolean => !!(a.loop && a.blend) && to - from >= 2 * (a.blend ?? 0) + 2;
+
+/**
+ * A span cut by another keeps easing: a left remnant runs into the cut over its last `blend` frames, a right remnant
+ * (`side` in) leaves its first frame, at rest, over as many. The keys between are dropped.
+ */
+function easeCut(g: Content, a: ActionDef, s: ActSpan, side: 'in' | 'out', fit: Fit): Content {
+  const b = a.blend ?? 0, first = s.start ?? s.from;
+  if (!blends(a, s.from, s.to)) return g;
+  const edge = side === 'in' ? s.from + b : s.to - b;
+  return eachChannel(g, a, null, (pc, p, _part, kind, id, src) => {
+    const lane = pc.keys.find((l) => l.kind === kind), list = lane?.channels[id];
+    if (!lane || !list) return pc;
+    const x = keyFrame(p, side === 'in' ? s.from : edge), y = keyFrame(p, side === 'in' ? edge : s.to);
+    const kept = list.filter((k) => k.frame <= x || k.frame >= y);
+    const next = { ...pc, keys: pc.keys.map((l) => (l === lane ? { ...l, channels: { ...l.channels, [id]: kept } } : l)) };
+    const k = keyAt(src, (((edge - first) % a.length) + a.length) % a.length), f = keyFrame(p, edge);
+    if (f < 0 || f > pc.duration - 1) return next;
+    const v = absolute(p.c, kind, id, k.value, fit);
+    return putChannel(next, kind, id, [side === 'out' ? { frame: f, value: v, ease: 'inout' } : { ...k, frame: f, value: v }]);
+  });
+}
+
 /** The channel's value at rest, as an action counts it. */
 const restValue = (kind: KeyKind, id: string): number => (kind === 'move' && SCALES.has(id) ? 1 : 0);
 
@@ -347,7 +379,7 @@ const restValue = (kind: KeyKind, id: string): number => (kind === 'move' && SCA
  */
 function blendEnds(at: Map<number, Key>, p: PartRef, a: ActionDef, kind: KeyKind, id: string, src: Key[], from: number, end: number, fit: Fit): void {
   const b = a.blend ?? 0;
-  if (end - from < 2 * b + 2) return;
+  if (!blends(a, from, end)) return;
   const lo = keyFrame(p, from), hi = keyFrame(p, end), inA = keyFrame(p, from + b), outA = keyFrame(p, end - b);
   for (const f of [...at.keys()]) if ((f > lo && f < inA) || (f > outA && f < hi)) at.delete(f);
   const rest = restValue(kind, id);
@@ -372,10 +404,10 @@ function seal(g: Content, spans: readonly ActSpan[], frames: readonly number[], 
   const ch = g.character as CharacterInfo;
   let out = g;
   for (const f of frames) {
-    const starts = spans.filter((s) => s.from === f).map((s) => owned(findAction(ch, s.action), ch));
+    const starts = spans.filter((s) => s.from === f).map((s) => owned(spanAction(ch, s), ch));
     for (const s of spans) {
       if (s.from !== f && s.to !== f) continue;
-      const def = findAction(ch, s.action);
+      const def = spanAction(ch, s);
       if (!def) continue;
       const a = atRate(def, fps);
       const head = s.from === f;
@@ -383,8 +415,7 @@ function seal(g: Content, spans: readonly ActSpan[], frames: readonly number[], 
       const m = local % a.length;
       const t = !a.loop ? Math.min(local, a.length) : !head && m === 0 && local > 0 ? a.length : m;
       const fit = fitFor(out, a, h);
-      // a blended loop rests where it truly starts and wherever it ends
-      const rests = !!(a.loop && a.blend) && (!head || s.start === undefined);
+      const rests = blends(a, s.from, s.to);
       out = eachChannel(out, a, null, (pc, p, part, kind, id, src) => {
         if (!head && starts.some((o) => moves(o, part, kind, id))) return pc;
         const k = keyAt(src, t), at = keyFrame(p, f);
@@ -408,34 +439,56 @@ function mouthChart(g: Content): { p: PartRef; row: number; chart: number } | nu
   return looksLikeMouth(rows[chart]) ? { p, row, chart } : null;
 }
 
+const SHAPE_OF = new Map<string, Viseme>((Object.keys(VISEME_NAMES) as Viseme[]).map((v) => [VISEME_NAMES[v], v]));
+
+/** The shape a placed action shows `t` frames after its first pass began. */
+function shapeAt(a: ActionDef, t: number): Viseme {
+  const u = a.loop ? ((t % a.length) + a.length) % a.length : Math.min(t, a.length);
+  let s: Viseme = 'rest';
+  for (const k of a.mouth ?? []) { if (k.frame <= u) s = k.shape; else break; }
+  return s;
+}
+
 /**
- * Writes the action's mouth shapes over `from` up to `to` (frames of the character's tracks) into its mouth chart the way
- * lip-sync does, a loop's passes repeated; with no action the span shows Rest. Any other mouth is left alone.
+ * The action's mouth shapes over `from` up to `to` (frames of the character's tracks; the first pass began at `first`) in
+ * its mouth chart, written the way lip-sync writes. `say` puts a shape only where the mouth shows Rest, so the person's
+ * own lip-sync is never written over, and the frames written are answered as runs of the character's frames. Otherwise
+ * each frame inside `mine` (the runs it wrote; absent: all) that still shows the action's shape goes back to Rest. Frames
+ * named for no shape, and any mouth that is not a chart, are left alone.
  */
-function speak(movie: Movie, g: Content, a: ActionDef | null, from: number, to: number): Content {
-  const m = mouthChart(g);
-  if (!m) return g;
-  const p = m.p, at = keyFrame(p, from);
-  const lo = Math.max(0, at), hi = Math.min(p.c.duration, keyFrame(p, to));
-  if (hi <= lo) return g;
-  const say = a?.mouth ?? [];
-  const shapes: Viseme[] = [];
+function speak(movie: Movie, g: Content, a: ActionDef, first: number, from: number, to: number, say: boolean, mine?: ReadonlyArray<readonly [number, number]>): { g: Content; said: Array<[number, number]> } {
+  let out = g;
+  const said: Array<[number, number]> = [];
+  const m0 = mouthChart(g);
+  if (!m0) return { g, said };
+  const at = keyFrame(m0.p, from), lo = Math.max(0, at), hi = Math.min(m0.p.c.duration, keyFrame(m0.p, to));
+  const runs: { from: number; shapes: Viseme[] }[] = [];
+  const row = m0.p.c.flip[m0.row];
   for (let f = lo; f < hi; f++) {
-    const t = !a ? 0 : a.loop ? (f - at) % a.length : Math.min(f - at, a.length);
-    let s: Viseme = 'rest';
-    for (const k of say) { if (k.frame <= t) s = k.shape; else break; }
-    shapes.push(s);
+    const c = from + (f - at);
+    if (!say && mine && !mine.some(([x, y]) => c >= x && c < y)) continue;
+    const want = shapeAt(a, c - first);
+    const i = flipIndexAt(row, f + m0.p.c.offset), now = i >= 0 ? SHAPE_OF.get(row.frames[i].name ?? '') : undefined;
+    const next = say ? (now === 'rest' && want !== 'rest' ? want : null) : (want !== 'rest' && now === want ? 'rest' : null);
+    if (!next) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.from + last.shapes.length === f) last.shapes.push(next); else runs.push({ from: f, shapes: [next] });
   }
-  const host = p.chain.length ? p.chain[p.chain.length - 1] : g;
-  try {
-    const out = applyLipsync({ ...movie, tracks: host.tracks }, {
-      content: p.c.id, row: m.row, chartRow: m.chart === m.row ? -1 : m.chart, from: lo + p.c.start, shapes, map: guessMapping(p.c.flip[m.chart]),
-    });
-    return host === g ? { ...g, tracks: out.tracks } : { ...g, tracks: mapDeep(g.tracks, host.id, (x) => ({ ...x, tracks: out.tracks })) };
-  } catch (e) {
-    if (e instanceof OpError) return g;
-    throw e;
+  for (const r of runs) {
+    const m = mouthChart(out);
+    if (!m) break;
+    const host = m.p.chain.length ? m.p.chain[m.p.chain.length - 1] : out;
+    try {
+      const done = applyLipsync({ ...movie, tracks: host.tracks }, {
+        content: m.p.c.id, row: m.row, chartRow: m.chart === m.row ? -1 : m.chart, from: r.from + m.p.c.start, shapes: r.shapes, map: guessMapping(m.p.c.flip[m.chart]),
+      });
+      out = host === out ? { ...out, tracks: done.tracks } : { ...out, tracks: mapDeep(out.tracks, host.id, (x) => ({ ...x, tracks: done.tracks })) };
+      said.push([from + (r.from - at), from + (r.from - at) + r.shapes.length]);
+    } catch (e) {
+      if (!(e instanceof OpError)) throw e;
+    }
   }
+  return { g: out, said };
 }
 
 /**
@@ -454,24 +507,32 @@ export function applyAction(movie: Movie, charId: string, actionId: string, at: 
   const acts = ch.acts ?? [];
   const hit = (s: ActSpan): boolean => s.from < to && s.to > from;
   const who = owned(a, ch);
-  for (const s of acts) if (hit(s)) merge(who, owned(findAction(ch, s.action), ch));
+  for (const s of acts) if (hit(s)) merge(who, owned(spanAction(ch, s), ch));
   const others = acts.filter((s) => !hit(s));
   const cleared = clearRange(g, who, from, to, others);
   const { g: written, skipped } = write(cleared, a, from, reps, fitFor(cleared, a, movie.height), to);
   const names = new Set(a.lanes.map((l) => l.part));
   if (skipped.length >= names.size) throw new OpError('This character has none of the parts the action moves.');
-  const kept: ActSpan[] = [];
+  const kept: ActSpan[] = [], cut: Array<[ActSpan, 'in' | 'out']> = [];
   for (const s of acts) {
     if (!hit(s)) { kept.push(s); continue; }
-    if (s.from < from) kept.push({ ...s, to: from });
-    if (s.to > to) kept.push({ ...s, from: to, start: s.start ?? s.from });
+    if (s.from < from) { const l = { ...s, to: from }; kept.push(l); cut.push([l, 'out']); }
+    if (s.to > to) { const r = { ...s, from: to, start: s.start ?? s.from }; kept.push(r); cut.push([r, 'in']); }
   }
-  kept.push({ action: def.id, from, to });
+  const placed: ActSpan = { action: def.id, from, to, ...(def.id.startsWith('builtin:') && def !== plain(def.id) ? { rig: true as const } : {}) };
+  kept.push(placed);
   kept.sort((p, q) => p.from - q.from);
-  const sealed = seal(written, kept, [from, to], movie.height, movie.fps);
-  // a mouth an earlier action set inside the span goes back to Rest unless this one sets it
-  const spoke = a.mouth || acts.some((s) => hit(s) && findAction(ch, s.action)?.mouth);
-  const said = spoke ? speak(movie, sealed, a.mouth ? a : null, from, to) : sealed;
+  let sealed = seal(written, kept, [from, to], movie.height, movie.fps);
+  for (const [s, side] of cut) {
+    const sd = spanAction(ch, s), sa = sd ? atRate(sd, movie.fps) : null;
+    if (sa?.loop && sa.blend) sealed = easeCut(sealed, sa, s, side, fitFor(sealed, sa, movie.height));
+  }
+  let said = sealed;
+  for (const s of acts) {
+    const sd = hit(s) ? spanAction(ch, s) : null;
+    if (sd?.mouth) said = speak(movie, said, atRate(sd, movie.fps), s.start ?? s.from, Math.max(s.from, from), Math.min(s.to, to), false, s.said).g;
+  }
+  if (a.mouth) { const r = speak(movie, said, a, from, from, to, true); said = r.g; placed.said = r.said; }
   // a built character without hair or a shadow is complete, so its optional parts are never named
   return { movie: put(movie, withChar(said, { acts: kept })), skipped: def.id.startsWith('builtin:') ? skipped.filter((n) => !OPTIONAL.has(n)) : skipped };
 }
@@ -484,9 +545,10 @@ export function clearAction(movie: Movie, charId: string, spanIndex: number): Mo
   const s = acts[spanIndex];
   if (!s) throw new OpError('That action is no longer on the Timeline.');
   const others = acts.filter((_, i) => i !== spanIndex);
-  const cleared = clearRange(g, owned(findAction(ch, s.action), ch), s.from, s.to, others);
+  const def = spanAction(ch, s);
+  const cleared = clearRange(g, owned(def, ch), s.from, s.to, others);
   const sealed = seal(cleared, others, [s.from, s.to], movie.height, movie.fps);
-  const said = findAction(ch, s.action)?.mouth ? speak(movie, sealed, null, s.from, s.to) : sealed;
+  const said = def?.mouth ? speak(movie, sealed, atRate(def, movie.fps), s.start ?? s.from, s.from, s.to, false, s.said).g : sealed;
   return put(movie, withChar(said, { acts: others }));
 }
 
@@ -549,15 +611,14 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   const action: ActionDef = { id: uid('act'), name: name.trim() || 'Action', length, loop, lanes, fps: movie.fps };
   // saved from inside one placed span of a blended loop: it keeps easing in and out where it is placed
   const span = (g.character.acts ?? []).find((s) => s.from <= lo && hi <= s.to);
-  const src = span ? findAction(g.character, span.action) : null;
-  if (loop && src?.loop && src.blend) action.blend = atRate(src, movie.fps).blend;
+  const src = span ? spanAction(g.character, span) : null;
+  const blend = loop && src?.loop && src.blend ? Math.min(Math.floor(length / 2), atRate(src, movie.fps).blend ?? 0) : 0;
+  if (blend >= 1) action.blend = blend;
   // and the mouth shapes that span set over the range, as runs from the range's first frame
   if (span && src?.mouth?.length) {
-    const a = atRate(src, movie.fps), say = a.mouth ?? [], first = span.start ?? span.from, mouth: NonNullable<ActionDef['mouth']> = [];
+    const a = atRate(src, movie.fps), first = span.start ?? span.from, mouth: NonNullable<ActionDef['mouth']> = [];
     for (let f = 0; f <= length; f++) {
-      const local = lo + f - first, t = a.loop ? local % a.length : Math.min(local, a.length);
-      let s: Viseme = 'rest';
-      for (const k of say) { if (k.frame <= t) s = k.shape; else break; }
+      const s = shapeAt(a, lo + f - first);
       if (!mouth.length || mouth[mouth.length - 1].shape !== s) mouth.push({ frame: f, shape: s });
     }
     action.mouth = mouth;

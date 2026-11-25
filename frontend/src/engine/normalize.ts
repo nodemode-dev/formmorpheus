@@ -151,6 +151,9 @@ function characterDef(ch: Obj): void {
     s.to = Math.max(s.from as number, Math.round(num(s.to, s.from as number)));
     if (typeof s.start === 'number' && Number.isFinite(s.start) && s.start < (s.from as number)) s.start = Math.round(s.start);
     else delete s.start;
+    if (s.rig !== true) delete s.rig;
+    if (Array.isArray(s.said)) s.said = s.said.filter((r): r is [number, number] => Array.isArray(r) && r.length === 2 && Number.isFinite(r[0]) && Number.isFinite(r[1]) && r[0] < r[1]).map((r) => [Math.round(r[0]), Math.round(r[1])]);
+    else delete s.said;
     return s;
   });
 }

@@ -7,6 +7,19 @@ Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
 
+## v0.31.0 · starter actions: old spans, the person's lip-sync, cut loops
+
+- refers-to: engine/action-ops.ts :: spanAction, plain, blends, easeCut, shapeAt, SHAPE_OF (new), speak, seal, clearRange, sizeOf, applyAction, clearAction, actionFromKeys; engine/actions-builtin.ts :: rigged (new), builtinFor; engine/types.ts :: ActSpan.rig, ActSpan.said (new); engine/normalize.ts :: character acts; io/fmact.ts :: parseFmact
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Spans remember which version wrote them.** A starter placed on a built character in 0.28.0 or 0.29.0 holds the plain lanes, but 0.30.0 cleared, swapped and covered it with the builder version's channels, so Idle left head y, arm y, body y and scale behind. A span placed with a builder version now carries `rig: true`; `spanAction` reads an unmarked starter span as the plain starter, and `owned` (through clearRange and the merge in applyAction), `seal`, `clearAction` and Save as Action all go through it. normalize keeps `rig` only when it is `true`. Nine-part characters never get the field: their spans and keys are as at 0.25.0 (checked against 0a7e706 with the review's dump for kofi, noor and bram, every apply, clear, combo and swap equal).
+- **The person's lip-sync is never written over.** Of the two choices (only Talk writes when a Lip-sync row exists, or a starter writes only where the mouth shows Rest) the second is safer and is the rule for every mouth chart, Lip-sync row or not: no starter, Talk included, replaces a shape the person or Lip-sync put there. The frames a starter does write are kept on its span as `said` runs (character frames). Clearing it, or laying another action over part of it, puts Rest back only on the overlap and only on frames inside those runs that still show the shape the starter put there; a span placed before 0.31.0 has no runs and is matched by shape alone. Frames named for no shape are never touched. Seen and left: a starter with mouth shapes fills the Rest pauses inside a person's lip-sync over its span.
+- **Cut loops keep easing.** Laying an action into a blended loop (Cheer at 40 over Cheer from 0) used to drop the arms in one frame: `easeCut` now runs the left remnant into the cut over its last `blend` frames (to the new span's first pose) and starts a right remnant at rest, easing into the loop over its first `blend` frames.
+- **Short blended spans.** One rule, `blends`: a blended loop eases and rests at its ends only when the span (or remnant) has room for both eases and a frame between (2 x blend + 2). A shorter one plays as a plain loop, so a short Cheer shows its arms up instead of nothing; seal no longer rests it.
+- **Smaller fixes.** `parseFmact` keeps one mouth entry per frame (the last in the file) and at most length + 1 of them. Save as Action caps a kept blend at half the new action's length, as the reader does. `sizeOf` measures to the shin and foot only on a built character (`rigged`: a hip and a forearm), so a drawn SVG character whose parts happen to be named `shin-r` or `foot-r` scales as at 0.25.0.
+- Two commits, not one per finding: the engine fixes touch the same functions of action-ops (spanAction is read by the mouth and the cut code) and part of a file is never staged with a patch; the file reader is its own commit.
+
 ## v0.31.0 · spots across the frame at full size
 
 - refers-to: engine/starter-scene.ts :: spotX (new `scale`); ui/characters-panel.ts :: placeCharacter
