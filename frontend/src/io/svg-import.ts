@@ -637,11 +637,12 @@ export function parseSvgParts(text: string): SvgDoc {
   if (!(height > 0)) height = hasVb ? (width * vb[3]) / vb[2] : 1080;
   let vbm: Mat = IDENT;
   if (hasVb) {
-    const par = (root.getAttribute('preserveAspectRatio') ?? '').trim();
-    if (par.startsWith('none')) vbm = [width / vb[2], 0, 0, height / vb[3], (-vb[0] * width) / vb[2], (-vb[1] * height) / vb[3]];
+    const [align = 'xMidYMid', fit = 'meet'] = (root.getAttribute('preserveAspectRatio') ?? '').trim().replace(/^defer\s+/, '').split(/\s+/).filter(Boolean);
+    if (align === 'none') vbm = [width / vb[2], 0, 0, height / vb[3], (-vb[0] * width) / vb[2], (-vb[1] * height) / vb[3]];
     else {
-      const s = Math.min(width / vb[2], height / vb[3]);
-      vbm = [s, 0, 0, s, (width - vb[2] * s) / 2 - vb[0] * s, (height - vb[3] * s) / 2 - vb[1] * s];
+      const s = (fit === 'slice' ? Math.max : Math.min)(width / vb[2], height / vb[3]);
+      const ax = align.startsWith('xMin') ? 0 : align.startsWith('xMax') ? 1 : 0.5, ay = align.endsWith('YMin') ? 0 : align.endsWith('YMax') ? 1 : 0.5;
+      vbm = [s, 0, 0, s, (width - vb[2] * s) * ax - vb[0] * s, (height - vb[3] * s) * ay - vb[1] * s];
     }
   }
   const ids = new Map<string, Element>();
