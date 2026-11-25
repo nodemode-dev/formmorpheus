@@ -42,6 +42,39 @@ export function visemes(spec: CastSpec, rig: CastRig): CastPrim[][] {
       [E(0, 2 * u, 11 * u, 3.5 * u, dk), P(D`M${-12 * u} ${4 * u}Q0 ${8 * u} ${12 * u} ${4 * u}`, null, { stroke: ln, sw }), ...fangs],
       [E(0, 3 * u, 9 * u, 6.5 * u, dk), E(0, 1 * u, 5 * u, 2.4 * u, TONGUE), ...fangs]];
   }
+  if (spec.species === 'fox') {
+    const ln = shade(sk, -.6), sw = n(2.6 * u), w = (y: number) => P(D`M${-8 * u} ${y - 2 * u}Q${-4 * u} ${y + 3.5 * u} 0 ${y - 1 * u}Q${4 * u} ${y + 3.5 * u} ${8 * u} ${y - 2 * u}`, null, { stroke: ln, sw });
+    return [rest,
+      [P(D`M${-7 * u} ${-.5 * u}Q${-3.5 * u} ${1.5 * u} 0 ${.3 * u}Q${3.5 * u} ${1.5 * u} ${7 * u} ${-.5 * u}`, null, { stroke: ln, sw })],
+      ai,
+      [E(0, 2.4 * u, 7.5 * u, 3.2 * u, INSIDE), E(0, 4 * u, 3.8 * u, 1.3 * u, TONGUE), w(0)],
+      [E(0, 3.4 * u, 4.4 * u, 5.8 * u, INSIDE), E(0, 6.4 * u, 2.6 * u, 1.5 * u, TONGUE), w(0)],
+      [E(0, 2.8 * u, 3 * u, 3.4 * u, INSIDE), w(0)],
+      [E(0, 2 * u, 6.5 * u, 2.6 * u, INSIDE), R(-4.5 * u, .2 * u, 9 * u, 2.4 * u, 1.2 * u, TEETH), w(0)],
+      [E(0, 3 * u, 5.8 * u, 4.8 * u, INSIDE), E(0, 1.8 * u, 3.4 * u, 1.7 * u, TONGUE), w(0)]];
+  }
+  if (spec.species === 'dino') {
+    const ln = shade(sk, -.45), dk = shade(sk, -.65), sw = n(3.2 * u), tooth = (y: number) => P(D`M${5 * u} ${y + 2.2 * u}L${11 * u} ${y + .4 * u}L${8.8 * u} ${y + 6.6 * u}Z`, TEETH);
+    return [rest,
+      [P(D`M${-17 * u} ${-1 * u}Q0 ${3.5 * u} ${17 * u} ${-1 * u}`, null, { stroke: ln, sw }), P(D`M${6 * u} ${.6 * u}L${10 * u} ${.2 * u}L${8.6 * u} ${3.8 * u}Z`, TEETH)],
+      ai,
+      [E(0, 2 * u, 14 * u, 4.2 * u, dk), E(0, 3.8 * u, 7 * u, 1.6 * u, TONGUE), tooth(-1.4 * u)],
+      [E(0, 3 * u, 7 * u, 8 * u, dk), E(0, 6.4 * u, 4 * u, 2 * u, TONGUE)],
+      [E(0, 2.5 * u, 4.6 * u, 4.8 * u, dk)],
+      [E(0, 2 * u, 12 * u, 3.4 * u, dk), R(-8 * u, -.4 * u, 16 * u, 2.6 * u, 1.3 * u, TEETH), P(D`M${-13 * u} ${4 * u}Q0 ${8 * u} ${13 * u} ${4 * u}`, null, { stroke: ln, sw })],
+      [E(0, 3 * u, 10 * u, 6.4 * u, dk), E(0, 1.2 * u, 5.4 * u, 2.4 * u, TONGUE), tooth(-1.4 * u)]];
+  }
+  if (spec.species === 'sprout') {
+    const ln = shade(sk, -.5), dk = shade(sk, -.66), sw = n(2.8 * u);
+    return [rest,
+      [P(D`M${-6.5 * u} 0Q0 ${2.4 * u} ${6.5 * u} 0`, null, { stroke: ln, sw })],
+      ai,
+      [E(0, 1.5 * u, 7.5 * u, 3 * u, dk), E(0, 3.2 * u, 3.8 * u, 1.2 * u, TONGUE)],
+      [E(0, 2.4 * u, 4.2 * u, 5.4 * u, dk, { stroke: ln, sw }), E(0, 5 * u, 2.4 * u, 1.4 * u, TONGUE)],
+      [E(0, 2 * u, 2.8 * u, 3.2 * u, dk, { stroke: ln, sw })],
+      [E(0, 1.2 * u, 6 * u, 2.4 * u, dk), R(-4.2 * u, -.8 * u, 8.4 * u, 2.4 * u, 1.1 * u, TEETH), P(D`M${-6.5 * u} ${2.8 * u}Q0 ${5.6 * u} ${6.5 * u} ${2.8 * u}`, null, { stroke: ln, sw })],
+      [E(0, 2 * u, 5.4 * u, 4.4 * u, dk), E(0, .8 * u, 3.2 * u, 1.6 * u, TONGUE)]];
+  }
   const lip = spec.face.lip, sw = n(3 * u);
   return [rest,
     [P(D`M${-8 * u} 0Q0 ${3 * u} ${8 * u} 0`, null, { stroke: lip, sw })],

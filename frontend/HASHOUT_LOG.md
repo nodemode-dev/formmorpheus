@@ -2,10 +2,24 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.28.0
-Last updated: 2026-11-25 · the studio cast as starters
+Current build version: v0.29.0
+Last updated: 2026-11-25 · eight new characters
 
 ---
+
+## v0.29.0 · the eight new characters as starters and in the Character Builder
+
+- refers-to: engine/cast/presets.ts :: CAST_PRESETS (new); engine/cast/index.ts; ui/characters-panel.ts :: paint, add; ui/character-builder.ts :: SPECIES_LABEL, FLAGS, HAIR_NOTE (new), STYLE_FREE (new), faceOnly (was humanOnly), hairNote (new), sync, randomize; styles/character-builder.css :: .fm-cb-seg.is-wrap, .fm-cb-tc:disabled, .fm-cb-note; ui/i18n/* (27 tables)
+- kind: decision
+- logged: v0.29.0 · 2026-11-25
+
+- **One list.** `CAST_PRESETS` is the studio's 13 then the 8 new, and both the Characters panel and the builder read it, so the Starter section is the 5 drawn, the 13 and the 8 (26), each built starter with its poster, tag and Open in Character Builder, and the builder's roster shows Amara and Jade after the studio's women, Dev, Walt and Sami after its men, and Pip, Rex and Sprig after Bolt, Zib and Moss.
+- **Species chips.** All seven, labelled Human, Robot, Alien, Monster, Fox, Dino, Sprout; the row wraps to two lines in the 356 wide column rather than overflow.
+- **Dimmed by what the face draws.** `humanOnly` became `faceOnly`, each control with the species whose face draws it, read from `headBuild`: jaw, earrings, facial hair and lip color stay human only (the new heads have a fixed jaw and their own mouth line); lashes for human, fox and sprout; blush for human, fox, dino and sprout; freckles for human and sprout; glasses for all. Robot, alien and monster get exactly the 0.27.0 dimming.
+- **Hair tab and `speciesHair`.** For dino and sprout the style is never drawn, so the style tiles are dimmed and the color stays live (it paints the dino's crest and tail spikes, the sprout's leaves and petals). For a fox the tiles stay live: any style but None gives the tuft. A note says so for the three species; it sits in the empty cells of the style grid's last row beside Mohawk, so showing or hiding it moves nothing.
+- **Randomize.** The studio's logic, whose ranges are `HAIRS.length` and `OUTFITS.length`, so it already reaches the new hairs and outfits for every species the studio would randomize. For fox, dino and sprout it leaves the hair style and color alone: the color is the species' accent and a random one gave brown leaves or a black tuft. Skin stays the studio's (human tones for humans only).
+- **Labels.** The species names, the new outfit and channel names (Varsity Jacket, Cardigan, Scrubs, Sleeves, Slacks, Badge), the new hair names, the eight tags and the three notes are in the 27 full tables in English; es-MX and fr-CA are left out as in 0.27.0.
+- **Tails and actions.** The tail follows `hip`. The 0.25.0 starters on this branch (Idle, Nod, Shake head, Wave Hello, Point, Walk in place, Jump, Sit) never key `hip`, so the tail stays on the pelvis in every frame (contact sheets for Pip and Rex). The built versions of Idle, Walk, Run and Dance belong to 0.30.0 and are not on this branch, so no `tail` lane was added here.
 
 ## v0.28.0 · Character Builder review fixes
 
@@ -97,6 +111,20 @@ Last updated: 2026-11-25 · the studio cast as starters
 - **Rebuild.** `rebuildCharacter` builds afresh in the same movie and lays it over the character with `mergeFromSource`, so parts keep their ids, keys, parents and actions and new parts are added; then the recipe is written as `character.build`. The merge would hand the mouth the fresh resting chart and drop what lip-sync wrote, so the old mouth rows are kept and each drawing named for a shape takes the new art of that name. A part named in the cast part map that the new build does not draw (a skirt after an outfit without one) is kept hidden with its keys and its own highlight, left out of `missing` and reported in `hidden`; when a later build draws it again it is shown with the fresh art. "Drawn again" is judged against the parts the old recipe built, so a part the person hid while the build drew it stays hidden. Parts with other names (the person's own) are left as the merge leaves them: kept, red, listed in `missing`. Actions with lanes for a hidden part still write its keys and lip-sync never touches it, both without error.
 - **From a recipe.** `castToCharacterGroup(spec, movie, at)` and `rebuildFromSpec(movie, charId, spec)` build the rig and its mouth shapes (`visemes`) and call the two above; both are in the cast index. The part map already holds `tail` (a slot on the hip bone, following `hip`) for the builds that will draw one.
 - **Not shared with the importer.** Its fit and shape helpers live in `io/`, which reads translations from `ui/`; the engine never imports either, so the few lines of fit and node conversion are written here against engine modules only.
+## v0.29.0 · eight new characters and the pieces they wear
+
+- refers-to: engine/cast/outfits.ts :: OUTFITS (varsity, cardigan, scrubs); engine/cast/hair.ts :: HAIRS, hairBuild (curls, braid, mohawk); engine/cast/head.ts :: SPECIES, headBuild (fox, dino, sprout), speciesHair (new), tailBuild (new); engine/cast/build.ts :: build (tail slot, species hair); engine/cast/visemes.ts :: visemes (fox, dino, sprout); engine/cast/presets.ts :: NEW_PRESETS (new); engine/cast/index.ts
+- kind: decision
+- logged: v0.29.0 · 2026-11-25
+
+- **Appended, never inserted.** Outfits 13 to 15 (Varsity Jacket, Cardigan, Scrubs), hairs 13 to 15 (Short Curls, Long Braid, Mohawk) and the species fox, dino and sprout come after the studio's, so every saved recipe keeps its index and every studio character draws exactly as before.
+- **Drawn in the studio's hand.** Flat fills with one `shade` step, the same stroke widths, face sizes in the head unit `M.u`, rounded caps and `blob` for organic outlines. The varsity jacket has a ribbed collar, hem and cuffs striped in the trim colour, snaps and a chenille letter; the cardigan is a V over the shirt with its collar points, a button band with two buttons and patch pockets; the scrubs are a V-neck top over the skin like the tank, a chest pocket with pens and a clip-on badge, darker trousers. Short Curls are two rings of curls over a close buzz cap; Long Braid is the side cap with a braid of alternating lobes in hair-sway, swung out past the shoulder so it reads from the front, with a band and a tuft; Mohawk is a see-through buzz cap in the shade as shaved sides, a crest in front and a taller darker crest in hair-sway.
+- **Species.** Fox: pointed ears with a cream inside, orange cheek tufts, a cream muzzle, a black nose and a w mouth. Dino: a head wider at the snout, darker spots, nostrils, brow ridges, a pale belly patch under the mouth, a wide smile with one tooth, and three crest spikes in hair-back. Sprout: no ears, a round face with a highlight like the alien's, a collar of petals behind the head and a stem with two leaves in hair-sway. Brows, lashes, blush, freckles (sprout) and glasses follow the face options; beards and earrings stay human.
+- **Species hair** (`speciesHair`). For the three new species the hair colour paints the species' own piece and the hair style is not drawn: the dino's crest and the sprout's leaves are always there; a fox gets a tuft between the ears only when a style is chosen. The studio's four species return null and keep their hair styles.
+- **Tail slot** (`tailBuild`). A slot `tail` on the hip bone, drawn right after `cape`, so behind the legs, the body and the arms; its part follows `hip`. The fox's is a bushy curve with a cream tip, the dino's a tapered tail with crest-coloured spikes and a pale underside, both built as a tube along one cubic curve so they scale with leg length. Every other character has no tail prims, so no slot and no part.
+- **Mouth shapes.** Each new species has its own eight in its line colour: the fox keeps its w over every open shape, the dino keeps its tooth and opens wide, the sprout uses dark green lines and inside.
+- **NEW_PRESETS.** Dev, Walt, Sami, Amara, Jade, Pip, Rex and Sprig, exactly as specified; their outfit colours equal to an outfit's defaults are left out. Rex's and Sprig's hair is -1 with the crest and leaf colour.
+- Checked headlessly (a throwaway node script outside the tree running the studio's own functions): all 13 studio presets (and the head close-up and `solveRest`) and 200 random recipes using only the studio's indices still equal the studio's static SVG string for string; the palettes and the first 13 outfits and hairs match. The eight were rendered as a lineup, as mouth charts (Pip, Rex, Sprig) and the new pieces on a plain man, woman and head, and looked at.
 
 ## v0.26.0 · the character generator in the engine
 

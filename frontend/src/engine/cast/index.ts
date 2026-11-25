@@ -12,4 +12,4 @@ export { OUTFITS } from './outfits';
 export { HAIRS } from './hair';
 export { SPECIES } from './head';
 export { SKINS, HAIRCOL, EYECOL } from './palettes';
-export { STUDIO_PRESETS } from './presets';
+export { STUDIO_PRESETS, NEW_PRESETS, CAST_PRESETS } from './presets';
