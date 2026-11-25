@@ -74,7 +74,7 @@ const blink = (at: number): SKey[] => [[0, 1], [at - 0.03, 1], [at, 0.08], [at +
 const S_IDLE: SAnim = { dur: 3.2, tracks: {
   hip: { y: [[0, 0], [0.5, 1.6], [1, 0]] }, torso: { r: [[0, -0.7], [0.5, 0.7], [1, -0.7]] }, head: { r: [[0, 1], [0.5, -1.4], [1, 1]] },
   arm_L_upper: { r: [[0, 0], [0.5, 2.2], [1, 0]] }, arm_R_upper: { r: [[0, 0], [0.5, -2.2], [1, 0]] }, eyes: { sy: blink(0.46) },
-  hairSway: { r: [[0, 1.6], [0.5, -1.6], [1, 1.6]] },
+  hairSway: { r: [[0, 1.6], [0.5, -1.6], [1, 1.6]] }, tail: { r: [[0, -1.5], [0.5, 1.5], [1, -1.5]] },
 } };
 
 const S_WALK: SAnim = { dur: 1, tracks: {
@@ -86,6 +86,7 @@ const S_WALK: SAnim = { dur: 1, tracks: {
   arm_L_upper: { r: [[0, 0], [0.25, 3], [0.5, 0], [0.75, -4], [1, 0]] }, arm_R_upper: { r: [[0, 0], [0.25, 4], [0.5, 0], [0.75, -3], [1, 0]] },
   arm_R_fore: { sy: [[0, 1], [0.25, 0.78], [0.5, 1], [1, 1]], r: [[0, 0], [0.25, 14], [0.5, 0], [1, 0]] },
   arm_L_fore: { sy: [[0, 1], [0.5, 1], [0.75, 0.78], [1, 1]], r: [[0, 0], [0.5, 0], [0.75, -14], [1, 0]] }, eyes: { sy: blink(0.6) },
+  tail: { r: [[0, 0], [0.25, 3], [0.5, 0], [0.75, -3], [1, 0]] },
 } };
 
 const S_RUN: SAnim = { dur: 0.56, tracks: {
@@ -97,7 +98,7 @@ const S_RUN: SAnim = { dur: 0.56, tracks: {
   arm_L_upper: { r: [[0, 8], [0.25, 14], [0.5, 8], [0.75, 2], [1, 8]] }, arm_R_upper: { r: [[0, -8], [0.25, -2], [0.5, -8], [0.75, -14], [1, -8]] },
   arm_L_fore: { r: [[0, -50], [0.25, -30], [0.5, -50], [0.75, -78], [1, -50]], sy: [[0, 0.8], [0.25, 0.95], [0.5, 0.8], [0.75, 0.6], [1, 0.8]] },
   arm_R_fore: { r: [[0, 50], [0.25, 78], [0.5, 50], [0.75, 30], [1, 50]], sy: [[0, 0.8], [0.25, 0.6], [0.5, 0.8], [0.75, 0.95], [1, 0.8]] },
-  mouthO: { sy: [[0, 0.5], [1, 0.5]] },
+  mouthO: { sy: [[0, 0.5], [1, 0.5]] }, tail: { r: [[0, 0], [0.25, 5], [0.5, 0], [0.75, -5], [1, 0]] },
 } };
 
 const S_WAVE: SAnim = { dur: 2.2, tracks: {
@@ -128,7 +129,7 @@ const S_DANCE: SAnim = { dur: 1.6, tracks: {
   torso: { r: [[0, 5], [0.5, -5], [1, 5]] }, head: { r: [[0, -6], [0.5, 6], [1, -6]] }, hairSway: { r: [[0, 7], [0.5, -7], [1, 7]] },
   arm_L_upper: { r: [[0, 104], [0.25, 82], [0.5, 104], [0.75, 82], [1, 104]] }, arm_L_fore: { r: [[0, 62], [0.25, 88], [0.5, 62], [0.75, 88], [1, 62]] },
   arm_R_upper: { r: [[0, -82], [0.25, -104], [0.5, -82], [0.75, -104], [1, -82]] }, arm_R_fore: { r: [[0, -88], [0.25, -62], [0.5, -88], [0.75, -62], [1, -88]] },
-  mouthO: { sy: [[0, 0.7], [1, 0.7]] }, eyes: { sy: blink(0.3) },
+  mouthO: { sy: [[0, 0.7], [1, 0.7]] }, eyes: { sy: blink(0.3) }, tail: { r: [[0, 5], [0.5, -5], [1, 5]] },
 } };
 
 const S_TALK: SAnim = { dur: 2.4, tracks: {
@@ -147,11 +148,12 @@ const S_CHEER: SAnim = { dur: 1.1, tracks: {
   arm_L_fore: { r: [[0, 14], [0.5, -12], [1, 14]] }, arm_R_fore: { r: [[0, -14], [0.5, 12], [1, -14]] },
   head: { r: [[0, -3], [0.5, 3], [1, -3]] }, hairSway: { r: [[0, 0], [0.3, 5], [0.6, -7], [1, 0]] }, mouthO: { sy: [[0, 0.9], [0.5, 1.1], [1, 0.9]] },
   brows: { y: [[0, -3], [1, -3]] }, shadow: { sx: [[0, 1], [0.2, 1.04], [0.5, 0.8], [0.8, 1.04], [1, 1]] },
+  tail: { r: [[0, 0], [0.2, -3, 'o'], [0.5, 4, 'i'], [0.8, -2], [1, 0]] },
 } };
 
 /** Studio bone to part: its L (the Stage's left, the character's own right) is our -r. */
 const S_PART: Record<string, string> = {
-  hip: 'hip', torso: 'body', head: 'head', eyes: 'eyes', brows: 'brows', hairSway: 'hair-sway', shadow: 'shadow',
+  hip: 'hip', torso: 'body', head: 'head', eyes: 'eyes', brows: 'brows', hairSway: 'hair-sway', shadow: 'shadow', tail: 'tail',
   thigh_L: 'leg-r', thigh_R: 'leg-l', shin_L: 'shin-r', shin_R: 'shin-l', foot_L: 'foot-r', foot_R: 'foot-l',
   arm_L_upper: 'arm-r', arm_R_upper: 'arm-l', arm_L_fore: 'forearm-r', arm_R_fore: 'forearm-l', hand_L: 'hand-r', hand_R: 'hand-l',
 };

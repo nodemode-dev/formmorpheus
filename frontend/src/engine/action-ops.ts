@@ -23,7 +23,7 @@ const REF_LEG = 344;
 const REF_HEIGHT = 900;
 const SOLE = ['shin-r', 'foot-r'];
 /** Parts a built character may lack (CAST_CONTRACT): a starter moving them says nothing when they are missing. */
-const OPTIONAL = new Set(['hip', 'forearm-l', 'forearm-r', 'shin-l', 'shin-r', 'foot-l', 'foot-r', 'hand-l', 'hand-r', 'eyes', 'brows', 'hair-sway', 'shadow']);
+const OPTIONAL = new Set(['hip', 'forearm-l', 'forearm-r', 'shin-l', 'shin-r', 'foot-l', 'foot-r', 'hand-l', 'hand-r', 'eyes', 'brows', 'hair-sway', 'shadow', 'tail']);
 
 export interface ActResult { movie: Movie; skipped: string[] }
 
