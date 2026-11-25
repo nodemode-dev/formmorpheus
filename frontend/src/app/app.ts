@@ -7,10 +7,14 @@ import { Renderer } from '../engine/render';
 import { convertToFlipbook } from '../ui/flip-convert';
 import { setFlipServices } from '../ui/flip-services';
 import type { Asset, Content } from '../engine/types';
-import { api, capabilities, onServiceChange, serviceReady } from '../io/api';
+import { api, ApiError, capabilities, onServiceChange, serviceReady } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
+import { characterToSvg } from '../io/svg-export';
+import { canLinkPaths, sourceApi, trustSource } from '../io/source-api';
+import { setSourceLink } from '../engine/source-merge';
+import { pickDestination, saveFileTo } from '../ui/export-where';
 import { AudioEngine } from '../media/audio';
 import { evictFonts, loadTextFonts, registerFont, registerFonts } from '../media/fonts';
 import { loadLibrary } from '../io/fonts-library';
@@ -23,7 +27,8 @@ import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
 import { ShapePanel } from '../ui/shape-panel';
 import { shapeCommands, SHAPE_CREATE_ITEMS } from '../ui/shape-commands';
-import { characterCommands } from '../ui/character-commands';
+import { characterCommands, selectedCharacter } from '../ui/character-commands';
+import { setupSourceLink } from './source-link';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
@@ -366,6 +371,17 @@ export function startApp(): void {
     if ('__TAURI_INTERNALS__' in window) void import('@tauri-apps/api/core').then((m) => m.invoke('note_recent_document', { path })).catch(() => undefined);
   }
   async function openFromPath(path: string): Promise<void> {
+    if (/\.svg$/i.test(path)) {
+      // an SVG handed over by its path becomes a character linked to that file
+      try {
+        const { text, link } = await sourceApi.read(path);
+        trustSource(path);
+        await importFiles([new File([text], path.split(/[\\/]/).pop() ?? 'character.svg', { type: 'image/svg+xml' })], { link });
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'The file could not be imported.', 'error');
+      }
+      return;
+    }
     if (!/\.fmo$/i.test(path)) return;
     try {
       await openFile(new File([await api.readFile(path)], path.split(/[\\/]/).pop() ?? 'movie.fmo'));
@@ -564,6 +580,42 @@ export function startApp(): void {
       engine.endJob(job);
     }
   }
+  async function characterOut(): Promise<void> {
+    const m = engine.movie, c = selectedCharacter(engine);
+    if (!m || !c) return;
+    // the desktop app's folder dialog gives a real path, so the saved file becomes the character's source
+    const dest = canLinkPaths() ? await pickDestination() : 'unavailable';
+    if (dest === null) return;
+    const job = engine.startJob(t('Character as SVG'), 1);
+    try {
+      const out = await characterToSvg(m, c.id, (id) => engine.assets.get(id));
+      const note = out.note ? ` ${out.note}` : '';
+      const saved = (file: string): string => tf('{file} saved with {n} parts. Edit it in a vector app, keep one group per part, then choose Update from Source... on the character.', { file, n: out.parts });
+      if (dest !== 'unavailable') {
+        const path = await saveFileTo(dest, out.blob, out.name);
+        if (dest.kind === 'engine') {
+          let why: string;
+          try {
+            const link = await sourceApi.stat(path);
+            engine.run('Link Source', (mv) => setSourceLink(mv, c.id, link));
+            trustSource(path);
+            toast(`${tf('{file} saved with {n} parts and linked. Edit it in a vector app, keep one group per part, and save: the character updates when you come back.', { file: path, n: out.parts })}${note}`);
+            return;
+          } catch (e) {
+            why = e instanceof ApiError && e.status === 413 ? t('Saved, not linked: larger than 20 MB.')
+              : tf('Saved, not linked: {reason}', { reason: e instanceof Error ? e.message : t('the file could not be read.') });
+          }
+          toast(`${saved(path)}${note} ${why}`);
+          return;
+        }
+      } else platform.files.download(out.blob, out.name);
+      toast(`${saved(out.name)}${note}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t('The export failed.'), 'error');
+    } finally {
+      engine.endJob(job);
+    }
+  }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
   const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm,.fmact';
@@ -606,6 +658,7 @@ export function startApp(): void {
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
     { id: 'export-fvd', label: 'Current frame as formvis document...', enabled: has, run: () => { void roundTripOut('frame'); } },
     { id: 'export-fvfx', label: 'Movie as formvfx composition...', enabled: has, run: () => { void roundTripOut('movie'); } },
+    { id: 'export-char-svg', label: 'Character as SVG for Vector App...', enabled: () => !!selectedCharacter(engine), run: () => { void characterOut(); } },
     { id: 'import-fvd', label: 'Import formvis document...', enabled: has, run: () => pickFor('.fvd,application/zip') },
     { id: 'import-fvfx', label: 'Import formvfx composition...', enabled: has, run: () => pickFor('.fvxproj,.zip,application/zip') },
     { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },
@@ -714,6 +767,7 @@ export function startApp(): void {
     ...actions.commands,
     ...shapeCommands(engine, () => stage?.shapeStage ?? null, shapePanel, mid),
     ...characterCommands(engine, charactersPanel),
+    ...setupSourceLink({ engine, renderer }).commands,
     ...paint.paintCommands(),
     ...pushCommands(engine),
     ...loopCommands(engine),
@@ -773,7 +827,7 @@ export function startApp(): void {
   setupOnboarding({ commands, engine, openMovie: openFromLibrary, closeHome: () => home.hide() });
   setupHelpCenter({ commands, engine, askToKeep, closeHome: () => home.hide() });
   menus.push(
-    { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
+    { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', 'export-char-svg', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', { label: 'Actions', items: ACTION_MENU_ITEMS }] },

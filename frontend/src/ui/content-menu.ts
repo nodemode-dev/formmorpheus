@@ -10,6 +10,7 @@ import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
 import { BoilMake } from './boil-make';
 import { canConvert } from './flip-convert';
+import { canLinkPaths } from '../io/source-api';
 import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
@@ -62,6 +63,9 @@ export class ContentMenu {
   private readonly makeChar: PopRow;
   private readonly saveChar: PopRow;
   private readonly mouthChar: PopRow;
+  private readonly srcUpdate: PopRow;
+  private readonly srcUnlink: PopRow;
+  private readonly srcRelink: PopRow;
   private readonly flipOrder: PopRow;
   private readonly del: PopRow;
   private readonly track: TrackMenu;
@@ -213,6 +217,14 @@ export class ContentMenu {
     this.saveChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.save' })); });
     this.mouthChar = popRow('character', 'Use as Mouth Chart...');
     this.mouthChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.mouth' })); });
+    const cmdRow = (ico: string, label: string, id: string): PopRow => {
+      const r = popRow(ico, label);
+      r.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: id })); });
+      return r;
+    };
+    this.srcUpdate = cmdRow('refresh', 'Update from Source...', 'character.source-update');
+    this.srcUnlink = cmdRow('unlink', 'Unlink Source', 'character.source-unlink');
+    this.srcRelink = cmdRow('link', 'Relink Source...', 'character.source-relink');
     this.flipOrder = popRow(null, 'Flip Content');
     this.flipOrder.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'flip-order' })); });
     const trackRow = popRow('track', 'Track options', { sub: true });
@@ -256,7 +268,7 @@ export class ContentMenu {
     const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
       sTransform, sTime, sConvert, sMore, popSep(),
-      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, trackRow.el, popSep(), this.del.el);
+      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, this.srcUpdate.el, this.srcUnlink.el, this.srcRelink.el, trackRow.el, popSep(), this.del.el);
   }
 
   private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
@@ -401,8 +413,12 @@ export class ContentMenu {
     for (const n of [this.blend.el, this.mask.el, this.highlight.el, this.parents.row.el, ...this.xform.rows]) setClass(n, 'is-gone', audioOnly);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
     setClass(this.makeChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group'));
-    setClass(this.saveChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group' && !!first.character));
-    setClass(this.mouthChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group' && !!first.character));
+    const isChar = sel.length === 1 && first.kind === 'group' && !!first.character;
+    setClass(this.saveChar.el, 'is-gone', !isChar);
+    setClass(this.mouthChar.el, 'is-gone', !isChar);
+    setClass(this.srcUpdate.el, 'is-gone', !isChar);
+    setClass(this.srcUnlink.el, 'is-gone', !(isChar && canLinkPaths() && !!first.character?.source));
+    setClass(this.srcRelink.el, 'is-gone', !(isChar && canLinkPaths()));
     this.del.setDisabled(none);
     this.syncSections();
   }

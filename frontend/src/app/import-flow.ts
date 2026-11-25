@@ -7,7 +7,7 @@ import * as ops from '../engine/ops';
 import * as groupInner from '../engine/group-inner-ops';
 import { groupCtx } from '../engine/group-ctx';
 import type { Renderer } from '../engine/render';
-import type { Content, Movie } from '../engine/types';
+import type { Content, Movie, SourceLink } from '../engine/types';
 import { registerFonts } from '../media/fonts';
 import { findSequence, importMedia, importSequence, type ImportResult } from '../media/import';
 import { askSequence } from '../ui/sequence-dialog';
@@ -29,6 +29,8 @@ export interface ImportOptions {
   drop?: DropPoint;
   /** Ask first for a lone sound (the Import command); a drop skips the preview. */
   preview?: boolean;
+  /** An SVG opened by its path on the desktop: the character it makes is linked to that file. */
+  link?: SourceLink;
 }
 
 export interface ImportDeps {
@@ -137,7 +139,8 @@ export function createImporter(d: ImportDeps): { importFiles(files: File[], opts
       let next: Movie = { ...mv, assets: { ...mv.assets, ...table } };
       const ids: string[] = [];
       for (const x of done) {
-        x.r.contents.forEach((c, i) => {
+        x.r.contents.forEach((c0, i) => {
+          const c = opts.link && c0.character ? { ...c0, character: { ...c0.character, source: opts.link } } : c0;
           if (grp && !drop) {
             // an open group being worked in takes the file on its own tracks, in the group's frames
             const local = Math.max(grp.offset, c.start - grp.start + grp.offset);

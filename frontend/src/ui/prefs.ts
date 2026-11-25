@@ -61,14 +61,18 @@ export interface Prefs {
   gpu: boolean;
   /** Stage drags snap to the frame's centre and quarters without the snap modifier (off: only while Shift or a second finger is held). */
   stageSnapAlways: boolean;
+  /** SVG paths this computer linked a character to (opened by path, picked in a dialog, saved here): only these are followed. Newest first. */
+  linkedSources: string[];
 }
 
 export const DEFAULT_PREFS: Prefs = {
   language: 'en', autoShowHome: true, homeOnLastClose: true, whatsNewAuto: true, whatsNewSeen: '', noticeSeconds: 0,
   uiFontSize: 'default', animations: true, themeAuto: false, themeLight: 'light', themeDark: 'studio', favouriteThemes: [],
   shortcuts: {}, menuHidden: [], menuColors: {}, dialogValues: {}, recent: [], undoDepth: 250, recentUndo: 100, stageUndoButtons: true, autosaveSeconds: 30,
-  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, penRoll: true, penPlay: false, confirmDelete: false, multiFinger: false, showTips: true, tipsSeen: [], tourDone: false, gpu: true, stageSnapAlways: false,
+  stageShare: 0.56, scrubSpeed: 'medium', undoGestures: true, rotatePinch: true, secondFinger: true, touchHold: true, penHover: true, penRoll: true, penPlay: false, confirmDelete: false, multiFinger: false, showTips: true, tipsSeen: [], tourDone: false, gpu: true, stageSnapAlways: false, linkedSources: [],
 };
+export const LINKED_SOURCES_MAX = 200;
+export const LINKED_SOURCE_LEN = 4096;
 
 const KEY = 'formmorpheus.prefs';
 const num = (v: unknown, lo: number, hi: number, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -161,6 +165,7 @@ export function loadPrefs(): Prefs {
       tourDone: flag(r.tourDone, d.tourDone),
       gpu: flag(r.gpu, d.gpu),
       stageSnapAlways: flag(r.stageSnapAlways, d.stageSnapAlways),
+      linkedSources: strings(r.linkedSources, LINKED_SOURCES_MAX, LINKED_SOURCE_LEN),
     };
   } catch {
     return { ...d, language: systemLang() };

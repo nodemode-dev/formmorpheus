@@ -302,6 +302,20 @@ export interface CharacterInfo {
   actions: ActionDef[];
   /** Where actions sit on the character's block. Absent: none. */
   acts?: ActSpan[];
+  /** The SVG file the character was made from, when it was opened from a real path (desktop). Absent: no link. */
+  source?: SourceLink;
+  /** Part names the last Update from Source did not find in the file (kept, with the hint "Not in the source file"). Absent: none. */
+  missing?: string[];
+  /** Of those parts, the person's own highlight each had before it was marked red; put back when the part returns. */
+  missingWas?: Record<string, Highlight>;
+}
+
+/** A linked source file as the engine's stat route last saw it (bytes, seconds since the epoch, hex digest). */
+export interface SourceLink {
+  path: string;
+  size: number;
+  mtime: number;
+  sha256: string;
 }
 
 /**

@@ -12,6 +12,8 @@ have: ffmpeg, a socket server, or a folder dialog onto the file system.
   /api/audio-encode/mp3          ffmpeg with libmp3lame; MP3 export is hidden on iPad
   /api/save-to/*                 writes into a folder picked with a folder dialog; saving goes through the system picker
   /api/library/{name}/copy-to    copies a movie into a folder picked with a folder dialog
+  /api/files/stat                watches a linked SVG by its path; the iPad picks the file again instead
+  /api/files/source              reads a linked SVG by its path; the iPad picks the file again instead
   /api/video-tools*              finds, downloads and removes ffmpeg; the iPad encodes with its own video encoders
   /api/agents*, /api/agent/*, /api/terminal*, /api/mcp/*, /mcp
                                  outside agents and the terminal panel are desktop only
@@ -43,6 +45,8 @@ DESKTOP_ONLY = [
     ("*", "/api/audio-encode/mp3"),
     ("*", "/api/save-to/*"),
     ("*", "/api/library/{}/copy-to"),
+    ("*", "/api/files/stat"),
+    ("*", "/api/files/source"),
     ("*", "/api/agents"),
     ("*", "/api/agents/*"),
     ("*", "/api/agent/*"),

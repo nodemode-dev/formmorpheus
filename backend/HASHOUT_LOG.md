@@ -3,7 +3,7 @@
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-25 · the Characters library and its MCP tools
+Last updated: 2026-11-25 · the linked SVG routes read one checked descriptor
 
 ---
 
@@ -14,6 +14,18 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 - logged: v0.25.0 · 2026-11-25
 
 - **A movie and a character of the same name deleted in the same second** both went to `<name> <stamp>.fmo`, and the movie's move replaced the character's file and its trash index entry (kind `character` became `movie`). The library's delete now takes the same free-name loop as the characters route (`<name> <stamp> 2.fmo` and on), so each keeps its own file and its own kind in the index. The two routes still hold their own locks; two deletes landing in the very same instant from different routes could still pick one name, which the window never does (each delete is one request after a question).
+
+## v0.25.0 · the linked SVG routes read one checked descriptor
+
+- refers-to: app/routers/files.py :: _source_path, _read_source, stat_source, read_source (was _source_file); ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Why.** `_source_file` checked the path (`is_symlink`, `is_file`, `stat`) and then opened it again by name, so a file swapped for a link, a FIFO or a bigger file between the check and the open was read anyway, and `/stat` hashed the whole file whatever its size.
+- **One descriptor.** Both routes go through `_read_source`: `os.open` with `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` (and `O_BINARY` where it exists), `fstat` of that descriptor must be a regular file of at most 20 MB, then at most 20 MB plus one byte is read from it and more is 413. `/stat` hashes exactly those bytes and answers their length; the change time is the `fstat`'s. `O_NONBLOCK` keeps a FIFO named `.svg` from hanging the open; it is then refused as not a regular file (404).
+- **Without `O_NOFOLLOW` (Windows).** An `os.lstat` is taken first and must not be a link; the opened descriptor's `(st_dev, st_ino)` must equal it, so a link put in its place between the two is refused (404).
+- **Paths refused with 400.** After backslashes become slashes: anything starting with `//` (network shares and device paths, as `save_to._folder`), a colon past the drive letter (alternate data streams), a `..` segment, a relative path, a name not ending in `.svg`. A hard link is a regular file and is read.
+- **`/source`** also sends `X-Content-Type-Options: nosniff`.
 
 ## v0.25.0 · the Characters library routes
 
@@ -40,6 +52,30 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 - **SVG in the import list needs nothing here.** The window picks the importer from the bytes and the file name's extension (`media/import.ts` `sniff` and `EXT`); the engine only passes the file name through the bridge, and the window builds the file without a type. The character importer for SVG is a window change.
 
 ---
+
+## v0.25.0 · the text of a character's linked SVG
+
+- refers-to: app/routers/files.py :: read_source, _source_file, stat_source; ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What it is for.** When the stat of a linked SVG changes, the window needs the new text to read the character again. A page cannot read a file by its path, so `GET /api/files/source?path=` returns it as `image/svg+xml`.
+- **Limits.** Exactly the stat route's: both call `_source_file` (window key in the route, absolute path, `.svg`, a regular file and not a symbolic link, at most 20 MB). The read stops at 20 MB plus one byte and refuses with 413 if the file grew past the limit between the check and the read.
+- **Stat of what was sent.** `X-Source-Size`, `X-Source-Mtime` and `X-Source-Sha256` describe exactly the bytes in the answer, so the window stores the stat of the text it read and a save that lands between a stat and a read is caught on the next poll.
+- **Served as.** `Cache-Control: no-store` and `Content-Security-Policy: sandbox`, so the SVG never runs as a page of the engine's origin even if opened directly (the guard already refuses a request without the window key).
+- **iPad.** Not served there (`DESKTOP_ONLY`); the iPad picks the file again with Update from Source...
+
+## v0.25.0 · the stat of a character's linked SVG
+
+- refers-to: app/routers/files.py :: stat_source, MAX_SOURCE_BYTES; ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What it is for.** The window polls `GET /api/files/stat?path=` every two seconds while it has focus, for each character whose `source` names a file, and updates the character when the answer differs from the stored `{size, mtime, sha256}`. A poll of stat, not a watcher library: no new dependency.
+- **Limits.** The window key is checked in the route as well as by the guard, as the other window-only routes do. Refused: a path that does not end in `.svg` (400), a relative path (400), a missing file, a folder or a symbolic link (404), a file over 20 MB (413). A link is refused so a `.svg` name cannot point the hash at some other file. Only size, change time and hash come back, never the bytes.
+- **Not checked against open movies.** The plan said "only for a path that a character in an open movie names"; the engine does not know which movies the window has open, so the decision in the dev plan (the `.svg`, regular file and size limits) is what holds.
+- **The hash.** Read in 1 MB blocks. The change time alone is not enough: some editors write the same bytes again on save, and a copy over the file can keep its old time.
+- **iPad.** Not served there (`DESKTOP_ONLY` in `api_contract_check`); the window sees 404 and offers Update from Source... only.
 
 ## v0.24.0 · the engine's test suite
 

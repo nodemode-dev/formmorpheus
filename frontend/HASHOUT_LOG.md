@@ -3,7 +3,7 @@
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-23 · the interface's test suite
+Last updated: 2026-11-25 · the source link is followed only where this computer made it
 
 ---
 
@@ -152,6 +152,28 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Guide roles.** `tidyGuides` writes each line as `{axis, at}` and keeps `role` only when it is `'floor'`; it also keeps `squareFrame` and `portraitFrame`, which it dropped (the 1:1 and 4:5 frame switches did not stay on). `normalizeMovie` now tidies `guides` on load, so a file's line roles are checked on open like the rest of the movie.
 - **Scene layers are pictures (removed plan).** The DEV_PLAN said starter scenes would reuse the SVG importer. They do not: each layer is rasterized into a picture block. The backgrounds use linear and radial gradients in `defs` and soft shadows, which the part importer does not keep, and the props are scenery, not rigged parts, so there is nothing to pose. A person edits one by opening the layer's SVG in their vector app (or bringing it in as a character, when it should move in parts) and putting the result in with Replace the picture or video....
 
+## v0.25.0 · the source link is followed only where this computer made it
+
+- refers-to: ui/prefs.ts :: Prefs.linkedSources, LINKED_SOURCES_MAX, LINKED_SOURCE_LEN, loadPrefs; io/source-api.ts :: trustSource, isTrusted, canLinkPaths (canWatchSources removed); app/source-link.ts :: tick, check, fromPath, start, Unlink Source; ui/content-menu.ts :: srcUnlink; app/app.ts :: openFromPath, characterOut; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Why.** A movie, a saved character or a paste carries `character.source.path` from wherever it was made. Followed as it was, a movie from someone else made this window hash and read whatever `.svg` sat at a path they chose, every 2 seconds, and lay it into the movie.
+- **The rule (orchestrator decision).** Only links made on this computer are followed automatically. `Prefs.linkedSources` (per computer, in the prefs store; newest first, at most 200 paths of at most 4096 characters, cleaned by `strings` like the other lists) holds the paths this computer produced. `trustSource(path)` puts a path first; `isTrusted(path)` is an exact match. Written only by: `openFromPath` for an `.svg` the desktop app handed over, `fromPath` after a successful read (Update from Source... and Relink Source... in the dialog), and `characterOut` after the desktop save is linked. Never on movie open, Characters Add to Movie, paste, `.fmo` import or `add_character`: those copy the movie data only.
+- **Polling.** `tick` skips an untrusted path with no request at all, and `check` asks `isTrusted` again right before reading the text. The first untrusted link of a movie (by `movie.id`, once per session) shows "{file} was linked on another computer: choose Relink Source... to follow it."; Relink Source... picks the file in the dialog, which makes it trusted.
+- **One request in flight in all.** `tick` is async and guarded by `running`: it walks the trusted linked paths one after another, awaiting each stat (and read), so a slow engine never has several requests from the poll at once. The per-path `busy` set is gone.
+- **Desktop app only.** Polling and Unlink Source are gated on `canLinkPaths()` (the desktop app, where a dialog gives a real path); `canWatchSources()` (any desktop engine, a browser included) is removed, since a browser can never make a trusted link. Update from Source... (pick the file again) stays everywhere.
+- **Character as SVG.** The stat-and-link step has its own `try`: when it fails the export still says saved, with the platform-neutral sentence, and adds "Saved, not linked: larger than 20 MB." for 413 or "Saved, not linked: {reason}" otherwise. Its texts, the job label and the note "Written without their art: {names}." (`io/svg-export.ts`) go through `t` and `tf`. The local `selectedCharacter` (first selected group that is a character) is replaced by the shared one in `ui/character-commands.ts` (exactly one selected character).
+
+## v0.25.0 · a part's own highlight survives going missing from the source
+
+- refers-to: engine/source-merge.ts :: mergeFromSource; engine/types.ts :: CharacterInfo.missingWas; engine/normalize.ts :: character
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Before.** A part gone from the file was set red, overwriting a highlight the person gave it, and stayed red after it came back.
+- **Now.** Going missing (not on a locked track): a highlight other than none and red is kept in `character.missingWas[name]`, then the part is set red; entries of parts still missing carry over. Coming back: a part that was in `missing` and is still red gets `missingWas[name]`, or none. A part the person gave another highlight while missing keeps it. `missingWas` is written only beside `missing`, and `normalize.ts` keeps only entries for names in `missing` with a known highlight.
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
@@ -200,6 +222,20 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Camera.** The scene's preset (panX, panY, zoom) is written as the movie camera's keys at frame 0 with `setCameraKeys`, so it holds for the whole movie and shows on the camera lane like any key.
 - **Floor.** `floorY` becomes a horizontal guide line marked `role: 'floor'` (a new optional field on `GuideLine`; moving the line keeps it, removing it removes it). `floorOf` finds it. It is shown and snapped to like any guide and is never exported.
 - Not done: no starter `.fmo` files (DEV_PLAN Decisions: manifest plus SVG layers built on open); the Home screen's Start list was left as it was.
+
+## v0.25.0 · the source link in the window
+
+- refers-to: app/source-link.ts (new) :: setupSourceLink, apply, check, tick, fromPath; io/source-api.ts (new) :: sourceApi, canWatchSources, canLinkPaths, pickSvgPath; engine/source-merge.ts :: setSourceLink, linkedCharacters, isMissingPart, mergeFromSource (missing); engine/types.ts :: CharacterInfo.missing; engine/normalize.ts :: character; app/import-flow.ts :: ImportOptions.link; app/app.ts :: openFromPath, setupSourceLink; ui/content-menu.ts :: srcUpdate, srcUnlink, srcRelink; ui/status.ts :: syncDims
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Polling.** Every 2 seconds while the window has focus (started on `focus`, and at once if the page already has it; stopped on `blur`; the first check runs on focus, so coming back from the vector app updates at once). Each check walks the open movie for every character with `source`, nested ones included, and asks `/api/files/stat` once per path with at most one request in flight per path. A hash that differs from a character's stored `sha256` reads the text from `/api/files/source`, runs `svgToCharacterGroup` on a scratch movie of the movie's size (no tracks, no assets), stores and preloads the pictures as `import-flow.ts` place does, and makes one `engine.run('Update from Source')` that calls `mergeFromSource` for each character on that path (a second character gets `ops.cloneContent` of the fresh group, so no id is shared) and writes the stat of the bytes read into `source` in the same step. A toast names the file and lists new parts and parts not in the file.
+- **Undo is not undone by the poll.** After an undo the stored hash is the old one while the file has the new one; a per-character map of the hash already applied this session keeps the next poll from putting the update back. A later save of the file, Update from Source... or Redo brings it back.
+- **Where it runs.** Decided by the platform, not by an answer: `platform.kind === 'desktop'` means the Python engine, which serves both routes (in the desktop app and in a browser alike), so the window polls; the iPad's engine has neither route, so the window never asks there and offers Update from Source... only (no Unlink, no Relink). A 404 on the desktop therefore means the file is gone: "Source file not found" once per path per session, the link is kept, and checking goes on so the file is picked up when it is back. Another refusal (400, 403, 413) is shown once and that path is not asked again this session. An engine that is not answering is skipped quietly.
+- **Missing parts.** `mergeFromSource` now writes the names it did not find into `character.missing` (removed when none). The status bar's selection text adds "Not in the source file" for such a part: it is where the window describes the selected block, and the Timeline chip is drawn on a canvas with no per-block hint. The red highlight from the merge stays as before.
+- **Menu.** On a selected character, beside Save to Characters: Update from Source... (always), Unlink Source (linked, desktop engine), Relink Source... (desktop app only, where a dialog gives a path). Update from Source... in the desktop app opens the system dialog (`plugin:dialog|open`, SVG filter, starting at the linked file) and links the chosen path with the stat of what was read; elsewhere it uses the platform picker, which gives no path, and keeps the link as it was. Relink Source... links and reads the file in one step named "Relink Source"; Unlink Source drops `source` as an undo step.
+- **Opened by path.** Paths the desktop app hands the window (Open With, a second launch, the command line: `formmorpheus://open-paths` and `take_pending_opens`) reached only `.fmo` before. An `.svg` path now reads the file through `/api/files/source` and imports it into the open movie with `ImportOptions.link`, so the character it makes is linked at import. `.svg` is not a declared document type of the app, so double-clicking an SVG does not offer FormMorpheus; Open With and the command line do. The Import command and drops use the browser's file chooser, which gives no path: those characters are linked with Relink Source...
+- **Files.** `normalize.ts` keeps `source` only with a string path ending in `.svg`, finite `size` and `mtime` and a string `sha256`, and keeps `missing` to names that are parts. Only links made on this computer are followed: a path is followed only when it is in `Prefs.linkedSources`, written where this computer produced the path (an `.svg` opened by a path the desktop app handed over, Update from Source... and Relink Source... through the dialog, the desktop save of Character as SVG). A link that arrived inside a movie, a saved character, a paste, an `.fmo` import or an agent's `add_character` is never asked for until the person chooses Relink Source... once (see "the source link is followed only where this computer made it").
 
 ## v0.25.0 · Lip-sync onto a character's mouth
 
@@ -300,6 +336,36 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Saving** (`actionFromKeys`) takes every Move and Bones channel with a key in the range, adds keys at both ends at the values shown there, and marks the action a loop when every channel ends where it starts. It does not place a span; the keys it came from stay plain keys.
 - **Removing an action** drops its spans; their keys stay as plain keys.
 - **Old files.** A character saved without `actions` is given `[]` on load in `normalize.ts`, so the field is required in the type and no code reads it with a fallback.
+
+## v0.25.0 · a character as SVG for a vector app
+
+- refers-to: io/svg-export.ts (new) :: characterToSvg; app/app.ts :: characterOut, selectedCharacter, command export-char-svg, File > Round Trips; ui/export-where.ts :: pickDestination, saveFileTo; engine/source-merge.ts :: setSourceLink
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Layout.** One `<g id="part name">` per part, nested by `parent` (a parent that is not a part of the character leaves the part at the top), bottom track first so the painter's order matches the Stage. Inside a part its own art and its child parts are ordered by their tracks; a sibling between a parent and its child cannot sit between them in a nested file, so it ends up above or below both.
+- **Space.** Each part's art is written in its own content space at rest (movie pixels, the movie centre is the content centre, as `shape-draw.ts` translates), with no `transform` attribute for the part's own Move transform. Nesting by parent and the pivot circles stay.
+- **Round trip with the merge (orchestrator's decision).** The importer bakes every transform it meets into the path coordinates, and Update from Source keeps each part's own transform. A first version wrote each part's rest transform as its group's `transform="matrix(...)"`; a part moved in the app then came back with the move baked into its art and kept in its transform, so it moved twice. Removed: the part's matrix on its `<g>`. Checked with the five starter characters: import, move one part and key another, export, re-import, merge: every part keeps its id, transform, keys and parent, nothing is added or missing, and the outlines, pivots and inner shapes match to 0.002 px.
+- **Parts drawn with several shapes.** The importer makes such a part a Group of shapes. Its inner blocks (not parts) are written as its art, bottom track first, each `<path>` with `data-name` set to the block's name so a re-import keeps the names, and an inner block's own transform as that element's `transform` (never a `<g>`, which would read back as a nested part). An open outline's fill is not written (the renderer never draws it), so after a round trip such an outline has no fill.
+- **Shapes.** A `path` is written as cubic segments straight from its BezNodes (lossless); an ellipse as two arcs; every other type as the polyline `outline()` gives, the outline the renderer fills. Fill only when the outline is closed, as the renderer does. Linear and radial gradients are `userSpaceOnUse` with the endpoints, centre and radius `shape-draw.ts` computes from the outline's box. Stroke alignment inside and outside, and trim path, have no SVG form: the stroke is centred and the outline whole. Values are the saved ones; Shape lane keys are animation and stay in the app.
+- **Pictures.** Embedded as `data:` PNG on `xlink:href` (what vector apps read most widely). A non-PNG picture is redrawn as PNG when the browser can. A Drawing's leaf layers go bottom first, each at the content's canvas, with its own and its layer groups' opacity; blend modes and layer masks are not written. A Flipbook writes the first drawing of each plain row.
+- **Pivots.** `<circle id="pivot-<part>" data-role="pivot" r="4">` as the last child of each part's group, in the part's own space, so it sits at the pivot after the transform. Thin outline in a magenta that art rarely uses; the importer removes it from the art.
+- **Left out.** Text, video and sound parts are written as empty groups with their pivot, so the part names survive, and the toast names them.
+- **Saving.** In the desktop app the folder dialog comes first (`ui/export-where.ts` `pickDestination`, as other exports to a folder), the engine writes the file there without replacing one (`saveFileTo`, `/api/save-to/file`, "Name 2" when taken) and answers its absolute path; the window asks `/api/files/stat` for it and links the character to it as one undo step, "Link Source", so later saves in the vector app update the character. Cancel in the dialog exports nothing. Everywhere else (a browser, iPad) it goes through `platform.files.download` as before: a download or the export picker gives no path, so the character is not linked and Relink Source... (desktop app) or Update from Source... does it. First version: always a download, never linked.
+
+## v0.25.0 · Update from Source: the merge by part name
+
+- refers-to: engine/types.ts :: SourceLink, CharacterInfo.source; engine/source-merge.ts (new) :: mergeFromSource, MISSING_HIGHLIGHT
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What the merge takes.** A part matched by name takes the fresh part's kind, `shape`, `asset`, `layers`, `canvas` and `pivot` (a field the fresh part lacks is removed, so a part that turned from a shape into a picture drops its outline). Everything else is the part's own: id, keys (Shape lane keys included), parent, rig, transform, opacity, blend, highlight, timing, name. Acts and actions live on the character, which the merge copies whole apart from `parts`.
+- **A Flipbook stays.** A matched part that is a Flipbook and comes back as anything else keeps its drawings: the mouth chart is drawn in the app, and the SVG export writes only its first drawing.
+- **Parts drawn with several shapes.** Such a part is a Group whose inner blocks are its art, so a matched Group takes the fresh part's inner tracks too (new inner ids; keys on those inner shapes are not kept). A Group that holds other parts keeps everything, as a Flipbook does: taking its tracks would drop those parts.
+- **New parts.** Cloned with `ops.cloneContent` (the paste command's re-id), each on its own new inner track at the top of the group, in the file's order, spanning the frames the existing parts span. A new part's parent follows the file: a matched part's own id, another new part's new id, or nothing when the file's parent is not a part.
+- **Missing parts.** Kept with the red highlight and returned by name, so the window can show the hint "Not in the source file". A highlight is never cleared when a part comes back: the person may have chosen red themselves.
+- **Locks.** A matched part on a locked inner track refuses the whole update with the part's name; a missing part on a locked track is reported but not recoloured. A locked character track is refused by `ops.updateContent`.
+- **Assets.** The optional fourth argument is the import's asset table; the records the taken and new parts use are added to `movie.assets`. Blobs stay the caller's (`engine.assets.set` and `renderer.preload`, as `app/import-flow.ts` place does). Old pictures are not removed here: undo needs them, and the engine's sweep of stray pixels lets them go.
 
 ## v0.24.0 · the interface's test suite
 
