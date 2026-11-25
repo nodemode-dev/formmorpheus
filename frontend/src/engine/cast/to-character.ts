@@ -316,7 +316,7 @@ function shapesIn(c: Content): ShapeDef[] {
 /** A fresh build waiting to be laid over a character: the group, the mouth pictures to store, and the recipe. */
 export interface CastPrepared { fresh: Content; assets: ImportResult['assets']; spec: CastSpec }
 
-/** A rebuild: `missing` holds only parts the person added; `hidden` the cast parts this build does not draw. */
+/** A rebuild: `hidden` lists the cast parts this build does not draw; `missing` is always empty (the person's own parts are left alone). */
 export interface CastRebuild extends SourceMerge { hidden: string[] }
 
 /** Builds a recipe for a rebuild in a movie of this size; the slow part, run before the edit. */
@@ -349,15 +349,18 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
     if (!ch0) return c;
     const hideIds = new Set(hidden.map((n) => ch0.parts[n]));
     const showIds = new Set(back.map((n) => ch0.parts[n]));
-    let tracks = c.tracks.map((t) => (t.content.some((x) => hideIds.has(x.id) || showIds.has(x.id)) ? { ...t, content: t.content.map((x) => {
+    const keepIds = new Set(r.missing.filter((n) => !isCastPart(n)).map((n) => ch0.parts[n]));
+    let tracks = c.tracks.map((t) => (t.content.some((x) => hideIds.has(x.id) || showIds.has(x.id) || keepIds.has(x.id)) ? { ...t, content: t.content.map((x) => {
+      if (keepIds.has(x.id)) return { ...x, highlight: highlight.get(x.id) ?? x.highlight };
       if (hideIds.has(x.id)) return { ...x, hidden: true as const, highlight: highlight.get(x.id) ?? x.highlight };
       if (showIds.has(x.id) && x.hidden) { const { hidden: _h, ...rest } = x; return rest as Content; }
       return x;
     }) } : t));
     tracks = placeAdded(tracks, freshOrder, r.added, ch0.parts);
-    const { missing: m0, missingWas: w0, ...base } = ch0;
-    const missing = (m0 ?? []).filter((n) => !hidden.includes(n));
-    const was = Object.fromEntries(Object.entries(w0 ?? {}).filter(([n]) => !hidden.includes(n)));
+    const { missing: _m, missingWas: _w, ...base } = ch0;
+    const gone = (n: string): boolean => !hidden.includes(n) && !(n in (g.character?.parts ?? {}));
+    const missing = (old?.character?.missing ?? []).filter(gone);
+    const was = Object.fromEntries(Object.entries(old?.character?.missingWas ?? {}).filter(([n]) => gone(n)));
     const ch = { ...base, ...(missing.length ? { missing } : {}), ...(missing.length && Object.keys(was).length ? { missingWas: was } : {}) };
     const mouthId = ch.parts.mouth;
     if (oldMouth?.kind === 'flipbook' && freshMouth?.kind === 'flipbook' && mouthId === oldMouth.id) {
@@ -374,7 +377,7 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
     const mouthC = mouthId ? tracks.flatMap((t) => t.content).find((x) => x.id === mouthId) : undefined;
     return { ...c, tracks, character: { ...ch, build: spec, ...(mouthC?.kind === 'flipbook' ? { mouth: mouthId } : {}) } };
   });
-  return { ...r, movie: next, missing: r.missing.filter((n) => !isCastPart(n)), hidden };
+  return { movie: next, added: r.added, missing: [], hidden };
 }
 
 /** Moves each added part's track (top first list) directly above the nearest part under it in the fresh draw order. */
