@@ -186,6 +186,132 @@ Perform records a gesture instead of placing keys by hand.
 
 **Modifications** (the gear in the banner): **Motion filtering** thins the keys while keeping the visible motion, and **Roll sensitivity** sets how much a pen's barrel roll turns the block. Sliders on the block's card (opacity, blur and the other filters) also record while the movie plays.
 
+## Characters
+
+A character is a Group whose inner blocks are named parts: a head, a body, arms, legs, a mouth. FormMorpheus keeps the names, so actions, lip-sync and the link to a vector app know which block is which. A character shows a small person glyph on its Timeline chip.
+
+### A character from an SVG
+
+Draw the character in a vector app with **one group per part**, and open the SVG with Import (Ctrl+I) or drop it on the window. It arrives as one Group named after the file, already a character, with one part on its own inner track for each group.
+
+- **Names.** A part is named by its label in the editor, then its `data-name`, then its `id`, then Part 1, Part 2 and so on. A name used twice gets a number.
+- **Parts inside parts.** A group inside a group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A layer group of an editor, and a lone wrapper group that holds only groups, are opened and not made parts. A loose shape outside any group is a part of its own.
+- **Pivots.** A part turns about its pivot, so put it where the joint is: the shoulder for an arm, the hip for a leg, the neck for a head, the wrist for a hand. Draw a small mark inside the part's own art and give it the id `pivot`, an id that starts with `pivot-`, or `data-role="pivot"`; its centre becomes the pivot and the mark is left out of the art. A part with no mark turns about the middle of its box.
+- **Shapes and pictures.** Paths, rectangles, circles, ellipses, lines, polygons and polylines with solid, linear or radial paint open as Shapes you can still edit. A part that holds text, pictures, reused elements, filters, masks, clipping, patterns or markers, or a filled shape that cuts a hole in another, opens as a picture (a Drawing you can touch up in Draw and Paint). The notice after the import names each such part and says why.
+- **Size.** The art keeps its pixel size. It is shrunk only when it is larger than the movie, and is centered.
+- **A mouth chart.** An SVG whose top-level groups are named for the mouth shapes (Rest, MBP, AI, E, O, U, FV and L / th, at least six of them) opens as one Flipbook with a drawing for each shape, named as Lip-sync expects.
+
+An SVG that holds nothing FormMorpheus can read is refused with its name.
+
+### Make Character
+
+For a Group you built by hand, select it and choose Content · **Make Character...** (also on the block's menu, in the Action menu as **Character**, and in command search). Type a name. The group's inner blocks become the parts, named as they are named on the Timeline, and the first inner Flipbook that holds a mouth chart becomes its mouth. It is one undo step. On a block that already is a character, Make Character names the parts again and keeps its actions.
+
+### The Characters panel
+
+View · **Characters** opens a panel beside the Stage with two lists. It sits on the left, so the Media Bin can stay open too.
+
+- **Starter** holds five original characters: Kofi, Ines, Marisol, Bram and Noor. Each has the same part names and a pivot at every joint, plus a mouth chart of eight drawings, so every action and Lip-sync from Sound works on it at once. Starter rows cannot be renamed or deleted.
+- **Mine** holds the characters you saved. Each row has **Add to Movie**, **Rename** and **Delete**. Delete moves the character to Recently Deleted.
+
+**Add to Movie**, or dragging a row onto the Stage or onto the Timeline, puts an independent copy at the Playhead (or where you dropped it) on a new track named for it. Every part is new, so two copies of the same character move apart. A character saved from a larger movie is scaled down to fit. It is one undo step. A starter character added to a movie made from a starter scene stands on that scene's floor (see Starter scenes).
+
+### Save to Characters
+
+Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. When the name is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". The saved character is a copy: later changes in the movie do not change it. Its actions go with it.
+
+Deleted characters stay in Recently Deleted on Home for 30 days. Restoring one puts it back in Characters.
+
+### Lip-sync onto a character's mouth
+
+Choose **Lip-sync from Sound...** on a sound block's menu, or on a character that has a mouth. In the dialog, the **Mouth flipbook** list starts with your characters, written as "Kofi (character)", and then the other Flipbooks. The default is the selected character's mouth. Choose **Lip-sync**, and the mouth inside the character takes the shape of the sound, in one undo step. The range is cut to the room on the mouth's own track and to the end of its character.
+
+## Actions
+
+An action is a named piece of motion for a character: Move and Bones keys for some of its parts, kept with the character. Applying one writes ordinary keys on the parts' own lanes, so you can still change them in Keyframe mode and in the Graph editor. An action stores each key as a change from the part's resting place, so the same action suits characters drawn at other places and sizes.
+
+### Apply an action
+
+Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the **Starter actions**: Idle, Nod, Shake head, Wave, Point, Walk in place, Jump and Sit. A looping action is marked **Loop**.
+
+- With no loop range set, the action goes in once, from the Playhead.
+- With a loop range (Alt+I sets its start and Alt+O its end), the action starts at the range's start, and a looping action repeats as many times as fit.
+- The starter actions are written for a character that faces you, with parts named `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r`. They never key the `mouth`, which Lip-sync owns. If your character draws its right arm on the other side, they are mirrored as they go in. They are written at 24 frames a second and keep their speed in a movie at another rate.
+- A part the character does not have is skipped, and the status line names it: "This character has no leg-r, so that part of the action was skipped."
+- Keys outside the span the action takes are never touched.
+
+Each apply is one undo step.
+
+### The strips
+
+An applied action shows as a labelled **strip** along the lower edge of the character's block, counted in the character's own frames, so moving or trimming the block keeps the strip and its keys together. Press a strip: the block is selected, the strip is marked, and the same card opens. Choose another action to **swap** it over the same frames, or **Clear Action** to remove it. **Swap Action...** and **Clear Action** in Content · Actions work on the strip you pressed last. A swap is one undo step, and undo brings the first action back with its exact keys.
+
+### Your own actions
+
+- **Save Action...** makes an action from the character's own keys across the loop range, or across the whole block when none is set. Type a name. It takes the Move and Bones keys inside the range, adds a key at each end where the picture is, and is marked Loop when every channel ends where it starts. The keys it came from stay plain keys.
+- **Delete Action...** removes one of the character's own actions. Where it was applied, the keys stay as plain keys and the strip goes.
+
+### .fmact files
+
+An action is a small text file you can keep, share and open in another movie.
+
+- **Export Action...** asks which action and saves `[name].fmact`. A starter action exports too.
+- **Import Action...** on Content · Actions, **Import** (Ctrl+I) with a `.fmact` among the files, or a drop on the window adds the action to the selected character, one undo step for each file. With no character selected, it says "Select a character, then import the action onto it."
+- A file over 1 MB, or one that is not an action, is refused ("That is not an action file."), and so is one made by a newer FormMorpheus. An action file holds Move and Bones keys and nothing else.
+
+## Starter scenes
+
+File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Choose one and a new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+
+- Each layer is a picture on **its own track**, the background at the bottom and every prop above it, each as long as the movie, so you can move, hide or replace any of them.
+- The scene's **camera** is set at frame 0 and shows on the camera lane like any key.
+- A **floor guide** is a horizontal guide line across the Stage where feet rest. It is shown and snapped to like any guide (Stage Options · Guides, **Show guides**), it is never exported, and you can drag it or remove it.
+- The starter files themselves are never changed.
+
+A starter character added to this movie from the Characters panel stands on the floor guide at half its size, centered on the frame. Without a floor guide, and for a character from Mine, it is placed as usual.
+
+## Working with a vector app
+
+A character can leave FormMorpheus as an SVG, be changed in a vector app such as FormPath, and come back with its animation. The vector app is only another program: FormMorpheus never starts or controls it.
+
+### Send a character out
+
+Select a character and choose File · Round Trips · **Character as SVG for Vector App...**.
+
+- In the desktop app a folder dialog opens first. The file is written there, named after the character, and never replaces another file ("Name 2" when the name is taken). The character is then **linked** to the file, and the notice says so. Cancel in the dialog exports nothing.
+- Elsewhere (in a browser, and on iPad) the file is downloaded or shared and the character is not linked; use Update from Source... when you bring it back.
+
+The SVG has one `<g id="part name">` for each part, nested the way the parts are parented, at the movie's size, with the art at rest. Shapes are written as paths, pictures as embedded PNG, and each part has a small magenta circle that marks its pivot (`pivot-` and the part's name); FormMorpheus removes it again when the file comes back. Text, video and sound parts are written as empty groups with their pivot, so their names survive, and the notice names them. Moves and keys are not written: they stay in FormMorpheus. Stroke alignment inside or outside, and trim path, have no form in SVG, so the stroke is centered and the outline whole.
+
+In the vector app, change the art, keep **one group per part** and keep each part's name, then save the file where it is.
+
+### The source link and Update from Source...
+
+A linked character follows its SVG file on the desktop. While the FormMorpheus window has focus, it looks at the file about every two seconds, and at once when you come back to the window. When the file has changed, the character is read again as one undo step named **Update from Source**, and a notice says "Updated from [file]." with the names of any new or missing parts.
+
+Parts are matched by name:
+
+- **A part that is in both** takes the new art and the new pivot. It keeps its keys, parent, bones, move and turn, opacity, blend mode, timing and name, and the character keeps its actions and strips. A part that is a Flipbook, such as a mouth chart you drew in FormMorpheus, keeps its drawings.
+- **A part that is new** in the file is added on top, on its own inner track, parented as the file says.
+- **A part that is gone** from the file stays. It gets the red highlight, and when it is selected the status bar adds "Not in the source file". The red stays when the part comes back, since you may have chosen it yourself.
+- A part on a locked track refuses the update and names the part.
+
+An undo of an update is not put back by the next look at the file. Save the file again, choose Update from Source..., or Redo, to bring it back. If the file cannot be found, a notice says "Source file not found" once and the link is kept, so it is picked up when the file is back. Only SVG files up to 20 MB that are plain files, not links to other files, are read.
+
+### The character's menu
+
+On a selected character, the block's menu has:
+
+- **Update from Source...** reads the character again from an SVG. In the desktop app it opens the system file dialog at the linked file and links the one you choose; elsewhere you pick the file and the link stays as it was.
+- **Unlink Source** stops the character following its file (desktop). It is one undo step.
+- **Relink Source...** links the character to an SVG file and reads it in one step (desktop app).
+
+An SVG that the desktop app is handed by its path (Open With, or the command line) is linked when it opens. An SVG from Import or a drop has no path, so link it with Relink Source....
+
+### On iPad
+
+The iPad has no automatic check and no Unlink Source or Relink Source...: choose **Update from Source...** and pick the file again from Files. An SVG and a `.fmact` file both open from the Files app (a movie must be open first). The Characters library is the **Characters** folder beside your movies in the Files app (it is not kept in iCloud Drive). See "On iPad" in New in 0.18.0.
+
 ## Importing media
 
 Use Import (Ctrl+I) or drop files on the window.
@@ -195,6 +321,8 @@ Use Import (Ctrl+I) or drop files on the window.
 | Video | MP4, MOV, WebM and what the window can decode | frame-accurate; on the desktop, a video the window cannot decode (ProRes, some HEVC) is converted by ffmpeg, and without ffmpeg it is refused with the reason |
 | Sound | WAV, MP3, AAC, FLAC, Ogg and Opus where decodable | waveform on the block |
 | Pictures | PNG, JPEG, WebP, AVIF, BMP | placed as a picture block |
+| SVG | SVG | opens as a character with a part for each group (see Characters) |
+| Actions | `.fmact` | added to the selected character (see Actions) |
 | Animated GIF | GIF | becomes a Flipbook, holds taken from the frame delays |
 | TIFF | TIFF | decoded by the app itself |
 | Fonts | TTF, OTF, WOFF, WOFF2 | ready in the Text card |
@@ -213,7 +341,7 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
   - an **animated GIF**, which becomes a Flipbook with its holds.
 - Fonts and sound files come over as they are.
 
-**From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: a **PNG** opens as a picture, and a **PSD** opens as a Drawing with its layers. The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
+**From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: a **PNG** opens as a picture, a **PSD** opens as a Drawing with its layers, and an **SVG** opens as a character with a part for each group (see Characters). The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
 
 ## Text
 
@@ -350,6 +478,20 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.25.0
+
+**Characters.** An SVG with one group per body part opens as a character, with parts, pivots and parenting. Make Character does the same for a Group you built. View · Characters lists five starter characters and the ones you save with Save to Characters; Add to Movie puts an independent copy in any movie. Lip-sync from Sound... can fill a character's mouth. Recently Deleted keeps deleted characters, and outside agents have `list_characters` and `add_character`.
+
+**Actions.** Apply, swap, clear and save named motions on a character, shown as strips on its block. Eight starter actions ship, and an action travels as a `.fmact` file.
+
+**Starter scenes.** File · New from Starter Scene... opens one of five original scenes as a new movie, with a floor guide for starter characters.
+
+**Vector app.** File · Round Trips · Character as SVG for Vector App... sends a character out and links it. When the file is saved in the vector app, the character updates by part name and keeps its animation. Update from Source..., Unlink Source and Relink Source... are on the character's menu.
+
+**On iPad.** The iPad keeps a Characters library in the Files app, and SVG and `.fmact` files open from Files. The iPad app is a beta you build yourself; it was built and run on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3.
+
+**The manual.** Transitions has its own section under Compose, and Coming from another animation app covers scene-based apps.
 
 ## New in 0.18.0
 
