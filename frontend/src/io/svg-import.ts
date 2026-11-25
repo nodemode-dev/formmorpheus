@@ -35,6 +35,8 @@ export interface SvgPart {
   pivot: [number, number] | null;
   opacity: number;
   hidden: boolean;
+  /** Not displayed in the file (display none, on it or on its layer): hidden, and left out of a mouth chart. */
+  undisplayed?: boolean;
   /** A standalone SVG of this part alone, used to draw it as a picture. */
   markup: string;
   /** When the part's groups are a mouth chart: one drawing per group, and the part becomes their Flipbook. */
@@ -546,7 +548,7 @@ function own(cx: Ctx, w: PartWork, container: Element, m0: Mat, st0: Style, nest
   for (const el of kids(container)) {
     if (!isSvg(el) || DEFS.has(el.localName) || QUIET.has(el.localName)) continue;
     const st = styleOf(cx, el, st0);
-    if (st.display === 'none') continue;
+    if (st.display === 'none' && (el.localName !== 'g' || isPivot(el))) continue;
     const m = mul(m0, transformOf(el.getAttribute('transform')));
     if (isPivot(el)) {
       w.part.pivot = geometryCentre(cx, el, m);
@@ -573,11 +575,12 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
     name: uniqueName(cx, labelOf(el) ?? `Part ${cx.parts.length + 1}`),
     parent, shapes: [], raster: null, pivot: null,
     opacity: opacity(st.opacity) * above,
-    hidden: st.visibility === 'hidden' || st.visibility === 'collapse',
+    hidden: st.visibility === 'hidden' || st.visibility === 'collapse' || st.display === 'none',
     markup: '',
   };
+  if (st.display === 'none') part.undisplayed = true;
   // a hidden part keeps its art: the flag hides it, and only what is hidden inside it stays out
-  if (part.hidden) { st = { ...st }; delete st.visibility; }
+  if (part.hidden) { st = { ...st }; delete st.visibility; delete st.display; }
   if (has(st.filter)) part.raster = 'a filter';
   else if (has(st.mask)) part.raster = 'a mask';
   else if (has(st['clip-path'])) part.raster = 'a clipping path';
@@ -592,9 +595,10 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
     const r = DRAWN.has(el.localName) ? drawElement(cx, el, m, st) : { why: WHY[el.localName] ?? 'an element that is not a shape' };
     if ('why' in r) part.raster = r.why; else part.shapes.push(...r.shapes);
   }
-  if (nested.length >= 2 && chartLike(nested.map(([g]) => labelOf(g) ?? ''))) {
+  const shown = nested.filter(([, , , gs]) => gs.display !== 'none');
+  if (shown.length >= 2 && chartLike(shown.map(([g]) => labelOf(g) ?? ''))) {
     // each mouth is drawn whole as a frame of this part, not made a part of its own
-    part.frames = nested.map(([g, gm, gOuter, gs]) => {
+    part.frames = shown.map(([g, gm, gOuter, gs]) => {
       const frame: SvgPart = { name: labelOf(g) ?? part.name, parent: index, shapes: [], raster: null, pivot: null, opacity: 1, hidden: gs.visibility === 'hidden' || gs.visibility === 'collapse', markup: '' };
       out.push({ part: frame, el: g, outer: gm, outerStyle: gOuter, cut: [] });
       return frame;
@@ -612,7 +616,7 @@ function top(cx: Ctx, container: Element, m0: Mat, st0: Style, above: number, ou
   for (const el of kids(container)) {
     if (!isSvg(el) || DEFS.has(el.localName) || QUIET.has(el.localName)) continue;
     const st = styleOf(cx, el, st0);
-    if (st.display === 'none') continue;
+    if (st.display === 'none' && el.localName !== 'g') continue;
     if (!DRAWN.has(el.localName)) { run = null; runs.push([[el, st]]); continue; }
     if (!run) { run = []; runs.push(run); }
     run.push([el, st]);
@@ -630,7 +634,13 @@ function top(cx: Ctx, container: Element, m0: Mat, st0: Style, above: number, ou
   });
   for (const [el, st] of items) {
     // an editor's layer holds parts; it is not one
-    if (isLayer(el)) { top(cx, el, mul(m0, transformOf(el.getAttribute('transform'))), st, above * opacity(st.opacity), out); continue; }
+    if (isLayer(el)) {
+      // a layer not displayed: its parts arrive hidden, with their art
+      const off = st.display === 'none', from = out.length;
+      top(cx, el, mul(m0, transformOf(el.getAttribute('transform'))), off ? { ...st, visibility: 'hidden' } : st, above * opacity(st.opacity), out);
+      if (off) for (let i = from; i < out.length; i++) out[i].part.undisplayed = true;
+      continue;
+    }
     makePart(cx, el, m0, st0, st, -1, above, out);
   }
 }
@@ -650,7 +660,7 @@ function markupOf(cx: Ctx, w: PartWork, xml: XMLSerializer): string {
   for (const c of w.cut) c.removeAttribute('data-fm-cut');
   for (const c of Array.from(clone.querySelectorAll('[data-fm-cut]'))) c.remove();
   // the part's opacity is the block's own; the picture is drawn whole
-  clone.setAttribute('style', `${clone.getAttribute('style') ?? ''};opacity:1${w.part.hidden ? ';visibility:visible' : ''}`);
+  clone.setAttribute('style', `${clone.getAttribute('style') ?? ''};opacity:1${w.part.hidden ? ';visibility:visible;display:inline' : ''}`);
   const inherit = INHERIT.filter((k) => w.outerStyle[k] !== undefined).map((k) => ` ${k}="${escAttr(w.outerStyle[k])}"`).join('');
   return `<svg xmlns="${SVG_NS}" xmlns:xlink="http://www.w3.org/1999/xlink"${cx.xmlns} width="${cx.width}" height="${cx.height}" viewBox="0 0 ${cx.width} ${cx.height}">${cx.defs}<g transform="${matrixText(w.outer)}"${inherit}>${xml.serializeToString(clone)}</g></svg>`;
 }
@@ -846,7 +856,7 @@ function chartLike(names: string[]): boolean {
 
 /** True when an SVG's top-level groups are a mouth chart: most of them named for the eight mouth shapes. */
 export function isMouthChart(doc: SvgDoc): boolean {
-  return chartLike(doc.parts.filter((p) => p.parent < 0).map((p) => p.name));
+  return chartLike(doc.parts.filter((p) => p.parent < 0 && !p.undisplayed).map((p) => p.name));
 }
 
 /** Parts drawn as one mouth Flipbook from frame `at`, a frame each named for its shape in chart order; null when none draws. */
@@ -883,7 +893,7 @@ async function chartBook(parts: SvgPart[], doc: SvgDoc, f: Fit, at: number, dur:
  */
 export async function svgToMouthChart(src: string | SvgDoc, movie: Movie, at = 0, fileName = 'Mouth chart.svg'): Promise<ImportResult & { content: Content }> {
   const doc = typeof src === 'string' ? parseSvgParts(src) : src;
-  const topParts = doc.parts.filter((p) => p.parent < 0);
+  const topParts = doc.parts.filter((p) => p.parent < 0 && !p.undisplayed);
   const assets: ImportResult['assets'] = [];
   const content = topParts.length ? await chartBook(topParts, doc, fitOf(doc, movie), at, Math.max(topParts.length, movie.duration - at), assets) : null;
   if (!content) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
