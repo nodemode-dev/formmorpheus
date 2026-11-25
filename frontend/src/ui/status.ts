@@ -1,4 +1,5 @@
 import type { Engine } from '../engine/engine';
+import { isMissingPart } from '../engine/source-merge';
 import { durationLabel } from '../engine/time';
 import type { Content, Movie } from '../engine/types';
 import { el, pendingClass, q, setClass, setStyleVar, setText, setTitle } from './dom';
@@ -67,6 +68,7 @@ export class StatusBar {
     if (m && ids.length === 1) {
       const found = this.find(m.tracks, ids[0]);
       if (found) pick = ` · ${t('{name}: frame {a} to {b}, {d}').replace('{name}', contentName(found.name)).replace('{a}', String(found.start)).replace('{b}', String(found.start + found.duration)).replace('{d}', durationLabel(found.duration, m.fps))}`;
+      if (found && isMissingPart(m, found.id)) pick += ` · ${t('Not in the source file')}`;
     } else if (ids.length > 1) pick = ` · ${tn(ids.length, '{n} selected', '{n} selected')}`;
     setText(this.dims, base + pick);
     setTitle(this.dims, base + pick);

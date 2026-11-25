@@ -5,7 +5,7 @@ import { updateInner } from './group-inner-ops';
 import { uid } from './model';
 import * as ops from './ops';
 import { findContent } from './transform';
-import type { Asset, Content, Highlight, Movie, Track } from './types';
+import type { Asset, Content, Highlight, Movie, SourceLink, Track } from './types';
 
 export interface SourceMerge {
   movie: Movie;
@@ -113,10 +113,49 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
   const taken = [...matched.values(), ...born.map((b) => b.c)];
   const table: Record<string, Asset> = {};
   for (const id of usedAssetIds([], taken)) if (assets[id] && !movie.assets[id]) table[id] = assets[id];
-  const info = g.character;
-  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds } } });
+  const { missing: _was, ...info } = g.character;
+  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing } : {}) } });
   const withAssets: Movie = Object.keys(table).length ? { ...movie, assets: { ...movie.assets, ...table } } : movie;
+  return { movie: editCharacter(withAssets, charId, next), added, missing };
+}
+
+function editCharacter(movie: Movie, charId: string, fn: (c: Content) => Content): Movie {
   const top = movie.tracks.some((t) => t.content.some((c) => c.id === charId));
-  const out = top ? ops.updateContent(withAssets, charId, next) : updateInner(withAssets, charId, next);
-  return { movie: out, added, missing };
+  return top ? ops.updateContent(movie, charId, fn) : updateInner(movie, charId, fn);
+}
+
+/** Sets or removes (`null`) the character's source link. */
+export function setSourceLink(movie: Movie, charId: string, link: SourceLink | null): Movie {
+  const g = findContent(movie, charId);
+  if (!g || g.kind !== 'group' || !g.character) throw new ops.OpError('That character no longer exists.');
+  const { source: _old, ...info } = g.character;
+  return editCharacter(movie, charId, (c) => ({ ...c, character: link ? { ...info, source: link } : info }));
+}
+
+/** Every character in the movie, nested ones too, that has a source link. */
+export function linkedCharacters(movie: Movie): { id: string; source: SourceLink }[] {
+  const out: { id: string; source: SourceLink }[] = [];
+  const walk = (tracks: Track[]): void => {
+    for (const t of tracks) for (const c of t.content) {
+      if (c.kind === 'group' && c.character?.source) out.push({ id: c.id, source: c.character.source });
+      if (c.tracks.length) walk(c.tracks);
+    }
+  };
+  walk(movie.tracks);
+  return out;
+}
+
+/** True when `id` is a part that the character holding it lists as not in its source file. */
+export function isMissingPart(movie: Movie, id: string): boolean {
+  let hit = false;
+  const walk = (tracks: Track[]): void => {
+    for (const t of tracks) for (const c of t.content) {
+      if (hit) return;
+      const ch = c.kind === 'group' ? c.character : undefined;
+      if (ch?.missing?.some((n) => ch.parts[n] === id)) { hit = true; return; }
+      if (c.tracks.length) walk(c.tracks);
+    }
+  };
+  walk(movie.tracks);
+  return hit;
 }

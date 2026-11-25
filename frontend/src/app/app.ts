@@ -12,6 +12,7 @@ import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { characterToSvg } from '../io/svg-export';
+import { sourceApi } from '../io/source-api';
 import { AudioEngine } from '../media/audio';
 import { evictFonts, loadTextFonts, registerFont, registerFonts } from '../media/fonts';
 import { loadLibrary } from '../io/fonts-library';
@@ -25,6 +26,7 @@ import { TextCard } from '../ui/text-card';
 import { ShapePanel } from '../ui/shape-panel';
 import { shapeCommands, SHAPE_CREATE_ITEMS } from '../ui/shape-commands';
 import { characterCommands } from '../ui/character-commands';
+import { setupSourceLink } from './source-link';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
@@ -367,6 +369,16 @@ export function startApp(): void {
     if ('__TAURI_INTERNALS__' in window) void import('@tauri-apps/api/core').then((m) => m.invoke('note_recent_document', { path })).catch(() => undefined);
   }
   async function openFromPath(path: string): Promise<void> {
+    if (/\.svg$/i.test(path)) {
+      // an SVG handed over by its path becomes a character linked to that file
+      try {
+        const { text, link } = await sourceApi.read(path);
+        await importFiles([new File([text], path.split(/[\\/]/).pop() ?? 'character.svg', { type: 'image/svg+xml' })], { link });
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'The file could not be imported.', 'error');
+      }
+      return;
+    }
     if (!/\.fmo$/i.test(path)) return;
     try {
       await openFile(new File([await api.readFile(path)], path.split(/[\\/]/).pop() ?? 'movie.fmo'));
@@ -731,6 +743,7 @@ export function startApp(): void {
     ...actions.commands,
     ...shapeCommands(engine, () => stage?.shapeStage ?? null, shapePanel, mid),
     ...characterCommands(engine, charactersPanel),
+    ...setupSourceLink({ engine, renderer }).commands,
     ...paint.paintCommands(),
     ...pushCommands(engine),
     ...loopCommands(engine),

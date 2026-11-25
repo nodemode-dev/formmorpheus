@@ -120,6 +120,11 @@ function character(c: Obj, kind: string): void {
   if (isObj(ch.parts)) for (const [k, v] of Object.entries(ch.parts)) if (typeof v === 'string' && v) parts[k] = v;
   ch.parts = parts;
   if (typeof ch.mouth !== 'string' || !ch.mouth) delete ch.mouth;
+  const s = ch.source;
+  const finite = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
+  if (s !== undefined && !(isObj(s) && typeof s.path === 'string' && /\.svg$/i.test(s.path) && finite(s.size) && finite(s.mtime) && typeof s.sha256 === 'string')) delete ch.source;
+  if (Array.isArray(ch.missing)) ch.missing = ch.missing.filter((n): n is string => typeof n === 'string' && n in parts);
+  if (!Array.isArray(ch.missing) || !ch.missing.length) delete ch.missing;
   characterDef(ch);
 }
 
