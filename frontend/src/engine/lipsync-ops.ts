@@ -23,6 +23,17 @@ export function guessMapping(row: FlipTrack): Record<Viseme, number> {
   return out;
 }
 
+/**
+ * A chart row that rests: its Rest drawing (named, else the first) moved to the front and held `duration` frames, so a
+ * mouth shows Rest for its whole block until lip-sync writes shapes; the other drawings stay after it to be copied.
+ */
+export function restingChart(row: FlipTrack, duration: number): FlipTrack {
+  if (!row.frames.length) return row;
+  const r = guessMapping(row).rest;
+  const rest = { ...row.frames[r], hold: Math.max(1, Math.round(duration)) };
+  return { ...row, frames: [rest, ...row.frames.filter((_, i) => i !== r)] };
+}
+
 /** True when a row looks like a mouth set: it has frames named for the shapes, or at least eight frames. */
 export function looksLikeMouth(row: FlipTrack): boolean {
   return row.frames.some((f) => f.name && VISEMES.some((v) => VISEME_NAMES[v] === f.name)) || row.frames.length >= VISEMES.length;

@@ -1,6 +1,6 @@
 // Characters: a Group whose inner contents are named parts (types.ts CharacterInfo). Finding parts by name, making a
 // group a character, the mouth chart, and where a nested content sits in movie time. Pure, no DOM.
-import { looksLikeMouth } from './lipsync-ops';
+import { looksLikeMouth, restingChart } from './lipsync-ops';
 import { relinkCharacter, uid } from './model';
 import { OpError } from './ops';
 import type { CharacterInfo, Content, Movie, Track } from './types';
@@ -155,6 +155,8 @@ export function attachMouthChart(movie: Movie, charId: string, flipbook: Content
   if (!g?.character) throw new OpError('That content is not a character.');
   const oldId = partId(movie, charId, 'mouth');
   const head = partId(movie, charId, 'head');
+  // a fresh chart rests on Rest for the whole block it is placed in, until lip-sync writes shapes
+  const rests = (d: number): Content => (flipbook.flip.length === 1 ? { ...flipbook, flip: [restingChart(flipbook.flip[0], d)] } : flipbook);
   return updateDeep(movie, charId, (c) => {
     const ch = c.character as CharacterInfo;
     let id: string;
@@ -162,12 +164,12 @@ export function attachMouthChart(movie: Movie, charId: string, flipbook: Content
     if (oldId) {
       id = oldId;
       tracks = c.tracks.map((t) => (t.content.some((x) => x.id === oldId) ? { ...t, content: t.content.map((x) => (x.id === oldId ? {
-        ...flipbook, id: x.id, name: x.name, start: x.start, duration: x.duration, offset: 0, transform: x.transform, keys: x.keys,
+        ...rests(x.duration), id: x.id, name: x.name, start: x.start, duration: x.duration, offset: 0, transform: x.transform, keys: x.keys,
         ...(x.parent ? { parent: x.parent } : {}), ...(x.pivot ? { pivot: x.pivot } : {}), ...(x.hidden ? { hidden: x.hidden } : {}),
       } : x)) } : t));
     } else {
       id = flipbook.id;
-      const item: Content = { ...flipbook, name: 'mouth', start: 0, duration: Math.max(1, c.duration), ...(head ? { parent: head } : {}) };
+      const item: Content = { ...rests(Math.max(1, c.duration)), name: 'mouth', start: 0, duration: Math.max(1, c.duration), ...(head ? { parent: head } : {}) };
       tracks = [{ id: uid('t'), name: 'mouth', hidden: false, content: [item] }, ...c.tracks];
     }
     const parts = oldId ? ch.parts : { ...ch.parts, mouth: id };

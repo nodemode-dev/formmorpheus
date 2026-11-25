@@ -7,6 +7,17 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · a mouth rests until lip-sync
+
+- refers-to: engine/lipsync-ops.ts :: restingChart; io/svg-import.ts :: chartBook; engine/character-ops.ts :: attachMouthChart
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** A chart's eight drawings each had hold 1 and the Flipbook ran the movie's length, and a Flipbook row loops, so a starter character (and any SVG character with a mouth chart inside, and Use as Mouth Chart) mouthed all eight shapes over and over before any lip-sync.
+- **Rest's hold covers the block** (`restingChart`). The chart row's Rest drawing (the frame named Rest, else the first, the one `guessMapping` takes for rest) is moved to the front and held for the block's length; the other seven follow it with hold 1, past the block's end, where they are never shown but stay in the row. `chartBook` builds every chart that way for its block (a mouth chart file, the chart inside an SVG character), and `attachMouthChart` holds Rest for the length of the block the chart is placed in (the old mouth part's, or the character's), on a one-row Flipbook only.
+- **Why not a library row.** A hidden chart row under a drawn row holding Rest was the other way, but the dialog takes the first row that looks like a mouth as the chart and its "A new track (keeps the chart)" hides only that row, so the drawn Rest row would stay visible under the written shapes, and `applyLipsync` would have to change. With the hold, the chart is still one row of eight named drawings: the dialog picks it, guesses the same mapping, defaults to a new track, copies the drawings by index and hides the chart, the same as before.
+- **Left.** The row is seven frames longer than the block, so an edit that grows a Flipbook to its longest row (insert, duplicate or hold change in Draw & Paint) grows the mouth block by those frames; inside a character they lie past the character's end.
+
 ## v0.25.0 · Lip-sync targets read apart
 
 - refers-to: ui/lipsync-dialog.ts :: fillBooks

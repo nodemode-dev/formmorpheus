@@ -3,6 +3,7 @@
 // (text, pictures, filters, masks, clipping, patterns, reused elements, cut-out shapes) becomes a picture of that part.
 // A mouth chart SVG (one group per mouth shape) becomes one Flipbook with its frames named for the shapes.
 import { characterInfoOf } from '../engine/character-ops';
+import { restingChart } from '../engine/lipsync-ops';
 import { content as makeContent, drawingLayer, flipTrack, track as makeTrack, uid } from '../engine/model';
 import { setParent } from '../engine/parenting';
 import { bounds, MAX_STOPS, outline, shapeBase } from '../engine/shape';
@@ -872,7 +873,7 @@ async function chartBook(parts: SvgPart[], doc: SvgDoc, f: Fit, at: number, dur:
     }
     frames.push({ id: uid('f'), hold: 1, layers: [layer], name });
   }
-  const row = { ...flipTrack('Mouth', 1), frames };
+  const row = restingChart({ ...flipTrack('Mouth', 1), frames }, dur);
   return makeContent('flipbook', at, dur, { name: 'Mouth', flip: [row], canvas: rect });
 }
 
