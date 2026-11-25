@@ -75,6 +75,45 @@ Last updated: 2026-11-23 · the interface's test suite
 - **The file is read once** (`importSvg`). It parsed the SVG to ask whether it is a mouth chart and then each importer parsed it again. `svgToCharacterGroup` and `svgToMouthChart` now take the text or the parsed `SvgDoc`, and `importSvg` hands them the one it read.
 - **Use as Mouth Chart...** (`character.mouth` in `character-commands.ts`, `CharactersPanel.useMouthChart`, a row in the block menu beside Save to Characters, built the same way, and in Content in the menu bar). On one selected character it opens the platform's file chooser for an SVG, reads it with `svgToMouthChart` (any SVG: one frame per top-level group), adds the pictures to the movie and puts the Flipbook in with `attachMouthChart` (in place of a `mouth` part, else on a new top inner track following `head`) in one `engine.run` step, which sets the character's mouth. So any character, an SVG one included, can be lip-synced from sound. A file that cannot be read says so and changes nothing; closing the chooser does nothing.
 
+## v0.25.0 · actions: files and saved movies are bounded
+
+## v0.25.0 · actions: Walk in place swings its arms against each other
+
+- refers-to: engine/actions-builtin.ts :: walkArm, neg, BUILTIN_ACTIONS (builtin:walk)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The bug.** Both arms took the same rotation keys, so both hands swung to the same side at once. `arm-l` now plays `neg(walkArm)`: the same frames and eases with every value negated, so the pair is opposite at every frame, frame 0 is still rest (0 stays 0) and the loop still closes exactly.
+- **Which way each arm goes.** `arm-r` is back (negative) when `leg-r` lifts at frame 6 and forward when `leg-l` lifts at frame 18, two frames behind each leg; `arm-l` is the reverse, so each arm is against the leg on its own side. Forward is read from the lift, not from the leg's rotation sign: `leg-l` lifts with -3 (its splay mirrors `leg-r`'s +3), so the legs were left as they were.
+- **Mirroring.** Actions are kept for arm-r on the Stage's left and a character drawn the other way round negates every rotation, arms and legs together; the pair stays opposite and each arm stays against its leg, so one set of keys serves both orientations.
+- **Idle, Jump and Sit left alone.** Their `arm-l` is already the negation of `arm-r` (Idle 1.5 and -1.5, `neg(jumpArm)`, `neg(sitArm)`): both arms rise or settle outward together, which is right for a pose that is the same on both sides. Only a walk wants the arms against each other.
+
+- refers-to: io/fmact.ts :: lane, key, parseFmact, BAD_IDS; engine/normalize.ts :: characterDef, actionLane, BAD_IDS; engine/types.ts :: ACTION_MAX_FRAMES; engine/action-ops.ts :: eachChannel
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Bounds.** An action read from an `.fmact` file or a saved movie has its `length` rounded and kept between 1 and `ACTION_MAX_FRAMES` (14400, ten minutes at 24 fps), its `fps` kept between 1 and 240, and only keys from frame 0 to `length`; a key before 0 is dropped, not moved to 0. A lane left with no channel is dropped. `eachChannel` skips any key outside 0 to `length` too, as a backstop for an action that reached the movie another way, so a stray key can never be written thousands of frames down a part.
+- **No prototype writes.** Channel maps (and an `.fmact` lane's options) are built with `Object.create(null)` and never take the ids `__proto__`, `constructor` or `prototype`: `JSON.parse` makes `__proto__` an ordinary own key, and copying it into a plain object would have set that object's prototype.
+
+## v0.25.0 · actions: review fixes (spans, boundaries, size, mirroring)
+
+- refers-to: engine/action-ops.ts :: loopPasses, findAction, clearRange, moves, mirrored, reach, sizeOf, fitFor, eachChannel, write, keyAt, seal, applyAction, clearAction, swapAction, actionFromKeys; engine/types.ts :: ActSpan.start, ACTION_MAX_FRAMES; engine/actions-builtin.ts :: cyc, cycle, anchor, jumpLegY, sitLegY; app/action-commands.ts :: apply, the history listener
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **A span never writes past its end.** `applyAction` and `write` take an optional `limit` (a frame of the character's tracks, inclusive): no key is written past it and the span's `to` is the smaller of its natural end and the limit. Swap Action passes the old span's `to`, so Nod [0,26] swapped for the 48-frame Wave gives Wave [0,26] and the Walk after it keeps every key (26, 32, 38 and on). Apply over the loop range passes Out the same way. A loop over a span takes `loopPasses`: whole passes (at least one) and, when frames are left, one more pass cut at the limit; it replaces the rounding that could run a pass past the end or stop short of it.
+- **The cut end.** Where a span ends at a frame its action has no key at, it gets a key there with the action's own value at that frame (the ease that was running carries on), so the motion stops cleanly instead of sliding toward whatever key comes next. This is `seal`, the same code that writes shared boundary keys below.
+- **Touching spans share one frame, owned by the later span.** A span owns its first frame and its last frame only on channels no span starting there moves (half-open for writing). After an apply or a clear, `seal` writes, for each span starting or ending at the frames involved, that span's own key there on the channels it owns. Clearing keeps a key inside the cleared range only when another span covers its frame and that span's action moves the same part and channel; before, any key at a frame some other span covered was kept, so clearing Walk [48,96] after Wave [0,48] left Walk's leg keys at 48 and Walk's value as Wave's ending. Now no Walk key stays on the legs and Wave ends at 48 on its own value.
+- **`ActSpan.start`.** A span cut from the left by a later apply keeps where its action's first pass began, so its boundary key (and a later clear's rewrite of it) is the action's value at the right moment of the pass. Absent for every span that was not cut that way; `normalize.ts` keeps it only when it is a number before `from`.
+- **Starter actions fit the character.** Their pixel channels (x, y, px, py) are drawn for a leg 344 px from hip to sole (the tallest starter) and are multiplied by the character's own size: its `leg-r` from pivot to the lowest point it draws, times its scale, over 344; else the height of everything it draws over 900; else 1 (a character drawn on Drawings with no canvas has no measurable size). Kept between 0.05 and 20. Measured on the redrawn cast, legs are 344, 322, 312, 300 and 222 (the girl), so Sit and Jump no longer push the smaller characters' feet through the floor. A person's own actions are not scaled: they were made on a character and keep its pixels.
+- **Feet stay down.** Sit's and Jump's leg keys are now exact for a scaled leg: wherever the leg squashes, its y is 344 times (1 minus its scaleY) at the same frames and eases, so the sole stays on the floor at every frame for any leg length. Sit lost its 2 px lift at frame 4; Jump's crouch and landing are 24.08 and 20.64 and its settle no longer lifts the feet.
+- **Cyclic lanes start at rest.** `cyc` shifts each lane so its frame 0 value is rest (0, or 1 for a scale) and its shape and timing stay. A loop placed later then starts from the pose before it instead of pulling the curve leading into it. The lanes keep their closing key equal to their first.
+- **Mirroring.** All actions are kept in the standard orientation (arm-r on the Stage's left). Save Action on a character drawn the other way round negates x, rotation, pivot x and bone turns as it saves, and every action (not only the starters) is mirrored again when it is applied to such a character, so a saved action plays the same way on a normal character and on its own.
+- **No closures per draw.** `findAction` is two plain loops; the Timeline calls it for every strip's label on each redraw.
+- **The picked strip goes on undo and redo.** The action commands watch the engine's `history` event and let go of `actPick` when the redo list changes length (an undo, a redo, or the first edit after an undo), since the same index may then name another span or none. Edits that leave the redo list empty keep it.
+- **An action starts from each part's unkeyed rest pose.** Values are offsets from the part's transform and pivot as set, not from whatever keys the part shows at the span's first frame. For the release notes.
+- **Removed.** `mirrored(g, a)` returned false for anything but a starter action; it now takes the character only. The old `write` loop moved into `eachChannel`, shared with `seal`.
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
@@ -139,6 +178,59 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Mouth charts.** An SVG whose top-level groups are named for the mouth shapes (6 or more of Rest, MBP, AI, E, O, U, FV, L / th, matched ignoring case and punctuation, so `L-th` and `data-name="L / th"` both read) opens as one Flipbook with its drawings in chart order and named as `VISEME_NAMES`, so lip-sync recognises it. `attachMouthChart` (engine) puts such a Flipbook in place of a character's `mouth` part, keeping its id, parent, pivot, Move and keys.
 - **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
 - **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
+
+## v0.25.0 · action files (.fmact)
+
+- refers-to: io/fmact.ts (new) :: fmactBlob, fmactName, parseFmact, readFmact, FMACT_MAX_BYTES; app/action-commands.ts :: importActionFile, action-export, action-import; app/import-flow.ts :: ImportDeps.importAction, importFiles; app/app.ts :: MEDIA_ACCEPT, createImporter, actionCommands deps
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The file** is `[name].fmact`, JSON `{format: 1, action: ActionDef}`, written with one space of indent so it reads in a text editor. The name is the action's, with the characters no file system takes turned into `_`.
+- **Export** is Content, Actions, Export Action...: the picker lists the character's own and the starter actions; the chosen one is handed over through the platform's download (the share sheet on iPad). A starter action exports like any other; imported, it becomes one of the character's own.
+- **Import** is Import Action... (the file picker for `.fmact`), Import with any `.fmact` among the files, or a drop: `importFiles` takes `.fmact` files out first and adds each to the selected character under a fresh id, one undo step each, then imports the rest as before. With no character selected it says "Select a character, then import the action onto it."
+- **The 1 MB refusal is in the window**, checked on `File.size` before the text is read, since no engine route ever sees an action file. A real action is a few kilobytes.
+- **Read checks every field** (name, length, loop, lanes, each key's frame, value and ease, custom handles) and keeps only Move and Bones lanes; anything else is "That is not an action file.", a format above 1 is "This action file was made by a newer version of FormMorpheus." `.fmact` joined `MEDIA_ACCEPT`.
+
+## v0.25.0 · actions on the Timeline: commands, strips, the picker
+
+- refers-to: app/action-commands.ts (new) :: actionCommands, selectedCharacter, ACTION_MENU_ITEMS; ui/action-picker.ts (new) :: ActionPicker; ui/act-strips.ts (new) :: actPick, drawActStrips, actStripAt, actLabel; ui/timeline.ts :: TimelineHooks.actStrip, drawBlock, tracksDown; ui/status.ts :: StatusBar.note; app/app.ts (commands, Content menu, Timeline hook)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Command ids** are `action-apply`, `action-swap`, `action-clear`, `action-save` and `action-delete`, in the repository's hyphen style (the plan wrote `action.save`). They sit in Content, Actions, and in the command palette. Each change runs through `engine.run`, so each is one undo step; a swap is one step (its clear and apply happen inside one run).
+- **Strips are drawn on the Timeline's canvas**, not as elements. The plan asked for elements patched in place, but every block, chip and mark of the Timeline is canvas drawing redrawn on change; elements laid over a scrolling, zooming canvas would have to follow it on every frame of a drag. Drawn with the block, a strip cannot flash or lag and nothing is rebuilt. They lie along the block's lower edge, labelled with the action's name (a starter action's in the interface language), the pressed one in the accent color. No allocation per draw: one scratch pair for the edges.
+- **Pressing a strip** selects the block, marks the strip (`actPick`) and opens the picker for that span: another action swaps it, Clear Action removes it. A press anywhere else on a block unmarks it. Strips of a character inside an open group are drawn but answer as the inner block they sit on; Swap and Clear reach them from the menu after a strip of the group's own block is pressed.
+- **Where Apply puts an action.** With a loop range set (In and Out), from its In, and a loop repeats as many passes as fit; without one, one pass from the Playhead. Save Action takes the loop range, else the whole block.
+- **Skipped parts** are named in the status line ("This character has no {parts}, so that part of the action was skipped."). The status bar's error flash gained a plain variant, `note`, so a skipped part is not shown as an error.
+- **The picker** is one card built once: the character's own actions (pooled rows relabelled in place, marked `data-no-i18n` since they are the person's words), then Starter actions (built once from the data). Loops say Loop. Delete Action lists only the character's own.
+
+## v0.25.0 · starter actions
+
+- refers-to: engine/actions-builtin.ts (new) :: BUILTIN_ACTIONS, seq, cyc; engine/action-ops.ts :: findAction, mirrored
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Eight actions as data**, written at 24 fps (`fps: 24`, so a movie at another rate keeps their speed): Idle (a breath, loop of 48), Nod (two dips, 26), Shake head (30), Wave (raise, three swings, lower, 48), Point (36, ends holding the point), Walk in place (two steps, loop of 24), Jump (30), Sit (30, ends seated). Ids start with `builtin:`; a span names one by id, so they are never copied into the movie, and `findAction` looks in the character's own actions first.
+- **Parts and sides.** Only `head`, `body`, `arm-l`, `arm-r`, `leg-l`, `leg-r`; `mouth` is never keyed (lip-sync owns it). They assume a character facing the viewer with `arm-r` and `leg-r` on the Stage's left (the character's own right). When a character's `arm-r` pivot sits right of its `arm-l` pivot, a built-in is mirrored as it is applied (x, rotation, pivot x and bone turns negated), so either way of drawing gets the same motion. Saved actions are never mirrored.
+- **Rotations** are degrees around each part's pivot (shoulder, hip, neck), positive clockwise on the Stage, so the Stage-left arm rises outward with positive turns. Offsets are in pixels for a character about 1000 px tall (the starter characters' size); a much smaller one moves further for its size.
+- **How the motion is made.** Every key carries an ease. Holds and extremes are eased in and out; a fall eases in (leaves slowly, speeds up) into a contact; a launch eases out. The head follows the body two to four frames late and the arms one to five (follow-through), and extremes overshoot and settle (Wave's arm passes rest on the way down, Point overshoots the line, Jump and Sit settle after landing). Arms and head move with the body's rise and fall so the shoulders and neck stay joined, since parts are siblings, not parented.
+- **Loops close exactly.** `cyc` places cyclic extremes, shifted for lag; the span that crosses the loop's end is split there at its eased value, the half before leaving slowly and the half after arriving fast, so the first and last key are equal and the curve runs on through the seam. Walk in place applied for 48 frames shows the same values at 0, 24 and 48.
+
+## v0.25.0 · actions: the model and the engine ops
+
+- refers-to: engine/types.ts :: ActionDef, ActSpan, CharacterInfo.actions, CharacterInfo.acts; engine/normalize.ts :: characterDef; engine/action-ops.ts (new)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Values are relative to each part's rest.** An action is reused on characters drawn at other places and sizes, so Move keys are stored as offsets: x, y, rotation, px and py are added to the part's transform (and pivot), scaleX and scaleY multiply its scale. Bone channels are degrees from rest already and apply only to a part whose rig has a bone of that id. Other lane kinds are not carried. Applying turns them into the same absolute keys the Keyframe mode writes, on the same `move` and `bones` lanes, so the Graph, the key drag and Perform see ordinary keys.
+- **`fps` on ActionDef.** Not in the plan's shape: an action made at 24 fps and applied to a 30 fps movie would otherwise play faster. `atRate` spaces the key frames by the ratio and rounds; a loop's first and last key both scale exactly, so it still closes. Absent means the movie's own rate. A saved action records its movie's rate.
+- **Spans count the frames the character's tracks see** (`srcFrame` of the group), not movie frames and not block frames, because that is where the parts' keys live: moving or trimming the block leaves span and keys together. A part's key frame is that frame minus the part's `start`, through any group between the character and the part. `to` is inclusive. `charFrame` turns the Playhead into it; `blockFrame` turns it back for drawing (a Time Remap lane on the character is not inverted).
+- **Keys outside the span are never touched.** Applying clears the span on the channels the action keys and on the channels of any span it lands on, then writes. A span it lands on keeps only what lies outside it (cut to one or two pieces). Clearing keeps keys at frames inside the other spans, so two spans that touch at one frame do not take each other's shared key.
+- **Repeats** apply to loops only; each pass's first key replaces the last pass's closing key, so the ease that leaves it is the action's own first ease.
+- **Keys past the part's block** are dropped; a part block shorter than the action shows the part of it that fits.
+- **Saving** (`actionFromKeys`) takes every Move and Bones channel with a key in the range, adds keys at both ends at the values shown there, and marks the action a loop when every channel ends where it starts. It does not place a span; the keys it came from stay plain keys.
+- **Removing an action** drops its spans; their keys stay as plain keys.
+- **Old files.** A character saved without `actions` is given `[]` on load in `normalize.ts`, so the field is required in the type and no code reads it with a fallback.
 
 ## v0.24.0 · the interface's test suite
 

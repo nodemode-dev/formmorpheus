@@ -1,7 +1,7 @@
 // Load-time normalisation: fills the fields older files lack (a v0.3 movie has no keys, no onion, a flipbook's
 // `frames` instead of rows) so no code path meets undefined. Runs on a freshly parsed movie, in memory only: the
 // file on disk stays as it was until the person saves. Pure, no DOM.
-import { FORMAT_VERSION, type Movie } from './types';
+import { ACTION_MAX_FRAMES, FORMAT_VERSION, type Movie } from './types';
 import { hasKind } from './keys';
 import './fx/index'; // registers the effect lane kinds before lanes are checked
 
@@ -119,6 +119,39 @@ function character(c: Obj, kind: string): void {
   if (isObj(ch.parts)) for (const [k, v] of Object.entries(ch.parts)) if (typeof v === 'string' && v) parts[k] = v;
   ch.parts = parts;
   if (typeof ch.mouth !== 'string' || !ch.mouth) delete ch.mouth;
+  characterDef(ch);
+}
+
+/** A character saved before actions existed reads as one with none; malformed actions and spans are dropped. */
+function characterDef(ch: Obj): void {
+  ch.actions = arr(ch.actions).filter(isObj).filter((a) => typeof a.id === 'string' && a.id !== '').map((a) => {
+    a.name = str(a.name, 'Action');
+    const length = Math.min(ACTION_MAX_FRAMES, Math.max(1, Math.round(num(a.length, 1))));
+    a.length = length;
+    a.loop = bool(a.loop, false);
+    a.lanes = arr(a.lanes).filter(isObj).filter((l) => typeof l.part === 'string').map((l) => { l.keys = arr(l.keys).map(lane).filter((k): k is Obj => k !== null).map((k) => actionLane(k, length)); return l; });
+    if (a.fps !== undefined) a.fps = Math.min(240, Math.max(1, num(a.fps, 24)));
+    return a;
+  });
+  if (ch.acts === undefined) return;
+  ch.acts = arr(ch.acts).filter(isObj).filter((s) => typeof s.action === 'string').map((s) => {
+    s.from = Math.round(num(s.from, 0));
+    s.to = Math.max(s.from as number, Math.round(num(s.to, s.from as number)));
+    if (typeof s.start === 'number' && Number.isFinite(s.start) && s.start < (s.from as number)) s.start = Math.round(s.start);
+    else delete s.start;
+    return s;
+  });
+}
+
+const BAD_IDS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** An action's lane keeps keys inside its frames only, in a channel map with no prototype to write through. */
+function actionLane(l: Obj, length: number): Obj {
+  const src = l.channels as Record<string, Obj[]>;
+  const out: Record<string, Obj[]> = Object.create(null);
+  for (const id of Object.keys(src)) if (!BAD_IDS.has(id)) out[id] = src[id].filter((k) => (k.frame as number) >= 0 && (k.frame as number) <= length);
+  l.channels = out;
+  return l;
 }
 
 /** Shape and Solid always carry a valid outline; an Adjustment's mask is optional; other kinds drop a stray one. */
