@@ -144,4 +144,4 @@ export function tailBuild(c: Pick<CastSpec, 'species' | 'skin' | 'hair'>, M: Met
   return [...sp, P(tube(0, 1, wf), sk), P(tube(.04, .88, (t) => wf(t) * .4, .58), shade(sk, .5))];
 }
 
-export const monsterFangs =(u: number): CastPrim[] => mirror((s) => [P(D`M${s * 10 * u} ${1 * u}L${s * 7 * u} ${9 * u}L${s * 4 * u} ${3.6 * u}Z`, '#ffffff')]);
+export const monsterFangs = (u: number): CastPrim[] => mirror((s) => [P(D`M${s * 10 * u} ${1 * u}L${s * 7 * u} ${9 * u}L${s * 4 * u} ${3.6 * u}Z`, '#ffffff')]);
