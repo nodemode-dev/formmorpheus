@@ -288,6 +288,16 @@ export interface Content {
   underlay?: FlipUnderlay;
   /** Shape and Solid: the outline, fill and stroke. Adjustment: an optional mask outline (engine/shape.ts). Absent on other kinds. */
   shape?: import('./shape-types').ShapeDef;
+  /** Group only: this group is a character (engine/character-ops.ts). Absent: a plain group. */
+  character?: CharacterInfo;
+}
+
+/** A character: a Group whose inner contents are named parts. `parts` maps a part name to its inner content id. */
+export interface CharacterInfo {
+  name: string;
+  parts: Record<string, string>;
+  /** Id of the inner Flipbook that is the mouth chart (lip-sync target). Absent: none. */
+  mouth?: string;
 }
 
 export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';
