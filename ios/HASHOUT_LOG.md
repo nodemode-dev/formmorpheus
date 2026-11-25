@@ -13,6 +13,18 @@ Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN
 - Rename: the name-taken check runs inside the store lock, before the move, as `characters.py` checks inside its lock.
 - Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used was already called in this file.
 
+## v0.25.0 · SVG characters and actions from Files
+
+- refers-to: App/Info.plist (CFBundleDocumentTypes, UTExportedTypeDeclarations); UX/DocumentOpening.swift (comment)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- New exported type `ai.nodemode.formmorpheus.action` for `.fmact`, conforming to `public.json`, with no MIME tag (an `application/json` tag would make `UTType(mimeType:)` ambiguous with `public.json`). A document type "FormMorpheus Action" claims it as Viewer, rank Owner, so Files opens a `.fmact` in FormMorpheus with a tap.
+- SVG: `public.svg-image` gets its own document type ("SVG drawing", Viewer, Alternate). `public.image` already covered it; the explicit entry keeps SVG in Open With even if the picture entry changes.
+- No Swift path changed: `DocumentOpening.stage` sends every file that is not a `.fmo` to the page as `openURL {kind: "import", path, name}` from `<tmp>/Opened`, `FilesRoutes` reads any extension from there, and the page hands it to the same importer as Import..., which picks the SVG character importer or the action importer by extension. As with pictures, a movie must be open first. The file picker already maps `.fmact` and `.svg` in an accept string through `UTType(filenameExtension:)`, which now finds the declared type.
+- No new iPad strings: the document type names are not translated in `*.lproj/InfoPlist.strings` (only the two usage questions are), as "FormMorpheus Movie" is not.
+- The plist parses (`plistlib`). Whether Files lists FormMorpheus under Open With for an SVG is for the device check (`docs/ios/BUILD.md`, 0.25.0).
+
 ## v0.25.0 · the Characters library on iPad
 
 - refers-to: Engine/CharactersRoutes.swift (new), Engine/EngineRouter.swift, Engine/EngineSupport.swift (`EngineConfig.charactersDir`, `ensureTree`), Engine/TrashRoutes.swift

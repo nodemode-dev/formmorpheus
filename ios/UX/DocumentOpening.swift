@@ -7,8 +7,9 @@ import UIKit
 ///  - A movie from anywhere else is COPIED into the Library (a free name, "Name 2" and so on) and opens from there; the
 ///    original is never touched. The interface autosaves into the Library, so editing a copy cannot damage a file in
 ///    iCloud Drive or on a share. A second tap on the same file reuses the copy when the bytes are identical.
-///  - Pictures, videos, sounds, brushes, fonts and other files the interface reads are copied to a temporary inbox and
-///    sent as an import into the open movie.
+///  - Pictures, videos, sounds, brushes, fonts and other files the interface reads (an SVG, which becomes a character,
+///    and a .fmact action included) are copied to a temporary inbox and sent as an import into the open movie; the
+///    page picks the importer by extension.
 ///  - Access to the original is held only while it is copied (security scoped, coordinated for iCloud placeholders).
 enum DocumentOpening {
     /// Called from the scene delegate (willConnectTo and openURLContexts). `send` delivers a bridge message to this
