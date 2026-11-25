@@ -4,6 +4,8 @@
 import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
+import { floorOf } from '../engine/guides';
+import { standOnFloor } from '../engine/starter-scene';
 import { newMovie, track as makeTrack } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
@@ -121,7 +123,7 @@ export async function starterCharacter(entry: StarterEntry, movie: Movie): Promi
 }
 
 /** Places a fresh-id copy of a character at the Playhead (or the dropped frame), on a new track of its own; one undo step. */
-export async function placeCharacter(engine: Engine, renderer: Renderer, src: CharacterSource, where: Where): Promise<string | null> {
+export async function placeCharacter(engine: Engine, renderer: Renderer, src: CharacterSource, where: Where, floorY: number | null = null): Promise<string | null> {
   const m = engine.movie;
   if (!m) return null;
   const at = typeof where === 'object' ? where.frame : engine.frame;
@@ -129,7 +131,8 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   delete copy.parent;
   // made in a larger movie: shrunk to fit, about the movie centre where its parts are placed from
   const k = Math.min(1, m.width / Math.max(1, src.width), m.height / Math.max(1, src.height));
-  if (k < 1) copy.transform = { ...copy.transform, scale: copy.transform.scale * k };
+  if (floorY !== null && src.width === m.width && src.height === m.height) copy.transform = standOnFloor(copy, m, floorY);
+  else if (k < 1) copy.transform = { ...copy.transform, scale: copy.transform.scale * k };
   const table: Record<string, Asset> = {};
   const pics = new Map<string, Blob>();
   for (const [id, { asset, blob }] of src.assets) {
@@ -344,12 +347,14 @@ export class CharactersPanel {
     this.paint();
     try {
       let src: CharacterSource;
-      if (key.startsWith('starter:')) {
+      const starter = key.startsWith('starter:');
+      if (starter) {
         const entry = (this.starters ?? []).find((s) => `starter:${s.id}` === key);
         if (!entry) return;
         src = await starterCharacter(entry, m);
       } else src = await unpackCharacter(await charactersApi.read(key.slice(5)));
-      await placeCharacter(this.engine, this.deps.renderer, src, where);
+      // a starter scene's floor guide: the starter character stands on it at the scene's scale
+      await placeCharacter(this.engine, this.deps.renderer, src, where, starter ? floorOf(this.engine.movie?.guides) : null);
     } catch (e) {
       toast(e instanceof Error ? e.message : t('The character could not be added.'), 'error');
     } finally {

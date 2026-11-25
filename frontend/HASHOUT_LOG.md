@@ -132,6 +132,15 @@ Last updated: 2026-11-23 · the interface's test suite
 - **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
 - **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
 
+## v0.25.0 · Starter characters stand on a starter scene's floor
+
+- refers-to: engine/starter-scene.ts :: STARTER_ART, standOnFloor; ui/characters-panel.ts :: placeCharacter, CharactersPanel.add
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- A starter character added (Add to Movie, or a drag onto the Stage or the Timeline) to a movie with a floor guide (`floorOf`, only a starter scene makes one) gets scale 0.5 in the SVG's own units (0.5 over the importer's fit, which is 1 in a 1920 x 1080 scene) and a move that puts the SVG's centre at x = the frame's middle, y = floorY - 236 (the starter conventions: feet at 1012 in a 1080 drawing, so (1012 - 540) x 0.5), turning about the group's own pivot. Without a floor guide, and for a saved character from Mine, the placement is as before. A character made in a movie of another size than the open one also keeps the old placement (the stand-on maths assumes the drawing was fitted to this movie).
+- Checked headlessly for all five characters in all five scenes: feet land on floorY, the drawing is 506 px tall, centred across.
+
 ## v0.25.0 · New from Starter Scene
 
 - refers-to: engine/starter-scene.ts :: isSceneEntry, rasterScale, sceneMovie; io/starter-scenes.ts :: readSceneManifest, withSvgImage, rasterize, buildSceneMovie; ui/starter-scene-dialog.ts :: StarterSceneDialog; engine/guides.ts :: GuideLine.role, floorOf; app/app.ts :: starterScenes, new-from-scene

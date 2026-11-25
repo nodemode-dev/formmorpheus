@@ -1,8 +1,8 @@
-// Starter scenes: a manifest entry and its layer pictures made into a new movie. Pure, no DOM: the pictures are
-// drawn by io/starter-scenes.ts.
+// Starter scenes: a manifest entry and its layer pictures made into a new movie, and a starter character stood on
+// the scene's floor. Pure, no DOM: the pictures are drawn by io/starter-scenes.ts.
 import { setCameraKeys } from './camera';
 import { content, identity, newMovie, track, uid } from './model';
-import type { Asset, Movie, Transform } from './types';
+import type { Asset, Content, Movie, Transform } from './types';
 import { MAX_SIDE } from './types';
 
 export interface SceneLayer { name: string; file: string; x: number; y: number; scale: number }
@@ -60,4 +60,16 @@ export function sceneMovie(entry: SceneEntry, pics: ScenePicture[]): { movie: Mo
   const cam = entry.camera;
   if (cam && fin(cam.panX) && fin(cam.panY) && fin(cam.zoom) && cam.zoom > 0) movie = setCameraKeys(movie, 0, { panX: cam.panX, panY: cam.panY, zoom: cam.zoom });
   return { movie, assets };
+}
+
+/** A starter character's drawing size, where its feet rest in it, and the scale it takes in a scene. */
+export const STARTER_ART = { w: 1080, h: 1080, feet: 1012, scale: 0.5 };
+
+/** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size, mid-frame. */
+export function standOnFloor(group: Content, movie: Movie, floorY: number): Transform {
+  const W = movie.width, H = movie.height;
+  const s = STARTER_ART.scale / Math.min(1, W / STARTER_ART.w, H / STARTER_ART.h);
+  const px = W / 2 + (group.pivot?.x ?? 0), py = H / 2 + (group.pivot?.y ?? 0);
+  const tx = W / 2, ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale;
+  return { ...group.transform, rotation: 0, scale: s, x: tx - px - s * (W / 2 - px), y: ty - py - s * (H / 2 - py) };
 }

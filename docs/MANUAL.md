@@ -7,7 +7,7 @@ On macOS use Cmd where this manual says Ctrl. The table of keys is under Keyboar
 ## Getting started
 
 1. Start the app. The **Home** screen opens first.
-2. Choose **New movie** (Ctrl+N), pick a size and a frame rate, and press create. Or choose **New flipbook** to start a frame by frame animation. Or choose File · **New from Starter Scene...** and pick a scene: a new movie opens with the scene's background and props, each on its own track, and a guide line on the floor.
+2. Choose **New movie** (Ctrl+N), pick a size and a frame rate, and press create. Or choose **New flipbook** to start a frame by frame animation. Or choose File · **New from Starter Scene...** and pick a scene: a new movie opens with the scene's background and props, each on its own track, and a guide line on the floor. A starter character added from the Characters panel then stands on that floor at half its size.
 3. Add content with the round **Create** button at the right of the Timeline: Drawing, Flipbook, Text, Track, or Import.
 4. Press Space to play. Press Space again to pause.
 5. Save with Ctrl+S. The first save asks for a name.
