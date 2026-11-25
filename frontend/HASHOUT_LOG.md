@@ -140,6 +140,18 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
 - **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
 
+## v0.25.0 · starter actions
+
+- refers-to: engine/actions-builtin.ts (new) :: BUILTIN_ACTIONS, seq, cyc; engine/action-ops.ts :: findAction, mirrored
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Eight actions as data**, written at 24 fps (`fps: 24`, so a movie at another rate keeps their speed): Idle (a breath, loop of 48), Nod (two dips, 26), Shake head (30), Wave (raise, three swings, lower, 48), Point (36, ends holding the point), Walk in place (two steps, loop of 24), Jump (30), Sit (30, ends seated). Ids start with `builtin:`; a span names one by id, so they are never copied into the movie, and `findAction` looks in the character's own actions first.
+- **Parts and sides.** Only `head`, `body`, `arm-l`, `arm-r`, `leg-l`, `leg-r`; `mouth` is never keyed (lip-sync owns it). They assume a character facing the viewer with `arm-r` and `leg-r` on the Stage's left (the character's own right). When a character's `arm-r` pivot sits right of its `arm-l` pivot, a built-in is mirrored as it is applied (x, rotation, pivot x and bone turns negated), so either way of drawing gets the same motion. Saved actions are never mirrored.
+- **Rotations** are degrees around each part's pivot (shoulder, hip, neck), positive clockwise on the Stage, so the Stage-left arm rises outward with positive turns. Offsets are in pixels for a character about 1000 px tall (the starter characters' size); a much smaller one moves further for its size.
+- **How the motion is made.** Every key carries an ease. Holds and extremes are eased in and out; a fall eases in (leaves slowly, speeds up) into a contact; a launch eases out. The head follows the body two to four frames late and the arms one to five (follow-through), and extremes overshoot and settle (Wave's arm passes rest on the way down, Point overshoots the line, Jump and Sit settle after landing). Arms and head move with the body's rise and fall so the shoulders and neck stay joined, since parts are siblings, not parented.
+- **Loops close exactly.** `cyc` places cyclic extremes, shifted for lag; the span that crosses the loop's end is split there at its eased value, the half before leaving slowly and the half after arriving fast, so the first and last key are equal and the curve runs on through the seam. Walk in place applied for 48 frames shows the same values at 0, 24 and 48.
+
 ## v0.25.0 · actions: the model and the engine ops
 
 - refers-to: engine/types.ts :: ActionDef, ActSpan, CharacterInfo.actions, CharacterInfo.acts; engine/normalize.ts :: characterDef; engine/action-ops.ts (new)

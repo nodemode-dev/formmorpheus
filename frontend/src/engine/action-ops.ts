@@ -7,6 +7,7 @@ import { uid } from './model';
 import { OpError } from './ops';
 import { srcFrame } from './retime';
 import { findContent, levelFrameOf } from './transform';
+import { BUILTIN_ACTIONS } from './actions-builtin';
 
 /** The kinds of lane an action carries. */
 const KINDS: ReadonlySet<KeyKind> = new Set<KeyKind>(['move', 'bones']);
@@ -28,9 +29,9 @@ export function characterOf(movie: Movie, id: string): Content & { character: Ch
   return g as Content & { character: CharacterInfo };
 }
 
-/** The character's own action with this id. */
+/** The character's own action with this id, else a built-in one. */
 export function findAction(ch: CharacterInfo, id: string): ActionDef | null {
-  return ch.actions.find((a) => a.id === id) ?? null;
+  return ch.actions.find((a) => a.id === id) ?? BUILTIN_ACTIONS.find((a) => a.id === id) ?? null;
 }
 
 /** The frame the character's tracks see at a movie frame (the Playhead). */
@@ -218,9 +219,18 @@ function putChannel(c: Content, kind: KeyKind, id: string, add: Key[]): Content 
   return { ...c, keys: [...c.keys, lane].sort((p, q) => laneRank(p.kind) - laneRank(q.kind)) };
 }
 
+/** Built-ins are drawn with arm-r on the Stage's left; a character drawn the other way round gets them mirrored. */
+function mirrored(g: Content, a: ActionDef): boolean {
+  if (!a.id.startsWith('builtin:')) return false;
+  const r = partRef(g, 'arm-r'), l = partRef(g, 'arm-l');
+  if (!r || !l) return false;
+  const x = (c: Content): number => c.transform.x + (c.pivot?.x ?? 0);
+  return x(r.c) > x(l.c);
+}
+
 /** Writes the action's keys from `from`, `reps` passes; parts the character lacks are returned by name. */
 function write(g: Content, a: ActionDef, from: number, reps: number): { g: Content; skipped: string[] } {
-  const mirror = false;
+  const mirror = mirrored(g, a);
   const skipped: string[] = [];
   let out = g;
   for (const l of a.lanes) {
