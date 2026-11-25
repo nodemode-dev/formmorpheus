@@ -30,6 +30,7 @@ enum EngineConfig {
     static let appName = "formmorpheus"
     static let projectExt = ".fmo"
     static let maxProjectBytes = 4 * 1024 * 1024 * 1024
+    static let maxCharacterBytes = 512 * 1024 * 1024
     static let maxExportBytes = 2 * 1024 * 1024 * 1024
 
     /// Tests or tools may point the engine at another folder before the first request.

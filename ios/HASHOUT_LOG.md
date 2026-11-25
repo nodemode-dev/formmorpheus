@@ -2,6 +2,17 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.25.0 · Characters match the desktop engine on delete, size and rename
+
+- refers-to: Engine/CharactersRoutes.swift (`write`, `rename`, `delete`), Engine/EngineSupport.swift (`EngineConfig.maxCharacterBytes`)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- Delete: two deletes of the same name in the same second no longer overwrite the first trashed file. Inside the store lock the trash name tries `<name> <stamp>.fmo`, then `<name> <stamp> 2.fmo`, ` 3` ... until free, as `characters.py` does.
+- PUT: the body limit is `EngineConfig.maxCharacterBytes`, 512 MB, the desktop's `MAX_CHARACTER_BYTES`, with its sentence "The character is too large to save." (was the 4 GB movie limit).
+- Rename: the name-taken check runs inside the store lock, before the move, as `characters.py` checks inside its lock.
+- Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used was already called in this file.
+
 ## v0.25.0 · the Characters library on iPad
 
 - refers-to: Engine/CharactersRoutes.swift (new), Engine/EngineRouter.swift, Engine/EngineSupport.swift (`EngineConfig.charactersDir`, `ensureTree`), Engine/TrashRoutes.swift

@@ -116,7 +116,7 @@ final class CharactersRoutes: APIRoutes {
 
     private func write(_ c: RouteContext) throws -> APIResponse {
         let path = try store.path(c.param("name"))
-        let body = try c.limited(EngineConfig.maxProjectBytes, "The character is too large to save.")
+        let body = try c.limited(EngineConfig.maxCharacterBytes, "The character is too large to save.")
         if body.count < 4 || Array(body.prefix(4)) != [0x50, 0x4B, 0x03, 0x04] {
             throw EngineError(400, "That is not a FormMorpheus character.")
         }
@@ -134,21 +134,27 @@ final class CharactersRoutes: APIRoutes {
         let to = try c.json().string("to")
         let stem = try store.cleanName(to)
         let dst = store.root.appendingPathComponent(stem + CharacterStore.ext)
+        store.lock.lock()
+        defer { store.lock.unlock() }
         // a change of case only is the same file on a case-insensitive volume
         if let other = store.find(stem), !(EngineFS.exists(other) && EngineFS.exists(src) && EngineFS.sameFile(other, src)) {
             throw EngineError(409, "A character with that name already exists.")
         }
-        store.lock.lock()
-        defer { store.lock.unlock() }
         try EngineFS.replace(src, dst)
         return APIResponse.json(store.entry(dst))
     }
 
     private func delete(_ c: RouteContext) throws -> APIResponse {
         let src = try existing(c)
-        let dst = EngineConfig.trashDir.appendingPathComponent("\(store.stem(src)) \(EngineText.stamp())\(CharacterStore.ext)")
+        let stamp = EngineText.stamp()
         store.lock.lock()
         defer { store.lock.unlock() }
+        var dst = EngineConfig.trashDir.appendingPathComponent("\(store.stem(src)) \(stamp)\(CharacterStore.ext)")
+        var n = 2
+        while EngineFS.exists(dst) {
+            dst = EngineConfig.trashDir.appendingPathComponent("\(store.stem(src)) \(stamp) \(n)\(CharacterStore.ext)")
+            n += 1
+        }
         try EngineFS.safeMove(src, dst)
         TrashStore.shared.record(dst, original: src.lastPathComponent, kind: CharacterStore.kind)
         return APIResponse.json(["deleted": store.stem(src), "kept": dst.path])
