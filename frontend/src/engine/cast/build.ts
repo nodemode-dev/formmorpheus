@@ -53,7 +53,6 @@ export function build(c: CastSpec): CastRig {
   for (const s of [-1, 1]) { const x = s < 0 ? 'L' : 'R'; SL(`arm_${x}_upper`, `arm_${x}_upper`, pt.armU(s)); SL(`arm_${x}_fore`, `arm_${x}_fore`, pt.armF(s)); SL(`hand_${x}`, `hand_${x}`, pt.hand(s)); }
   SL('headBehind', 'head', hd.behind); SL('head', 'head', hd.head); SL('eyes', 'eyes', hd.eyes, H * .44); SL('brows', 'brows', hd.brows);
   SL('mouth', 'mouth', hd.mouth); SL('mouthOpen', 'mouthO', hd.mouthO); SL('hairFront', 'head', hr.front); SL('headAcc', 'head', hd.acc);
-  // Eye prims sit on the eye line already, so the slot takes no offset.
   const eyes = slots.find((s) => s.name === 'eyes');
   if (eyes) eyes.oy = 0;
   return { M, bones, slots, height: legLen + M.pelvisH + T + M.neckLen + H };

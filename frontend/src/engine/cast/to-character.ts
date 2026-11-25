@@ -1,5 +1,3 @@
-// A built rig as a FormMorpheus character: one Group, one inner track per drawn slot in the rig's draw order, each part
-// following its parent part, the mouth a mouth chart Flipbook. Placed as an SVG starter of the 1080 convention is. No DOM.
 import { characterInfoOf, characterOf, partContent, updateDeep } from '../character-ops';
 import { restingChart } from '../lipsync-ops';
 import { content as makeContent, drawingLayer, flipTrack, track as makeTrack, uid } from '../model';
@@ -183,7 +181,6 @@ function primDefs(p: CastPrim, m: Mat): { name: string; def: ShapeDef }[] {
   for (const r of runs) {
     const nodes = nodesOf(r, m);
     if (nodes.length < 2) continue;
-    // an open run that is filled and stroked: the fill closes it, the stroke does not
     if (fill && stroke && !r.closed) {
       out.push({ name, def: def(nodes.map((n) => ({ ...n })), fill, null, true) });
       out.push({ name, def: def(nodes, null, stroke, false) });
@@ -334,7 +331,6 @@ export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRi
   const highlight = new Map(old ? old.tracks.flatMap((t) => t.content).map((x) => [x.id, x.highlight]) : []);
   const before = old?.character?.build ? builtParts(old.character.build) : null;
   const r = mergeFromSource(movie, charId, g, table);
-  // a cast part this build does not draw is hidden with its keys, not marked missing; one drawn again by a later build shows
   const hidden = r.missing.filter(isCastPart);
   const back = Object.keys(g.character?.parts ?? {}).filter((n) => isCastPart(n) && before && !before.has(n));
   const freshMouth = g.character?.parts.mouth ? g.tracks.flatMap((t) => t.content).find((c) => c.id === g.character?.parts.mouth) : undefined;
@@ -382,7 +378,6 @@ function builtParts(spec: CastSpec): Set<string> | null {
       const n = s.name === OPEN_SLOT ? 'mouth' : castPartName(s.name);
       if (n) out.add(n);
     }
-    // the mouth chart is made from the recipe's mouth shapes whatever its slots hold
     out.add('mouth');
     return out;
   } catch { return null; }

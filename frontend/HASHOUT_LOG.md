@@ -7,6 +7,18 @@ Last updated: 2026-11-25 · characters built from a recipe
 
 ---
 
+## v0.26.0 · cast comments moved here
+
+- refers-to: engine/cast/to-character.ts (file head, primDefs, rebuild, builtParts); engine/cast/build.ts :: build (eyes slot)
+- kind: removed
+- logged: v0.26.0 · 2026-11-25
+
+- to-character.ts head: "A built rig as a FormMorpheus character: one Group, one inner track per drawn slot in the rig's draw order, each part following its parent part, the mouth a mouth chart Flipbook. Placed as an SVG starter of the 1080 convention is. No DOM."
+- primDefs: "an open run that is filled and stroked: the fill closes it, the stroke does not."
+- rebuild: "a cast part this build does not draw is hidden with its keys, not marked missing; one drawn again by a later build shows."
+- builtParts: "the mouth chart is made from the recipe's mouth shapes whatever its slots hold."
+- build.ts, after the slots: "Eye prims sit on the eye line already, so the slot takes no offset." (the studio sets the eyes slot's oy back to 0 after `SL` gave it H * .44).
+
 ## v0.26.0 · a built rig becomes a character
 
 - refers-to: engine/cast/to-character.ts :: rigToCharacterGroup, rebuildCharacter, castPartName, CAST_UNIT (all new)
