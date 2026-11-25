@@ -22,6 +22,8 @@ const PIXELS = new Set(['x', 'y', 'px', 'py']);
 const REF_LEG = 344;
 const REF_HEIGHT = 900;
 const SOLE = ['shin-r', 'foot-r'];
+/** Parts a built character may lack (CAST_CONTRACT): a starter moving them says nothing when they are missing. */
+const OPTIONAL = new Set(['hip', 'forearm-l', 'forearm-r', 'shin-l', 'shin-r', 'foot-l', 'foot-r', 'hand-l', 'hand-r', 'eyes', 'brows', 'hair-sway', 'shadow']);
 
 export interface ActResult { movie: Movie; skipped: string[] }
 
@@ -130,7 +132,8 @@ function atRate(a: ActionDef, fps: number): ActionDef {
     }),
   }));
   const mouth = a.mouth?.map((m) => ({ ...m, frame: Math.round(m.frame * r) }));
-  return { ...a, length: Math.max(1, Math.round(a.length * r)), lanes, fps, ...(mouth ? { mouth } : {}) };
+  const blend = a.blend ? Math.max(1, Math.round(a.blend * r)) : 0;
+  return { ...a, length: Math.max(1, Math.round(a.length * r)), lanes, fps, ...(mouth ? { mouth } : {}), ...(blend ? { blend } : {}) };
 }
 
 /** Lane kind and channel ids each part of an action keys; null for an action no longer known (everything it could key). */
@@ -329,9 +332,30 @@ function write(g: Content, a: ActionDef, from: number, reps: number, fit: Fit, l
         at.set(f, { ...key, frame: f, value: absolute(p.c, kind, id, key.value, fit) });
       }
     }
+    if (a.loop && a.blend) blendEnds(at, p, a, kind, id, src, from, Math.min(from + reps * a.length, limit), fit);
     return putChannel(pc, kind, id, [...at.values()].sort((x, y) => x.frame - y.frame));
   });
   return { g: out, skipped };
+}
+
+/** The channel's value at rest, as an action counts it. */
+const restValue = (kind: KeyKind, id: string): number => (kind === 'move' && SCALES.has(id) ? 1 : 0);
+
+/**
+ * A loop whose first pose is not the rest pose: the span's first `blend` frames ease from rest into the loop as it
+ * runs there, and its last `blend` frames ease back to rest, so nothing snaps or stays raised. Too short a span is left as is.
+ */
+function blendEnds(at: Map<number, Key>, p: PartRef, a: ActionDef, kind: KeyKind, id: string, src: Key[], from: number, end: number, fit: Fit): void {
+  const b = a.blend ?? 0;
+  if (end - from < 2 * b + 2) return;
+  const lo = keyFrame(p, from), hi = keyFrame(p, end), inA = keyFrame(p, from + b), outA = keyFrame(p, end - b);
+  for (const f of [...at.keys()]) if ((f > lo && f < inA) || (f > outA && f < hi)) at.delete(f);
+  const rest = restValue(kind, id);
+  const put = (f: number, k: Key): void => { if (f >= 0 && f <= p.c.duration - 1) at.set(f, { ...k, frame: f, value: absolute(p.c, kind, id, k.value, fit) }); };
+  put(lo, { frame: 0, value: rest, ease: 'inout' });
+  put(inA, keyAt(src, b % a.length));
+  put(outA, { frame: 0, value: keyAt(src, (end - b - from) % a.length).value, ease: 'inout' });
+  put(hi, { frame: 0, value: rest, ease: 'inout' });
 }
 
 /** The action's key at frame `t` of a pass: its own key there, else the value shown there with the ease that runs on. */
@@ -359,11 +383,14 @@ function seal(g: Content, spans: readonly ActSpan[], frames: readonly number[], 
       const m = local % a.length;
       const t = !a.loop ? Math.min(local, a.length) : !head && m === 0 && local > 0 ? a.length : m;
       const fit = fitFor(out, a, h);
+      // a blended loop rests where it truly starts and wherever it ends
+      const rests = !!(a.loop && a.blend) && (!head || s.start === undefined);
       out = eachChannel(out, a, null, (pc, p, part, kind, id, src) => {
         if (!head && starts.some((o) => moves(o, part, kind, id))) return pc;
         const k = keyAt(src, t), at = keyFrame(p, f);
         if (at < 0 || at > pc.duration - 1) return pc;
-        return putChannel(pc, kind, id, [{ ...k, frame: at, value: absolute(p.c, kind, id, k.value, fit) }]);
+        const v = rests ? restValue(kind, id) : k.value;
+        return putChannel(pc, kind, id, [{ ...k, frame: at, value: absolute(p.c, kind, id, v, fit) }]);
       });
     }
   }
@@ -445,7 +472,8 @@ export function applyAction(movie: Movie, charId: string, actionId: string, at: 
   // a mouth an earlier action set inside the span goes back to Rest unless this one sets it
   const spoke = a.mouth || acts.some((s) => hit(s) && findAction(ch, s.action)?.mouth);
   const said = spoke ? speak(movie, sealed, a.mouth ? a : null, from, to) : sealed;
-  return { movie: put(movie, withChar(said, { acts: kept })), skipped };
+  // a built character without hair or a shadow is complete, so its optional parts are never named
+  return { movie: put(movie, withChar(said, { acts: kept })), skipped: def.id.startsWith('builtin:') ? skipped.filter((n) => !OPTIONAL.has(n)) : skipped };
 }
 
 /** Removes the keys of one placed action (inside its span, on the parts and channels it moves) and the span. */

@@ -229,25 +229,82 @@ function flat(a: ActionDef): ActionDef {
   return { ...a, lanes };
 }
 
+/** Sit's drop as a share of the whole, at Sit's own frames: a small rise, the drop, an overshoot, the settle. */
+const SIT: Array<[number, number]> = [[0, 0], [4, -0.027], [20, 1.067], [24, 0.987], [30, 1]];
+/** How much of the thigh is lost to sight when it points at the viewer. */
+const SIT_FOLD = 0.85;
+const sitBy = (fn: (s: number) => number): Key[] => seq(SIT.map(([f, s]): Pt => [f, fn(s)]));
+
+/**
+ * Sit on the builder's rig, seen from the front: the hip drops by what the thighs lose as they fold toward the viewer
+ * (thigh squash, the shin scaled back by its inverse so shin and foot keep their length and the feet stay down), hands
+ * to the lap. No knee turn: a turn between the squashed thigh and the shin would shear the shin and foot.
+ */
+function rigSit(): ActionDef {
+  // keyed every frame: the shin's scale must undo the thigh's on each frame shown, or the feet leave the floor between keys
+  const drop = sitBy((s) => s), at: number[] = [];
+  for (let f = 0; f <= 30; f++) at.push(evalChannel(drop, f) ?? 0);
+  const each = (fn: (s: number) => number): Key[] => at.map((s, f) => ({ frame: f, value: fn(s), ease: 'linear' }));
+  const thigh = each((s) => 1 - SIT_FOLD * s), shin = each((s) => 1 / (1 - SIT_FOLD * s));
+  const turn = (deg: number): Key[] => sitBy((s) => deg * s);
+  return {
+    id: 'builtin:sit', name: 'Sit', length: 30, loop: false, fps: S_FPS,
+    lanes: [
+      part('hip', { y: each((s) => SIT_FOLD * S_THIGH * RIG_PX * s) }),
+      part('leg-r', { scaleY: thigh }), part('shin-r', { scaleY: shin }),
+      part('leg-l', { scaleY: thigh }), part('shin-l', { scaleY: shin }),
+      part('arm-r', { rotation: sitArm }), part('arm-l', { rotation: neg(sitArm) }),
+      part('forearm-r', { rotation: turn(-25) }), part('forearm-l', { rotation: turn(25) }),
+    ],
+  };
+}
+/** The studio's thigh at body height 1, in rig pixels. */
+const S_THIGH = 80;
+
 /** On a character with the builder's parts (a hip, a forearm), these play in place of the starter of the same id. */
 const RIG_ACTIONS: ReadonlyMap<string, ActionDef> = new Map([
-  fromStudio('builtin:idle', 'Idle', true, S_IDLE),
+  { ...fromStudio('builtin:idle', 'Idle', true, S_IDLE), blend: 4 },
   fromStudio('builtin:walk', 'Walk in place', true, S_WALK),
-  fromStudio('builtin:run', 'Run', true, S_RUN),
+  { ...fromStudio('builtin:run', 'Run', true, S_RUN), blend: 4 },
   // our Wave Hello lifts arm-r; the studio waves with its R arm, so it plays mirrored
   fromStudio('builtin:wave', 'Wave Hello', false, S_WAVE, true),
   fromStudio('builtin:jump', 'Jump', false, S_JUMP),
-  fromStudio('builtin:dance', 'Dance', true, S_DANCE),
+  { ...fromStudio('builtin:dance', 'Dance', true, S_DANCE), blend: 4 },
   fromStudio('builtin:talk', 'Talk', true, S_TALK),
-  fromStudio('builtin:cheer', 'Cheer', true, S_CHEER),
+  { ...fromStudio('builtin:cheer', 'Cheer', true, S_CHEER), blend: 4 },
+  rigSit(),
 ].map((a) => [a.id, a]));
 
 const rigOf = (id: string): ActionDef => RIG_ACTIONS.get(id) as ActionDef;
 
+/** What each part follows on the builder's rig, for the starters' own lanes. */
+const CHAIN_UP: Record<string, string> = { head: 'body', 'arm-r': 'body', 'arm-l': 'body' };
+
+/** A starter on the builder's rig: a part that follows another moved by the action keeps only its own travel. */
+function chained(a: ActionDef): ActionDef {
+  const of = (name: string): Record<string, Key[]> | undefined => a.lanes.find((l) => l.part === name)?.keys[0].channels;
+  const lanes = a.lanes.map((l) => {
+    const up = CHAIN_UP[l.part] ? of(CHAIN_UP[l.part]) : undefined;
+    if (!up) return l;
+    const own = { ...l.keys[0].channels };
+    for (const id of ['x', 'y']) {
+      const mine = own[id], theirs = up[id];
+      if (!theirs) continue;
+      const frames = [...new Set([...(mine ?? []), ...theirs].map((k) => k.frame))].sort((p, q) => p - q);
+      own[id] = frames.map((f) => {
+        const v = (mine ? evalChannel(mine, f) ?? 0 : 0) - (evalChannel(theirs, f) ?? 0);
+        return { frame: f, value: Math.abs(v) < 1e-9 ? 0 : v, ease: (mine?.find((k) => k.frame === f) ?? theirs.find((k) => k.frame === f) as Key).ease };
+      });
+    }
+    return part(l.part, own);
+  });
+  return { ...a, lanes };
+}
+
 /** The starter to play for `id` on a character with these parts: the builder's version when it has a hip and a forearm. */
 export function builtinFor(def: ActionDef, parts: Readonly<Record<string, string>>): ActionDef {
   if (!parts.hip || !(parts['forearm-r'] || parts['forearm-l'])) return def;
-  return RIG_ACTIONS.get(def.id) ?? def;
+  return RIG_ACTIONS.get(def.id) ?? CHAINED.get(def.id) ?? def;
 }
 
 /** Built-in actions; ids start with `builtin:` so a saved span names one without copying it into the character. */
@@ -341,3 +398,7 @@ export const BUILTIN_ACTIONS: readonly ActionDef[] = [
     ],
   },
 ];
+
+const CHAINED: ReadonlyMap<string, ActionDef> = new Map(
+  BUILTIN_ACTIONS.filter((a) => ['builtin:nod', 'builtin:shake', 'builtin:point'].includes(a.id)).map((a) => [a.id, chained(a)]),
+);
