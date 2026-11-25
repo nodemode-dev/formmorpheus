@@ -35,7 +35,7 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 
 ## Check on the iPad (0.23.0)
 
-Nothing in this list has been tried on a device yet; the Swift code has never been compiled.
+Not yet run on a device; the app itself is built and runs (see the top of this guide).
 
 1. ProRes 4444 with transparency: import a ProRes 4444 .mov that has an alpha channel into an open movie. A progress line says "Converting ..."; the clip lands on the Stage. Put a color under it and check that the see-through parts stay see-through. If a notice says the first frame shows no transparency, the iPad's video decoder drops it: note the iPad model and iPadOS version.
 2. ProRes 422 without transparency: import a ProRes 422 .mov. It should be converted and play.

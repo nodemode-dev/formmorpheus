@@ -120,7 +120,7 @@
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
-- **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is built and runs on an iPad with Apple Pencil, Apple Pencil Pro included. It is a beta that you build yourself on a Mac with Xcode: see [`docs/ios/BUILD.md`](docs/ios/BUILD.md). An App Store version is planned only if the iPad app gets real adoption.
+- **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is built and runs on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked. It is a beta that you build yourself on a Mac with Xcode: see [`docs/ios/BUILD.md`](docs/ios/BUILD.md). An App Store version is planned only if the iPad app gets real adoption.
 
 ## Download
 
