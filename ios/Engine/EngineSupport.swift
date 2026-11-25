@@ -25,7 +25,7 @@ enum EngineFSError: Error {
 // MARK: - Folders and constants
 
 /// The engine's storage. The root is the app's Documents folder, so the Files app shows
-/// Library, Brushes, Fonts, Ideas, Recently Deleted, Recovery, Exports and Jobs, the names the desktop engine uses.
+/// Library, Characters, Brushes, Fonts, Ideas, Recently Deleted, Recovery, Exports and Jobs, the names the desktop engine uses.
 enum EngineConfig {
     static let appName = "formmorpheus"
     static let projectExt = ".fmo"
@@ -70,13 +70,14 @@ enum EngineConfig {
     static var recoveryDir: URL { return folder("Recovery") }
     static var exportsDir: URL { return folder("Exports") }
     static var jobsDir: URL { return folder("Jobs") }
+    static var charactersDir: URL { return folder("Characters") }
 
     /// Creates every top-level folder once, so the Files app shows the whole tree from the first launch.
     /// Jobs is left out: the export builder keeps its temporary job folders in Caches (thousands of frames
     /// do not belong in Files or in the device backup), so Documents/Jobs would stay empty.
     static func ensureTree() {
         _ = localLibraryDir; _ = brushesDir; _ = fontsDir; _ = ideasDir
-        _ = trashDir; _ = recoveryDir; _ = exportsDir
+        _ = trashDir; _ = recoveryDir; _ = exportsDir; _ = charactersDir
     }
 
     /// A path inside `root` (after resolving links and "..")?

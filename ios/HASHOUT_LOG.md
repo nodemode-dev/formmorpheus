@@ -2,6 +2,20 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.25.0 · the Characters library on iPad
+
+- refers-to: Engine/CharactersRoutes.swift (new), Engine/EngineRouter.swift, Engine/EngineSupport.swift (`EngineConfig.charactersDir`, `ensureTree`), Engine/TrashRoutes.swift
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- `/api/characters` follows `/api/library` and the desktop's `routers/characters.py`: `GET /characters` answers `{folder, items}` with the library's entry (`name`, `file`, `path`, `size`, `modified`, `created`; no `stack`, the folder is flat), newest first; `GET /characters/{name}` the `.fmo` bytes; `GET /characters/{name}/poster` the `poster.png` inside it or an empty 204, with the library's `?v=` caching; `PUT /characters/{name}` checks the zip magic, writes a part file and renames it over the old one, and answers the entry; `POST /characters/{name}/rename` takes `{to}` and answers the new entry (409 when the name is taken, a change of case only is allowed); `DELETE /characters/{name}` moves the file to Recently Deleted as `<name> <stamp>.fmo` with kind `character` and answers `{deleted, kept}`.
+- Storage: `Documents/Characters`, made at launch with the other folders so the Files app shows it from the first run. Not in iCloud Drive: only the movie library can live there. The hourly part sweep already covers the folder.
+- Restore from Recently Deleted puts a `character` back in Characters under the first free name (`name 2.fmo` ...), and the trash list shows its name without `.fmo`, as for movies.
+- No window key here: the iPad has no `/api/window` and no key on any route; the scheme handler only answers its own web view and the router's Origin guard refuses a foreign origin on PUT, POST and DELETE, which covers the new prefix like every other.
+- Not ported: `/api/files/stat`. It answers 404 (FilesRoutes has only `/files/read`), and the window then hides the automatic source update and keeps Update from Source....
+- The error sentences say "character" where the library's say "project"; align them with `characters.py` word for word if that file says otherwise.
+- Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used is one the library and trash routes already call.
+
 ## v0.23.1 · the product's name in what iPadOS shows
 
 - refers-to: App/Info.plist (CFBundleTypeName, UTTypeDescription, the two usage descriptions); App/*.lproj/InfoPlist.strings (30 languages); Engine/EngineSupport.swift, FilesRoutes.swift, LibraryRoutes.swift, RecoveryRoutes.swift, SaveToRoutes.swift; Export/JobsRoutes.swift; UX/SceneState.swift
