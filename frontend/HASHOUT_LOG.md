@@ -7,6 +7,18 @@ Last updated: 2026-11-25 · the Character Builder
 
 ---
 
+## v0.28.0 · Character Builder review fixes
+
+- refers-to: ui/character-builder.ts :: CharacterBuilder constructor (Ctrl+Z listener), thumbs, thumbsFor, add; styles/character-builder.css :: .fm-cb
+- kind: fix
+- logged: v0.28.0 · 2026-11-25
+
+- **No field undo in the builder.** The dialog's field undo records only settled input changes, so Ctrl+Z there gave mixed recipes. A capture listener on the builder's scrim takes Ctrl or Cmd+Z first: in the name field it lets the browser's own text undo run and stops the dialog's; anywhere else it does nothing at all. The app's undo was already kept off by the dialog guard (`anyDialogOpen`) and the scrim stopping the key; checked: Ctrl+Z and Cmd+Z in the builder leave the movie's tracks as they were.
+- **Tiles keyed one by one.** Each hair and outfit tile keeps the key of what it draws: the recipe with that tile's choice, without id, name and tag, with only the colors of the outfit it shows. A color change on the Outfit tab now redraws the one tile it touches (was all 13); a name change redraws none. Opening the builder clears the keys so a theme change shows.
+- **Fits small windows.** The body's fixed `min-height: 420px` pushed the footer off a 560 tall window; it is `min(420px, 100vh - 160px)` now. Checked at 1024 by 560 (dialog 32 to 528), 1180 by 640 and 1600 by 1000.
+- **Add to Movie's toast** names the character as it was when Add was pressed, not after the build.
+- The `// Look`, `// Hair`, `// Outfit` markers were removed: the pane variables say it.
+
 ## v0.28.0 · Update from Source drops the recipe
 
 - refers-to: engine/source-merge.ts :: mergeFromSource
