@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <g id="leg-l">
+    <path d="M551 700.4 L560 968.3 A22 22 0 0 0 604 967.7 L605 699.6 A27 27 0 0 0 551 700.4 Z" fill="#2e2b3b"/>
+    <path d="M549.4 700.4 L558.7 968.3 A18 18 0 0 0 594.8 967.7 L593.7 699.6 A22.1 22.1 0 0 0 549.4 700.4 Z" fill="#3e3a4d"/>
+    <path d="M549 1002.5 C549 972.1 569.7 970.2 586 970.2 C602.3 970.2 623 972.1 623 1002.5 L623 1012 L549 1012 Z" fill="#6b4630"/>
+    <rect x="547" y="1002.1" width="78" height="9.9" rx="4.6" fill="#4a2f20"/>
+    <circle id="pivot-leg-l" data-role="pivot" cx="578" cy="700" r="4" fill="#ff3d8b"/>
+  </g>
+  <g id="leg-r">
+    <path d="M475 699.6 L476 967.7 A22 22 0 0 0 520 968.3 L529 700.4 A27 27 0 0 0 475 699.6 Z" fill="#2e2b3b"/>
+    <path d="M473.4 699.8 L474.7 967.8 A18 18 0 0 0 510.8 968.2 L517.7 700.2 A22.1 22.1 0 0 0 473.4 699.8 Z" fill="#3e3a4d"/>
+    <path d="M457 1002.5 C457 972.1 477.7 970.2 494 970.2 C510.3 970.2 531 972.1 531 1002.5 L531 1012 L457 1012 Z" fill="#6b4630"/>
+    <rect x="455" y="1002.1" width="78" height="9.9" rx="4.6" fill="#4a2f20"/>
+    <circle id="pivot-leg-r" data-role="pivot" cx="502" cy="700" r="4" fill="#ff3d8b"/>
+  </g>
+  <g id="body">
+    <rect x="516" y="330" width="48" height="130" rx="18" fill="#c88d66"/>
+    <path d="M570 446 C602 448 644 452 654 490 C664 560 658 700 686 838 C640 852 590 856 540 856 C490 856 440 852 394 838 C422 700 416 560 426 490 C436 452 478 448 510 446 Z" fill="#a2402c"/>
+    <path d="M560 448 C588 450 626 456 636 492 C644 560 638 700 662 830 C622 846 576 848 530 848 C484 848 438 846 398 830 C422 700 416 560 424 492 C434 456 472 450 500 448 Z" fill="#c4533b"/>
+    <path d="M546 560 L546 846" fill="none" stroke="#a2402c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M482 452 L546 560 L510 600 L450 470 Z" fill="#a2402c"/>
+    <path d="M598 452 L546 560 L584 598 L632 470 Z" fill="#a2402c"/>
+    <path d="M474 446 Q540 486 606 446 Q612 478 590 496 Q540 520 490 496 Q468 478 474 446 Z" fill="#8db79a"/>
+    <path d="M554 500 L592 494 L586 640 L568 628 L552 644 Z" fill="#6f9a7e"/>
+    <path d="M556 610 L586 606" fill="none" stroke="#8db79a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="524" cy="650" r="7" fill="#823323"/>
+    <circle cx="524" cy="720" r="7" fill="#823323"/>
+    <circle cx="524" cy="790" r="7" fill="#823323"/>
+    <path d="M444 700 L494 700 L494 742 Q469 750 444 742 Z" fill="#a2402c"/>
+    <circle id="pivot-body" data-role="pivot" cx="540" cy="700" r="4" fill="#ff3d8b"/>
+  </g>
+  <g id="arm-l">
+        <g id="hand-l">
+      <path d="M721.9 733.5 C725.6 749.4 718.4 764.7 705.9 767.6 C693.5 770.4 680.4 759.9 676.7 743.9 C673 728 680.1 712.8 692.6 709.9 C705.1 707 718.2 717.6 721.9 733.5 Z" fill="#c88d66"/>
+      <path d="M718.4 732.5 C722 748.1 715.1 763 702.9 765.8 C690.7 768.6 678 758.3 674.3 742.7 C670.7 727.1 677.7 712.1 689.9 709.3 C702 706.5 714.8 716.9 718.4 732.5 Z" fill="#e2ab84"/>
+      <path d="M681 723.7 C685.7 729.8 686.5 737.1 682.7 740.1 C678.9 743 672 740.5 667.3 734.4 C662.5 728.4 661.8 721.1 665.6 718.1 C669.3 715.2 676.3 717.7 681 723.7 Z" fill="#e2ab84"/>
+      <path d="M679.4 722.7 Q682.3 733.4 677.6 741.3" fill="none" stroke="#c88d66" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle id="pivot-hand-l" data-role="pivot" cx="689.5" cy="707.9" r="4" fill="#ff3d8b"/>
+    </g>
+    <path d="M602.9 483.6 L659.8 694.7 A26 26 0 0 0 710.5 683.1 L669.1 468.4 A34 34 0 0 0 602.9 483.6 Z" fill="#a2402c"/>
+    <path d="M600.7 482.5 L658.2 693.9 A21.3 21.3 0 0 0 699.6 683.9 L655 469.5 A27.9 27.9 0 0 0 600.7 482.5 Z" fill="#c4533b"/>
+    <path d="M652.4 667.2 L658.8 695 A27 27 0 0 0 711.5 682.8 L705.1 655 Z" fill="#a2402c"/>
+    <circle id="pivot-arm-l" data-role="pivot" cx="636" cy="476" r="4" fill="#ff3d8b"/>
+  </g>
+  <g id="arm-r">
+        <g id="hand-r">
+      <path d="M409.1 743.9 C405.4 759.9 392.3 770.4 379.9 767.6 C367.4 764.7 360.2 749.4 363.9 733.5 C367.6 717.6 380.7 707 393.2 709.9 C405.7 712.8 412.8 728 409.1 743.9 Z" fill="#c88d66"/>
+      <path d="M405.7 742.7 C402 758.3 389.3 768.6 377.1 765.8 C364.9 763 358 748.1 361.6 732.5 C365.2 716.9 378 706.5 390.1 709.3 C402.3 712.1 409.3 727.1 405.7 742.7 Z" fill="#e2ab84"/>
+      <path d="M412.7 734.4 C408 740.5 401.1 743 397.3 740.1 C393.5 737.1 394.3 729.8 399 723.7 C403.7 717.7 410.7 715.2 414.4 718.1 C418.2 721.1 417.5 728.4 412.7 734.4 Z" fill="#e2ab84"/>
+      <path d="M400.6 722.7 Q397.7 733.4 402.4 741.3" fill="none" stroke="#c88d66" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle id="pivot-hand-r" data-role="pivot" cx="390.5" cy="707.9" r="4" fill="#ff3d8b"/>
+    </g>
+    <path d="M410.9 468.4 L369.5 683.1 A26 26 0 0 0 420.2 694.7 L477.1 483.6 A34 34 0 0 0 410.9 468.4 Z" fill="#a2402c"/>
+    <path d="M408.6 470 L367.8 684.3 A21.3 21.3 0 0 0 409.4 693.5 L463.1 482 A27.9 27.9 0 0 0 408.6 470 Z" fill="#c4533b"/>
+    <path d="M374.9 655 L368.5 682.8 A27 27 0 0 0 421.2 695 L427.6 667.2 Z" fill="#a2402c"/>
+    <circle id="pivot-arm-r" data-role="pivot" cx="444" cy="476" r="4" fill="#ff3d8b"/>
+  </g>
+  <g id="head">
+    <circle cx="546" cy="156" r="44" fill="#b8bfca"/>
+    <circle cx="540" cy="152" r="42" fill="#e4e7ec"/>
+    <path d="M514 140 Q540 124 566 140" fill="none" stroke="#b8bfca" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M428 300 C420 200 460 162 540 160 C620 162 660 200 652 300 Q644 330 628 336 L452 336 Q436 330 428 300 Z" fill="#b8bfca"/>
+    <ellipse cx="448" cy="286" rx="17" ry="20" fill="#e2ab84"/>
+    <ellipse cx="445.6" cy="287" rx="8.4" ry="11" fill="#c88d66"/>
+    <ellipse cx="632" cy="286" rx="17" ry="20" fill="#e2ab84"/>
+    <ellipse cx="634.4" cy="287" rx="8.4" ry="11" fill="#c88d66"/>
+    <path d="M540 176 C592.6 176 634 220.4 634 284.8 C634 346.9 611.4 384.7 570.1 396.9 C555 400.7 544.7 400.7 540 400.7 C535.3 400.7 525 400.7 509.9 396.9 C468.6 384.7 446 346.9 446 284.8 C446 220.4 487.4 176 540 176 Z" fill="#e2ab84"/>
+    <path d="M436 290 C428 210 476 168 544 168 C610 168 652 206 644 284 C634 250 616 230 580 226 C546 224 500 214 476 226 C452 238 444 262 436 290 Z" fill="#e4e7ec"/>
+    <path d="M436 290 Q422 318 442 330 Q448 306 450 282 Z" fill="#e4e7ec"/>
+    <path d="M644 284 Q658 316 638 330 Q632 304 630 278 Z" fill="#e4e7ec"/>
+    <path d="M500 192 Q550 196 596 214" fill="none" stroke="#b8bfca" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M517 247 Q500 242.5 483 253" fill="none" stroke="#b8bfca" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M563 247 Q580 242.5 597 253" fill="none" stroke="#b8bfca" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="502" cy="278" rx="8" ry="11" fill="#2a2238"/>
+    <circle cx="499.6" cy="273.8" r="2.9" fill="#ffffff"/>
+    <ellipse cx="578" cy="278" rx="8" ry="11" fill="#2a2238"/>
+    <circle cx="575.6" cy="273.8" r="2.9" fill="#ffffff"/>
+    <path d="M488 296 Q502 302 516 296" fill="none" stroke="#c88d66" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M564 296 Q578 302 592 296" fill="none" stroke="#c88d66" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M526 306 Q540 321.4 554 306 Q540 313 526 306 Z" fill="#c88d66"/>
+    <ellipse cx="478" cy="322" rx="15" ry="9.3" fill="#e19682"/>
+    <ellipse cx="602" cy="322" rx="15" ry="9.3" fill="#e19682"/>
+        <g id="mouth">
+      <path d="M519.8 344.1 Q540 358.5 560.2 344.1" fill="none" stroke="#8a3d3a" stroke-width="5.3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle id="pivot-mouth" data-role="pivot" cx="540" cy="346" r="4" fill="#ff3d8b"/>
+    </g>
+    <circle cx="502" cy="280" r="25" fill="none" stroke="#3a3350" stroke-width="5"/>
+    <circle cx="578" cy="280" r="25" fill="none" stroke="#3a3350" stroke-width="5"/>
+    <path d="M527 278 Q540 270 553 278" fill="none" stroke="#3a3350" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M477 276 L450 270" fill="none" stroke="#3a3350" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M603 276 L630 270" fill="none" stroke="#3a3350" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="446" cy="316" r="6" fill="#e7b84a"/>
+    <circle cx="634" cy="316" r="6" fill="#e7b84a"/>
+    <circle id="pivot-head" data-role="pivot" cx="540" cy="452" r="4" fill="#ff3d8b"/>
+  </g>
+</svg>
