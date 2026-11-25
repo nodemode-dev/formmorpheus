@@ -7,6 +7,17 @@ Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
 
+## v0.31.0 · the builder in long languages and right to left
+
+- refers-to: styles/character-builder.css :: .fm-cb-roster, .fm-cb-panel, .fm-cb-sl, .fm-cb-sl span (new), .fm-cb-out
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Checked in a browser in all 29 tables** (Pip, Rex, Sprig and Karl on the Hair tab; Look; Outfit): the hair note stays inside the empty cells of the last style row in every language (at most 64 px tall in Greek against a 91 px row), and the style grid is the same height with the note shown and hidden, so nothing shifts. The grid is 15 px taller in Japanese, Korean, Thai and Chinese for every recipe alike, from the line height of their tile labels.
+- **Slider labels.** The 76 px label column let "Телосложение", "Ruumiinrakenne", "Kroppsbyggnad" and "Σωματότυπος" run under the slider track. It is 96 px, and a label still too long breaks onto a second line (`overflow-wrap: anywhere` is the last resort for one long word), never under the track.
+- **Right to left.** The roster's and the panel's dividers were `border-right` and `border-left`, so in Arabic both sat on the dialog's outer edges and the columns had none between them; they are `border-inline-end` and `border-inline-start`. A slider's value is `text-align: end`, at the outer edge in both directions. The columns, tabs, tiles, swatches and the hair note mirror by the grid and flex order with no other change.
+- **Not changed.** Tile labels keep one line with an ellipsis (a second line would make the rows uneven between languages); the full label is the tile's tooltip.
+
 ## v0.31.0 · builder labels with their own entries
 
 - refers-to: ui/character-builder.ts :: SENSE (new), tw (new), relabel, sync; ui/i18n/* (27 full tables), ui/i18n/es-MX.ts, ui/i18n/fr-CA.ts
