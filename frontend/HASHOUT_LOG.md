@@ -15,6 +15,7 @@ Last updated: 2026-11-23 · the interface's test suite
 
 - **Save to Characters compares the cleaned name.** The name is cleaned with `freeName(base, [])` first (`A/B` becomes `A B`) and that is what is compared with the saved names and written, so saving `A/B` twice asks before replacing instead of quietly replacing `A B`.
 - **The replace question can be cancelled.** There was no three-way question but the Unsaved Changes one, which has fixed words. `Confirm` now reports a close (Escape, the close button, a click outside) as `null` instead of `false`; `confirmAction` turns that back into `false`, so every caller is unchanged. The new `chooseOrCancel` hands the `null` through: Replace is `true`, Keep Both `false`, a close saves nothing. Without the window's own dialogs it asks two system questions, the second one the other answer.
+- **Saved characters hold no outside links** (`packCharacter`). Every inner content, at any depth, whose `parent` names an id that is not the group or inside it loses that `parent` in the library copy (a hand parented to a prop on another track, say). Links between the character's own parts stay. The movie itself is not changed.
 
 ## v0.25.0 · characters in Recently Deleted
 

@@ -63,7 +63,16 @@ export async function packCharacter(engine: Engine, renderer: Renderer, g: Conte
     const a = m.assets[id], b = engine.assets.get(id);
     if (a && b) { table[id] = a; blobs.set(id, b); }
   }
-  const { parent: _p, ...free } = g;
+  const own = new Set<string>();
+  const collect = (c: Content): void => { own.add(c.id); for (const tr of c.tracks) tr.content.forEach(collect); };
+  collect(g);
+  // a link to content outside the character would dangle in the library copy
+  const unlink = (c: Content): Content => {
+    const { parent, ...rest } = c;
+    const out: Content = parent && !own.has(parent) ? rest : c;
+    return out.tracks.length ? { ...out, tracks: out.tracks.map((tr) => ({ ...tr, content: tr.content.map(unlink) })) } : out;
+  };
+  const { parent: _p, ...free } = unlink(g);
   const lib: Movie = { ...newMovie({ name, width: m.width, height: m.height, fps: m.fps }), duration: Math.max(1, g.duration), tracks: [makeTrack(name, [{ ...free, start: 0 }])], assets: table };
   let poster: Blob | null = null;
   try {
