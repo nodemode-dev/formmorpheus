@@ -1,11 +1,11 @@
-// A character out to a vector app as SVG: one <g id="part name"> per part, nested by parent, each part's rest
-// transform as its transform attribute, shapes as <path>, pictures as embedded PNG, one pivot circle per part.
-// The art is written in the part's own space, the way engine/shape-draw.ts and the renderer draw it.
+// A character out to a vector app as SVG: one <g id="part name"> per part, nested by parent, shapes as <path>,
+// pictures as embedded PNG, one pivot circle per part. Each part is written at rest in its own space with no
+// transform of its own: the importer bakes transforms into the art and Update from Source keeps each part's transform.
 import { canvasOf } from '../engine/canvas';
 import { animate } from '../engine/keys';
 import { bounds, outline, paintStops, shapeBase, type ShapeVals, type Sub } from '../engine/shape';
 import type { BezNode, ShapeDef } from '../engine/shape-types';
-import { findContent, ownMatrix, type Mat } from '../engine/transform';
+import { findContent, mul, ownMatrix, type Mat } from '../engine/transform';
 import type { CanvasRect, Content, DrawingLayer, Movie, Track } from '../engine/types';
 
 type BlobOf = (id: string) => Blob | undefined;
@@ -71,7 +71,8 @@ class Writer {
   defs: string[] = [];
   left: string[] = [];
   private grads = 0;
-  constructor(readonly movie: Movie, readonly blobOf: BlobOf) {}
+  private at: Mat = [1, 0, 0, 1, 0, 0];
+  constructor(readonly movie: Movie, readonly blobOf: BlobOf, readonly parts: Set<string>) {}
 
   private gradient(d: ShapeDef, v: ShapeVals, box: [number, number, number, number]): string {
     const f = d.fill;
@@ -96,7 +97,7 @@ class Writer {
     return id;
   }
 
-  shape(c: Content): string {
+  shape(c: Content, label = ''): string {
     const d = c.shape as ShapeDef;
     const W = this.movie.width, H = this.movie.height;
     let v = shapeBase(d);
@@ -126,14 +127,14 @@ class Writer {
       if (s.miter !== undefined && s.miter !== 4) attrs += ` stroke-miterlimit="${n(s.miter)}"`;
       if ((s.dash ?? 0) > 0) attrs += ` stroke-dasharray="${n(s.dash as number)} ${n(Math.max(0, s.gap ?? 0))}"${s.dashOffset ? ` stroke-dashoffset="${n(s.dashOffset)}"` : ''}`;
     }
-    return `<path d="${path}"${attrs}/>`;
+    return `<path${label ? ` data-name="${esc(label)}"` : ''} d="${path}"${attrs}${matrixAttr(this.at)}/>`;
   }
 
   private async image(id: string | null, r: CanvasRect, opacity: number): Promise<string> {
     const blob = id ? this.blobOf(id) : undefined;
     if (!blob) return '';
     const op = opacity < 1 ? ` opacity="${n(opacity)}"` : '';
-    return `<image x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" preserveAspectRatio="none"${op} xlink:href="${await pngUrl(blob)}"/>`;
+    return `<image x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" preserveAspectRatio="none"${op}${matrixAttr(this.at)} xlink:href="${await pngUrl(blob)}"/>`;
   }
 
   /** Leaf layers bottom first, with their groups' visibility and opacity carried down. */
@@ -152,10 +153,23 @@ class Writer {
     return out;
   }
 
-  async art(c: Content): Promise<string> {
+  async art(c: Content, label = ''): Promise<string> {
     const W = this.movie.width, H = this.movie.height;
     switch (c.kind) {
-      case 'shape': case 'solid': return c.shape ? this.shape(c) : '';
+      case 'shape': case 'solid': return c.shape ? this.shape(c, label) : '';
+      case 'group': {
+        // a part drawn with several shapes: its inner blocks are its art, named so a re-import keeps the names; an inner
+        // transform goes on each element, since a <g> inside a part would read back as a part of its own
+        let out = '';
+        const was = this.at;
+        for (let i = c.tracks.length - 1; i >= 0; i--) for (const k of c.tracks[i].content) {
+          if (this.parts.has(k.id)) continue;
+          this.at = mul(was, ownMatrix(animate({ ...k, keys: [] }, 0), this.movie));
+          out += await this.art(k, k.name);
+        }
+        this.at = was;
+        return out;
+      }
       case 'image': {
         const a = c.asset ? this.movie.assets[c.asset] : undefined;
         return a ? this.image(c.asset, { x: (W - a.width) / 2, y: (H - a.height) / 2, w: a.width, h: a.height }, 1) : '';
@@ -201,7 +215,7 @@ export async function characterToSvg(movie: Movie, charId: string, blobOf: BlobO
       kids.set(c.parent, list);
     } else roots.push(c);
   }
-  const w = new Writer(movie, blobOf);
+  const w = new Writer(movie, blobOf, new Set(nameOf.keys()));
   const seen = new Set<string>();
   const part = async (c: Content, depth: number): Promise<string> => {
     seen.add(c.id);
@@ -214,7 +228,7 @@ export async function characterToSvg(movie: Movie, charId: string, blobOf: BlobO
     items.sort((a, b) => a.at - b.at);
     const px = movie.width / 2 + (rest.px ?? 0), py = movie.height / 2 + (rest.py ?? 0);
     const pivot = `${pad}  <circle id="pivot-${esc(name)}" data-role="pivot" cx="${n(px)}" cy="${n(py)}" r="4" fill="none" stroke="#ff2d7a" stroke-width="1"/>`;
-    return [`${pad}<g id="${esc(name)}"${matrixAttr(ownMatrix(rest, movie))}>`, ...items.map((x) => x.text), pivot, `${pad}</g>`].join('\n');
+    return [`${pad}<g id="${esc(name)}">`, ...items.map((x) => x.text), pivot, `${pad}</g>`].join('\n');
   };
   const body: string[] = [];
   for (const c of roots) body.push(await part(c, 0));

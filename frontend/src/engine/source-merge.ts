@@ -34,11 +34,17 @@ function mapIn(tracks: Track[], fn: (c: Content) => Content): Track[] {
   }) }));
 }
 
-/** The old part with the new picture: kind, shape, picture asset, layers, canvas and pivot. A Flipbook made in the app is never swapped for a still. */
-function takeArt(old: Content, fresh: Content): Content {
+const holds = (tracks: Track[], ids: Set<string>): boolean => tracks.some((t) => t.content.some((c) => ids.has(c.id) || holds(c.tracks, ids)));
+
+/**
+ * The old part with the new picture: kind, shape, picture asset, layers, inner blocks of a part drawn with several
+ * shapes, canvas and pivot. A Flipbook made in the app, and a group that holds other parts, are never swapped.
+ */
+function takeArt(old: Content, fresh: Content, partIds: Set<string>): Content {
   if (old.kind === 'flipbook' && fresh.kind !== 'flipbook') return old;
+  if (old.kind === 'group' && holds(old.tracks, partIds)) return old;
   const { shape: _s, canvas: _c, pivot: _p, ...rest } = old;
-  const next: Content = { ...rest, kind: fresh.kind, asset: fresh.asset, layers: fresh.layers, flip: fresh.kind === 'flipbook' ? fresh.flip : old.flip };
+  const next: Content = { ...rest, kind: fresh.kind, asset: fresh.asset, layers: fresh.layers, tracks: fresh.kind === 'group' ? fresh.tracks : [], flip: fresh.kind === 'flipbook' ? fresh.flip : old.flip };
   if (fresh.shape) next.shape = fresh.shape;
   if (fresh.canvas) next.canvas = fresh.canvas;
   if (fresh.pivot) next.pivot = fresh.pivot;
@@ -96,9 +102,10 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
   });
 
   const gone = new Set(missing.map((n) => oldParts[n]).filter((id) => !have.get(id)?.track.locked));
+  const partIds = new Set(Object.values(oldParts));
   const tracks = [...newTracks, ...mapIn(g.tracks, (c) => {
     const f = matched.get(c.id);
-    if (f) return takeArt(c, f);
+    if (f) return takeArt(c, f, partIds);
     if (gone.has(c.id)) return { ...c, highlight: MISSING_HIGHLIGHT };
     return c;
   })];
