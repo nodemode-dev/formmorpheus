@@ -2,7 +2,7 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.29.0
+Current build version: v0.30.0
 Last updated: 2026-11-25 · the linked SVG routes read one checked descriptor
 
 ---
