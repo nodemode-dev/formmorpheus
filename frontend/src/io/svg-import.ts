@@ -566,9 +566,11 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
     name: uniqueName(cx, labelOf(el) ?? `Part ${cx.parts.length + 1}`),
     parent, shapes: [], raster: null, pivot: null,
     opacity: opacity(st.opacity) * above,
-    hidden: st.visibility === 'hidden',
+    hidden: st.visibility === 'hidden' || st.visibility === 'collapse',
     markup: '',
   };
+  // a hidden part keeps its art: the flag hides it, and only what is hidden inside it stays out
+  if (part.hidden) { st = { ...st }; delete st.visibility; }
   if (has(st.filter)) part.raster = 'a filter';
   else if (has(st.mask)) part.raster = 'a mask';
   else if (has(st['clip-path'])) part.raster = 'a clipping path';
@@ -582,7 +584,7 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
     const r = DRAWN.has(el.localName) ? drawElement(cx, el, m, st) : { why: WHY[el.localName] ?? 'an element that is not a shape' };
     if ('why' in r) part.raster = r.why; else part.shapes.push(...r.shapes);
   }
-  for (const [g, gm, gOuter, gs] of nested) makePart(cx, g, gm, gOuter, gs, index, part.opacity, out);
+  for (const [g, gm, gOuter, gs] of nested) makePart(cx, g, gm, gOuter, part.hidden && gs.visibility === undefined ? { ...gs, visibility: 'hidden' } : gs, index, part.opacity, out);
 }
 
 const isLayer = (el: Element): boolean => el.localName === 'g' && (el.getAttribute('inkscape:groupmode') === 'layer' || el.getAttributeNS('http://www.inkscape.org/namespaces/inkscape', 'groupmode') === 'layer');
@@ -613,7 +615,7 @@ function markupOf(cx: Ctx, w: PartWork, xml: XMLSerializer): string {
   for (const c of w.cut) c.removeAttribute('data-fm-cut');
   for (const c of Array.from(clone.querySelectorAll('[data-fm-cut]'))) c.remove();
   // the part's opacity is the block's own; the picture is drawn whole
-  clone.setAttribute('style', `${clone.getAttribute('style') ?? ''};opacity:1`);
+  clone.setAttribute('style', `${clone.getAttribute('style') ?? ''};opacity:1${w.part.hidden ? ';visibility:visible' : ''}`);
   const inherit = INHERIT.filter((k) => w.outerStyle[k] !== undefined).map((k) => ` ${k}="${escAttr(w.outerStyle[k])}"`).join('');
   return `<svg xmlns="${SVG_NS}" xmlns:xlink="http://www.w3.org/1999/xlink"${cx.xmlns} width="${cx.width}" height="${cx.height}" viewBox="0 0 ${cx.width} ${cx.height}">${cx.defs}<g transform="${matrixText(w.outer)}"${inherit}>${xml.serializeToString(clone)}</g></svg>`;
 }
