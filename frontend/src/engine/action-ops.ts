@@ -547,6 +547,10 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   }
   if (!lanes.length) throw new OpError('The character has no keys between those frames.');
   const action: ActionDef = { id: uid('act'), name: name.trim() || 'Action', length, loop, lanes, fps: movie.fps };
+  // saved from inside one placed span of a blended loop: it keeps easing in and out where it is placed
+  const span = (g.character.acts ?? []).find((s) => s.from <= lo && hi <= s.to);
+  const src = span ? findAction(g.character, span.action) : null;
+  if (loop && src?.loop && src.blend) action.blend = atRate(src, movie.fps).blend;
   return { movie: put(movie, withChar(g, { actions: [...g.character.actions, action] })), action };
 }
 
