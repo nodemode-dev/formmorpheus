@@ -43,6 +43,7 @@ import { pickedPart } from './inner-pick';
 import { findDeep, movieStart } from '../engine/character-ops';
 import { laneFocus } from './lane-focus';
 import { loadView, saveView, type SavedView } from './timeline-view';
+import { actPick, actStripAt, drawActStrips } from './act-strips';
 type SavedViewArgs = SavedView & { id: string };
 import { rulerDrag, SpacePan } from './timeline-nav';
 import { toast } from './toast';
@@ -87,6 +88,8 @@ export interface TimelineHooks {
   scrubSpeed(): number;
   /** Open the Graph on a lane (the Graph button on an expanded lane). */
   graph?(id: string, kind: KeyKind, channel: string | null): void;
+  /** A press on an action strip of a character block (`index` into its spans). */
+  actStrip?(x: number, y: number, id: string, index: number): void;
 }
 
 type Drag =
@@ -1200,6 +1203,7 @@ export class TimelineView {
       }
       c.restore();
     }
+    if (item.character?.acts && w > 8) drawActStrips(c, item, x0, w, y, BLOCK_H, this.ppf, p);
     if (item.kind === 'group' && w > 70) {
       const open = this.opened.has(item.id), ax = x1 - 18, ay = y + 6;
       c.fillStyle = p.chip;
@@ -1681,6 +1685,13 @@ export class TimelineView {
           this.schedule();
           return;
         }
+      }
+      const strip = h.item.character?.acts && !h.edge ? actStripAt(h.item, x - this.fx(h.item.start), h.y - this.laneTop(h.index), BLOCK_H, this.ppf) : -1;
+      if (strip >= 0 || actPick.id) { actPick.id = strip >= 0 ? h.item.id : null; actPick.index = strip; this.schedule(); }
+      if (strip >= 0 && !additive) {
+        this.engine.select([h.item.id], h.track.id);
+        this.hooks.actStrip?.(e.clientX, e.clientY, h.item.id, strip);
+        return;
       }
       if (h.item.kind === 'audio' && this.engine.selection.content.includes(h.item.id)) {
         const bx = this.fx(h.item.start);

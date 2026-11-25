@@ -140,6 +140,19 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
 - **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
 
+## v0.25.0 · actions on the Timeline: commands, strips, the picker
+
+- refers-to: app/action-commands.ts (new) :: actionCommands, selectedCharacter, ACTION_MENU_ITEMS; ui/action-picker.ts (new) :: ActionPicker; ui/act-strips.ts (new) :: actPick, drawActStrips, actStripAt, actLabel; ui/timeline.ts :: TimelineHooks.actStrip, drawBlock, tracksDown; ui/status.ts :: StatusBar.note; app/app.ts (commands, Content menu, Timeline hook)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Command ids** are `action-apply`, `action-swap`, `action-clear`, `action-save` and `action-delete`, in the repository's hyphen style (the plan wrote `action.save`). They sit in Content, Actions, and in the command palette. Each change runs through `engine.run`, so each is one undo step; a swap is one step (its clear and apply happen inside one run).
+- **Strips are drawn on the Timeline's canvas**, not as elements. The plan asked for elements patched in place, but every block, chip and mark of the Timeline is canvas drawing redrawn on change; elements laid over a scrolling, zooming canvas would have to follow it on every frame of a drag. Drawn with the block, a strip cannot flash or lag and nothing is rebuilt. They lie along the block's lower edge, labelled with the action's name (a starter action's in the interface language), the pressed one in the accent color. No allocation per draw: one scratch pair for the edges.
+- **Pressing a strip** selects the block, marks the strip (`actPick`) and opens the picker for that span: another action swaps it, Clear Action removes it. A press anywhere else on a block unmarks it. Strips of a character inside an open group are drawn but answer as the inner block they sit on; Swap and Clear reach them from the menu after a strip of the group's own block is pressed.
+- **Where Apply puts an action.** With a loop range set (In and Out), from its In, and a loop repeats as many passes as fit; without one, one pass from the Playhead. Save Action takes the loop range, else the whole block.
+- **Skipped parts** are named in the status line ("This character has no {parts}, so that part of the action was skipped."). The status bar's error flash gained a plain variant, `note`, so a skipped part is not shown as an error.
+- **The picker** is one card built once: the character's own actions (pooled rows relabelled in place, marked `data-no-i18n` since they are the person's words), then Starter actions (built once from the data). Loops say Loop. Delete Action lists only the character's own.
+
 ## v0.25.0 · starter actions
 
 - refers-to: engine/actions-builtin.ts (new) :: BUILTIN_ACTIONS, seq, cyc; engine/action-ops.ts :: findAction, mirrored

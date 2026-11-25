@@ -96,9 +96,12 @@ export class StatusBar {
     setTitle(this.hint, text);
   }
 
-  private flashError(text: string): void {
+  /** A sentence (already translated) shown in place of the mode hint for a few seconds. */
+  note(text: string): void { this.flashError(text, false); }
+
+  private flashError(text: string, error = true): void {
     window.clearTimeout(this.errorTimer);
-    setClass(this.hint, 'is-error', true);
+    setClass(this.hint, 'is-error', error);
     setText(this.hint, text);
     setTitle(this.hint, text);
     this.errorTimer = window.setTimeout(() => { this.errorTimer = 0; this.syncHint(); }, 6000);
