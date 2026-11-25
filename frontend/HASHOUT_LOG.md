@@ -7,6 +7,17 @@ Last updated: 2026-11-25 · labels that translate cleanly
 
 ---
 
+## v0.25.0 · characters added to any movie each take their own spot
+
+- refers-to: engine/starter-scene.ts :: spotX (new), standOnFloor; ui/characters-panel.ts :: placeCharacter
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** In a movie without a floor guide, two starters added one after the other (Add to Movie or a drop) both landed at x 0, y 0, scale 1, so the second hid the first; saved characters from Mine did the same.
+- **One spot order.** The spot maths left `standOnFloor` for `spotX`: it counts the characters already in the movie's top-level tracks and answers the x the next one's middle takes (mid-frame, then right, left, further right, further left, 280 px a step scaled by width / 1920, clamped a quarter of a starter's drawn width inside the frame). `standOnFloor` uses it as before. Every other placement (no floor guide, a saved character, a character made in a movie of another size) keeps its scale (shrunk to fit as before) and its vertical position and is moved across by `spotX - width / 2`, so the first character lands where it always did. The agent bridge's `add_character` goes through the same `placeCharacter`, so its characters spread the same way.
+- Only the middle is clamped: a character drawn wider than the gap to the edge can still run past it at the outer spots, as on the floor.
+- Checked headlessly (a throwaway happy-dom script outside the tree): three starters added to a plain 1920 x 1080 movie land at x 0, 280 and -280, y 0, scale 1; a character made in a 3840 x 2160 movie added fourth lands at x 560, y 0, scale 0.5; five starters in a 400 px wide movie all keep their middle inside the frame.
+
 ## v0.25.0 · labels that translate cleanly
 
 - refers-to: engine/actions-builtin.ts :: builtin:wave; engine/source-merge.ts :: mergeFromSource
