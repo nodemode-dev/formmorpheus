@@ -7,6 +7,14 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 
 ---
 
+## v0.25.0 · Recently Deleted names, movie and character
+
+- refers-to: app/routers/library.py :: delete_project; app/routers/characters.py :: delete_character; app/routers/trash.py :: record
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **A movie and a character of the same name deleted in the same second** both went to `<name> <stamp>.fmo`, and the movie's move replaced the character's file and its trash index entry (kind `character` became `movie`). The library's delete now takes the same free-name loop as the characters route (`<name> <stamp> 2.fmo` and on), so each keeps its own file and its own kind in the index. The two routes still hold their own locks; two deletes landing in the very same instant from different routes could still pick one name, which the window never does (each delete is one request after a question).
+
 ## v0.25.0 · the Characters library routes
 
 - refers-to: app/routers/characters.py (new); app/main.py (router at /api/characters); app/core/config.py :: characters_dir, MAX_CHARACTER_BYTES; app/routers/trash.py :: _meta, restore; ../docs/api-contract.json (written by ../setup/api_contract_dump)
