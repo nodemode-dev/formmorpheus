@@ -308,6 +308,8 @@ export interface CharacterInfo {
   missing?: string[];
   /** Of those parts, the person's own highlight each had before it was marked red; put back when the part returns. */
   missingWas?: Record<string, Highlight>;
+  /** A character made in the character builder keeps its recipe, so it can be opened there again. Absent: drawn elsewhere. */
+  build?: import('./cast/spec').CastSpec;
 }
 
 /** A linked source file as the engine's stat route last saw it (bytes, seconds since the epoch, hex digest). */
