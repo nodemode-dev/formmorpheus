@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import mimetypes
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,14 @@ from app.routers import agents, mcp, terminal
 from app.routers import video_tools
 from app.services import claude_code
 from app.services import terminal as terminals
+
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("application/json", ".json")
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
 
 log = logging.getLogger("formmorpheus")
 

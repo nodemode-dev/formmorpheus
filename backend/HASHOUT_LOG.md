@@ -3,9 +3,20 @@
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
 Current build version: v0.30.0
-Last updated: 2026-11-25 · the linked SVG routes read one checked descriptor
+Last updated: 2026-11-25 · the window's files keep their types on Windows
 
 ---
+
+## v0.31.0 · the window's files keep their types on Windows
+
+- refers-to: app/main.py :: the mimetypes.add_type calls after the last import
+- kind: fix
+- logged: v0.31.0 · 2026-11-25
+
+- **The black window on Windows.** A tester on Windows 10 saw the desktop window load and stay black, from the website's installer and from the .msi alike. Python's `mimetypes` takes file types from the Windows registry (`HKEY_CLASSES_ROOT\.js`, value `Content Type`) over its own table, and some installers and editors set `.js` to `text/plain`. On those PCs the engine served the built window's scripts as `text/plain`, WebView2 refused every module script under strict MIME checking, and the window kept only its dark pre-paint background. macOS, Linux, dev mode (Vite serves the page) and Windows PCs with the default value never show it. FormVis met the same fault and fixed it in v1.98.6; FormMorpheus had not carried that fix.
+- The calls pin `.js` and `.mjs` to `text/javascript` and `.css` to `text/css` (a script or stylesheet with another type is refused), and `.svg`, `.json`, `.woff2` and `.woff` to their own types, which the window also loads (the starter posters, the starter manifests, the fonts). They cover `StaticFiles`, `FileResponse` and any direct `guess_type`. They sit after the last import, so a module that re-reads the registry while importing cannot undo them. They look redundant off Windows; keep them.
+- Repro on a Windows PC: `reg add "HKCU\Software\Classes\.js" /v "Content Type" /d "text/plain" /f`, then open the installed app; restore with `/d "text/javascript"`.
+- Checked here: with the type table poisoned to `text/plain` for every one of these extensions, the engine serves `index.html`'s scripts as `text/javascript`, its stylesheets as `text/css`, a starter poster as `image/svg+xml`, the starter manifest as `application/json` and a font as `font/woff2`; without the calls the same run serves `text/plain`. Not run on a Windows PC.
 
 ## v0.25.0 · Recently Deleted names, movie and character
 
