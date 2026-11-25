@@ -7,6 +7,20 @@ Last updated: 2026-11-25 · labels that translate cleanly
 
 ---
 
+## v0.26.0 · a built rig becomes a character
+
+- refers-to: engine/cast/to-character.ts :: rigToCharacterGroup, rebuildCharacter, castPartName, CAST_UNIT (all new)
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **Same result as an SVG import.** `rigToCharacterGroup` answers the importer's `ImportResult` (one character Group, the mouth pictures as assets with their blobs), so whatever places an imported or starter character places a built one. It is async for the same reason the importer is: the mouth drawings are pictures, and a picture's PNG is only made asynchronously. Without an OffscreenCanvas (a test run) the mouth frames keep empty layers, as a chart drawing that fails to draw does in the importer. No notice is written: that text is the interface's, and the engine has no translations.
+- **Parts.** One part per slot with prims, in the rig's slot order (first slot on the bottom track), named by the contract's part map (`_L` is the character's right, so `-r`). A part with one shape is a Shape, with more a Group of Shapes top first, as the importer does. Pivot is the slot's bone origin in rest pose. Parents follow the map and climb past a missing part (no `head` part: its children follow `body`); the links are made with `setParent`, as the importer makes them.
+- **Prims.** Every prim becomes a path Shape in movie pixels from the centre: the slot's matrix is its bone's rest world matrix times `translate(ox, oy)` when `oy` is set (the studio's own rule, which ignores `ox` alone). Ellipses are four cubic arcs turned by `rot` about their centre, rects get cubic corners of `min(r, w/2, h/2)`, `Q` becomes a cubic. Caps are the prim's (round by default) and joins round, as the studio writes them; `op` multiplies the fill and stroke alpha, as the importer reads `opacity`. An open path that is filled and stroked becomes two shapes (the fill closed, the stroke open), since one Shape fills only a closed outline.
+- **Scale.** Rig units go into the 1080 character space at `CAST_UNIT` 2.25 per unit, x on 540 and the rig's floor (y 0) on 1012; that space is then fitted to the movie as the importer fits a 1080 viewBox (`k = min(1, W / 1080, H / 1080)`, centred on whole pixels). One constant rather than one per character, so the cast keeps the studio's relative heights: the studio's adults at body h 1 are 401 to 414 units, 902 to 932 tall.
+- **Mouth.** A Flipbook named `mouth` of eight drawings named by `VISEME_NAMES` in `VISEMES` order, resting on Rest through `restingChart`, its canvas the union of the eight shapes, painted with the Stage's own shape painter. Given no mouth shapes, the mouth slot is Rest, the open mouth slot (its bone is folded to scale 0 at rest, read unfolded) is AI, and Rest stands in for the rest. The open mouth slot never becomes a part.
+- **Rebuild.** `rebuildCharacter` builds afresh in the same movie and lays it over the character with `mergeFromSource`, so parts keep their ids, keys, parents and actions and new parts are added; then the recipe is written as `character.build`. The merge would hand the mouth the fresh resting chart and drop what lip-sync wrote, so the old mouth rows are kept and each drawing named for a shape takes the new art of that name. Parts the new build lacks are kept and marked as the merge marks them.
+- **Not shared with the importer.** Its fit and shape helpers live in `io/`, which reads translations from `ui/`; the engine never imports either, so the few lines of fit and node conversion are written here against engine modules only.
+
 ## v0.25.0 · characters added to any movie each take their own spot
 
 - refers-to: engine/starter-scene.ts :: spotX (new), standOnFloor; ui/characters-panel.ts :: placeCharacter
