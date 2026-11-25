@@ -2,8 +2,8 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.26.0
-Last updated: 2026-11-25 · characters built from a recipe
+Current build version: v0.27.0
+Last updated: 2026-11-25 · the Character Builder
 
 ---
 

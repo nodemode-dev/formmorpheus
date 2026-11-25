@@ -2,6 +2,15 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.27.0 · 2026-11-25
+
+The Character Builder: make a character by choosing, not drawing.
+
+### New
+- Character Builder... (Characters panel, Build a character; the command palette; the Content menu). Pick a preset, then shape it on a live preview: name, kind (person, robot, alien, monster), skin, height, build, shoulders, head size, frame A or B, eye colour, jaw, lashes, blush, freckles, earrings, glasses, facial hair and lip colour on Look; 13 hair styles and their colour on Hair; 13 outfits with a colour for each of their three parts on Outfit. Randomize makes a new look, and Reset goes back to the preset.
+- Add to Movie puts the character in the movie standing on the floor, in one undo step. Save to Characters keeps it in Mine with its recipe.
+- Edit in Character Builder... on a built character's menu opens it with its recipe. Apply changes it in one undo step and keeps its keys, actions and lip-sync; pieces the new look no longer has are hidden with their keys and come back when they return.
+
 ## 0.26.0 · 2026-11-25
 
 FormMorpheus can make characters from a recipe, the groundwork for the Character Builder.
