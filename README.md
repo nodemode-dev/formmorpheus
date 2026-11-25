@@ -97,15 +97,15 @@
   <tr>
     <td width="33%" valign="top">
       <h4>Content blocks</h4>
-      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups
+      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups · Characters · Starter content
     </td>
     <td width="33%" valign="top">
       <h4>Animation tools</h4>
-      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync
+      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
-      Opens: video, sound, GIF, TIFF, PSD, ORA, KRA, fonts · Saves: MP4, WebM, MOV, GIF, image frames · Native: <code>.fmo</code>
+      Opens: video, sound, GIF, TIFF, PSD, ORA, KRA, SVG parts, fonts · Saves: MP4, WebM, MOV, GIF, image frames · Native: <code>.fmo</code>, <code>.fmact</code>
     </td>
   </tr>
 </table>
@@ -118,6 +118,7 @@
 - **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
 - **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg, or the family's LGPL build that Preferences, Video Tools downloads on request.
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
+- **Characters:** an SVG with one group per body part opens as a character with parts, pivots and parenting; save it to the Characters library, apply actions to it, and send it to a vector app and back, where it updates by part name and keeps its animation. Starter characters and scenes are included.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
 - **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is built and runs on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked. It is a beta that you build yourself on a Mac with Xcode: see [`docs/ios/BUILD.md`](docs/ios/BUILD.md). An App Store version is planned only if the iPad app gets real adoption.

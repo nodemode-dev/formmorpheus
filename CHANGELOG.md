@@ -2,6 +2,39 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.25.0 · 2026-11-25
+
+FormMorpheus gets characters: draw the parts in a vector app, animate them with ready actions, and keep the art and the animation in step.
+
+### New
+- Characters from SVG. An SVG with one group per body part opens as a character: a Group with a named part for each group, a part inside a part parented to it (turn an arm and its hand follows), and a pivot where you drew a mark with the id `pivot` or at the middle of the part. A part that holds text, pictures, filters or masks opens as a picture, and the notice names it. A character shows a person glyph on its Timeline chip.
+- Content, Make Character... turns a Group you built by hand into a character, with its inner blocks as the parts and a mouth chart Flipbook as its mouth.
+- View, Characters: a panel with Starter characters and Mine. Save to Characters keeps a character in your Characters folder, Add to Movie (or a drag onto the Stage or the Timeline) puts an independent copy in any movie, and Rename and Delete work on your own. Deleted characters go to Recently Deleted, where they show as characters and restore into Characters.
+- Starter characters: Kofi, Ines, Marisol, Bram and Noor, original and drawn for this release, each with its part names, a pivot at every joint and a mouth chart of eight shapes.
+- Lip-sync from Sound... lists your characters first, as "Kofi (character)", and writes into the mouth inside the character.
+- Actions: apply, swap, clear and save named motions on a character (Content, Actions). An applied action shows as a labelled strip on the character's block; press a strip to swap it or clear it. Keys outside it are never touched, and each change is one undo step.
+- Eight starter actions work on any character with the usual part names: Idle, Nod, Shake head, Wave, Point, Walk in place, Jump and Sit. A part the character lacks is skipped and named in the status line.
+- `.fmact` files: Export Action... saves an action, and Import Action..., Import or a drop adds it to the selected character.
+- Starter scenes: File, New from Starter Scene... opens Corner Street, Park, Kitchen, Classroom or Stage as a new movie, with a track for each layer, the scene's camera and a floor guide. A starter character added to it stands on the floor at half size.
+- The vector link: File, Round Trips, Character as SVG for Vector App... saves the character as an SVG with one group per part and a pivot mark for each, and in the desktop app links it. When the file is saved in your vector app, the character updates by itself, parts matched by name, keeping its keys, parent, bones and actions. New parts are added on top; parts gone from the file stay, marked red, with "Not in the source file" in the status bar.
+- On a character's menu: Update from Source... (pick the file again), Unlink Source and Relink Source....
+- Outside agents: `list_characters` reads your Characters library, and `add_character` puts a copy of a saved character in a movie, after you say yes in the window.
+- iPad: a Characters folder in the Files app holds your saved characters, with Recently Deleted. SVG drawings and `.fmact` files open from Files. The iPad has no automatic update from a vector app: Update from Source... picks the file again.
+
+### Improved
+- The iPad build guide opens from Help in the app as well as on GitHub, and has a step by step check for this version.
+
+### Changed
+- SVG files open. They did not open before; now each one becomes a character, a loose shape being a part of its own. A drawing with groups named for the mouth shapes opens as a Flipbook that Lip-sync recognises.
+- The iPad documents tell what is true: the iPad app is a beta that you build yourself, built and run on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked. The README, the manual and the build guide said it was not built or was coming.
+- "Coming from another animation app" in the manual covers scene-based apps: bring the movie over as MP4, WebM, GIF or numbered PNG frames, and your own art as SVG, PNG or PSD. Another app's characters and scenery cannot be brought over.
+
+### Fixed
+- The manual had no section on Transitions. It now explains the four kinds, the direction of Wipe and Push, Dip to Color's color, the length and where a transition sits.
+
+### Under the hood
+- The desktop engine answers `/api/characters` and, for a linked SVG, `/api/files/stat` and `/api/files/source`. The last two take only an absolute path to a regular `.svg` file of at most 20 MB, and need the window's key.
+
 ## 0.24.0 · 2026-11-23
 
 FormMorpheus has a test suite. Nothing in the app changes.
