@@ -2,10 +2,41 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.24.0
-Last updated: 2026-11-25 · the source link is followed only where this computer made it
+Current build version: v0.25.0
+Last updated: 2026-11-25 · labels that translate cleanly
 
 ---
+
+## v0.25.0 · characters added to any movie each take their own spot
+
+- refers-to: engine/starter-scene.ts :: spotX (new), standOnFloor; ui/characters-panel.ts :: placeCharacter
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** In a movie without a floor guide, two starters added one after the other (Add to Movie or a drop) both landed at x 0, y 0, scale 1, so the second hid the first; saved characters from Mine did the same.
+- **One spot order.** The spot maths left `standOnFloor` for `spotX`: it counts the characters already in the movie's top-level tracks and answers the x the next one's middle takes (mid-frame, then right, left, further right, further left, 280 px a step scaled by width / 1920, clamped a quarter of a starter's drawn width inside the frame). `standOnFloor` uses it as before. Every other placement (no floor guide, a saved character, a character made in a movie of another size) keeps its scale (shrunk to fit as before) and its vertical position and is moved across by `spotX - width / 2`, so the first character lands where it always did. The agent bridge's `add_character` goes through the same `placeCharacter`, so its characters spread the same way.
+- Only the middle is clamped: a character drawn wider than the gap to the edge can still run past it at the outer spots, as on the floor.
+- Checked headlessly (a throwaway happy-dom script outside the tree): three starters added to a plain 1920 x 1080 movie land at x 0, 280 and -280, y 0, scale 1; a character made in a 3840 x 2160 movie added fourth lands at x 560, y 0, scale 0.5; five starters in a 400 px wide movie all keep their middle inside the frame.
+
+## v0.25.0 · an SVG part not displayed in the file
+
+- refers-to: io/svg-import.ts :: SvgPart.undisplayed (new), own, makePart, top, markupOf, isMouthChart, svgToMouthChart
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** A part group hidden with `display="none"` or `style="display:none"`, how many vector apps hide a layer, was dropped without a word: `own` and `top` skipped every element whose display was none.
+- **Hidden with its art, like visibility.** A `g` not displayed now goes on to `makePart`, which marks the part hidden (the earlier fix "A hidden SVG part keeps its art" is the model) and reads its art with the display and inherited visibility dropped. Display is not inherited, so its children are read as usual; its nested parts inherit the hidden flag as a hidden part's do. Its picture markup also says `display:inline`, so a part that must be a picture is drawn and then hidden by its flag. An editor layer not displayed (a layer is not a part) passes `visibility: hidden` down to what it holds, so its parts and loose shapes arrive hidden with their art.
+- **What stays skipped.** A shape (not a group) not displayed, loose at the top or inside a visible part, and a pivot marker not displayed, are left out as before. Inside a part whose groups are a mouth chart, a group not displayed is neither a frame nor counted by `chartLike`, as before. A top-level part not displayed (itself or through its layer) is `undisplayed`, and `isMouthChart` and `svgToMouthChart` leave it out, so a chart file reads exactly as it did; a file whose mouths are mostly not displayed is still not a chart, but its groups now arrive as hidden parts.
+- Checked headlessly (a throwaway happy-dom script outside the tree, picture path stubbed) with `display="none"`, `style="display:none"` and a mixed style: the part and its nested part arrive hidden with their shapes, the block is hidden in the character, a loose shape not displayed inside a visible part stays out, a picture part's markup is displayed; a nested chart with an extra group not displayed keeps its eight frames; a chart file with an extra group not displayed is still a chart of eight; a layer not displayed gives hidden parts with art.
+
+## v0.25.0 · labels that translate cleanly
+
+- refers-to: engine/actions-builtin.ts :: builtin:wave; engine/source-merge.ts :: mergeFromSource
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Wave Hello.** The starter action was named "Wave", a key the tables already hold for the wave shape and brush ("Welle", "Onda"), so every language would have shown the wrong sense. It is "Wave Hello"; its id `builtin:wave` is unchanged, so saved spans still find it.
+- **Locked part.** The refusal named the part through a template literal, which no table key can match. It is one fixed sentence now, so the page translator finds it; the part is the one the person just tried to update.
 
 ## v0.25.0 · a part picked inside a character
 

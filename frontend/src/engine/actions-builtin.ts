@@ -91,7 +91,7 @@ export const BUILTIN_ACTIONS: readonly ActionDef[] = [
     ],
   },
   {
-    id: 'builtin:wave', name: 'Wave', length: 48, loop: false, fps: 24,
+    id: 'builtin:wave', name: 'Wave Hello', length: 48, loop: false, fps: 24,
     lanes: [
       part('arm-r', { rotation: seq([[0, 0], [9, 158], [14, 128], [19, 158], [24, 128], [29, 158], [34, 132], [37, 140], [45, -4], [48, 0]]) }),
       part('head', { rotation: seq([[0, 0], [12, -4], [38, -4], [46, 0.5], [48, 0]]) }),

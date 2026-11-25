@@ -69,15 +69,21 @@ export const STARTER_ART = { w: 1080, h: 1080, feet: 1012, scale: 0.5 };
 const SPOTS = [0, 1, -1, 2, -2];
 const STEP = 280;
 
-/** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size; each character already in the movie moves it one spot along so two never land on each other. */
+/** The x the next character's middle takes across `movie`: one spot along per character already in it, so two never land on each other. */
+export function spotX(movie: Movie): number {
+  const W = movie.width;
+  let n = 0;
+  for (const t of movie.tracks) for (const c of t.content) if (c.character) n++;
+  const margin = Math.min(W / 2, (STARTER_ART.w * STARTER_ART.scale) / 4);
+  return Math.min(W - margin, Math.max(margin, W / 2 + SPOTS[n % SPOTS.length] * STEP * (W / 1920)));
+}
+
+/** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size, at its spot. */
 export function standOnFloor(group: Content, movie: Movie, floorY: number): Transform {
   const W = movie.width, H = movie.height;
   const s = STARTER_ART.scale / Math.min(1, W / STARTER_ART.w, H / STARTER_ART.h);
   const px = W / 2 + (group.pivot?.x ?? 0), py = H / 2 + (group.pivot?.y ?? 0);
-  let n = 0;
-  for (const t of movie.tracks) for (const c of t.content) if (c.character) n++;
-  const margin = Math.min(W / 2, (STARTER_ART.w * STARTER_ART.scale) / 4);
-  const tx = Math.min(W - margin, Math.max(margin, W / 2 + SPOTS[n % SPOTS.length] * STEP * (W / 1920)));
+  const tx = spotX(movie);
   const ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale;
   return { ...group.transform, rotation: 0, scale: s, x: tx - px - s * (W / 2 - px), y: ty - py - s * (H / 2 - py) };
 }
