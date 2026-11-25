@@ -3,6 +3,6 @@
 export const groupCtx: {
   /** The id of the open group that receives new tracks and content, or null for the top level. */
   target: () => string | null;
-  /** The block inside a group that is picked (outlined) on the Timeline. */
+  /** The block inside a group that is picked (outlined on the Timeline, edited by the Stage's box); its outermost group stays the selection. Set it through `engine.pick` or `engine.select`. */
   picked: string | null;
 } = { target: () => null, picked: null };

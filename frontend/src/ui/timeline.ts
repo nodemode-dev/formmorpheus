@@ -36,8 +36,11 @@ import * as lockOps from '../engine/lock-ops';
 import * as hideOps from '../engine/hide-ops';
 import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
 import { chipFill, drawFlipCells, drawGroupPreview } from './timeline-look';
+import { drawPerson } from './character-glyph';
 import { TrackHeads } from './timeline-heads';
 import { InnerMenu } from './timeline-inner';
+import { pickedPart } from './inner-pick';
+import { findDeep, movieStart } from '../engine/character-ops';
 import { laneFocus } from './lane-focus';
 import { loadView, saveView, type SavedView } from './timeline-view';
 type SavedViewArgs = SavedView & { id: string };
@@ -45,6 +48,8 @@ import { rulerDrag, SpacePan } from './timeline-nav';
 import { toast } from './toast';
 
 const RULER_H = 28;
+/** Room the person glyph of a character takes on its name chip, in px. */
+const PERSON_ROOM = 14;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
 let BLOCK_H = 44;
 const LANE_GAP = 10;
@@ -209,7 +214,7 @@ export class TimelineView {
   /** Inner blocks shifted to the movie's frames, kept so their thumbnails stay cached between draws. */
   private readonly proxies = new WeakMap<Content, Content>();
   private get innerSel(): string | null { return groupCtx.picked; }
-  private set innerSel(v: string | null) { groupCtx.picked = v; }
+  private set innerSel(v: string | null) { this.engine.pick(v); }
   /** A ghost and insertion line while something is carried toward the lanes: an inner block leaving its group, or files from the desktop. */
   private cue: { x: number; y: number; w: number; insertY: number | null; label: string } | null = null;
   private pal: Palette | null = null;
@@ -337,6 +342,8 @@ export class TimelineView {
       this.schedule();
     });
     engine.on('selection', () => {
+      // a picked part's lanes take the room of its group's (Keyframe and Perform)
+      if (engine.mode !== 'compose') this.layoutFor = null;
       const now = engine.selection.content;
       if (now.join() !== this.lastSel.join()) {
         if (this.lastSel.length) this.prevSel = this.lastSel;
@@ -489,7 +496,7 @@ export class TimelineView {
     let y = 0;
     for (const t of m.tracks) {
       let extra = 0;
-      if (lanes) for (const c of t.content) extra = Math.max(extra, lanesHeight(c));
+      if (lanes) for (const c of t.content) extra = Math.max(extra, lanesHeight(this.laneItem(c)));
       else extra = this.rowExtra(t);
       this.tops.push(y);
       this.rowH.push(STRIDE + extra);
@@ -919,7 +926,7 @@ export class TimelineView {
           c.lineWidth = 1;
         }
       }
-      if (lanes) for (const item of t.content) if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined, (it, lf) => this.laneThumb(m, it, lf));
+      if (lanes) for (const blk of t.content) { const item = this.laneItem(blk); if (item.keys.length) drawLanes(c, item, y + BLOCK_H + LANES_GAP, this.geom(item), lp, this.height, Math.max(0, Math.min(item.duration - 1, this.engine.frame - item.start)), this.keySel.size ? (k, f) => this.keySel.has(item.id, k, f) : undefined, (it, lf) => this.laneThumb(m, it, lf)); }
     }
     this.drawLinks(c, m, p.accent);
     if (endX < this.width) {
@@ -1050,7 +1057,8 @@ export class TimelineView {
 
   /** Centre of the Playhead pill: on the first lane row of the selected content, Keyframe mode only. */
   private keySpot(m: Movie): { c: Content; x: number; y: number } | null {
-    if (this.engine.mode === 'compose') return null;
+    // the pill's Action and keys act on the selected block, not on a part picked inside it
+    if (this.engine.mode === 'compose' || pickedPart(this.engine)) return null;
     const sel = this.engine.selected;
     const item = sel.length === 1 ? sel[0] : null;
     const at = item ? locate(m, item.id) : null;
@@ -1125,7 +1133,8 @@ export class TimelineView {
     if (w > 46) {
       const label = contentName(item.name);
       c.font = '600 10px Inter, system-ui, sans-serif';
-      const tw = Math.min(w - 16, c.measureText(label).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
+      const person = item.character ? PERSON_ROOM : 0;
+      const tw = Math.min(w - 16, c.measureText(label).width + 24 + person + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
       const chip = chipFill(item.highlight, p.chip, p.hl);
       const ink = chip.ink ?? p.text;
       c.fillStyle = chip.fill;
@@ -1139,10 +1148,11 @@ export class TimelineView {
       c.textAlign = 'left';   // not the page direction: the chip sits at the block's left edge
       c.save();
       c.beginPath();
-      c.rect(x0 + 19, y + 5, tw - 15, 15);
+      c.rect(x0 + 19, y + 5, tw - 15 - (person ? person * 2 + 2 : 0), 15);
       c.clip();
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
+      if (person && tw > 46) { c.strokeStyle = ink; drawPerson(c, x0 + tw - 11 - PERSON_ROOM, y + 7, 11); c.lineWidth = 1; }
       if (item.kind === 'group' || item.kind === 'flipbook') drawChevron(c, x0 + tw - 8, y + 12.5, item.kind === 'group' && this.opened.has(item.id), ink);
       if (t.locked) {
         c.fillStyle = p.text;
@@ -1362,6 +1372,30 @@ export class TimelineView {
   }
   private laneThumbs = new WeakMap<Content, HTMLCanvasElement>();
 
+  /**
+   * Keyframe and Perform: a part picked inside the selected group shows its own lanes under the group's block, in
+   * place of the group's, as a copy whose start is in movie frames (kept while the part and its place are unchanged).
+   */
+  private laneItem(c: Content): Content {
+    if (c.kind !== 'group' || this.engine.mode === 'compose') return c;
+    const p = pickedPart(this.engine);
+    if (!p || p.group.id !== c.id) return c;
+    const m = this.engine.movie as Movie, f = findDeep(m, p.part.id);
+    const start = f ? movieStart(f) : c.start;
+    const was = this.laneProxy;
+    if (was && was.src === p.part && was.out.start === start) return was.out;
+    this.laneProxy = { src: p.part, out: { ...p.part, start } };
+    return this.laneProxy.out;
+  }
+  private laneProxy: { src: Content; out: Content } | null = null;
+
+  /** A block or picked part by id, as the lanes show it. */
+  private laneContent(id: string): Content | null {
+    const p = this.laneProxy;
+    if (p && p.out.id === id && pickedPart(this.engine)?.part.id === id) return p.out;
+    return this.engine.selected.find((it) => it.id === id) ?? null;
+  }
+
   /** One Flipbook cell's picture: the content at a local frame, kept until the movie or the size changes. */
   private flipTiles = new WeakMap<Content, Map<string, HTMLCanvasElement>>();
   private flipTile(m: Movie, item: Content, local: number, tileW: number): HTMLCanvasElement | null {
@@ -1434,7 +1468,7 @@ export class TimelineView {
     if (w <= 46) return 0;
     const c = this.tracksCanvas.getContext('2d') as CanvasRenderingContext2D;
     c.font = '600 10px Inter, system-ui, sans-serif';
-    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
+    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.character ? PERSON_ROOM : 0) + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
   }
 
   private round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -1735,7 +1769,8 @@ export class TimelineView {
     if (!t) return null;
     const top = this.laneTop(i) + BLOCK_H + LANES_GAP;
     if (y < top) return null;
-    for (const c of t.content) {
+    for (const blk of t.content) {
+      const c = this.laneItem(blk);
       if (!c.keys.length) continue;
       const hit = hitLanes(c, top, x, y, this.geom(c), (px) => this.xf(px) - c.start);
       if (hit) return { c, track: t, hit };
@@ -1745,6 +1780,7 @@ export class TimelineView {
 
   private laneDown(e: PointerEvent, lh: { c: Content; track: Track; hit: LaneHit }): void {
     const { c, track, hit } = lh;
+    if (hit.graph && this.hooks.graph && !track.content.includes(c)) return;
     if (hit.graph && this.hooks.graph) {
       this.engine.select([c.id], track.id);
       this.hooks.graph(c.id, hit.slot.lane.kind, hit.row.channel);
@@ -1753,7 +1789,7 @@ export class TimelineView {
     if (hit.toggle) {
       const lane = hit.slot.lane;
       this.engine.select([c.id], track.id);
-      this.engine.view((mv) => ops.updateContent(mv, c.id, (x) => keyOps.setExpanded(x, lane.kind, !lane.expanded))); // view state: no undo step
+      this.engine.view((mv) => groupInner.updateAny(mv, c.id, (x) => keyOps.setExpanded(x, lane.kind, !lane.expanded))); // view state: no undo step
       return;
     }
     this.tracksCanvas.setPointerCapture(e.pointerId);
@@ -1850,7 +1886,7 @@ export class TimelineView {
     if (d.kind === 'trim' && !d.ripple && touchModifier()) { d.ripple = true; this.syncFreeTrim(); }
     const speed = this.hooks.scrubSpeed();
     if (d.kind === 'key') {
-      const c = this.engine.selected.find((it) => it.id === d.id);
+      const c = this.laneContent(d.id);
       if (!c) return;
       // snaps to the Playhead and to keys of other lanes (Alt: off); a tooltip names the frame
       const near = snapKeyFrame(this.engine, c, d.lk, Math.max(0, Math.min(c.duration - 1, Math.round(d.from0 + (e.clientX - d.x0) / this.ppf))), this.ppf, e.altKey);
@@ -1859,7 +1895,8 @@ export class TimelineView {
       if (to === d.cur) return;
       this.cancelLongPress();
       const base = d.base, kind = d.lk, from0 = d.from0, channel = d.channel ?? undefined;
-      if (this.engine.run('Move Keyframe', (mv) => ops.updateContent(mv, d.id, () => keyOps.moveKey(base, kind, from0, to, channel)), d.tag)) {
+      // a picked part's lanes show it with its start in movie frames: its own start is kept
+      if (this.engine.run('Move Keyframe', (mv) => groupInner.updateAny(mv, d.id, (x) => ({ ...keyOps.moveKey(base, kind, from0, to, channel), start: x.start })), d.tag)) {
         d.cur = to;
         this.engine.seek(c.start + to);
       }
@@ -2078,7 +2115,7 @@ export class TimelineView {
     if (d.kind === 'pan' && d.tap !== undefined && e.type === 'pointerup' && Math.abs(e.clientX - d.x0) < 6 && Math.abs(e.clientY - d.y0) < 6) this.engine.seek(d.tap);
     // a tap on a key (no drag) opens its values
     // (a key in an expanded row opens a numeric field right at the key; a collapsed lane opens the card)
-    if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform' && !(d.channel && openKeyField(this.engine, d.id, d.lk, d.channel, d.from0, e.clientX, e.clientY))) this.actionMenu.editKey(this.keyPill, d.lk);
+    if (d.kind === 'key' && d.cur === d.from0 && e.type === 'pointerup' && this.engine.mode !== 'perform' && pickedPart(this.engine)?.part.id !== d.id && !(d.channel && openKeyField(this.engine, d.id, d.lk, d.channel, d.from0, e.clientX, e.clientY))) this.actionMenu.editKey(this.keyPill, d.lk);
     if (d.kind === 'duration' && !d.moved) this.endMenu.open(e.clientX, e.clientY);
     if (d.kind === 'inner' && d.out && e.type === 'pointerup') {
       const o = d.out, mv0 = this.engine.movie;
@@ -2143,8 +2180,9 @@ export class TimelineView {
   private doubleClick(e: MouseEvent): void {
     const h = this.hit(e);
     const editable = !!h?.item && (h.item.kind === 'text' || h.item.kind === 'drawing' || h.item.kind === 'flipbook' || h.item.kind === 'shape' || h.item.kind === 'solid' || h.item.kind === 'adjust');
-    // a block that cannot be edited (or Alt held) zooms to itself; empty lane steps the zoom in
-    if (h?.item && (e.altKey || !editable)) this.zoomTo(h.item.start, end(h.item));
+    // a character opens in place to its parts (Compose); a block that cannot be edited (or Alt held) zooms to itself; empty lane steps the zoom in
+    if (h?.item?.character && !e.altKey && this.engine.mode === 'compose') { if (!this.opened.has(h.item.id)) { this.opened.add(h.item.id); this.layoutFor = null; this.schedule(); } }
+    else if (h?.item && (e.altKey || !editable)) this.zoomTo(h.item.start, end(h.item));
     else if (h?.item) this.hooks.edit(h.item);
     else this.zoomToFrames(e.clientX, e.ctrlKey || e.metaKey);
   }

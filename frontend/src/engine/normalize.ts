@@ -105,7 +105,20 @@ function content(c: unknown): Obj | null {
   c.tracks = trackList(c.tracks);
   c.volume = num(c.volume, 1);
   shapeDef(c, kind);
+  character(c, kind);
   return c;
+}
+
+/** A character's own fields are checked; fields a newer build added stay as they are and are written back. */
+function character(c: Obj, kind: string): void {
+  const ch = c.character;
+  if (ch === undefined) return;
+  if (kind !== 'group' || !isObj(ch)) { delete c.character; return; }
+  ch.name = str(ch.name, str(c.name, 'Character'));
+  const parts: Record<string, string> = {};
+  if (isObj(ch.parts)) for (const [k, v] of Object.entries(ch.parts)) if (typeof v === 'string' && v) parts[k] = v;
+  ch.parts = parts;
+  if (typeof ch.mouth !== 'string' || !ch.mouth) delete ch.mouth;
 }
 
 /** Shape and Solid always carry a valid outline; an Adjustment's mask is optional; other kinds drop a stray one. */

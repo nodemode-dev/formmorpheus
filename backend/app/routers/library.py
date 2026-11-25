@@ -580,8 +580,13 @@ def delete_project(name: str) -> dict:
     src = project_path(name)
     if not src.is_file():
         raise HTTPException(404, "No project by that name.")
-    dst = config.trash_dir() / f"{src.stem} {time.strftime('%Y%m%d-%H%M%S')}{config.PROJECT_EXT}"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
     with _lock:
+        dst = config.trash_dir() / f"{src.stem} {stamp}{config.PROJECT_EXT}"
+        n = 2
+        while dst.exists():
+            dst = config.trash_dir() / f"{src.stem} {stamp} {n}{config.PROJECT_EXT}"
+            n += 1
         safe_move(src, dst)
         trash.record(dst, src.name, "movie")
         _order_swap(None if src.parent == config.library_dir() else src.parent, f"lib:{src.stem}", None)

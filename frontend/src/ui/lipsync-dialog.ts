@@ -2,6 +2,7 @@
 // Flipbook and writes the analysed shapes into it as holds (one undo step). Built once, then patched.
 import type { Engine } from '../engine/engine';
 import { applyLipsync, guessMapping, looksLikeMouth, mouthChartRow, NEW_ROW } from '../engine/lipsync-ops';
+import { findDeep, listCharacters, movieStart } from '../engine/character-ops';
 import { freeSpan, locate } from '../engine/model';
 import type { Content, Movie } from '../engine/types';
 import type { AudioEngine } from '../media/audio';
@@ -9,6 +10,7 @@ import { lipsync, mono, VISEMES, VISEME_NAMES, type Viseme } from '../media/lips
 import { el, q, setDisabled, setHidden, setText, setValue } from './dom';
 import { Dialog } from './dialogs';
 import { t } from './i18n';
+import { tf } from './i18n-fill';
 import '../styles/lipsync.css';
 
 const SHAPE_LABEL: Record<Viseme, string> = { rest: 'Rest', MBP: 'M B P (closed)', AI: 'A I (wide open)', E: 'E', O: 'O', U: 'U', FV: 'F V', L: 'L / th' };
@@ -90,13 +92,17 @@ export class LipsyncDialog extends Dialog {
     if (!m) return;
     const sel = this.engine.selected[0];
     const all = allContent(m);
-    const sounds = all.filter((c) => isSound(c, m)), books = all.filter((c) => c.kind === 'flipbook');
+    const sounds = all.filter((c) => isSound(c, m));
+    const { mouths, books } = this.targets(m);
     fill(this.sound, sounds.map((c) => [c.id, c.name]));
-    fill(this.book, books.map((c) => [c.id, c.name]));
+    this.fillBooks(m);
     setText(this.into.options[0], t('The same track'));
     setText(this.into.options[1], t('A new track (keeps the chart)'));
-    const wantSound = sel && isSound(sel, m) ? sel.id : sounds.find((s) => books.some((b) => this.overlap(s, b)))?.id ?? sounds[0]?.id ?? '';
-    const wantBook = sel?.kind === 'flipbook' ? sel.id : books.find((b) => b.flip.some(looksLikeMouth))?.id ?? books[0]?.id ?? '';
+    const targets = [...mouths.map((x) => x.mouth), ...books];
+    const wantSound = sel && isSound(sel, m) ? sel.id : sounds.find((s) => targets.some((b) => this.overlap(m, s, b)))?.id ?? sounds[0]?.id ?? '';
+    // a character's mouth comes first: the selected character's, else the first character's
+    const selMouth = sel?.kind === 'group' ? mouths.find((x) => x.char.id === sel.id)?.mouth.id : undefined;
+    const wantBook = selMouth ?? (sel?.kind === 'flipbook' ? sel.id : mouths[0]?.mouth.id ?? books.find((b) => b.flip.some(looksLikeMouth))?.id ?? books[0]?.id ?? '');
     setValue(this.sound, wantSound);
     setValue(this.book, wantBook);
     this.mapKey = '';
@@ -105,13 +111,47 @@ export class LipsyncDialog extends Dialog {
     this.open(this.go);
   }
 
-  private overlap(a: Content, b: Content): boolean {
-    return a.start < b.start + b.duration && b.start < a.start + a.duration;
+  /** Characters with a mouth Flipbook, then the other Flipbooks (a character's mouth is listed once, as the character). */
+  private targets(m: Movie): { mouths: Array<{ char: Content; mouth: Content }>; books: Content[] } {
+    const mouths: Array<{ char: Content; mouth: Content }> = [];
+    for (const char of listCharacters(m)) {
+      const id = char.character?.mouth;
+      const mouth = id ? findDeep(m, id)?.content : undefined;
+      if (mouth && mouth.kind === 'flipbook') mouths.push({ char, mouth });
+    }
+    const taken = new Set(mouths.map((x) => x.mouth.id));
+    return { mouths, books: allContent(m).filter((c) => c.kind === 'flipbook' && !taken.has(c.id)) };
+  }
+
+  private fillBooks(m: Movie): void {
+    const { mouths, books } = this.targets(m);
+    const items = [...mouths.map((x): [string, string] => [x.mouth.id, tf('{name} (character)', { name: x.char.character?.name ?? x.char.name })]), ...books.map((c): [string, string] => [c.id, c.name])];
+    // two copies of one character read the same: the second and later get a number, in list order
+    const used = new Set<string>();
+    for (const it of items) {
+      let label = it[1];
+      for (let n = 2; used.has(label); n++) label = tf('{name} {n}', { name: it[1], n });
+      used.add(label);
+      it[1] = label;
+    }
+    fill(this.book, items);
+  }
+
+  /** A block's first frame and length in movie frames, wherever it sits. */
+  private span(m: Movie, c: Content): { start: number; end: number } {
+    const f = findDeep(m, c.id);
+    const start = f ? movieStart(f) : c.start;
+    return { start, end: start + c.duration };
+  }
+
+  private overlap(m: Movie, a: Content, b: Content): boolean {
+    const x = this.span(m, a), y = this.span(m, b);
+    return x.start < y.end && y.start < x.end;
   }
 
   private cur(): { m: Movie; snd: Content | null; fb: Content | null } {
     const m = this.engine.movie as Movie;
-    return { m, snd: locate(m, this.sound.value)?.content ?? null, fb: locate(m, this.book.value)?.content ?? null };
+    return { m, snd: locate(m, this.sound.value)?.content ?? null, fb: findDeep(m, this.book.value)?.content ?? null };
   }
 
   private pickBook(): void {
@@ -143,9 +183,9 @@ export class LipsyncDialog extends Dialog {
   }
 
   private pickSound(): void {
-    const { snd, fb } = this.cur();
+    const { m, snd, fb } = this.cur();
     if (snd) {
-      const lo = fb ? Math.max(snd.start, fb.start) : snd.start;
+      const lo = fb ? Math.max(snd.start, this.span(m, fb).start) : snd.start;
       this.from.value = String(lo + 1);
       this.to.value = String(this.limit(snd, fb));
     }
@@ -156,8 +196,11 @@ export class LipsyncDialog extends Dialog {
   private limit(snd: Content, fb: Content | null): number {
     let stop = snd.start + snd.duration;
     if (fb) {
-      const loc = locate(this.cur().m, fb.id);
-      if (loc) stop = Math.min(stop, freeSpan(loc.track, fb.start, new Set([fb.id])).to);
+      const f = findDeep(this.cur().m, fb.id);
+      // the room after the block on its own track, counted in that track's frames, then moved to movie frames
+      if (f) stop = Math.min(stop, freeSpan(f.track, fb.start, new Set([fb.id])).to - fb.start + movieStart(f));
+      // a character's mouth shows only while its character does
+      if (f?.groups.length) stop = Math.min(stop, f.groups[0].start + f.groups[0].duration);
     }
     return stop;
   }
@@ -188,8 +231,7 @@ export class LipsyncDialog extends Dialog {
   private show2(bookId: string): void {
     const m = this.engine.movie;
     if (!m) return;
-    const books = allContent(m).filter((c) => c.kind === 'flipbook');
-    fill(this.book, books.map((c) => [c.id, c.name]));
+    this.fillBooks(m);
     setValue(this.book, bookId);
     this.book.value = bookId;
     this.mapKey = '';

@@ -23,6 +23,7 @@ import { isOra, readOra } from '../io/ora-import';
 import { isPdn, readPdn } from '../io/pdn-import';
 import { isPsd, readPsd } from '../io/psd-import';
 import { isTiledArtwork, readTiledArtwork } from '../io/tiled-artwork-import';
+import { importSvg, isSvgFile } from '../io/svg-import';
 import { sniffProject } from '../io/project-sniff';
 import { tn } from '../ui/i18n';
 
@@ -35,12 +36,12 @@ export interface ImportResult {
   replaces?: string;
 }
 
-type Sniff = 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'tiled-artwork' | 'font' | 'media' | 'unknown';
+type Sniff = 'svg' | 'png' | 'jpeg' | 'gif' | 'webp' | 'avif' | 'bmp' | 'tiff' | 'tga' | 'heic' | 'psd' | 'ora' | 'kra' | 'pdn' | 'tiled-artwork' | 'font' | 'media' | 'unknown';
 
 const EXT: Record<string, Sniff> = {
   png: 'png', apng: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', avif: 'avif', bmp: 'bmp', tif: 'tiff', tiff: 'tiff',
   tga: 'tga', targa: 'tga', heic: 'heic', heif: 'heic', hif: 'heic', psd: 'psd', psb: 'psd', ora: 'ora', kra: 'kra', krz: 'kra', pdn: 'pdn',
-  ttf: 'font', otf: 'font', woff: 'font', woff2: 'font', ttc: 'font',
+  svg: 'svg', ttf: 'font', otf: 'font', woff: 'font', woff2: 'font', ttc: 'font',
   mp4: 'media', m4v: 'media', mov: 'media', webm: 'media', mkv: 'media', ogv: 'media', ogg: 'media', oga: 'media', opus: 'media',
   wav: 'media', mp3: 'media', aac: 'media', m4a: 'media', flac: 'media', mpg: 'media', mpeg: 'media', ts: 'media',
   aif: 'media', aiff: 'media', aifc: 'media', caf: 'media', ac3: 'media', eac3: 'media', mp2: 'media', mxf: 'media', avi: 'media', wmv: 'media',
@@ -75,6 +76,7 @@ function sniff(file: File, b: Uint8Array, tail?: Uint8Array): Sniff {
   if (ascii(b, 0, 'OTTO') || ascii(b, 0, 'true') || ascii(b, 0, 'wOFF') || ascii(b, 0, 'wOF2') || ascii(b, 0, 'ttcf') || (b[0] === 0 && b[1] === 1 && b[2] === 0 && b[3] === 0)) return 'font';
   if (ascii(b, 4, 'ftyp') || (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) || ascii(b, 0, 'OggS') || ascii(b, 0, 'fLaC') || ascii(b, 0, 'ID3')) return 'media';
   if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return 'media';
+  if (isSvgFile(file, b)) return 'svg';
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
   return EXT[ext] ?? 'unknown';
 }
@@ -582,6 +584,8 @@ export async function importMedia(file: File, movie: Movie, at: number, onProgre
   const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 26)).arrayBuffer());
   const kind0 = sniff(file, head, tail);
   // layered artwork: each reader gives a neutral document that becomes a Drawing with its layers
+  // an SVG with a group per part is a character, one with groups named for the mouth shapes a mouth chart
+  if (kind0 === 'svg') return importSvg(file, movie, at);
   if (kind0 === 'psd' || kind0 === 'ora' || kind0 === 'kra' || kind0 === 'pdn' || kind0 === 'tiled-artwork') {
     const doc = await (kind0 === 'psd' ? readPsd(file) : kind0 === 'ora' ? readOra(file) : kind0 === 'kra' ? readKra(file) : kind0 === 'tiled-artwork' ? readTiledArtwork(file) : readPdn(file));
     return layeredToDrawing(doc, file.name, movie, at);

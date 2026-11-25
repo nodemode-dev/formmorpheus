@@ -23,6 +23,7 @@ import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
 import { ShapePanel } from '../ui/shape-panel';
 import { shapeCommands, SHAPE_CREATE_ITEMS } from '../ui/shape-commands';
+import { characterCommands } from '../ui/character-commands';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
 import { Commands, type Command } from '../ui/commands';
@@ -66,6 +67,7 @@ import { StatusBar } from '../ui/status';
 import { TimelineView } from '../ui/timeline';
 import { GraphEditor } from '../ui/graph-editor';
 import { MediaBin } from '../ui/media-bin';
+import { CharactersPanel } from '../ui/characters-panel';
 import { TitleTools } from '../ui/titlebar-tools';
 import { installUndoUi } from '../ui/undo-banner';
 import { installTextWarpNote } from '../ui/text-warp-note';
@@ -192,6 +194,7 @@ export function startApp(): void {
   });
   const graphEditor = new GraphEditor(timeline.root, engine);
   const mediaBin = new MediaBin(engine, { renderer, video, timeline: () => timeline, stageWrap: () => q(root, '.fm-stage-wrap') });
+  const charactersPanel = new CharactersPanel(engine, { renderer, timeline: () => timeline, stageWrap: () => q(root, '.fm-stage-wrap') });
   new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);
@@ -549,7 +552,7 @@ export function startApp(): void {
   }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';
@@ -616,7 +619,7 @@ export function startApp(): void {
     { id: 'group', label: 'Group', keys: ['Mod+G'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Group', (m) => { const r = ops.groupContent(m, ids); return { movie: r.movie, select: [r.group] }; }); } },
     { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.length === 1 && engine.selected[0].kind === 'group' && document.querySelector('[data-act="multi"]')?.getAttribute('aria-pressed') !== 'true', run: () => { const g = engine.selected.length === 1 ? engine.selected.find((c) => c.kind === 'group') : undefined; if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
-    { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
+    { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => { if (groupCtx.picked) engine.pick(null); else engine.select([]); } },
     { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => afterCreate(engine.insert('drawing')) },
     { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => afterCreate(engine.insert('flipbook')) },
     { id: 'create-opens-paint', label: 'Open Draw & Paint after adding', enabled: has, checked: () => openPaintOnCreate(), run: () => setOpenPaintOnCreate(!openPaintOnCreate()) },
@@ -693,6 +696,7 @@ export function startApp(): void {
   commands.add(
     ...add,
     ...shapeCommands(engine, () => stage?.shapeStage ?? null, shapePanel, mid),
+    ...characterCommands(engine, charactersPanel),
     ...paint.paintCommands(),
     ...pushCommands(engine),
     ...loopCommands(engine),
@@ -755,8 +759,8 @@ export function startApp(): void {
     { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
-    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup'] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth'] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', 'characters-panel', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'help-web', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {

@@ -3,7 +3,41 @@
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-23 · the engine's test suite
+Last updated: 2026-11-25 · the Characters library and its MCP tools
+
+---
+
+## v0.25.0 · Recently Deleted names, movie and character
+
+- refers-to: app/routers/library.py :: delete_project; app/routers/characters.py :: delete_character; app/routers/trash.py :: record
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **A movie and a character of the same name deleted in the same second** both went to `<name> <stamp>.fmo`, and the movie's move replaced the character's file and its trash index entry (kind `character` became `movie`). The library's delete now takes the same free-name loop as the characters route (`<name> <stamp> 2.fmo` and on), so each keeps its own file and its own kind in the index. The two routes still hold their own locks; two deletes landing in the very same instant from different routes could still pick one name, which the window never does (each delete is one request after a question).
+
+## v0.25.0 · the Characters library routes
+
+- refers-to: app/routers/characters.py (new); app/main.py (router at /api/characters); app/core/config.py :: characters_dir, MAX_CHARACTER_BYTES; app/routers/trash.py :: _meta, restore; ../docs/api-contract.json (written by ../setup/api_contract_dump)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One file per character.** `<data folder>/Characters/<name>.fmo`, a movie the size of its source holding one track with the one character group, made by the window with `packMovie` and no history. The folder sits in the data folder, not the library folder, so a library moved to another drive leaves the characters where the Starter and the iPad expect them, and the hourly part-file sweep already covers it. It is made on first use.
+- **Modelled on the library, with less.** Same name cleaning (`clean_name`, message says character), same `entry()` shape without `stack`, same zip magic check, part file with fsync and `os.replace` under a lock, same `read_limited` (512 MB here, not 4 GB: a character is a few parts, and a bigger file is a mistake), same rename with a 409 on a taken name (a change of letter case is allowed), same poster read (`library._picture`: 204 when the file has none). Left out on purpose: stacks, tags, order, duplicate, copy-to, the poster write route and preview. A character never needs them, and each is a route the iPad would have to copy.
+- **Window key.** Nothing to add: `WindowKeyGuard` covers every path under `/api/`, reads as well as writes, and `GuardMiddleware` refuses a foreign origin on writes, so `/api/characters` is covered exactly as `/api/library` is. There is no allow or deny list by path.
+- **Delete goes to Recently Deleted** as `<name> <stamp>.fmo` with kind `character` in the trash index; a second delete in the same second takes a number instead of replacing the first (the library's delete would replace). `trash.restore` puts a `character` back in Characters under a free name (`Name 2`), and `_meta` gives it the plain name like a movie. The window's Recently Deleted list must show the kind (it treats every kind but `movie` as an export today).
+- **Contract file.** `docs/api-contract.json` was regenerated with `setup/api_contract_dump`, not edited. The iPad check now lists the new routes as not served until the Swift routes land.
+
+## v0.25.0 · MCP tools for characters
+
+- refers-to: app/routers/mcp.py :: TOOLS, t_list_characters, t_add_character, _character, _restore message; ../agents/manifest.json (written by ../setup/agents.py sync)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **`list_characters` reads**: name, modified, size, optional `query`; no window needed, refused only when agents are blocked.
+- **`add_character` is class `asks`, not `changes`.** It puts content into a movie in the window and needs the window to do it, which is what `import_file` does, and SECURITY.md says imports always ask. The `changes` class skips the question when the person allowed outside agents, and the window half is not a library change. It goes through `_window`, so it asks every time (deny or once), waits 2 minutes for the answer and 2 for the work, and says plainly when no window is open. The engine checks that the character exists and, when `movie` is given, that the movie does, before asking.
+- **The message to the window** is `add_character` with `{character, movie?, at?}`. No file goes across the bridge: the bridge file route serves only the library folder, and the window holds the key to read `/api/characters/{name}` itself. The window answers `{ok: true, content, movie?, saved}`.
+- **Restore wording.** `manage_movie restore` by an id from `list_deleted` says "to Characters." for a character. Restoring by name still looks at movies only.
+- **SVG in the import list needs nothing here.** The window picks the importer from the bytes and the file name's extension (`media/import.ts` `sniff` and `EXT`); the engine only passes the file name through the bridge, and the window builds the file without a type. The character importer for SVG is a window change.
 
 ---
 

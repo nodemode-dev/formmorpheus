@@ -1,5 +1,5 @@
 import type { BlendMode, Content, Highlight, MaskMode, Movie, PlaybackMode, Track, Transform } from './types';
-import { clampSide, content as makeContent, end, fits, sourceFrames, sortContent, track as makeTrack, trackName, uid, contentEnd } from './model';
+import { clampSide, content as makeContent, end, fits, relinkCharacter, sourceFrames, sortContent, track as makeTrack, trackName, uid, contentEnd } from './model';
 import { clampFps } from './time';
 import { tidyGuides } from './guides';
 import { scaleKeyTimes, shiftKeys } from './key-ops';
@@ -45,7 +45,8 @@ export function cloneContent(c: Content, start: number): Content {
   };
   // a parent inside the copied group follows the copy; one outside stays
   const relink = (x: Content): Content => {
-    const next: Content = x.tracks.length ? { ...x, tracks: x.tracks.map((t) => ({ ...t, content: t.content.map(relink) })) } : x;
+    const inner: Content = x.tracks.length ? { ...x, tracks: x.tracks.map((t) => ({ ...t, content: t.content.map(relink) })) } : x;
+    const next = relinkCharacter(inner, ids);
     if (next.parent && ids.has(next.parent)) return { ...next, parent: ids.get(next.parent) };
     return next;
   };

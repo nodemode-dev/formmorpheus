@@ -8,9 +8,11 @@
       "list_movies",
       "get_movie",
       "get_movie_picture",
+      "list_characters",
       "manage_movie",
       "export_movie",
       "import_file",
+      "add_character",
       "list_commands",
       "run_command"
     ],
@@ -19,17 +21,20 @@
       "list_movies",
       "get_movie",
       "get_movie_picture",
+      "list_characters",
       "list_commands"
     ],
     "approval_gated": [
       "manage_movie",
       "export_movie",
       "import_file",
+      "add_character",
       "run_command"
     ],
     "asks_first": [
       "export_movie",
-      "import_file"
+      "import_file",
+      "add_character"
     ],
     "commands": [
       {

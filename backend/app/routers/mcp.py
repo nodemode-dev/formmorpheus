@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from app.core import config, window_key
-from app.routers import exports, fonts, jobs, library, trash
+from app.routers import characters, exports, fonts, jobs, library, trash
 from app.services import agent_access, bridge, claude_code, movies
 from app.services import ffmpeg as ff
 
@@ -35,8 +35,8 @@ IMPORTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".tif", ".
            ".otf", ".ttf", ".ttc", ".woff", ".woff2", ".psd", ".psb", ".ora", ".kra"}
 INSTRUCTIONS = ("FormMorpheus is an animation studio on this computer; its movies are .fmo files in the person's library folder. "
                 "Start with get_context. list_movies, get_movie and get_movie_picture read; manage_movie creates, renames, duplicates, "
-                "deletes (to Recently Deleted) and restores movies; export_movie and import_file are carried out by the open FormMorpheus "
-                "window after the person agrees there. list_commands lists the other commands and run_command runs one. Changes need the "
+                "deletes (to Recently Deleted) and restores movies; list_characters reads the saved characters; export_movie, import_file and "
+                "add_character are carried out by the open FormMorpheus window after the person agrees there. list_commands lists the other commands and run_command runs one. Changes need the "
                 "person's yes: outside agents are off until they allow them in the window.")
 NO_WINDOW = "Open FormMorpheus first: the FormMorpheus window does this ({what}), and none is open. Ask the person to open FormMorpheus, then retry."
 CHOICE_WORDS = {"ask": "off until the person allows them (a change asks in the window when it is open)", "allowed": "allowed", "blocked": "blocked"}
@@ -72,6 +72,7 @@ def _command(name: str, kind: str, description: str, props: dict, required: list
 _S = {"type": "string"}
 _INT = {"type": "integer"}
 _MOVIE = {"type": "string", "description": "A movie's name, as list_movies gives it"}
+_CHARACTER = {"type": "string", "description": "A saved character's name, as list_characters gives it"}
 TOOLS = [
     _tool("get_context", "reads", "Reads what FormMorpheus is and how it stands: the version, the library folder, whether the window is open, "
           "whether outside agents are allowed, and whether ffmpeg is found and which encoders it has.", {}),
@@ -81,6 +82,8 @@ TOOLS = [
           "counts by kind, assets, and whether it has a poster, a preview and saved history.", {"movie": _MOVIE}, ["movie"]),
     _tool("get_movie_picture", "reads", "Reads a movie's poster, and its preview frame when the file carries one, as PNG pictures.",
           {"movie": _MOVIE, "which": {"type": "string", "enum": ["poster", "preview", "both"], "description": "Default both"}}, ["movie"]),
+    _tool("list_characters", "reads", "Reads the saved characters (the Characters library): each character's name, last change and file size. "
+          "query narrows by words in the name.", {"query": _S}),
     _tool("manage_movie", "changes", "Changes the library: create makes an empty movie (name, width, height, fps, seconds), rename gives a movie a new name (to), "
           "duplicate copies it, delete moves it to Recently Deleted (it is never erased here), restore brings a deleted movie back (movie is its name or "
           "the id list_deleted gives). The first change asks the person in the FormMorpheus window unless they allowed outside agents.",
@@ -101,6 +104,12 @@ TOOLS = [
           "Waits up to 2 minutes for the answer and 2 minutes for the import.",
           {"path": _S, "movie": _MOVIE, "at": {"type": "integer", "minimum": 0}, "track": {"type": "string", "description": "A track's name (default the top track when it has room there, else a new track)"}},
           ["path", "movie"]),
+    _tool("add_character", "asks", "Asks first: the person approves in the FormMorpheus window, which then adds a saved character to the movie open "
+          "there (or to movie, which it opens) at the playhead, as one group with its own copy of every part, and saves the movie. character is a name "
+          "from list_characters; at is the movie frame to place it at instead of the playhead. Waits up to 2 minutes for the answer and 2 minutes for the work.",
+          {"character": _CHARACTER, "movie": {"type": "string", "description": "A movie's name, as list_movies gives it (default the movie open in the window)"},
+           "at": {"type": "integer", "minimum": 0}},
+          ["character"]),
     _tool("list_commands", "reads", "Reads the commands that are not tools: id, class (reads, changes the library) and what each does; id returns one with its parameters.",
           {"id": _S}),
     _tool("run_command", "changes", "Changes the library or reads, as the command's class says: runs one command from list_commands with its params. "
@@ -108,7 +117,7 @@ TOOLS = [
           {"id": _S, "params": {"type": "object"}}, ["id"], destructive=True),
 ]
 COMMANDS = [
-    _command("list_deleted", "reads", "Reads Recently Deleted: each item's id, name, kind (movie or export), when it was deleted and the days left before it goes.", {}),
+    _command("list_deleted", "reads", "Reads Recently Deleted: each item's id, name, kind (movie, character or export), when it was deleted and the days left before it goes.", {}),
     _command("list_exports", "reads", "Reads the Exports folder: each file's name, kind, size and last change.", {}),
     _command("list_stacks", "reads", "Reads the stacks of the library and the movies in each.", {}),
     _command("export_capabilities", "reads", "Reads what the person's ffmpeg can encode for the engine's export jobs: H.264, ProRes, ProRes 4444 and HEVC, each with the reason when it cannot.", {}),
@@ -154,6 +163,19 @@ def _movie(raw) -> Path:
     if found is None or not _inside(found, config.library_dir()):
         raise ToolError(f"There is no movie named {stem} in the library. list_movies gives the names.")
     return found
+
+
+def _character(raw) -> Path:
+    name = str(raw or "").strip()
+    if not name:
+        raise ToolError("Give character, a saved character's name from list_characters.")
+    try:
+        path = characters.character_path(name)
+    except HTTPException:
+        raise ToolError(f"{name} cannot be a character's name.") from None
+    if not path.is_file():
+        raise ToolError(f"There is no saved character named {path.stem}. list_characters gives the names.")
+    return path
 
 
 def _when(t: float) -> str:
@@ -234,6 +256,14 @@ async def t_list_movies(a: Agent, args: dict) -> dict:
         rows.append({"name": e["name"], "modified": e["modified"], "size": e["size"], "tags": tags.get(e["name"], []), **({"stack": e["stack"]} if e.get("stack") else {})})
     lines = [f"{r['name']} · {_when(r['modified'])} · {_size(r['size'])}" + (f" · tags {', '.join(r['tags'])}" if r["tags"] else "") + (f" · stack {r['stack']}" if r.get("stack") else "") for r in rows]
     return _ok(f"{len(rows)} movie{'s' if len(rows) != 1 else ''}" + (":\n" + "\n".join(lines) if lines else "."), {"movies": rows})
+
+
+async def t_list_characters(a: Agent, args: dict) -> dict:
+    items = (await asyncio.to_thread(characters.list_characters))["items"]
+    words = str(args.get("query") or "").lower().split()
+    rows = [{"name": e["name"], "modified": e["modified"], "size": e["size"]} for e in items if not words or all(w in e["name"].lower() for w in words)]
+    lines = [f"{r['name']} · {_when(r['modified'])} · {_size(r['size'])}" for r in rows]
+    return _ok(f"{len(rows)} character{'s' if len(rows) != 1 else ''}" + (":\n" + "\n".join(lines) if lines else "."), {"characters": rows})
 
 
 def _track_lines(tracks: list, depth: int = 0) -> list[str]:
@@ -339,7 +369,8 @@ async def t_manage_movie(a: Agent, args: dict) -> dict:
         return _ok(f"Moved {stem} to Recently Deleted (id {item}); restore brings it back.", {"deleted": stem, "id": item})
     out = await asyncio.to_thread(_restore, args.get("movie"))
     name = out["restored"][: -len(config.PROJECT_EXT)] if out["restored"].endswith(config.PROJECT_EXT) else out["restored"]
-    return _ok(f"Restored {name} " + ("to the library." if out["kind"] == "movie" else "to the Exports folder."), {"restored": name, "kind": out["kind"]})
+    where = {"movie": "to the library.", "character": "to Characters."}.get(out["kind"], "to the Exports folder.")
+    return _ok(f"Restored {name} {where}", {"restored": name, "kind": out["kind"]})
 
 
 async def t_export_movie(a: Agent, args: dict) -> dict:
@@ -393,6 +424,22 @@ async def t_import_file(a: Agent, args: dict) -> dict:
     added = str(out.get("content") or src.name)
     return _ok(f"Imported {src.name} into {movie.stem} as {added}" + (", and the movie was saved." if out.get("saved") else "; the movie is not saved yet."),
                {"movie": movie.stem, "content": added, "kind": out.get("kind"), "saved": bool(out.get("saved"))})
+
+
+async def t_add_character(a: Agent, args: dict) -> dict:
+    stem = _character(args.get("character")).stem
+    payload = {"character": stem}
+    movie = str(args.get("movie") or "").strip()
+    if movie:
+        payload["movie"] = _movie(movie).stem
+    if args.get("at") is not None:
+        payload["at"] = max(0, int(args["at"]))
+    where = f"the movie {payload['movie']}" if movie else "the movie open in the window"
+    out = await _window(a, "add_character", payload, f"add the character {stem} to {where}", IMPORT_WAIT)
+    added = str(out.get("content") or stem)
+    into = str(out.get("movie") or payload.get("movie") or "")
+    return _ok(f"Added the character {stem} as {added}" + (f" in {into}" if into else "") + (", and the movie was saved." if out.get("saved") else "; the movie is not saved yet."),
+               {"character": stem, "movie": into or None, "content": added, "saved": bool(out.get("saved"))})
 
 
 async def t_list_commands(a: Agent, args: dict) -> dict:

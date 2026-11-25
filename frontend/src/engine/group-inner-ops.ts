@@ -17,6 +17,17 @@ export function ownerGroup(tracks: Track[], id: string): Content | null {
   return null;
 }
 
+/** The top-level group that holds `id` at any depth (null for a top-level block or an unknown id). */
+export function outerGroup(tracks: Track[], id: string): Content | null {
+  for (const t of tracks) for (const c of t.content) if (c.kind === 'group' && ownerGroup([{ ...t, content: [c] }], id)) return c;
+  return null;
+}
+
+/** Edits one block wherever it sits: on a top-level track, or inside a group. */
+export function updateAny(movie: Movie, id: string, fn: (c: Content) => Content): Movie {
+  return movie.tracks.some((t) => t.content.some((c) => c.id === id)) ? ops.updateContent(movie, id, fn) : updateInner(movie, id, fn);
+}
+
 /** Runs `fn` on the group's tracks as if they were the movie's, and writes the result back. */
 function viaGroup(movie: Movie, innerId: string, fn: (m: Movie) => Movie): Movie {
   const g = ownerGroup(movie.tracks, innerId);

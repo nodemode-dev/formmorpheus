@@ -7,6 +7,139 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · a part picked inside a character
+
+- refers-to: engine/engine.ts :: select, pick, pruneSelection; engine/group-ctx.ts :: picked; engine/group-inner-ops.ts :: outerGroup, updateAny; ui/inner-pick.ts (new) :: pickedPart, stageTargets, stageFind, partAt, partBox; ui/stage-view.ts :: find, patchT, boxOf, pick, dblclick, down, writeKeys, nudge; ui/path-view.ts :: target, pivot and path edits; ui/timeline.ts :: innerSel, laneItem, laneContent, laneHit, laneDown, keySpot, doubleClick; ui/action-menu.ts :: setLaneShown; app/app.ts :: deselect
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** A part of a character could not be edited alone, so "rotate an arm in Keyframe mode" could not be done: the Stage picked only top-level blocks, a click on a part's bar in an opened group outlined it on the Timeline but the Stage kept the whole group's box, and `engine.select([partId])` was dropped because `locate` reads only the top tracks.
+- **One inner selection, the one groups already had.** The Timeline's in-place group expand already kept `groupCtx.picked`, a block picked inside an opened group while the group stays the engine's selection. That is now the inner selection everywhere, not a second system: `engine.pick(id)` sets it and tells the views (a `selection` event), the Timeline's picks go through it, and `engine.select([id])` with an id inside a group selects its outermost group and picks the id. Selecting anything else, or nothing, drops the pick; a pick whose content is gone is dropped with the selection. `engine.selected` stays top-level, so every command that acts on the selection is unchanged.
+- **Getting in and out.** On the Stage a double-click on a group (a character) picks the part under the pointer; while a part is picked, a click picks another part of the same group, a press on the picked part's box keeps it, and a press on the group away from every part goes back to the whole group. Escape (the Deselect command) first leaves the part, keeping the group selected, then deselects. On the Timeline a double-click on a character's block opens it in place (Compose; Alt still zooms), and a click on a part's bar picks it as before. A part is the content on the group's own tracks (an arm, the head); a part's own shapes are not picked one by one. Perform keeps the whole selection.
+- **What the Stage edits** (`ui/inner-pick.ts`). `stageTargets` is the picked part while its group shows, else the selection; `stageFind` finds either. The part is handed over as a copy whose `start` is moved so `engine.frame - start` is the part's own frame (the group's start, offset and speed counted through `levelFrameOf`), so `animate`, `isOver`, the box, the handles, Move keys and the HUD read it like a top-level block; the parent space comes from `screenMat`, which already follows parents and groups. Writes go through `updateAny` (top-level `updateContent`, else `updateInner`), keeping the copy's start out of the movie. A part on a locked track, or in a group on one, is not grabbed.
+- **Picking and the box.** A part is hit where one of its drawn pieces is (`partAt`: each shape, picture or canvas box of the part at the frame, through its world matrix), not by its box, since a group's box is the whole movie. A picked part that is a group gets a box round what it draws (`partBox`, in its own picture space), also used for its anchor sectors; a top-level group keeps the movie's box, as before.
+- **Pivot and paths.** The path view finds its content through `stageTargets` and `stageFind` and writes through `updateAny`, so Edit anchor, the pivot drag (Move lane px and py keys in Keyframe), path nodes and handles act on the part; a picked part does not stop Edit anchor.
+- **Its lanes** (Keyframe and Perform). Under the group's block the Timeline shows the picked part's lanes in place of the group's (`laneItem`, a copy with its start in movie frames, kept while the part is unchanged so its lane pictures are not remade), drawn and hit like any lanes; a key drag writes through `updateAny` and keeps the part's own start; a lane's expand toggle works. The Playhead pill, the key value card and the Graph button are left out for a part, since they act on the selected block.
+- **Left.** The box menu's Flip and Reset, Warp, Bones, the effect tools on the Stage, multi-key choice on the lanes and the lane menu act on top-level blocks only.
+
+## v0.25.0 · a mouth rests until lip-sync
+
+- refers-to: engine/lipsync-ops.ts :: restingChart; io/svg-import.ts :: chartBook; engine/character-ops.ts :: attachMouthChart
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The fault.** A chart's eight drawings each had hold 1 and the Flipbook ran the movie's length, and a Flipbook row loops, so a starter character (and any SVG character with a mouth chart inside, and Use as Mouth Chart) mouthed all eight shapes over and over before any lip-sync.
+- **Rest's hold covers the block** (`restingChart`). The chart row's Rest drawing (the frame named Rest, else the first, the one `guessMapping` takes for rest) is moved to the front and held for the block's length; the other seven follow it with hold 1, past the block's end, where they are never shown but stay in the row. `chartBook` builds every chart that way for its block (a mouth chart file, the chart inside an SVG character), and `attachMouthChart` holds Rest for the length of the block the chart is placed in (the old mouth part's, or the character's), on a one-row Flipbook only.
+- **Why not a library row.** A hidden chart row under a drawn row holding Rest was the other way, but the dialog takes the first row that looks like a mouth as the chart and its "A new track (keeps the chart)" hides only that row, so the drawn Rest row would stay visible under the written shapes, and `applyLipsync` would have to change. With the hold, the chart is still one row of eight named drawings: the dialog picks it, guesses the same mapping, defaults to a new track, copies the drawings by index and hides the chart, the same as before.
+- **Left.** The row is seven frames longer than the block, so an edit that grows a Flipbook to its longest row (insert, duplicate or hold change in Draw & Paint) grows the mouth block by those frames; inside a character they lie past the character's end.
+
+## v0.25.0 · Lip-sync targets read apart
+
+- refers-to: ui/lipsync-dialog.ts :: fillBooks
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Unique labels.** Two copies of one character were both listed as "Marisol (character)", so the Mouth flipbook list could not tell them apart. After the labels are made, a label already used in the list gets a number through the template `{name} {n}` (translated whole), from 2 up until it is free, in list order: the first copy keeps its plain label. Flipbooks of the same name are numbered the same way. Only the text changes; the values are still the Flipbooks' ids.
+
+## v0.25.0 · the Characters panel opens at its height
+
+- refers-to: ui/characters-panel.ts :: manifest, readManifest, mineRead, opening, show, hide, refresh, paint
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **No jump on open.** The starter manifest was fetched on the first open, after the panel showed, so the Starter section appeared above Mine and pushed it down (y 145 to 450), and Mine said "No characters saved yet" until the library answered. The manifest is now read when the panel is made at startup (`readManifest`, kept as a promise), and the library is listed then too, into the hidden panel, so its rows and posters are ready. `show` waits on that promise (already settled in practice; a close meanwhile cancels the open with `opening`), paints, then unhides, so the panel's first frame has both sections. The empty Mine text stays hidden until a list has been read (`mineRead`, set on success or failure); every open still re-reads the library and patches the rows in place.
+
+## v0.25.0 · saved characters' posters
+
+- refers-to: io/characters-api.ts :: charactersApi.poster (was posterUrl); ui/characters-panel.ts :: posters, loadPoster, paint, updateRow
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Fetched, not linked.** A saved character's poster was an `<img src>` on `/api/characters/{name}/poster`, which the engine refused (403): an image cannot send the window key, and every `/api/` route asks for it. `posterUrl` is gone; `charactersApi.poster(name, v, row)` fetches it through the low-priority picture queue (`lowFetch`, as movie posters in `io/api.ts` `picture`), so the key rides on it and visible rows go first. Null when there is none or it fails.
+- **Shown as an object URL.** The panel keeps one `{want, url}` per saved row. A row asks again only when its name or modified time changes; the answer is decoded off-screen and set with `swapMedia` in one write, the glyph staying until then in the thumb's fixed 56 x 42 box, and the old URL is revoked after the swap. A row that leaves the list has its URL revoked in `paint`; an answer for a row that is gone or newer is revoked unused. Starter posters are plain files outside `/api/` and keep their `src`.
+
+## v0.25.0 · review fixes, characters
+
+- refers-to: ui/characters-panel.ts :: save, packCharacter, useMouthChart; ui/character-commands.ts :: character.mouth; ui/content-menu.ts :: mouthChar; app/app.ts :: Content menu; ui/dialogs.ts :: Confirm, confirmAction, chooseOrCancel; io/svg-import.ts :: makePart, markupOf, parseCss, top, parseSvgParts, partContent, chartLike, chartBook, svgToMouthChart, svgToCharacterGroup, importSvg
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Save to Characters compares the cleaned name.** The name is cleaned with `freeName(base, [])` first (`A/B` becomes `A B`) and that is what is compared with the saved names and written, so saving `A/B` twice asks before replacing instead of quietly replacing `A B`.
+- **The replace question can be cancelled.** There was no three-way question but the Unsaved Changes one, which has fixed words. `Confirm` now reports a close (Escape, the close button, a click outside) as `null` instead of `false`; `confirmAction` turns that back into `false`, so every caller is unchanged. The new `chooseOrCancel` hands the `null` through: Replace is `true`, Keep Both `false`, a close saves nothing. Without the window's own dialogs it asks two system questions, the second one the other answer.
+- **Saved characters hold no outside links** (`packCharacter`). Every inner content, at any depth, whose `parent` names an id that is not the group or inside it loses that `parent` in the library copy (a hand parented to a prop on another track, say). Links between the character's own parts stay. The movie itself is not changed.
+- **A hidden SVG part keeps its art.** A group with `visibility="hidden"` (or `collapse`, the same for a group) became a hidden part with nothing in it, because its children inherited the hidden and were skipped. The part is marked hidden, then its own art is read with the inherited visibility dropped; a child hidden on its own (relative to the part) is still left out. A nested part that does not set visibility itself stays hidden, as it inherits it. The part's picture markup says `visibility:visible`, so a part that must be a picture is drawn and then hidden by its flag.
+- **A style rule the reader cannot apply makes a picture** (`parseCss`, `Ctx.styled`). Only tag, `#id` and `.class` selectors and their joins are applied to shapes; the old comment said the rest went to the picture path, but they were dropped and the shapes kept the wrong paint. Now every other selector is run once with `querySelectorAll` on the parsed file, and a part holding an element it matches (or a part whose own group it matches) is drawn as a picture, noted as "a complex style rule". A selector the parser refuses (a pseudo-element) is ignored, and `:hover` and the like match nothing. Left: the picture carries the file's style sheets but not the part's ancestors, so a rule that names an ancestor outside the part (`#layer1 path`) still does not reach it there.
+- **preserveAspectRatio is honoured** (`parseSvgParts`). Every viewBox was centred and fitted (`xMidYMid meet`) unless it said `none`. Now the alignment (`xMin`, `xMid`, `xMax` with `YMin`, `YMid`, `YMax`) places the drawing and `slice` fills the size (the larger scale) instead of fitting it; a leading `defer` is skipped, an empty or unknown word falls back to the middle. With `slice`, art past the size is not cut here: parts keep their full shapes, as they do past the edge of any SVG.
+- **Loose shapes make one part** (`top`, `parseSvgParts(text, name)`). Every top-level shape outside a group was a part of its own, so an ungrouped drawing became hundreds of tracks. Now shapes side by side (path, rect, circle, ellipse, line, polyline, polygon, with nothing else drawn between them) are moved into a new `g` (marked `data-fm-loose`) in the parsed document and read as one part; anything else (a group, text, a picture, an editor layer) ends the run. The wrapper gets only the inherited style of where it sits, so the file's own `g` rules are not applied to it while reading shapes (a picture of the run, if it needs one, would see them). One run is named after the file; with several they are `Part N` like any unnamed part. A run of one shape is left as before: its own part, named by its label.
+- **A mouth chart inside a character becomes its mouth** (`makePart`, `SvgPart.frames`, `chartLike`, `chartBook`, `partContent`). A part whose child groups pass the same test as a mouth chart file (`chartLike`: at least six of them named for the mouth shapes by label, `data-name` or id, and no more than ten) no longer makes each mouth a part drawn on top of the others. Each child group is read as a whole drawing (`frames`, kept out of `doc.parts`, its picture with nothing cut), and the part becomes one Flipbook with a frame per shape in chart order, keeping the part's name, pivot, opacity and parent. `characterInfoOf` already picks a Flipbook that looks like a mouth, so the character's `mouth` is set and Lip-sync from Sound writes into it. `chartBook` is the old body of `svgToMouthChart`, which now calls it too, so there is one way a chart is drawn. A mouth group hidden with `display:none` is still skipped, as in a chart file; one hidden with `visibility` is drawn.
+- **The file is read once** (`importSvg`). It parsed the SVG to ask whether it is a mouth chart and then each importer parsed it again. `svgToCharacterGroup` and `svgToMouthChart` now take the text or the parsed `SvgDoc`, and `importSvg` hands them the one it read.
+- **Use as Mouth Chart...** (`character.mouth` in `character-commands.ts`, `CharactersPanel.useMouthChart`, a row in the block menu beside Save to Characters, built the same way, and in Content in the menu bar). On one selected character it opens the platform's file chooser for an SVG, reads it with `svgToMouthChart` (any SVG: one frame per top-level group), adds the pictures to the movie and puts the Flipbook in with `attachMouthChart` (in place of a `mouth` part, else on a new top inner track following `head`) in one `engine.run` step, which sets the character's mouth. So any character, an SVG one included, can be lip-synced from sound. A file that cannot be read says so and changes nothing; closing the chooser does nothing.
+
+## v0.25.0 · characters in Recently Deleted
+
+- refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Shown as characters.** An item of kind `character` has the person glyph (`PERSON_SVG`, sized by `.fm-trash-glyph svg`), the kind "Character" and its name without `.fmo`, which the engine already strips. Movies and exports are as before.
+- **Restore.** A character's restore always says where it went: "{name} is back in Characters.", or "Restored to Characters as {name}" when the engine had to give it a free name. The engine answers `{restored, kind: "character"}`; `restored` is the file name, so `.fmo` is taken off as for a movie.
+
+## v0.25.0 · an outside agent adds a character
+
+- refers-to: app/agent-bridge.ts :: addCharacter, take; ui/characters-panel.ts :: placeCharacter, unpackCharacter; io/characters-api.ts :: charactersApi.read
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
+- **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
+
+## v0.25.0 · Lip-sync onto a character's mouth
+
+- refers-to: ui/lipsync-dialog.ts :: targets, fillBooks, span, overlap, cur, pickSound, limit, show, show2; engine/lipsync-ops.ts :: applyLipsync, groupHolding; ui/content-menu.ts :: lipOk; engine/character-ops.ts :: findDeep, movieStart, listCharacters
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Targets.** The Mouth flipbook list starts with every character whose `mouth` is a Flipbook, as "{name} (character)", then the other Flipbooks; a character's mouth is listed once, as its character. The default is the selected character's mouth, else the selected Flipbook, else the first character's, else as before. The block menu offers Lip-sync from Sound... on a character with a mouth.
+- **Nested mouths.** A character's mouth sits inside its group, where `locate` and `updateContent` do not reach. `applyLipsync` now, when the Flipbook is not at the top, takes the top-level group that holds it, runs itself on that group's tracks as a movie with the start frame moved into the group's frames (start and offset; a group's speed is not counted), and writes the tracks back in one edit, so it stays one undo step and still refuses a locked track. The dialog reads the block's place with `findDeep` and works its range in movie frames, cut to the room on the mouth's own track and to the end of its character. `media/lipsync.ts` is unchanged.
+
+## v0.25.0 · the Characters panel and library
+
+- refers-to: io/characters-api.ts (new) :: charactersApi, freeName; ui/characters-panel.ts (new) :: CharactersPanel, packCharacter, unpackCharacter, starterCharacter, placeCharacter; styles/characters.css (new); ui/character-commands.ts :: characters-panel, character.save; ui/content-menu.ts :: saveChar; app/app.ts :: charactersPanel, View and Content menus
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Client.** `/api/characters` as the engine and the iPad answer it: list (`{folder, items}`, newest first), read, write (an `.fmo`), rename (`{to}`, 409 when taken), delete (to Recently Deleted), poster. Its own small `call` beside `io/api.ts`'s, with the same not-running sentence and error detail; the window key rides on every `/api` fetch already (`io/window-key.ts`).
+- **What is saved.** A movie the size of the current one holding one track with the character group (its own `parent` link dropped, start 0) and only the pictures it uses, packed by `packMovie` with no history and a 320 px poster drawn by `renderer.thumb` at the Playhead. The engine replaces a name silently, so Save to Characters asks when the name is taken: Replace, or Keep Both, which saves as "Name 2" (Escape keeps both, never losing one).
+- **Placing.** Add to Movie, or a drag of a row onto the Stage or a Timeline row (the media bin's way: a private drag type, window drop listeners, `timeline.dropTarget`), puts `ops.cloneContent` of the group at the Playhead or the dropped frame on a new track named for it: every inner id is new and `parts`, `mouth` and `parent` follow through the paste remap, so two copies move apart. One undo step. A character made in a larger movie is scaled down to fit about the movie centre. Its pictures go into the blob store and the renderer's preload before the run, as an import does.
+- **Starter.** Reads `/starters/characters/manifest.json` once (`{format, characters: [{id, name, file, poster?, mouths?}]}`, files beside it). No manifest or no entries: the Starter section stays hidden. Adding one fetches its SVG, runs the SVG importer, names the character after the entry, and with `mouths` runs the mouth chart importer and `attachMouthChart`. Starter rows have no Rename or Delete.
+- **Built once.** The panel is the media bin's frame and rows (`fm-bin` classes) placed on the left so both can be open; two section lists patched with `patchList`. A poster `<img>` changes `src` only when the address changes (the modified time is in it), keeps the person glyph until the picture loads, and goes back to the glyph when there is none (204).
+
+## v0.25.0 · Make Character
+
+- refers-to: ui/character-commands.ts (new) :: characterCommands, makeCharacterFlow, selectedGroup, selectedCharacter; ui/character-glyph.ts (new) :: PERSON_D, PERSON_SVG, drawPerson; ui/icons-morph.ts :: character; ui/action-menu.ts :: charBtn; ui/content-menu.ts :: makeChar; ui/timeline.ts :: PERSON_ROOM, block chip, chipWidth; app/app.ts :: commands, Content menu; engine/character-ops.ts :: makeCharacter, characterInfoOf
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Command.** `character.make` (Make Character...) asks for a name (the group's or the character's own as the default) and runs `makeCharacter` through `engine.run`, one undo step. Parts are the group's inner contents by name, top track first, a repeated name numbered; the mouth is the first inner Flipbook with a row that `looksLikeMouth`. On a character it names the parts again and keeps any other field the character has. It is offered in the Action menu (a Character button beside Shape, shown for a group), the Content menu bar (after Ungroup) and the block's own menu.
+- **The chip glyph.** The Timeline is one canvas, so there is no element to give a class: the glyph is one outline (`PERSON_D`) shared by the inline SVG icon and a `Path2D` made once and stroked in the chip's ink, after the name and before the chevron, when the block's `character` is set. The chip grows by `PERSON_ROOM` (14 px) in the paint and in `chipWidth`, so the Edit pill and hits stay beside it. Nothing is allocated per frame.
+
+## v0.25.0 · SVG parts become a character
+
+- refers-to: io/svg-import.ts (new) :: parseSvgParts, pathRuns, svgToCharacterGroup, svgToMouthChart, isMouthChart, isSvgFile, importSvg; engine/character-ops.ts (new); engine/model.ts :: relinkCharacter; engine/ops.ts :: cloneContent; engine/track-ops.ts :: cloneTrack; engine/normalize.ts :: character; media/import.ts :: Sniff, EXT, sniff, importMedia; app/app.ts :: MEDIA_ACCEPT
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One entry point.** Every way a file arrives (Import, a drop, the iPad's Files, the MCP `import_file`) goes through `importMedia`, so `.svg` is routed there: `svg` in the extension table and a text sniff (`<svg`, or `<?xml` with an `.svg` name). `drop-files.ts` only lists files and needed no change. SVG used to fail as an unknown file.
+- **Parts.** Each top-level `<g>` is a part; a loose top-level element is a part of its own; a nested `<g>` is its own part, linked with `setParent` to the part it sits in, so turning an arm turns its hand. An editor's layer group (`inkscape:groupmode="layer"`) and a lone wrapper group holding only groups are opened, not made parts. Name: the editor's label, then `data-name` (what other vector apps write when an id had to be cleaned), then `id`, then `Part N`; a repeated name gets a number.
+- **Coordinates.** Every part sits at rest with no Move: shape nodes and pictures are placed in movie pixels from the movie centre, so a parent's transform does not shift its children. The SVG keeps its pixel size and is shrunk only when larger than the movie, centred on whole pixels, like layered artwork.
+- **Shapes.** A Shape holds one outline, so each subpath of an element is its own Shape; a part with one outline is that Shape, a part with several is a Group of them. Paths read every command, relative and absolute; arcs become cubic pieces of at most 90 degrees. Transforms (matrix, translate, scale, rotate with a centre, skew) compose down the tree with the viewBox and `preserveAspectRatio` (none or centred meet). Paint comes from attributes, simple `<style>` rules (tag, id, class), then `style`; linear and radial gradients with their href chain map onto the Shape gradient (stop offsets moved onto the run the renderer draws across the box); more than 8 stops are sampled down. A stroke's width, dashes and offset scale with the transform.
+- **Pictures.** Text, images, reused elements, filters, masks, clipping, patterns, markers and a filled subpath inside another that cuts a hole (even-odd, or wound the other way) make that whole part a picture: a standalone SVG of the part alone (nested parts and the pivot cut out, every definition carried, the inherited paint and the file's namespaces kept) drawn by the browser at the movie's scale, cropped to what it covers, and placed as a Drawing with its own canvas, so it can be touched up in Draw & Paint. The notice names each such part and why.
+- **Pivots.** An element inside the part's own art (not a nested part's) with `id="pivot"`, an id starting `pivot-`, or `data-role="pivot"` gives the pivot at its centre and is left out of the art. Without one, the part's box centre.
+- **Opened as a character.** The new Group carries `character` at once (named after the file, parts by name), so an SVG opens ready to animate; Make Character is for groups built by hand.
+- **Mouth charts.** An SVG whose top-level groups are named for the mouth shapes (6 or more of Rest, MBP, AI, E, O, U, FV, L / th, matched ignoring case and punctuation, so `L-th` and `data-name="L / th"` both read) opens as one Flipbook with its drawings in chart order and named as `VISEME_NAMES`, so lip-sync recognises it. `attachMouthChart` (engine) puts such a Flipbook in place of a character's `mouth` part, keeping its id, parent, pivot, Move and keys.
+- **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
+- **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
+
 ## v0.24.0 · the interface's test suite
 
 - refers-to: vitest.config.ts (new); tests/unit/** (new); tests/unit/_support/* (new); tests/unit/version.test.ts (new); package.json :: scripts.test, devDependencies; ../setup/test (new); ../docs/TESTING.md (new)

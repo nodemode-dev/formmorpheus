@@ -8,14 +8,15 @@ The server is `POST /mcp` on the engine: Streamable HTTP in stateless JSON, prot
 
 | Class | Tools | What happens |
 |---|---|---|
-| Reads | `get_context`, `list_movies`, `get_movie`, `get_movie_picture`, `list_commands`, and through `run_command` the commands `list_deleted`, `list_exports`, `list_stacks`, `export_capabilities`, `list_fonts` | run at once; refused only when agents are blocked |
+| Reads | `get_context`, `list_movies`, `get_movie`, `get_movie_picture`, `list_characters`, `list_commands`, and through `run_command` the commands `list_deleted`, `list_exports`, `list_stacks`, `export_capabilities`, `list_fonts` | run at once; refused only when agents are blocked |
 | Changes the library | `manage_movie` (create, rename, duplicate, delete, restore) and, through `run_command`, `set_tags` and `set_stack` | ask in the window under Ask; go ahead under Allowed |
-| Asks first | `export_movie`, `import_file` | ask every time, then the open window carries them out |
+| Asks first | `export_movie`, `import_file`, `add_character` | ask every time, then the open window carries them out |
 
 - A movie is found by name inside the library folder only. Delete moves a movie to Recently Deleted; nothing is erased.
 - `import_file` takes an absolute path inside the library folder, a picture, video, sound, font or layered image file, up to 2 GB. The window opens the movie, imports the file and saves the movie.
 - `export_movie` is carried out by the window, which renders the movie and writes the file to the Exports folder. Formats the browser cannot encode go through the person's ffmpeg.
-- The server waits 2 minutes for an answer to a question, 10 minutes for an export and 2 minutes for an import.
+- `list_characters` reads the Characters library (one `.fmo` per character in `Characters/` of the data folder). `add_character {character, movie?, at?}` is carried out by the window: it opens `movie` (or uses the open one), places a copy of the character with fresh ids at `at` or the Playhead through the Characters panel's Add to Movie, and saves the movie.
+- The server waits 2 minutes for an answer to a question, 10 minutes for an export and 2 minutes for an import or an added character.
 - No tool reads another file or folder on the computer, and none returns the window key, a socket ticket or a tab's token.
 
 ## The Outside agents choice

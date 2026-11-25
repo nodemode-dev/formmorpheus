@@ -255,7 +255,7 @@ Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Th
 - **Recent**: the movies you opened lately.
 - **Movies**: the whole library, as thumbnails or a list, with a filter box and sorting. Rename, duplicate and delete are on each item.
 - **Exports**: everything you exported. Open, save a copy or delete.
-- **Recently Deleted**: deleted movies and exports stay here for 30 days. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
+- **Recently Deleted**: deleted movies, characters and exports stay here for 30 days. A character is marked with the person glyph, and restoring it puts it back in Characters. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
 - **Preferences** and **Help** at the foot.
 
 ## Preferences
@@ -296,11 +296,11 @@ An outside agent is a program on your computer, such as Claude Code, Codex, Curs
 
 ### What an agent can do
 
-- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
+- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
 - **Changes to the library** are made by `manage_movie`: create an empty movie, rename, duplicate, delete and restore. Delete moves a movie to Recently Deleted and never erases it. `run_command` also sets a movie's tags and its stack.
-- **Two always ask first**: `export_movie` makes a file in the Exports folder, and `import_file` brings a picture, video, sound or font file into a movie and saves it. Both need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out.
+- **Three always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, and `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie. All three need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character` uses the movie already open when the agent names none).
 
-Agents work only on FormMorpheus's own data: your movie library, Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
+Agents work only on FormMorpheus's own data: your movie library, your Characters library (the Characters folder in the data folder), Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
 
 ### Outside agents
 

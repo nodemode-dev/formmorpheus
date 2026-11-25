@@ -77,7 +77,7 @@ final class TrashStore {
             deleted = EngineJSON.number(rec["deleted"], fallback: deleted)
         }
         var name = original
-        if kind == "movie" && original.lowercased().hasSuffix(EngineConfig.projectExt) {
+        if (kind == "movie" || kind == CharacterStore.kind) && original.lowercased().hasSuffix(EngineConfig.projectExt) {
             name = String(original.dropLast(EngineConfig.projectExt.count))
         }
         let age = Date().timeIntervalSince1970 - deleted
@@ -164,6 +164,9 @@ final class TrashRoutes: APIRoutes {
                 n += 1
             }
             dst = EngineConfig.libraryDir.appendingPathComponent(name + EngineConfig.projectExt)
+        } else if meta.kind == CharacterStore.kind {
+            let stem = parts.ext.lowercased() == EngineConfig.projectExt ? parts.stem : meta.original
+            dst = EngineFS.freePath(EngineConfig.charactersDir, stem: stem, ext: EngineConfig.projectExt)
         } else {
             dst = EngineFS.freePath(EngineConfig.exportsDir, stem: parts.stem, ext: parts.ext)
         }

@@ -11,6 +11,17 @@ export function uid(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${counter.toString(36)}${rand}`;
 }
 
+/** A copied character follows its copied parts: part and mouth ids are mapped through the copy's old-to-new ids. */
+export function relinkCharacter(c: Content, ids: Map<string, string>): Content {
+  const ch = c.character;
+  if (!ch) return c;
+  const parts: Record<string, string> = {};
+  for (const [name, id] of Object.entries(ch.parts)) parts[name] = ids.get(id) ?? id;
+  const mouth = ch.mouth ? ids.get(ch.mouth) ?? ch.mouth : undefined;
+  const { mouth: _old, ...rest } = ch;
+  return { ...c, character: { ...rest, parts, ...(mouth ? { mouth } : {}) } };
+}
+
 export function identity(): Transform {
   return { x: 0, y: 0, scale: 1, rotation: 0, flipH: false, flipV: false };
 }

@@ -1,4 +1,5 @@
 import { ICONS } from './icons';
+import { PERSON_D } from './character-glyph';
 
 const S = (body: string, extra = ''): string => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"${extra}>${body}</svg>`;
 
@@ -16,6 +17,7 @@ const MORPH: Record<string, string> = {
   audio: S('<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>'),
   group: S('<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><rect x="7" y="7" width="6" height="5" rx="1"/><rect x="11" y="12.5" width="6" height="5" rx="1"/>'),
   track: S('<rect x="3" y="7" width="18" height="10" rx="2.5"/><path d="M7 7v10"/>'),
+  character: S(`<path d="${PERSON_D}"/>`),
   cut: S('<circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/><path d="M8.3 15.7L18 4M15.7 15.7L6 4"/>'),
   copy: S('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>'),
   paste: S('<rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3.5h6V5"/><path d="M9 11h6M9 15h4"/>'),

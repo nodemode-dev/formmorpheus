@@ -65,7 +65,7 @@ def _meta(path: Path, data: dict) -> dict:
         deleted = st.st_mtime
     return {
         "id": path.name,
-        "name": original[: -len(config.PROJECT_EXT)] if kind == "movie" and original.lower().endswith(config.PROJECT_EXT) else original,
+        "name": original[: -len(config.PROJECT_EXT)] if kind in ("movie", "character") and original.lower().endswith(config.PROJECT_EXT) else original,
         "original": original,
         "kind": kind,
         "deleted": deleted,
@@ -152,6 +152,8 @@ def restore(item_id: str) -> dict:
                 name = f"{stem} {n}"
                 n += 1
             dst = folder / f"{name}{config.PROJECT_EXT}"
+        elif meta["kind"] == "character":
+            dst = _free(config.characters_dir(), original.stem, config.PROJECT_EXT)
         else:
             folder = config.exports_dir()
             dst = _free(folder, original.stem, original.suffix)

@@ -1,12 +1,13 @@
 import '../styles/trash.css';
 import { api, type TrashItem } from '../io/api';
+import { PERSON_SVG } from './character-glyph';
 import { confirmAction } from './dialogs';
 import { el, patchList, q, setClass, setDisabled, setHidden, setText, setTitle } from './dom';
 import { icon } from './icons';
 import { dateText, onLanguage, t, tn } from './i18n';
 import { toast } from './toast';
 
-/** Home's Recently Deleted page: movies and exports the user deleted, kept for 30 days. Built once; rows are patched
+/** Home's Recently Deleted page: movies, characters and exports the user deleted, kept for 30 days. Built once; rows are patched
  *  in place by id, so a restore or delete only removes that row. */
 export class HomeTrash {
   readonly root = el(`<div class="fm-trash">
@@ -43,9 +44,11 @@ export class HomeTrash {
   private async restore(item: TrashItem): Promise<void> {
     try {
       const back = await api.restoreTrash(item.id);
-      const shown = item.kind === 'movie' ? back.restored.replace(/\.fmo$/i, '') : back.restored;
-      const was = item.kind === 'movie' ? item.name : item.original;
-      if (shown !== was) toast(t('Restored as {name}').replace('{name}', shown));
+      const named = item.kind === 'movie' || item.kind === 'character';
+      const shown = named ? back.restored.replace(/\.fmo$/i, '') : back.restored;
+      const was = named ? item.name : item.original;
+      if (item.kind === 'character') toast((shown !== was ? t('Restored to Characters as {name}') : t('{name} is back in Characters.')).replace('{name}', shown));
+      else if (shown !== was) toast(t('Restored as {name}').replace('{name}', shown));
     } catch (err) { toast((err as Error).message); }
     await this.refresh();
     this.onRestored();
@@ -71,7 +74,7 @@ export class HomeTrash {
       key: (i) => i.id,
       create: (i) => {
         const n = el(`<div class="fm-trash-row" role="listitem"><span class="fm-trash-glyph"></span><span class="fm-trash-name"></span><span class="fm-trash-kind"></span><span class="fm-trash-when"></span><span class="fm-trash-left"></span><span class="fm-trash-acts"><button class="cv-btn" type="button" data-restore>Restore</button><button class="cv-btn cv-btn-ghost" type="button" data-purge>Delete Now</button></span></div>`);
-        q(n, '.fm-trash-glyph').innerHTML = icon(i.kind === 'movie' ? 'film' : 'download', 16);
+        q(n, '.fm-trash-glyph').innerHTML = i.kind === 'character' ? PERSON_SVG : icon(i.kind === 'movie' ? 'film' : 'download', 16);
         this.fill(n, i);
         return n;
       },
@@ -84,7 +87,7 @@ export class HomeTrash {
   private fill(n: HTMLElement, i: TrashItem): void {
     setText(q(n, '.fm-trash-name'), i.name);
     setTitle(q(n, '.fm-trash-name'), i.original);
-    setText(q(n, '.fm-trash-kind'), i.kind === 'movie' ? 'Movie' : 'Export');
+    setText(q(n, '.fm-trash-kind'), i.kind === 'movie' ? 'Movie' : i.kind === 'character' ? 'Character' : 'Export');
     setText(q(n, '.fm-trash-when'), dateText(i.deleted * 1000));
     setText(q(n, '.fm-trash-left'), tn(i.daysLeft, '{n} day left', '{n} days left'));
     setClass(q(n, '.fm-trash-left'), 'is-soon', i.daysLeft <= 3);

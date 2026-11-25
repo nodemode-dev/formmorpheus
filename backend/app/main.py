@@ -9,7 +9,7 @@ from app.core import config, partsweep, window_key
 from app.core.guard import GuardMiddleware
 from app.core.page_policy import PagePolicy
 from app import penlink
-from app.routers import save_to, fonts,audio_encode, proxy, brushes, exports, files, ideas, jobs, library, recovery, system, trash, transcode
+from app.routers import save_to, fonts,audio_encode, proxy, brushes, characters, exports, files, ideas, jobs, library, recovery, system, trash, transcode
 from app.routers import agents, mcp, terminal
 from app.routers import video_tools
 from app.services import claude_code
@@ -26,6 +26,7 @@ app.add_middleware(GuardMiddleware)   # added last, so it runs first on every re
 app.include_router(window_key.router)
 app.include_router(system.router, prefix="/api")
 app.include_router(library.router, prefix="/api/library")
+app.include_router(characters.router, prefix="/api/characters")
 app.include_router(exports.router, prefix="/api/exports")
 app.include_router(brushes.router, prefix="/api/brushes")
 app.include_router(fonts.router, prefix="/api/fonts")

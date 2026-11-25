@@ -1,0 +1,10 @@
+/* Characters panel: the media bin's panel and rows, placed on the left so both can be open, with two sections. */
+.fm-chars { right: auto; left: var(--space-3); }
+.fm-chars-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.fm-chars-sec[hidden] { display: none; }
+.fm-chars .fm-chars-list { overflow: visible; }
+.fm-chars-sub { padding: var(--space-2) var(--space-3) var(--space-1); color: var(--text-muted); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-chars-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.fm-chars-img[hidden] { display: none; }
+.fm-chars .fm-bin-glyph svg { width: 22px; height: 22px; }
+.fm-chars .fm-bin-row.is-busy { opacity: 0.6; }

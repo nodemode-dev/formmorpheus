@@ -6,8 +6,8 @@ import type { Engine } from '../engine/engine';
 import type { View } from '../engine/render';
 import * as keyOps from '../engine/key-ops';
 import * as pathOps from '../engine/path-ops';
-import * as ops from '../engine/ops';
-import { locate } from '../engine/model';
+import { updateAny } from '../engine/group-inner-ops';
+import { stageFind, stageTargets } from './inner-pick';
 import { animate, evalLane, laneFrames, laneOf } from '../engine/keys';
 import { laneSegments, smoothPathOn, type PathNode } from '../engine/path';
 import type { Content, Movie } from '../engine/types';
@@ -108,13 +108,13 @@ export class PathView {
       const b = (e.target as Element).closest('button');
       if (b) this.action(b.dataset.a ?? '');
     });
-    engine.on('selection', () => { this.selFrame = null; if (anchorMode.on && this.engine.selection.content[0] !== anchorMode.id) anchorMode.stop(); });
+    engine.on('selection', () => { this.selFrame = null; if (anchorMode.on && stageTargets(this.engine)[0]?.id !== anchorMode.id) anchorMode.stop(); });
   }
 
   get dragging(): boolean { return !!this.drag; }
 
   private target(): { c: Content; local: number } | null {
-    const sel = this.engine.selected.filter((c) => this.engine.isOver(c));
+    const sel = stageTargets(this.engine).filter((c) => this.engine.isOver(c));
     if (sel.length !== 1) return null;
     return { c: sel[0], local: this.engine.frame - sel[0].start };
   }
@@ -306,12 +306,12 @@ export class PathView {
     const cur = this.currentFrame(local);
     if (a === 'smooth') {
       const lane = laneOf(c, 'move');
-      if (lane) this.engine.run('Smooth Path', (m) => ops.updateContent(m, c.id, (cc) => keyOps.setLaneOption(cc, 'move', 'path', !smoothPathOn(lane))));
+      if (lane) this.engine.run('Smooth Path', (m) => updateAny(m, c.id, (cc) => keyOps.setLaneOption(cc, 'move', 'path', !smoothPathOn(lane))));
     } else if (cur !== null && a === 'corner') {
-      this.engine.run('Corner Point', (m) => ops.updateContent(m, c.id, (cc) => pathOps.toggleCorner(cc, cur)));
+      this.engine.run('Corner Point', (m) => updateAny(m, c.id, (cc) => pathOps.toggleCorner(cc, cur)));
     } else if (cur !== null && a === 'linear') {
       const on = pathOps.nodeMode(c, cur) !== 'linear';
-      this.engine.run('Linear Path', (m) => ops.updateContent(m, c.id, (cc) => pathOps.setLinear(cc, cur, on)));
+      this.engine.run('Linear Path', (m) => updateAny(m, c.id, (cc) => pathOps.setLinear(cc, cur, on)));
     }
   }
 
@@ -332,7 +332,7 @@ export class PathView {
       const frame = Number(tg.getAttribute('data-f'));
       this.selFrame = frame;
       if (e.altKey) {
-        this.engine.run('Corner Point', (mv) => ops.updateContent(mv, t.c.id, (cc) => pathOps.toggleCorner(cc, frame)));
+        this.engine.run('Corner Point', (mv) => updateAny(mv, t.c.id, (cc) => pathOps.toggleCorner(cc, frame)));
         e.preventDefault();
         return;
       }
@@ -351,7 +351,7 @@ export class PathView {
     const d = this.drag, m = this.engine.movie, v = this.view;
     if (!d || !m || !v || e.pointerId !== d.pointer) return;
     const [x, y] = this.local(e);
-    const found = locate(m, d.id);
+    const found = stageFind(this.engine, m, d.id);
     if (!found) return;
     const c = found.content;
     if (d.kind === 'pivot') {
@@ -382,26 +382,26 @@ export class PathView {
       if (d.keyed) {
         const local = this.engine.frame - c.start;
         const ease = newKeyState().lastEase;
-        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => {
+        this.engine.run('Move Pivot', (mv) => updateAny(mv, d.id, (cc) => {
           let out = laneOf(cc, 'move') ? cc : ensureLane(cc, 'move', local, mv.addKeyAtStart, ease);
           for (const fr of d.frames) { const s = still(fr.b); out = keyOps.setKeys(out, 'move', fr.f, { px: npx, py: npy, x: s.x, y: s.y }); }
           return out;
         }), d.tag);
       } else {
         const s = still(b);
-        this.engine.run('Move Pivot', (mv) => ops.updateContent(mv, d.id, (cc) => ({ ...cc, pivot: { x: npx, y: npy }, transform: { ...cc.transform, x: s.x, y: s.y } })), d.tag);
+        this.engine.run('Move Pivot', (mv) => updateAny(mv, d.id, (cc) => ({ ...cc, pivot: { x: npx, y: npy }, transform: { ...cc.transform, x: s.x, y: s.y } })), d.tag);
       }
       return;
     }
     const b = basis(c, true, this.engine.frame - c.start);
     const px = (x - v.ox) / v.scale - m.width / 2 - b.px, py = (y - v.oy) / v.scale - m.height / 2 - b.py;
     if (d.kind === 'node') {
-      this.engine.run('Move Path Key', (mv) => ops.updateContent(mv, d.id, (cc) => pathOps.moveNode(cc, d.frame, px, py)), d.tag);
+      this.engine.run('Move Path Key', (mv) => updateAny(mv, d.id, (cc) => pathOps.moveNode(cc, d.frame, px, py)), d.tag);
     } else {
       const n = this.nodes.find((q2) => q2.frame === d.frame);
       if (!n) return;
       const vec: [number, number] = [px - n.x, py - n.y];
-      this.engine.run('Edit Path Curve', (mv) => ops.updateContent(mv, d.id, (cc) => pathOps.setHandle(cc, d.frame, d.side, vec)), d.tag);
+      this.engine.run('Edit Path Curve', (mv) => updateAny(mv, d.id, (cc) => pathOps.setHandle(cc, d.frame, d.side, vec)), d.tag);
     }
   }
 

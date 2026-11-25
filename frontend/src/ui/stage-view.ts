@@ -47,6 +47,8 @@ import '../styles/stage-box2.css';
 import { MultiBox } from './stage-multi';
 import { CameraPanel } from './camera-panel';
 import { Surround } from './stage-surround';
+import { updateAny } from '../engine/group-inner-ops';
+import { partAt, partBox, pickedPart, stageFind, stageTargets } from './inner-pick';
 
 /** The text block's centre as an offset from the movie centre (it sits off-centre for left or right aligned text). */
 function textCentre(s: TextStyle, m: Movie): { x: number; y: number } {
@@ -210,7 +212,8 @@ export class StageView {
       const m = this.engine.movie;
       if (!m) return null;
       const s = this.extent(m, c);
-      const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : canvasCentreOffset(c, m);
+      const pb = c.kind === 'group' ? this.boxOf(m, c) : null;
+      const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : pb ? { x: pb.cx, y: pb.cy } : canvasCentreOffset(c, m);
       const out: Array<[number, number]> = [];
       for (const j of [-1, 0, 1]) for (const i of [-1, 0, 1]) out.push([dc.x + (i * s.w) / 2, dc.y + (j * s.h) / 2]);
       return out;
@@ -235,9 +238,14 @@ export class StageView {
     const dbl = (e: MouseEvent): void => {
       const m = this.engine.movie;
       if (!m || !this.view || this.nav.preview || (e.target as Element).closest('.fm-ted, .fm-box-h, .fm-box-s, .fm-box-rot, .fm-box-more, button, input')) return;
-      const id = this.pick(m, ...this.nav.local(e));
+      const [lx, ly] = this.nav.local(e);
+      const id = this.pick(m, lx, ly);
       const c = id ? locate(m, id)?.content : null;
-      if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); this.textStage.showMenu(e.clientX, e.clientY); }
+      // into a group (a character): the part under the pointer is picked; a click then picks another, Escape leaves
+      const into = pickedPart(this.engine)?.group ?? (c?.kind === 'group' ? c : null);
+      const part = into && this.engine.mode !== 'perform' ? partAt(stageMovie(m, cameraMode.on), into, this.engine.frame, this.view, lx, ly) : null;
+      if (part) this.engine.select([part]);
+      else if (id && c && c.kind === 'text' && c.text) { this.engine.select([id]); this.textStage.start(id); this.textStage.showMenu(e.clientX, e.clientY); }
       else if (id && c && (c.kind === 'shape' || c.kind === 'solid')) { this.engine.select([id]); this.onEditShape?.(id, e.clientX, e.clientY); }
     };
     this.root.addEventListener('dblclick', dbl);
@@ -417,14 +425,24 @@ export class StageView {
     return this.view ? screenMat(stageMovie(m, cameraMode.on), c, this.engine.frame, this.view) : null;
   }
 
+  /** A content the Stage edits: a top-level block, or the part picked inside the selected group (ui/inner-pick.ts). */
+  private find(m: Movie, id: string): { content: Content; locked: boolean } | null {
+    return stageFind(this.engine, m, id);
+  }
+
+  /** Compose: the base transform of a top-level block or a picked part. */
+  private patchT(mv: Movie, id: string, t: Partial<Content['transform']>): Movie {
+    return updateAny(mv, id, (c) => ({ ...c, transform: { ...c.transform, ...t } }));
+  }
+
   private parentPt(m: Movie, id: string, x: number, y: number): [number, number] {
-    const at = locate(m, id);
+    const at = this.find(m, id);
     return at ? unmapPt(this.sm(m, at.content), x, y) : [x, y];
   }
 
   /** Movement of a dragged content in its own parent space, in movie pixels: the pointer is held on the spot grabbed even while the parent moves. */
   private moveDelta(g: Extract<Grab, { kind: 'move' }>, m: Movie, id: string, x: number, y: number, v: View): [number, number] {
-    const at = locate(m, id), a = g.anchors.get(id);
+    const at = this.find(m, id), a = g.anchors.get(id);
     const S = at ? this.sm(m, at.content) : null;
     if (!S || !a) return [(x - g.x0) / v.scale, (y - g.y0) / v.scale];
     const [lx, ly] = unmapPt(S, a.w[0] + (x - g.x0), a.w[1] + (y - g.y0));
@@ -471,7 +489,7 @@ export class StageView {
   /** The first Compose edit of a content that has a Move lane explains why its picture may not follow the box. */
   private composeNote(ids: string[]): void {
     const m = this.engine.movie;
-    const c = m ? locate(m, ids[0])?.content : null;
+    const c = m ? this.find(m, ids[0])?.content : null;
     if (!c || !laneOf(c, 'move') || this.composeToldFor === c.id) return;
     this.composeToldFor = c.id;
     toast('Compose edits the base transform. This content has keyframes, which still drive it; change them in Keyframe mode.', 'info', { ms: 6000 });
@@ -484,11 +502,11 @@ export class StageView {
     this.engine.run(label, (mv) => {
       let out = mv;
       for (const id of ids) {
-        const at = locate(out, id);
+        const at = this.find(out, id);
         if (!at) continue;
         const local = f - at.content.start;
         if (local < 0 || local >= at.content.duration) continue;
-        out = ops.updateContent(out, id, (c) => keyOps.setKeys(laneOf(c, 'move') ? c : ensureLane(c, 'move', local, mv.addKeyAtStart, ease), 'move', local, vals(id)));
+        out = updateAny(out, id, (c) => keyOps.setKeys(laneOf(c, 'move') ? c : ensureLane(c, 'move', local, mv.addKeyAtStart, ease), 'move', local, vals(id)));
       }
       return out;
     }, tag);
@@ -504,7 +522,7 @@ export class StageView {
     const hw = (size.w / 2) * t.sx * t.kx * v.scale, hh = (size.h / 2) * t.sy * t.ky * v.scale;
     const a = (t.rot * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
     const S = this.sm(m, c);
-    const sb = stageBox(c, this.engine.frame, m);
+    const sb = this.boxOf(m, c);
     const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : sb ? { x: sb.cx, y: sb.cy } : canvasCentreOffset(c, m);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x0, y0]) => {
       // the box centre is the canvas centre, which sits off the movie centre for a Drawing with its own canvas
@@ -513,8 +531,13 @@ export class StageView {
     });
   }
 
+  /** A Shape's box, or a picked group part's box round what it draws (a top-level group keeps the movie's box). */
+  private boxOf(m: Movie, c: Content): { w: number; h: number; cx: number; cy: number } | null {
+    return stageBox(c, this.engine.frame, m) ?? (c.kind === 'group' && c.id === pickedPart(this.engine)?.part.id ? partBox(m, c, this.engine.frame) : null);
+  }
+
   private extent(m: Movie, c: Content): { w: number; h: number } {
-    const sb = stageBox(c, this.engine.frame, m);
+    const sb = this.boxOf(m, c);
     if (sb) return { w: sb.w, h: sb.h };
     if (c.kind === 'image' && c.asset && m.assets[c.asset]) return { w: m.assets[c.asset].width, h: m.assets[c.asset].height };
     if (c.kind === 'text' && c.text) {
@@ -527,7 +550,7 @@ export class StageView {
 
   private drawBox(m: Movie): void {
     // a sound has no picture: no transform box
-    const sel = this.nav.preview ? [] : this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
+    const sel = this.nav.preview ? [] : stageTargets(this.engine).filter((c) => boxed(c) && this.engine.isOver(c));
     this.surround.sync(this.view, m.width, m.height, !this.nav.preview);
     this.textStage.sync();
     this.shapeStage.sync();
@@ -580,7 +603,7 @@ export class StageView {
     const [x, y] = this.local(e);
     const target = e.target as Element;
     // content on a locked track is not grabbed, moved or keyed from the Stage in any mode
-    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c) && !locate(m, c.id)?.track.locked);
+    const sel = stageTargets(this.engine).filter((c) => boxed(c) && this.engine.isOver(c) && !this.find(m, c.id)?.locked);
     const tag = `stage-${Date.now()}`;
     this.root.focus({ preventScroll: true });
     if (sel.length === 1 && target.closest('.fm-box-more')) {
@@ -612,6 +635,8 @@ export class StageView {
     } else {
       const hitId = this.pick(m, x, y);
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
+      // inside a group, a press on it away from every part leaves the part for the whole group
+      else if (hitId && pickedPart(this.engine)?.group.id === hitId) this.engine.pick(null);
       // Perform keeps its one content when the pen lands off it: the take is a drag, not a click
       if (!hitId && !e.shiftKey && !(this.engine.mode === 'perform' && sel.length === 1)) {
         // press and hold outside the box, then drag: moves the selected content with the box out of the way (a click or a quick drag still deselects)
@@ -626,7 +651,7 @@ export class StageView {
         this.engine.select([]);
         return;
       }
-      const ids = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c)).map((c) => c.id);
+      const ids = stageTargets(this.engine).filter((c) => boxed(c) && this.engine.isOver(c) && !this.find(m, c.id)?.locked).map((c) => c.id);
       if (!ids.length) return;
       this.grab = this.moveGrab(m, v, ids, x, y, tag);
     }
@@ -642,9 +667,9 @@ export class StageView {
   private modsHeld = { r: false, s: false };
 
   private moveGrab(m: Movie, v: View, ids: string[], x: number, y: number, tag: string): Grab {
-    const base = new Map(ids.map((id) => [id, this.pose((locate(m, id) as NonNullable<ReturnType<typeof locate>>).content)]));
+    const base = new Map(ids.map((id) => [id, this.pose((this.find(m, id) as NonNullable<ReturnType<StageView['find']>>).content)]));
     const anchors = new Map(ids.map((id) => {
-      const p = base.get(id) as Pose, c = (locate(m, id) as NonNullable<ReturnType<typeof locate>>).content;
+      const p = base.get(id) as Pose, c = (this.find(m, id) as NonNullable<ReturnType<StageView['find']>>).content;
       const s: [number, number] = [v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale];
       return [id, { s, w: mapPt(this.sm(m, c), s[0], s[1]) }] as const;
     }));
@@ -655,7 +680,7 @@ export class StageView {
   private beginOutside(id: string, tag: string): void {
     const p = this.pend, m = this.engine.movie, v = this.view;
     this.pend = null;
-    if (!p || !m || !v || this.grab || !locate(m, id)) return;
+    if (!p || !m || !v || this.grab || !this.find(m, id)) return;
     this.grabPointer = p.pointer;
     this.slop = null;
     this.grab = this.moveGrab(m, v, [id], ...this.nav.local({ clientX: p.x, clientY: p.y }), tag);
@@ -818,6 +843,13 @@ export class StageView {
   }
 
   private pick(m: Movie, x: number, y: number): string | null {
+    // inside a group: its parts first, then the picked part's own box
+    const p = pickedPart(this.engine);
+    if (p && this.view && this.engine.isOver(p.group)) {
+      const part = partAt(stageMovie(m, cameraMode.on), p.group, this.engine.frame, this.view, x, y);
+      if (part) return part;
+      if (inside(this.corners(m, p.view), x, y)) return p.part.id;
+    }
     for (const t of m.tracks) {
       if (t.hidden) continue;
       const c = t.content.find((it) => this.engine.frame >= it.start && this.engine.frame < end(it));
@@ -838,7 +870,7 @@ export class StageView {
       this.slop = null;
     }
     this.lastClient = [e.clientX, e.clientY];
-    const hudId = g.kind === 'move' ? g.ids[0] : g.id, hudAt = hudId ? locate(m, hudId) : null;
+    const hudId = g.kind === 'move' ? g.ids[0] : g.id, hudAt = hudId ? this.find(m, hudId) : null;
     this.hud.base = hudAt ? fitBase(m, hudAt.content) : 1;
     let [x, y] = this.local(e);
     // scale and rotate read the pointer in the content's parent space, so they hold under a moving parent
@@ -883,7 +915,7 @@ export class StageView {
         let out = mv;
         for (const id of g.ids) {
           const b = g.base.get(id) as Pose; const [ex, ey] = id === g.ids[0] ? [dx, dy] : this.moveDelta(g, m, id, x, y, v);
-          out = ops.patchContent(out, [id], { transform: this.store(b, b.x + ex, b.y + ey, b.rot, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy) });
+          out = this.patchT(out, id, this.store(b, b.x + ex, b.y + ey, b.rot, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy));
         }
         return out;
       }, g.tag);
@@ -904,7 +936,7 @@ export class StageView {
       const k = Math.round(Math.max(0.01, ratio * b.sx) * 1000) / 1000;
       this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: k, sy: k, rot: b.rot });
       this.composeNote([g.id]);
-      this.engine.run('Scale', (mv) => ops.patchContent(mv, [g.id], { transform: { ...this.store(b, b.x, b.y, b.rot, k * b.kx * b.fx, k * b.ky * b.fy), scale: k } }), g.tag);
+      this.engine.run('Scale', (mv) => this.patchT(mv, g.id, { ...this.store(b, b.x, b.y, b.rot, k * b.kx * b.fx, k * b.ky * b.fy), scale: k }), g.tag);
     } else {
       const b = g.base;
       const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
@@ -922,7 +954,7 @@ export class StageView {
       const rr = Math.round(deg * 10) / 10;
       this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: b.sx, sy: b.sy, rot: rr });
       this.composeNote([g.id]);
-      this.engine.run('Rotate', (mv) => ops.patchContent(mv, [g.id], { transform: { ...this.store(b, b.x, b.y, rr, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy), rotation: rr } }), g.tag);
+      this.engine.run('Rotate', (mv) => this.patchT(mv, g.id, { ...this.store(b, b.x, b.y, rr, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy), rotation: rr }), g.tag);
     }
   }
 
@@ -937,7 +969,7 @@ export class StageView {
 
   /** What a held snap modifier can land on: the frame's lines and the other visible contents' edges and centres, with the dragged content's box. */
   private snapTargets(m: Movie, v: View, ids: string[]): { box: Box; xs: number[]; ys: number[] } | undefined {
-    const first = locate(m, ids[0])?.content;
+    const first = this.find(m, ids[0])?.content;
     if (!first) return undefined;
     const toMovie = (pts: [number, number][]): Box => boxOf(pts.map(([px, py]) => [(px - v.ox) / v.scale, (py - v.oy) / v.scale] as const));
     const { xs, ys } = frameLines(m.width, m.height);
@@ -957,7 +989,7 @@ export class StageView {
 
   /** Drag a side node: that axis stretches while the opposite side stays put; past it the content flips. */
   private stretchTo(g: Extract<Grab, { kind: 'stretch' }>, m: Movie, v: View, x: number, y: number): void {
-    const c = locate(m, g.id)?.content;
+    const c = this.find(m, g.id)?.content;
     if (!c) return;
     const b = g.base, ext = this.extent(m, c);
     const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
@@ -988,7 +1020,7 @@ export class StageView {
     }
     const nk = Math.abs(s) / base;
     this.composeNote([g.id]);
-    this.engine.run('Stretch', (mv) => ops.updateContent(mv, g.id, (cc) => {
+    this.engine.run('Stretch', (mv) => updateAny(mv, g.id, (cc) => {
       const t = cc.transform;
       const sx = g.axis === 'x' ? nk : t.stretchX ?? 1, sy = g.axis === 'y' ? nk : t.stretchY ?? 1;
       const at = this.store(b, nx, ny, b.rot, g.axis === 'x' ? s : b.sx * b.kx * b.fx, g.axis === 'y' ? s : b.sy * b.ky * b.fy);
@@ -1003,7 +1035,7 @@ export class StageView {
     if (e.target !== this.root || e.altKey || this.nav.preview) return;
     const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const d = dir[e.key];
-    if (!d || !this.engine.selected.some((c) => this.engine.isOver(c))) return;
+    if (!d || !stageTargets(this.engine).some((c) => this.engine.isOver(c))) return;
     const mod = e.ctrlKey || e.metaKey;
     const step = e.shiftKey ? (mod ? 100 : 10) : 1;
     e.preventDefault();
@@ -1013,14 +1045,14 @@ export class StageView {
   /** Move the selection by movie pixels; a burst of nudges is one undo step. */
   nudge(dx: number, dy: number): void {
     const m = this.engine.movie;
-    const sel = this.engine.selected.filter((c) => boxed(c) && this.engine.isOver(c));
+    const sel = m ? stageTargets(this.engine).filter((c) => boxed(c) && this.engine.isOver(c) && !this.find(m, c.id)?.locked) : [];
     if (!m || !sel.length) return;
     const ids = sel.map((c) => c.id), tag = `nudge-${ids.join()}`;
     if (this.keyedIds(ids)) {
       const base = new Map(sel.map((c) => [c.id, this.pose(c)]));
       this.writeKeys('Nudge Keyframe', ids, (id) => { const b = base.get(id) as Pose; return { x: b.x + dx, y: b.y + dy, scaleX: b.sx, scaleY: b.sy, rotation: b.rot }; }, tag);
     } else {
-      this.engine.run('Nudge', (mv) => tops.nudge(mv, ids, dx, dy), tag);
+      this.engine.run('Nudge', (mv) => ids.reduce((out, id) => updateAny(out, id, (c) => ({ ...c, transform: { ...c.transform, x: c.transform.x + dx, y: c.transform.y + dy } })), mv), tag);
     }
     window.clearTimeout(this.nudgeTimer);
     this.nudgeTimer = window.setTimeout(() => this.engine.endGesture(), 700);
