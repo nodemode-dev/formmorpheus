@@ -213,6 +213,8 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
   - an **animated GIF**, which becomes a Flipbook with its holds.
 - Fonts and sound files come over as they are.
 
+**From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: an **SVG** or a **PNG** opens as a picture, and a **PSD** opens as a Drawing with its layers. From 0.25.0 an SVG with one group per body part opens as a character. The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
+
 ## Text
 
 Add Text from Create. Type the words, and the Text card opens: **font** (the bundled fonts and any you imported), **size**, **weight**, **color** and **alignment**. Double-click the block to edit again. Each change is one undo step.
