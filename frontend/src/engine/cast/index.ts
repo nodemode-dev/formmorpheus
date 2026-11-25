@@ -1,0 +1,13 @@
+export type { CastSpec, CastPrim, CastBone, CastSlot, CastRig } from './spec';
+export type { CastInput } from './build';
+export type { Mat, RigSvgOpts } from './svg';
+export type { Outfit } from './outfits';
+export type { HairStyle } from './hair';
+export { mkSpec, build } from './build';
+export { rigToSvg, solveRest } from './svg';
+export { visemes } from './visemes';
+export { OUTFITS } from './outfits';
+export { HAIRS } from './hair';
+export { SPECIES } from './head';
+export { SKINS, HAIRCOL, EYECOL } from './palettes';
+export { STUDIO_PRESETS } from './presets';
