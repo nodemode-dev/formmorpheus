@@ -119,7 +119,7 @@ export function characterInfoOf(g: Content, name: string): CharacterInfo {
     if (!mouth && c.kind === 'flipbook' && c.flip.some(looksLikeMouth)) mouth = c.id;
   }
   const clean = name.trim().slice(0, 80) || g.name;
-  return mouth ? { name: clean, parts, mouth } : { name: clean, parts };
+  return mouth ? { name: clean, parts, mouth, actions: [] } : { name: clean, parts, actions: [] };
 }
 
 /** Makes a group a character named `name`; a character already keeps its other fields and gets its parts named again. */
@@ -130,7 +130,7 @@ export function makeCharacter(movie: Movie, groupId: string, name: string): Movi
   if (!g.tracks.some((t) => t.content.length)) throw new OpError('That group is empty.');
   return updateDeep(movie, groupId, (c) => {
     const info = characterInfoOf(c, name);
-    const kept = c.character ? { ...c.character, ...info } : info;
+    const kept = c.character ? { ...c.character, ...info, actions: c.character.actions } : info;
     if (!info.mouth) delete kept.mouth;
     return { ...c, name: info.name, character: kept };
   });

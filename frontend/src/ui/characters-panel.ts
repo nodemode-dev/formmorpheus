@@ -109,7 +109,7 @@ export async function starterCharacter(entry: StarterEntry, movie: Movie): Promi
   };
   const r = await svgToCharacterGroup(await get(entry.file), entry.file, movie, 0);
   let group: Content = r.contents[0];
-  group = { ...group, name: entry.name, character: { ...(group.character ?? { parts: {} }), name: entry.name } };
+  group = { ...group, name: entry.name, character: { ...(group.character ?? { parts: {}, actions: [] }), name: entry.name } };
   const assets = new Map(r.assets.map((a) => [a.asset.id, a]));
   if (entry.mouths) {
     const chart = await svgToMouthChart(await get(entry.mouths), movie, 0, entry.mouths);
