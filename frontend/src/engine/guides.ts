@@ -1,6 +1,13 @@
 // Stage guides: grid, rule of thirds, title and action safe areas, and guide lines dragged from the rulers.
 // They are a drawing aid on the Stage only (never part of an exported picture). Pure maths, no DOM.
-export interface GuideLine { axis: 'x' | 'y'; at: number }
+/** `role` 'floor': the line a starter scene's characters stand on. */
+export interface GuideLine { axis: 'x' | 'y'; at: number; role?: 'floor' }
+
+/** Where the floor guide is (movie pixels from the top), or null when the movie has none. */
+export function floorOf(g: Guides | undefined): number | null {
+  const l = g?.lines?.find((x) => x.axis === 'y' && x.role === 'floor' && Number.isFinite(x.at));
+  return l ? l.at : null;
+}
 
 export interface Guides {
   /** The Stage shows rulers along its top and left edges. */
@@ -90,7 +97,11 @@ export function tidyGuides(g: Guides | null | undefined): Guides | null {
   if (g.titleSafe) out.titleSafe = true;
   if (g.actionSafe) out.actionSafe = true;
   if (g.verticalSafe) out.verticalSafe = true;
-  const lines = (g.lines ?? []).filter((l) => (l.axis === 'x' || l.axis === 'y') && Number.isFinite(l.at)).slice(0, 200);
+  if (g.squareFrame) out.squareFrame = true;
+  if (g.portraitFrame) out.portraitFrame = true;
+  const lines = (Array.isArray(g.lines) ? g.lines : [])
+    .filter((l) => !!l && (l.axis === 'x' || l.axis === 'y') && Number.isFinite(l.at)).slice(0, 200)
+    .map((l): GuideLine => (l.role === 'floor' ? { axis: l.axis, at: l.at, role: 'floor' } : { axis: l.axis, at: l.at }));
   if (lines.length) out.lines = lines;
   if (g.snap === false) out.snap = false;
   if (g.hide) out.hide = true;

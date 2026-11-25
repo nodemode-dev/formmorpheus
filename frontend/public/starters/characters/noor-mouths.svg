@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <g id="Rest" data-name="Rest">
+    <path d="M521 331 Q540 343 559 331" fill="none" stroke="#6e2c2a" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="MBP" data-name="MBP">
+    <path d="M516 334 Q528 322 540 328.4 Q552 322 564 334 Q540 343 516 334 Z" fill="#9c4058"/>
+    <path d="M517.5 334 Q540 337 562.5 334" fill="none" stroke="#6e2c2a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="AI" data-name="AI">
+    <path d="M519.5 329 Q529.7 318 540 324.4 Q550.3 318 560.5 329 C559.5 356.1 549.2 368 540 368 C530.8 368 520.5 356.1 519.5 329 Z" fill="#3e1420"/>
+    <path d="M524 327 Q540 322 556 327 L554.8 335 Q540 331 525.2 335 Z" fill="#fffaf2"/>
+    <path d="M529.7 361 Q540 347 550.3 361 Q540 370 529.7 361 Z" fill="#d0707e"/>
+    <path d="M519.5 329 Q529.7 318 540 324.4 Q550.3 318 560.5 329 C559.5 356.1 549.2 368 540 368 C530.8 368 520.5 356.1 519.5 329 Z" fill="none" stroke="#9c4058" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="E" data-name="E">
+    <path d="M515.3 331 Q527.6 321 540 327.4 Q552.4 321 564.7 331 Q557.3 351 540 351 Q522.7 351 515.3 331 Z" fill="#3e1420"/>
+    <path d="M519.7 329 Q540 325 560.3 329 L558.3 337 Q540 334 521.7 337 Z" fill="#fffaf2"/>
+    <path d="M525.2 347 Q540 342 554.8 347 L552.4 350 Q540 352 527.6 350 Z" fill="#fffaf2"/>
+    <path d="M515.3 331 Q527.6 321 540 327.4 Q552.4 321 564.7 331 Q557.3 351 540 351 Q522.7 351 515.3 331 Z" fill="none" stroke="#9c4058" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="O" data-name="O">
+    <ellipse cx="540" cy="343" rx="13.8" ry="18.2" fill="#9c4058"/>
+    <ellipse cx="540" cy="343" rx="7.6" ry="11.9" fill="#3e1420"/>
+    <path d="M533.7 352.2 Q540 346 546.3 352.2 Q540 355.6 533.7 352.2 Z" fill="#d0707e"/>
+  </g>
+  <g id="U" data-name="U">
+    <ellipse cx="540" cy="339" rx="13.7" ry="14.8" fill="#9c4058"/>
+    <ellipse cx="540" cy="339" rx="5.5" ry="6.6" fill="#3e1420"/>
+    <path d="M531 335.6 L534 330.4" fill="none" stroke="#c8708a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="FV" data-name="FV">
+    <path d="M522 338 Q540 334 558 338 Q550.8 352.8 540 352.8 Q529.2 352.8 522 338 Z" fill="#9c4058"/>
+    <path d="M525.9 329 Q540 325 554.1 329 L552.6 341 Q540 344 527.4 341 Z" fill="#fffaf2"/>
+    <path d="M534.6 328 L534.6 341" fill="none" stroke="#dcd2c4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M545.4 328 L545.4 341" fill="none" stroke="#dcd2c4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M520 330 Q530 319 540 325.4 Q550 319 560 330" fill="none" stroke="#9c4058" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="L-th" data-name="L / th">
+    <path d="M521.4 330 Q530.7 319 540 325.4 Q549.3 319 558.6 330 C557.7 350.2 548.4 359 540 359 C531.6 359 522.3 350.2 521.4 330 Z" fill="#3e1420"/>
+    <path d="M526.2 328 Q540 323 553.8 328 L552.7 334 Q540 330 527.3 334 Z" fill="#fffaf2"/>
+    <path d="M530.3 356 C530.7 340 535.3 333 540 333 C544.7 333 549.3 340 549.7 356 Q540 362 530.3 356 Z" fill="#d0707e"/>
+    <path d="M521.4 330 Q530.7 319 540 325.4 Q549.3 319 558.6 330 C557.7 350.2 548.4 359 540 359 C531.6 359 522.3 350.2 521.4 330 Z" fill="none" stroke="#9c4058" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

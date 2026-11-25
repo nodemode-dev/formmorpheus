@@ -1,0 +1,76 @@
+{
+  "format": 1,
+  "conventions": {
+    "canvas": "Each character file is 1080 by 1080 (viewBox 0 0 1080 1080), front view, standing, feet resting on y 1012. An adult is about 900 units tall; place characters at scale 0.5 in a 1920 by 1080 scene.",
+    "parts": "Top-level groups, bottom to top: leg-l, leg-r, body, arm-l, arm-r, head. Nested: mouth inside head, hand-l inside arm-l, hand-r inside arm-r. Each group's id is its part name. A nested group is a child part of the group that holds it.",
+    "sides": "The -l and -r suffixes are the character's own left and right, so in this front view the -l parts are on the viewer's right.",
+    "pivot": "Each part group has exactly one direct child marking its joint: a circle r 4 with data-role=\"pivot\" and id \"pivot-<part>\" (pivot-leg-l, pivot-hand-r, pivot-mouth and so on). XML ids are unique per file, so no element is literally id \"pivot\": find a part's pivot as its direct child with data-role=\"pivot\", or else the element whose id is \"pivot-\" plus the part name. The pivot is a marker, not art: drop it from the drawing. Joints: legs at the hip, body at the pelvis centre, arms at the shoulder, hands at the wrist, head at the neck base, mouth at the mouth centre.",
+    "joints": "Parts overlap at every joint (rounded caps centred on the pivot, the neck kept in body under the head), so a part rotated about its pivot shows no gap. The neck is short and wide and starts inside the head, and the head turns about the neck base under the collar, so a tilt of 15 degrees, a nod or a jump never shows a gap or a stretched neck.",
+    "style": "The family look: a softened-square head (flat crown, near-straight cheeks, rounded jaw corners, a flat chin), eyes as rounded rectangles with a square catch-light, one highlight shape everywhere (a short pill leaning up to the right, on hair, shoes and lenses), the family's violet #857cf3 as one small detail per character plus the stripe on every sole, flat shading lit from the upper left. Arms bend slightly at the elbow; hands are a mitten with a thumb on the inner side and two finger lines.",
+    "mouths": "The mouth chart <id>-mouths.svg is the same size, with the mouths at the same place as the head's mouth group (mouthCenter). It has 8 top-level groups in lip-sync order: Rest, MBP, AI, E, O, U, FV, L-th. Each group's data-name is the shape name exactly as the lip-sync analysis names it (Rest, MBP, AI, E, O, U, FV, L / th); use data-name as the frame name, else the id. The id of the last group is L-th because an id cannot hold spaces or a slash. The mouth group inside head holds the Rest drawing.",
+    "elements": "Only path, rect, circle, ellipse, line, polyline and polygon, styled by attributes (fill, stroke, stroke-width, stroke-linecap, stroke-linejoin), solid colors only. No transforms, no defs, no text, no CSS. fill=\"none\" appears on outline-only shapes (glasses, a belt buckle).",
+    "license": "Original artwork made for this project and covered by the repository's own license."
+  },
+  "characters": [
+    {
+      "id": "kofi",
+      "name": "Kofi",
+      "file": "kofi.svg",
+      "mouths": "kofi-mouths.svg",
+      "poster": "posters/kofi.png",
+      "description": "Young man, tall and slim, short twists, knit sweater and a cross-body pouch.",
+      "mouthCenter": [
+        540.0,
+        306.0
+      ]
+    },
+    {
+      "id": "ines",
+      "name": "Ines",
+      "file": "ines.svg",
+      "mouths": "ines-mouths.svg",
+      "poster": "posters/ines.png",
+      "description": "Older woman, silver bun, soft square glasses, long coat and a knitted scarf.",
+      "mouthCenter": [
+        540.0,
+        352.0
+      ]
+    },
+    {
+      "id": "marisol",
+      "name": "Marisol",
+      "file": "marisol.svg",
+      "mouths": "marisol-mouths.svg",
+      "poster": "posters/marisol.png",
+      "description": "Girl of about nine, two hair puffs, pinafore dress and rain boots.",
+      "mouthCenter": [
+        540.0,
+        490.0
+      ]
+    },
+    {
+      "id": "bram",
+      "name": "Bram",
+      "file": "bram.svg",
+      "mouths": "bram-mouths.svg",
+      "poster": "posters/bram.png",
+      "description": "Broad man in his fifties, full beard, waistcoat and rolled shirt sleeves.",
+      "mouthCenter": [
+        540.0,
+        336.0
+      ]
+    },
+    {
+      "id": "noor",
+      "name": "Noor",
+      "file": "noor.svg",
+      "mouths": "noor-mouths.svg",
+      "poster": "posters/noor.png",
+      "description": "Woman in her thirties, headscarf, belted jumpsuit and sneakers.",
+      "mouthCenter": [
+        540.0,
+        334.0
+      ]
+    }
+  ]
+}

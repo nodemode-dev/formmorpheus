@@ -114,6 +114,44 @@ Last updated: 2026-11-23 · the interface's test suite
 - **An action starts from each part's unkeyed rest pose.** Values are offsets from the part's transform and pivot as set, not from whatever keys the part shows at the span's first frame. For the release notes.
 - **Removed.** `mirrored(g, a)` returned false for anything but a starter action; it now takes the character only. The old `write` loop moved into `eachChannel`, shared with `seal`.
 
+## v0.25.0 · Starter characters redrawn: necks, hands, mouths and a family look
+
+- refers-to: public/starters/characters (five character SVGs, five mouth charts, posters, manifest.json :: conventions.joints, conventions.style, mouthCenter)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+- refers-to (checks): io/svg-import.ts :: parseSvgParts, svgToCharacterGroup, svgToMouthChart; engine/lipsync-ops.ts :: looksLikeMouth
+
+- **Necks.** The neck in `body` is short and wide (60 to 80 units wide, about 30 visible) and reaches well up inside the head; the head's pivot is at the neck base under the collar (Kofi 374, Ines 430, Marisol 568, Bram 444, Noor 436), a collar, scarf, shirt points or beard covering the joint. Checked by drawing every head turned 15 degrees each way, dropped 14 px (Nod) and lifted 8 px (Jump): no gap, no long thin neck. The old necks were up to 130 units long and about 50 wide, so a tilt showed a stick.
+- **Hands and arms.** Same parts, same pivots by role. Each arm is drawn as an upper arm and a forearm meeting at a slightly bent elbow, the sleeve ending at the wrist; each hand is a flat mitten with a thumb on the inner side and two finger lines, drawn from just above the wrist so it turns without a gap.
+- **Mouths.** Each chart is fitted to its face: width (Kofi 22, Ines 19, Marisol 18, Bram 24, Noor 19 units half-width), lip color, lip weight, how far the mouth opens (Ines least, Marisol most), and a cupid's bow on Marisol and Noor; Marisol's E shows her tongue, not lower teeth. Bram's mouths sit under his moustache (drawn after the `mouth` group in `head`), his Rest a small lower lip on the beard. Rest is never wider than MBP, so the width does not jump between them. FV is the upper teeth resting on the lower lip tucked up under them, with no dark gap and no lower teeth, so it reads apart from E. Ids and `data-name` values are unchanged; `mouthCenter` follows the new mouths.
+- **A family look.** A softened-square head, rounded-rectangle eyes with a square catch-light, one highlight shape everywhere (a short pill leaning up to the right), flat shading lit from the upper left, and the family's violet as one detail per character (Kofi's pouch clasp, Ines's earrings, Marisol's hair ties and star, Bram's pocket square, Noor's belt) plus a stripe on every sole. Written into the manifest as `conventions.style` for whoever draws the final art.
+- **Checks.** The S1 check (throwaway, outside the tree) passes again: 9 parts with exact names and nesting, a pivot per part at its joint, no part a picture, 8 mouth frames named as `VISEME_NAMES`, `looksLikeMouth` true, every mouth within 40 px of `mouthCenter`. Posters redrawn from the new art.
+
+## v0.25.0 · Starter scenes redrawn to the characters' scale
+
+- refers-to: public/starters/scenes (every background and prop SVG, manifest.json :: conventions.size, layers x y scale)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One scale.** An adult starter at scale 0.5 is about 450 px, 1.7 m, so the props are drawn at 265 px to the metre at the floor: bench seats 0.45 m with backs at 0.86 m, the kitchen table 0.75 m, the chair seat 0.45 m with its back at 0.94 m, the classroom desk 0.75 m, the bookshelf 1.5 m, the bar stool 0.76 m, the microphone head at 1.5 m (mouth height), the speaker 1.0 m, the post box 1.1 m, the lamp post 3.4 m, the street's planter tree 2.9 m and the park's tree 3.6 m.
+- **Depth in the backgrounds.** Each background is drawn in perspective with the horizon 1.5 m above the floor line (an adult's eye), and what stands at the back is drawn at the scale of its distance. The street's buildings stand across the road behind a kerb and a far pavement, at about 72 px to the metre, so their 2.1 m doors are about 150 px. The kitchen counter (0.9 m), wall cabinets, window and fridge stand at the back wall, about 200 px to the metre; the classroom's board, windows and dado likewise. Floors and ceilings have boards running to the vanishing point.
+- **On the floor.** Every standing prop's feet are on the centre line of its own contact shadow at the bottom of its SVG, and its layer y puts that line on the scene's floorY (the street's was 930 with props ending at 920 to 940, the classroom desk ended 10 px below the floor, the stage's stool and speaker 2 and 10 px above). The kettle stands on the table top and the globe on the desk. The kite flies.
+- **Removed.** The five `scene.json` files, copies of the manifest entries that nothing read, and the sentence about them in the manifest conventions.
+- The gradient ids (`sky`, `win`, `back`, `spot`, `curtain`) and file names are the same as before; the family's violet comes back as one small detail per scene, the same way the characters carry it.
+
+## v0.25.0 · Starter scenes: review fixes
+
+- refers-to: app/app.ts :: starterScenes, prepareOpen; engine/starter-scene.ts :: rasterScale, standOnFloor, SPOTS, STEP; ui/starter-scene-dialog.ts :: StarterSceneDialog.load, show, thumb, choose; engine/guides.ts :: tidyGuides; engine/normalize.ts :: normalizeMovie
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Opening a scene is a normal open.** New from Starter Scene goes through `prepareOpen` like a library or file open, so playback stops, fonts and first frames are ready before the switch, and the previous movie's pictures, video, sound and fonts are let go. `prepareOpen` now takes only `movie` and `assets`, all it ever read. When the person stays with the current movie (`askToKeep` false) the dialog stays open; `make` answers whether it opened.
+- **Sharp under a zoom.** A scene layer is drawn at twice its own size whenever twice fits within `MAX_SIDE` on both sides (before: only when twice fitted the movie, so a 1920 x 1080 background was drawn at 1x and went soft under a camera zoom). A 1920 x 1080 background is 3840 x 2160, about 33 MB decoded; props are small. Whole steps only, as before.
+- **No empty-then-filled dialog.** The manifest is read when the dialog is made (at start-up), and `show` waits for it before opening, so the cards are there when it appears. A read that failed (an empty list) is tried again on the next show. Each thumbnail is drawn off screen into an `OffscreenCanvas` and copied to the card's canvas once all its layers are in. The second `paint()` after a first read is gone. The cards are plain buttons in a plain grid: the list roles are dropped (`role="listitem"` on a button hid it as a button).
+- **Spots along the floor.** `standOnFloor` counts the characters already in the movie's top-level tracks and moves the next one along: mid-frame, then 280 px right, 280 left, 560 right, 560 left (scaled by width / 1920), round again after five, clamped to a quarter of a starter's drawn width inside the frame. Feet stay on the floor.
+- **Guide roles.** `tidyGuides` writes each line as `{axis, at}` and keeps `role` only when it is `'floor'`; it also keeps `squareFrame` and `portraitFrame`, which it dropped (the 1:1 and 4:5 frame switches did not stay on). `normalizeMovie` now tidies `guides` on load, so a file's line roles are checked on open like the rest of the movie.
+- **Scene layers are pictures (removed plan).** The DEV_PLAN said starter scenes would reuse the SVG importer. They do not: each layer is rasterized into a picture block. The backgrounds use linear and radial gradients in `defs` and soft shadows, which the part importer does not keep, and the props are scenery, not rigged parts, so there is nothing to pose. A person edits one by opening the layer's SVG in their vector app (or bringing it in as a character, when it should move in parts) and putting the result in with Replace the picture or video....
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
@@ -131,6 +169,37 @@ Last updated: 2026-11-23 · the interface's test suite
 
 - **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
 - **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
+
+## v0.25.0 · Starter characters read by the SVG importer (S1 check)
+
+- refers-to: io/svg-import.ts :: parseSvgParts, svgToCharacterGroup, svgToMouthChart, isMouthChart; engine/lipsync-ops.ts :: looksLikeMouth; public/starters/characters
+- kind: explainer
+- logged: v0.25.0 · 2026-11-25
+
+- Every starter character and mouth chart was run through the importer headlessly (a throwaway script outside the tree, happy-dom, the picture path stubbed). Each character reads as 9 parts with the exact names, `hand-l` in `arm-l`, `hand-r` in `arm-r`, `mouth` in `head`, the rest at the top; no part becomes a picture (no assets made); every part has its pivot: legs at the top of the leg, arms at the shoulder, hands at the wrist, body at the pelvis on the centre line, the mouth within 2 px of the manifest's `mouthCenter`, and the -l parts on the viewer's right. Each mouth chart reads as 8 frames named exactly as `VISEME_NAMES` in order, `looksLikeMouth` true, no shape a picture, every mouth centred near `mouthCenter`.
+- The head's pivot sits below the head's own shapes (at the neck base, inside the body's neck) by the starter conventions, so the head turns on its neck; that is intended, not a fault.
+- Nothing failed: neither the importer nor the art was changed.
+
+## v0.25.0 · Starter characters stand on a starter scene's floor
+
+- refers-to: engine/starter-scene.ts :: STARTER_ART, standOnFloor; ui/characters-panel.ts :: placeCharacter, CharactersPanel.add
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- A starter character added (Add to Movie, or a drag onto the Stage or the Timeline) to a movie with a floor guide (`floorOf`, only a starter scene makes one) gets scale 0.5 in the SVG's own units (0.5 over the importer's fit, which is 1 in a 1920 x 1080 scene) and a move that puts the SVG's centre at x = the frame's middle, y = floorY - 236 (the starter conventions: feet at 1012 in a 1080 drawing, so (1012 - 540) x 0.5), turning about the group's own pivot. Without a floor guide, and for a saved character from Mine, the placement is as before. A character made in a movie of another size than the open one also keeps the old placement (the stand-on maths assumes the drawing was fitted to this movie).
+- Checked headlessly for all five characters in all five scenes: feet land on floorY, the drawing is 506 px tall, centred across.
+
+## v0.25.0 · New from Starter Scene
+
+- refers-to: engine/starter-scene.ts :: isSceneEntry, rasterScale, sceneMovie; io/starter-scenes.ts :: readSceneManifest, withSvgImage, rasterize, buildSceneMovie; ui/starter-scene-dialog.ts :: StarterSceneDialog; engine/guides.ts :: GuideLine.role, floorOf; app/app.ts :: starterScenes, new-from-scene
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What opens.** File, New from Starter Scene... (beside New Movie...) reads `/starters/scenes/manifest.json` and shows each scene as a card: its name, its prop count and a small picture drawn once per card (every layer SVG decoded as an image and drawn at its place into a 320 x 180 canvas; a layer that fails is left out). Choosing a card builds a new movie of the scene's width, height, fps, duration (frames) and background, named "Untitled Movie", and opens it the way New does (no library name, so the library adopts it under a free "Untitled Movie" name); the open movie is written first with the same quiet save leaving a movie always does. The starter files are only fetched.
+- **Layers.** One track per layer, the first layer of the manifest at the bottom (so the last track), each holding one picture block named for the layer and spanning the whole movie. A layer SVG is drawn into a PNG picture asset (kind `image`, as picture imports store them) at twice its own size when that still fits inside the movie, else at its own size. Only whole steps: a fractional step rounded the sides differently and the Microphone Stand came out 1 px taller than its shape. The block's scale is `scale x svg width / picture width`, its move puts the picture's centre at the layer's x, y from the top-left.
+- **Camera.** The scene's preset (panX, panY, zoom) is written as the movie camera's keys at frame 0 with `setCameraKeys`, so it holds for the whole movie and shows on the camera lane like any key.
+- **Floor.** `floorY` becomes a horizontal guide line marked `role: 'floor'` (a new optional field on `GuideLine`; moving the line keeps it, removing it removes it). `floorOf` finds it. It is shown and snapped to like any guide and is never exported.
+- Not done: no starter `.fmo` files (DEV_PLAN Decisions: manifest plus SVG layers built on open); the Home screen's Start list was left as it was.
 
 ## v0.25.0 · Lip-sync onto a character's mouth
 

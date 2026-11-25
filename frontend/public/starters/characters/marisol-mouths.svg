@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <g id="Rest" data-name="Rest">
+    <path d="M522 487 Q540 499 558 487" fill="none" stroke="#4e2318" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="MBP" data-name="MBP">
+    <path d="M517 490 Q528.5 479 540 483.8 Q551.5 479 563 490 Q540 499 517 490 Z" fill="#d0606f"/>
+    <path d="M518.4 490 Q540 493 561.6 490" fill="none" stroke="#4e2318" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="AI" data-name="AI">
+    <path d="M520.6 485 Q530.3 475 540 479.8 Q549.7 475 559.4 485 C558.5 514.8 551.7 528.1 540 528.1 C528.3 528.1 521.5 514.8 520.6 485 Z" fill="#4a1620"/>
+    <path d="M524.8 483 Q540 478 555.2 483 L554 491 Q540 487 526 491 Z" fill="#fffaf2"/>
+    <path d="M530.3 520.2 Q540 504.6 549.7 520.2 Q540 530.3 530.3 520.2 Z" fill="#e07a84"/>
+    <path d="M520.6 485 Q530.3 475 540 479.8 Q549.7 475 559.4 485 C558.5 514.8 551.7 528.1 540 528.1 C528.3 528.1 521.5 514.8 520.6 485 Z" fill="none" stroke="#d0606f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="E" data-name="E">
+    <path d="M519.3 487 Q529.6 478 540 482.8 Q550.4 478 560.7 487 Q554.5 509 540 509 Q525.5 509 519.3 487 Z" fill="#4a1620"/>
+    <path d="M523 485 Q540 481 557 485 L555.3 493 Q540 490 524.7 493 Z" fill="#fffaf2"/>
+    <path d="M530.7 505.7 Q540 499 549.3 505.7 Q540 510.2 530.7 505.7 Z" fill="#e07a84"/>
+    <path d="M519.3 487 Q529.6 478 540 482.8 Q550.4 478 560.7 487 Q554.5 509 540 509 Q525.5 509 519.3 487 Z" fill="none" stroke="#d0606f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="O" data-name="O">
+    <ellipse cx="540" cy="500.1" rx="12.7" ry="18.5" fill="#d0606f"/>
+    <ellipse cx="540" cy="500.1" rx="7.5" ry="13.3" fill="#4a1620"/>
+    <path d="M534.1 509.8 Q540 503.2 545.9 509.8 Q540 513.4 534.1 509.8 Z" fill="#e07a84"/>
+  </g>
+  <g id="U" data-name="U">
+    <ellipse cx="540" cy="495" rx="12.1" ry="13.2" fill="#d0606f"/>
+    <ellipse cx="540" cy="495" rx="5.1" ry="6.2" fill="#4a1620"/>
+    <path d="M531.4 491.6 L534.4 486.4" fill="none" stroke="#e48c96" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="FV" data-name="FV">
+    <path d="M522.9 494 Q540 490 557.1 494 Q550.3 508 540 508 Q529.7 508 522.9 494 Z" fill="#d0606f"/>
+    <path d="M526.7 485 Q540 481 553.3 485 L552 497 Q540 500 528 497 Z" fill="#fffaf2"/>
+    <path d="M534.9 484 L534.9 497" fill="none" stroke="#dcd2c4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M545.1 484 L545.1 497" fill="none" stroke="#dcd2c4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M521.1 486 Q530.5 476 540 480.8 Q549.5 476 558.9 486" fill="none" stroke="#d0606f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="L-th" data-name="L / th">
+    <path d="M522.4 486 Q531.2 476 540 480.8 Q548.8 476 557.6 486 C556.8 508.2 547.9 518 540 518 C532.1 518 523.2 508.2 522.4 486 Z" fill="#4a1620"/>
+    <path d="M526.9 484 Q540 479 553.1 484 L552 490 Q540 486 528 490 Z" fill="#fffaf2"/>
+    <path d="M530.8 514.6 C531.2 496.7 535.6 489 540 489 C544.4 489 548.8 496.7 549.2 514.6 Q540 521.4 530.8 514.6 Z" fill="#e07a84"/>
+    <path d="M522.4 486 Q531.2 476 540 480.8 Q548.8 476 557.6 486 C556.8 508.2 547.9 518 540 518 C532.1 518 523.2 508.2 522.4 486 Z" fill="none" stroke="#d0606f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

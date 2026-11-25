@@ -1,0 +1,265 @@
+{
+  "format": 1,
+  "conventions": {
+    "canvas": "Each scene is a folder: background.svg is 1920 by 1080; every other layer is a prop SVG at its own size.",
+    "size": "Props are drawn at real size for the characters: about 265 px to the metre at the floor (an adult at scale 0.5 is about 450 px, 1.7 m). A prop's feet rest on the centre line of the soft contact shadow at the bottom of its SVG; its layer y puts that line on floorY (or on the top of the furniture it sits on). The background is drawn in perspective with the horizon about 1.5 m above floorY, so what stands farther back is smaller.",
+    "layers": "Layers are listed bottom to top. x and y are the layer's centre in movie pixels from the top-left of the 1920 by 1080 movie; scale multiplies the SVG's own size.",
+    "floorY": "floorY is where feet rest, in movie pixels. A starter character placed at scale 0.5 stands on the floor when its centre is at y = floorY - 236.",
+    "camera": "camera is the movie camera's starting preset: panX and panY in movie pixels, zoom 1 for the full frame.",
+    "elements": "Only path, rect, circle, ellipse, line, polyline and polygon with solid fills (fill-opacity for soft shadows and light), strokes and linear or radial gradients in defs. No text, filters, masks, patterns, images or CSS.",
+    "license": "Original artwork made for this project and covered by the repository's own license."
+  },
+  "scenes": [
+    {
+      "id": "street",
+      "name": "Corner Street",
+      "folder": "street",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#9fd0e3",
+      "floorY": 930,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Post Box",
+          "file": "post-box.svg",
+          "x": 1840,
+          "y": 786.7,
+          "scale": 1.0
+        },
+        {
+          "name": "Lamp",
+          "file": "lamp.svg",
+          "x": 200,
+          "y": 485.5,
+          "scale": 1.0
+        },
+        {
+          "name": "Bench",
+          "file": "bench.svg",
+          "x": 1240,
+          "y": 817,
+          "scale": 1.0
+        },
+        {
+          "name": "Planter Tree",
+          "file": "planter-tree.svg",
+          "x": 1620,
+          "y": 552,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "park",
+      "name": "Park",
+      "folder": "park",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#8ccbe8",
+      "floorY": 950,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Kite",
+          "file": "kite.svg",
+          "x": 780,
+          "y": 280,
+          "scale": 0.8
+        },
+        {
+          "name": "Tree",
+          "file": "tree.svg",
+          "x": 300,
+          "y": 481,
+          "scale": 1.0
+        },
+        {
+          "name": "Bench",
+          "file": "bench.svg",
+          "x": 1300,
+          "y": 837,
+          "scale": 1.0
+        },
+        {
+          "name": "Bush",
+          "file": "bush.svg",
+          "x": 1720,
+          "y": 843.8,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "folder": "kitchen",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#f6e7cf",
+      "floorY": 1000,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Plant",
+          "file": "plant.svg",
+          "x": 280,
+          "y": 866.3,
+          "scale": 1.0
+        },
+        {
+          "name": "Chair",
+          "file": "chair.svg",
+          "x": 1660,
+          "y": 880.9,
+          "scale": 1.0
+        },
+        {
+          "name": "Table",
+          "file": "table.svg",
+          "x": 1340,
+          "y": 905.7,
+          "scale": 1.0
+        },
+        {
+          "name": "Kettle",
+          "file": "kettle.svg",
+          "x": 1420,
+          "y": 778.8,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "classroom",
+      "name": "Classroom",
+      "folder": "classroom",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#cfe0e6",
+      "floorY": 1000,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Bookshelf",
+          "file": "bookshelf.svg",
+          "x": 1700,
+          "y": 806.5,
+          "scale": 1.0
+        },
+        {
+          "name": "Desk",
+          "file": "desk.svg",
+          "x": 1180,
+          "y": 905.7,
+          "scale": 1.0
+        },
+        {
+          "name": "Globe",
+          "file": "globe.svg",
+          "x": 1100,
+          "y": 754.9,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "stage",
+      "name": "Stage",
+      "folder": "stage",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#2a2238",
+      "floorY": 950,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Speaker",
+          "file": "speaker.svg",
+          "x": 1640,
+          "y": 821.5,
+          "scale": 1.0
+        },
+        {
+          "name": "Stool",
+          "file": "stool.svg",
+          "x": 1400,
+          "y": 853.6,
+          "scale": 1.0
+        },
+        {
+          "name": "Microphone Stand",
+          "file": "mic-stand.svg",
+          "x": 760,
+          "y": 747.6,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 40,
+        "zoom": 1.1
+      }
+    }
+  ]
+}
