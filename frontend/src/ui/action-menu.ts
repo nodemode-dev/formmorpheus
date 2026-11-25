@@ -22,6 +22,7 @@ import '../engine/fx';
 import { eyedropButton } from './fx-stage-tools';
 import { ActionGroups, FILTER_GROUPS, MOTION_GROUPS } from './action-groups';
 import { FxStack } from './fx-stack';
+import { PERSON_SVG } from './character-glyph';
 import { buildCurves, buildSwatch, groupHead, type CurvesExtra, type Swatch } from './fx-params';
 
 export const CLAPPER = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 6.4l16.8-3.3.8 3.9-16.8 3.3z"/><path d="M4 11h16v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8.4 4.6l1.6 3.2M13.6 3.6l1.6 3.2"/></svg>';
@@ -99,6 +100,8 @@ export class ActionMenu {
   private readonly levelBtn: HTMLButtonElement;
   /** Shape, Solid and Adjustment content: opens the Shape panel (ui/shape-panel.ts). */
   private readonly shapeBtn: HTMLButtonElement;
+  /** A Group: Make Character (names the group's parts again when it already is one). */
+  private readonly charBtn: HTMLButtonElement;
   private readonly moveGrp: HTMLElement;
   private readonly filterGrp: HTMLElement;
   private readonly passHint: HTMLElement;
@@ -136,6 +139,9 @@ export class ActionMenu {
     this.shapeBtn = mk('Shape', kindSpec('shape').icon);
     this.shapeBtn.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'shape-options' })); });
     setHidden(this.shapeBtn, true);
+    this.charBtn = mk('Character', PERSON_SVG);
+    this.charBtn.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.make' })); });
+    setHidden(this.charBtn, true);
 
     // two steps, as the reference: Action! (Move, Filter) then the list of that choice, with a way back
     const back = (): HTMLButtonElement => el<HTMLButtonElement>(`<button class="fm-ka-back" type="button" aria-label="Back" title="Back">${icon('chevronLeft', 16)}</button>`);
@@ -209,6 +215,7 @@ export class ActionMenu {
     setHidden(this.filterBtn, audio);
     setHidden(this.levelBtn, !audio);
     setHidden(this.shapeBtn, !(t.c.kind === 'shape' || t.c.kind === 'solid' || t.c.kind === 'adjust'));
+    setHidden(this.charBtn, t.c.kind !== 'group');
     this.show('action');
     this.groups.reset();
     this.paintKeyed();

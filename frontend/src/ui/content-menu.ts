@@ -59,6 +59,7 @@ export class ContentMenu {
   onEditInFormvis: ((id: string) => void) | null = null;
   private readonly group: PopRow;
   private readonly ungroup: PopRow;
+  private readonly makeChar: PopRow;
   private readonly flipOrder: PopRow;
   private readonly del: PopRow;
   private readonly track: TrackMenu;
@@ -204,6 +205,8 @@ export class ContentMenu {
     this.formvis.el.addEventListener('click', () => { const id = this.ids[0]; this.pop.hide(); if (id) this.onEditInFormvis?.(id); });
     this.group = popRow('group', 'Group');
     this.ungroup = popRow('ungroup', 'Ungroup');
+    this.makeChar = popRow('character', 'Make Character...');
+    this.makeChar.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'character.make' })); });
     this.flipOrder = popRow(null, 'Flip Content');
     this.flipOrder.el.addEventListener('click', () => { this.pop.hide(); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'flip-order' })); });
     const trackRow = popRow('track', 'Track options', { sub: true });
@@ -247,7 +250,7 @@ export class ContentMenu {
     const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
     body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
       sTransform, sTime, sConvert, sMore, popSep(),
-      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, trackRow.el, popSep(), this.del.el);
+      this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, trackRow.el, popSep(), this.del.el);
   }
 
   private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
@@ -391,6 +394,7 @@ export class ContentMenu {
     setHidden(this.opacityBox, audioOnly);
     for (const n of [this.blend.el, this.mask.el, this.highlight.el, this.parents.row.el, ...this.xform.rows]) setClass(n, 'is-gone', audioOnly);
     setClass(this.ungroup.el, 'is-gone', !isGroup);
+    setClass(this.makeChar.el, 'is-gone', !(sel.length === 1 && first.kind === 'group'));
     this.del.setDisabled(none);
     this.syncSections();
   }

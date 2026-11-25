@@ -36,6 +36,7 @@ import * as lockOps from '../engine/lock-ops';
 import * as hideOps from '../engine/hide-ops';
 import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
 import { chipFill, drawFlipCells, drawGroupPreview } from './timeline-look';
+import { drawPerson } from './character-glyph';
 import { TrackHeads } from './timeline-heads';
 import { InnerMenu } from './timeline-inner';
 import { laneFocus } from './lane-focus';
@@ -45,6 +46,8 @@ import { rulerDrag, SpacePan } from './timeline-nav';
 import { toast } from './toast';
 
 const RULER_H = 28;
+/** Room the person glyph of a character takes on its name chip, in px. */
+const PERSON_ROOM = 14;
 // Track height scales (Ctrl+Shift+wheel): BLOCK_H and STRIDE are set together by setRowHeight.
 let BLOCK_H = 44;
 const LANE_GAP = 10;
@@ -1125,7 +1128,8 @@ export class TimelineView {
     if (w > 46) {
       const label = contentName(item.name);
       c.font = '600 10px Inter, system-ui, sans-serif';
-      const tw = Math.min(w - 16, c.measureText(label).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
+      const person = item.character ? PERSON_ROOM : 0;
+      const tw = Math.min(w - 16, c.measureText(label).width + 24 + person + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
       const chip = chipFill(item.highlight, p.chip, p.hl);
       const ink = chip.ink ?? p.text;
       c.fillStyle = chip.fill;
@@ -1139,10 +1143,11 @@ export class TimelineView {
       c.textAlign = 'left';   // not the page direction: the chip sits at the block's left edge
       c.save();
       c.beginPath();
-      c.rect(x0 + 19, y + 5, tw - 15, 15);
+      c.rect(x0 + 19, y + 5, tw - 15 - (person ? person * 2 + 2 : 0), 15);
       c.clip();
       c.fillText(label, x0 + 20, y + 13);
       c.restore();
+      if (person && tw > 46) { c.strokeStyle = ink; drawPerson(c, x0 + tw - 11 - PERSON_ROOM, y + 7, 11); c.lineWidth = 1; }
       if (item.kind === 'group' || item.kind === 'flipbook') drawChevron(c, x0 + tw - 8, y + 12.5, item.kind === 'group' && this.opened.has(item.id), ink);
       if (t.locked) {
         c.fillStyle = p.text;
@@ -1434,7 +1439,7 @@ export class TimelineView {
     if (w <= 46) return 0;
     const c = this.tracksCanvas.getContext('2d') as CanvasRenderingContext2D;
     c.font = '600 10px Inter, system-ui, sans-serif';
-    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
+    return Math.min(w - 16, c.measureText(contentName(item.name)).width + 24 + (item.character ? PERSON_ROOM : 0) + (item.kind === 'group' || item.kind === 'flipbook' ? 14 : 0));
   }
 
   private round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

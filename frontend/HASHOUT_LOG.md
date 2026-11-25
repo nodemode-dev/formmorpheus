@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · Make Character
+
+- refers-to: ui/character-commands.ts (new) :: characterCommands, makeCharacterFlow, selectedGroup, selectedCharacter; ui/character-glyph.ts (new) :: PERSON_D, PERSON_SVG, drawPerson; ui/icons-morph.ts :: character; ui/action-menu.ts :: charBtn; ui/content-menu.ts :: makeChar; ui/timeline.ts :: PERSON_ROOM, block chip, chipWidth; app/app.ts :: commands, Content menu; engine/character-ops.ts :: makeCharacter, characterInfoOf
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Command.** `character.make` (Make Character...) asks for a name (the group's or the character's own as the default) and runs `makeCharacter` through `engine.run`, one undo step. Parts are the group's inner contents by name, top track first, a repeated name numbered; the mouth is the first inner Flipbook with a row that `looksLikeMouth`. On a character it names the parts again and keeps any other field the character has. It is offered in the Action menu (a Character button beside Shape, shown for a group), the Content menu bar (after Ungroup) and the block's own menu.
+- **The chip glyph.** The Timeline is one canvas, so there is no element to give a class: the glyph is one outline (`PERSON_D`) shared by the inline SVG icon and a `Path2D` made once and stroked in the chip's ink, after the name and before the chevron, when the block's `character` is set. The chip grows by `PERSON_ROOM` (14 px) in the paint and in `chipWidth`, so the Edit pill and hits stay beside it. Nothing is allocated per frame.
+
 ## v0.25.0 · SVG parts become a character
 
 - refers-to: io/svg-import.ts (new) :: parseSvgParts, pathRuns, svgToCharacterGroup, svgToMouthChart, isMouthChart, isSvgFile, importSvg; engine/character-ops.ts (new); engine/model.ts :: relinkCharacter; engine/ops.ts :: cloneContent; engine/track-ops.ts :: cloneTrack; engine/normalize.ts :: character; media/import.ts :: Sniff, EXT, sniff, importMedia; app/app.ts :: MEDIA_ACCEPT
