@@ -37,9 +37,9 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 
 Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./formmorpheus ios`, then Run. For step 1 put an SVG in the Files app that has one group per body part (`head`, `body`, `arm-l`, `arm-r`, `leg-l`, `leg-r`, with a `mouth` group inside `head` and an `arm-l` that holds a `hand-l` group), and for step 5 a short sound with speech. Write what happened under each step, in your own words.
 
-1. SVG character from Files: open a movie, then in the Files app tap the SVG (or long-press it, Share, FormMorpheus). Expected: FormMorpheus comes forward and the Timeline shows one Group named after the file with 8 parts; rotating `arm-l` turns `hand-l` with it. In the Files app, On My iPad > FormMorpheus now has a Characters folder.
+1. SVG character from Files: open a movie, then in the Files app tap the SVG (or long-press it, Share, FormMorpheus). Expected: FormMorpheus comes forward and the Timeline shows one Group named after the file with 8 parts; rotating `arm-l` turns `hand-l` with it.
    Result:
-2. Save to Characters: make the group a character (Action menu), then choose Save to Characters on its menu. Close the app from the app switcher and open it again. Expected: View > Characters lists it under Mine, the same file is in On My iPad > FormMorpheus > Characters, and Add to Movie twice gives two copies that move on their own. Delete it from the panel: it shows in Recently Deleted and Restore puts it back under Mine.
+2. Save to Characters: choose Save to Characters on the character's menu. Close the app from the app switcher and open it again. Expected: View > Characters lists it under Mine, the same file is in On My iPad > FormMorpheus > Characters, and Add to Movie twice gives two copies that move on their own. Delete it from the panel: it shows in Recently Deleted and Restore puts it back under Mine.
    Result:
 3. A Starter Character and a Starter Scene: File > New from Starter Scene..., pick one, then add a Starter Character from View > Characters, Starter. Expected: a new untitled movie with the scene's background and props, and the character on the Stage at the playhead with its poster in the panel.
    Result:
@@ -47,11 +47,13 @@ Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./form
    Result:
 5. Lip-sync from Sound: put the speech sound on a track, then Lip-sync from Sound... and choose the character's mouth at the top of the list. Expected: the mouth changes shape while the voice speaks and rests outside it.
    Result:
-6. Update from Source...: change the color of one part of the step 1 SVG in a vector app and save it to Files. On the character's menu choose Update from Source... and pick the file again. Expected: the part has the new color and keeps its keys and its action. There is no automatic update on iPad, and no message about one.
+6. Update from Source...: apply Wave to the step 1 character first. Then change the color of one part of the step 1 SVG in a vector app and save it to Files. On the character's menu choose Update from Source... and pick the file again. Expected: the part has the new color and keeps its keys and its action. There is no automatic update on iPad, and no message about one.
    Result:
 7. Draw on a Flipbook with Apple Pencil Pro: add a Flipbook, draw a few frames. Squeeze and double tap do what Settings > Apple Pencil (or Preferences) says, as in 0.23.0, and barrel roll turns a brush that follows the Pencil's angle. Expected: pressure and tilt shape the stroke, the squeeze palette or the chosen action appears, and the haptic plays.
    Result:
 8. Export MP4: export the movie from step 3 to 5 as MP4. Expected: the export finishes, plays in the Photos app or the Files app with the sound, and shows the character, its action and the lip-sync as on the Stage.
+   Result:
+9. Action file from Files: on a character that has Wave, choose Export Action... from its action menu and pick Wave, then put the Wave.fmact file in the Files app. Select a different character, then open the file from Files (tap it, or long-press it, Share, FormMorpheus). Expected: Wave is added to that character. Then select nothing, or a block that is not a character, and open the file again. Expected: a notice in the window says "Select a character, then import the action onto it." and nothing is added.
    Result:
 
 ## Check on the iPad (0.23.0)

@@ -43,8 +43,7 @@ Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN
 - Storage: `Documents/Characters`, made at launch with the other folders so the Files app shows it from the first run. Not in iCloud Drive: only the movie library can live there. The hourly part sweep already covers the folder.
 - Restore from Recently Deleted puts a `character` back in Characters under the first free name (`name 2.fmo` ...), and the trash list shows its name without `.fmo`, as for movies.
 - No window key here: the iPad has no `/api/window` and no key on any route; the scheme handler only answers its own web view and the router's Origin guard refuses a foreign origin on PUT, POST and DELETE, which covers the new prefix like every other.
-- Not ported: `/api/files/stat`. It answers 404 (FilesRoutes has only `/files/read`), and the window then hides the automatic source update and keeps Update from Source....
-- The error sentences say "character" where the library's say "project"; align them with `characters.py` word for word if that file says otherwise.
+- Not ported: `/api/files/stat` and `/api/files/source`. They answer 404 (FilesRoutes has only `/files/read`). The window never calls them here: it gates the automatic source update on the platform kind (`canWatchSources` in `frontend/src/io/source-api.ts`, true only on desktop), so the iPad never polls and offers Update from Source... instead.
 - Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used is one the library and trash routes already call.
 
 ## v0.23.1 · the product's name in what iPadOS shows
