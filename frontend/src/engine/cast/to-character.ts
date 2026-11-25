@@ -313,19 +313,27 @@ function shapesIn(c: Content): ShapeDef[] {
   return c.tracks.flatMap((t) => t.content.flatMap(shapesIn));
 }
 
+/** A fresh build waiting to be laid over a character: the group, the mouth pictures to store, and the recipe. */
+export interface CastPrepared { fresh: Content; assets: ImportResult['assets']; spec: CastSpec }
+
 /** A rebuild: `missing` holds only parts the person added; `hidden` the cast parts this build does not draw. */
-export interface CastRebuild extends SourceMerge { hidden: string[]; assets: ImportResult['assets'] }
+export interface CastRebuild extends SourceMerge { hidden: string[] }
+
+/** Builds a recipe for a rebuild in a movie of this size; the slow part, run before the edit. */
+export async function prepareRebuild(spec: CastSpec, movie: Movie, rig: CastRig = build(spec), mouthShapes: CastPrim[][] | null = visemes(spec, rig)): Promise<CastPrepared> {
+  const r = await rigToCharacterGroup(rig, spec, mouthShapes, { ...movie, tracks: [], assets: {} }, 0);
+  return { fresh: r.contents[0], assets: r.assets, spec };
+}
 
 /**
- * Builds the character afresh from its rig and lays it over `charId` by part name: matched parts take the new art and
- * keep their keys, actions and parents. Mouth drawings lip-sync wrote keep their timing and take the new art by shape
- * name. The recipe is written as the character's build. `assets` carries the pictures of the new mouth to store.
+ * Lays a prepared build over `charId` by part name, synchronously, inside the caller's edit: matched parts take the new
+ * art and keep their keys, actions and parents. Mouth drawings lip-sync wrote keep their timing and take the new art by
+ * shape name. The recipe is written as the character's build. The caller stores `prepared.assets` blobs.
  */
-export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRig, spec: CastSpec, mouthShapes: CastPrim[][] | null): Promise<CastRebuild> {
-  const fresh = await rigToCharacterGroup(rig, spec, mouthShapes, movie, 0);
+export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepared): CastRebuild {
+  const { fresh: g, spec } = prepared;
   const table: Record<string, Asset> = {};
-  for (const a of fresh.assets) table[a.asset.id] = a.asset;
-  const g = fresh.contents[0];
+  for (const a of prepared.assets) table[a.asset.id] = a.asset;
   const oldMouth = partContent(movie, charId, 'mouth');
   const old = characterOf(movie, charId);
   const highlight = new Map(old ? old.tracks.flatMap((t) => t.content).map((x) => [x.id, x.highlight]) : []);
@@ -363,7 +371,7 @@ export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRi
     const mouthC = mouthId ? tracks.flatMap((t) => t.content).find((x) => x.id === mouthId) : undefined;
     return { ...c, tracks, character: { ...ch, build: spec, ...(mouthC?.kind === 'flipbook' ? { mouth: mouthId } : {}) } };
   });
-  return { ...r, movie: next, missing: r.missing.filter((n) => !isCastPart(n)), hidden, assets: fresh.assets };
+  return { ...r, movie: next, missing: r.missing.filter((n) => !isCastPart(n)), hidden };
 }
 
 const CAST_PARTS = new Set(Object.values(PART));
@@ -387,10 +395,4 @@ function builtParts(spec: CastSpec): Set<string> | null {
 export function castToCharacterGroup(spec: CastSpec, movie: Movie, at = 0): Promise<ImportResult> {
   const rig = build(spec);
   return rigToCharacterGroup(rig, spec, visemes(spec, rig), movie, at);
-}
-
-/** Rebuilds the character `charId` from a recipe (see rebuildCharacter). */
-export function rebuildFromSpec(movie: Movie, charId: string, spec: CastSpec): Promise<CastRebuild> {
-  const rig = build(spec);
-  return rebuildCharacter(movie, charId, rig, spec, visemes(spec, rig));
 }

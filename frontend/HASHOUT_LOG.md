@@ -7,6 +7,14 @@ Last updated: 2026-11-25 · characters built from a recipe
 
 ---
 
+## v0.26.0 · rebuild review fixes
+
+- refers-to: engine/cast/to-character.ts :: prepareRebuild, mergeRebuild (new), CastPrepared (new), CastRebuild; rebuildCharacter and rebuildFromSpec (removed); engine/cast/index.ts
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **Prepare, then merge.** A rebuild awaited its mouth PNGs and then merged into the movie it was handed, so an edit made while the pictures were encoding was lost when the caller stored the result. It is now split as Update from Source splits it (app/source-link.ts): `prepareRebuild(spec, movie, rig?, mouthShapes?)` is async and builds against an empty copy of the movie (its size only), answering `{ fresh, assets, spec }`; `mergeRebuild(movie, charId, prepared)` is synchronous and runs inside the caller's `engine.run` against the current movie. The caller stores the asset blobs (and preloads them) before the edit. `rebuildCharacter` and `rebuildFromSpec` are removed: as one async call they invite the stale merge. `CastRebuild` no longer carries assets.
+
 ## v0.26.0 · cast comments moved here
 
 - refers-to: engine/cast/to-character.ts (file head, primDefs, rebuild, builtParts); engine/cast/build.ts :: build (eyes slot)
