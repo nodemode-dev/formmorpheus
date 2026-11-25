@@ -595,10 +595,28 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
 const isLayer = (el: Element): boolean => el.localName === 'g' && (el.getAttribute('inkscape:groupmode') === 'layer' || el.getAttributeNS('http://www.inkscape.org/namespaces/inkscape', 'groupmode') === 'layer');
 
 function top(cx: Ctx, container: Element, m0: Mat, st0: Style, above: number, out: PartWork[]): void {
+  const runs: Array<Array<[Element, Style]>> = [];
+  let run: Array<[Element, Style]> | null = null;
   for (const el of kids(container)) {
     if (!isSvg(el) || DEFS.has(el.localName) || QUIET.has(el.localName)) continue;
     const st = styleOf(cx, el, st0);
     if (st.display === 'none') continue;
+    if (!DRAWN.has(el.localName)) { run = null; runs.push([[el, st]]); continue; }
+    if (!run) { run = []; runs.push(run); }
+    run.push([el, st]);
+  }
+  const items = runs.map((r): [Element, Style] => {
+    if (r.length < 2 || !DRAWN.has(r[0][0].localName)) return r[0];
+    // shapes side by side outside any group are one part, not a part each
+    const g = container.ownerDocument.createElementNS(SVG_NS, 'g');
+    g.setAttribute('data-fm-loose', '');
+    container.insertBefore(g, r[0][0]);
+    for (const [el] of r) g.appendChild(el);
+    const ws: Style = {};
+    for (const k of INHERIT) if (st0[k] !== undefined) ws[k] = st0[k];
+    return [g, ws];
+  });
+  for (const [el, st] of items) {
     // an editor's layer holds parts; it is not one
     if (isLayer(el)) { top(cx, el, mul(m0, transformOf(el.getAttribute('transform'))), st, above * opacity(st.opacity), out); continue; }
     makePart(cx, el, m0, st0, st, -1, above, out);
@@ -625,8 +643,8 @@ function markupOf(cx: Ctx, w: PartWork, xml: XMLSerializer): string {
   return `<svg xmlns="${SVG_NS}" xmlns:xlink="http://www.w3.org/1999/xlink"${cx.xmlns} width="${cx.width}" height="${cx.height}" viewBox="0 0 ${cx.width} ${cx.height}">${cx.defs}<g transform="${matrixText(w.outer)}"${inherit}>${xml.serializeToString(clone)}</g></svg>`;
 }
 
-/** Reads an SVG into parts without touching a movie: names, nesting, shapes in the SVG's pixels, pivots and the picture markup. */
-export function parseSvgParts(text: string): SvgDoc {
+/** Reads an SVG into parts without touching a movie: names, nesting, shapes in the SVG's pixels, pivots and the picture markup. `name` names the one part made of loose shapes, when there is one. */
+export function parseSvgParts(text: string, name?: string): SvgDoc {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   const root = doc.documentElement;
   if (!root || root.localName !== 'svg' || doc.getElementsByTagName('parsererror').length) throw new Error(t('This SVG file could not be read.'));
@@ -672,6 +690,8 @@ export function parseSvgParts(text: string): SvgDoc {
     const st = styleOf(cx, only, rootStyle);
     top(cx, only, mul(m0, transformOf(only.getAttribute('transform'))), st, opacity(st.opacity), work);
   } else top(cx, root, m0, rootStyle, 1, work);
+  const loose = work.filter((w) => w.el.hasAttribute('data-fm-loose'));
+  if (name && loose.length === 1) { cx.names.delete(loose[0].part.name); loose[0].part.name = uniqueName(cx, name); }
   for (const w of work) w.part.markup = markupOf(cx, w, xml);
   return { width, height, parts: cx.parts };
 }
@@ -772,7 +792,7 @@ async function partContent(p: SvgPart, doc: SvgDoc, f: Fit, dur: number, assets:
  * nested groups parented to the part they sit in, pivots from each part's pivot element or its centre.
  */
 export async function svgToCharacterGroup(text: string, fileName: string, movie: Movie, at: number): Promise<ImportResult> {
-  const doc = parseSvgParts(text);
+  const doc = parseSvgParts(text, baseOf(fileName));
   if (!doc.parts.length) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
   const f = fitOf(doc, movie);
   const dur = Math.max(1, movie.duration - at);
