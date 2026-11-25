@@ -1,6 +1,6 @@
 // A built rig as a FormMorpheus character: one Group, one inner track per drawn slot in the rig's draw order, each part
 // following its parent part, the mouth a mouth chart Flipbook. Placed as an SVG starter of the 1080 convention is. No DOM.
-import { characterInfoOf, partContent, updateDeep } from '../character-ops';
+import { characterInfoOf, characterOf, partContent, updateDeep } from '../character-ops';
 import { restingChart } from '../lipsync-ops';
 import { content as makeContent, drawingLayer, flipTrack, track as makeTrack, uid } from '../model';
 import { setParent } from '../parenting';
@@ -316,23 +316,42 @@ function shapesIn(c: Content): ShapeDef[] {
   return c.tracks.flatMap((t) => t.content.flatMap(shapesIn));
 }
 
+/** A rebuild: `missing` holds only parts the person added; `hidden` the cast parts this build does not draw. */
+export interface CastRebuild extends SourceMerge { hidden: string[]; assets: ImportResult['assets'] }
+
 /**
  * Builds the character afresh from its rig and lays it over `charId` by part name: matched parts take the new art and
  * keep their keys, actions and parents. Mouth drawings lip-sync wrote keep their timing and take the new art by shape
  * name. The recipe is written as the character's build. `assets` carries the pictures of the new mouth to store.
  */
-export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRig, spec: CastSpec, mouthShapes: CastPrim[][] | null): Promise<SourceMerge & { assets: ImportResult['assets'] }> {
+export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRig, spec: CastSpec, mouthShapes: CastPrim[][] | null): Promise<CastRebuild> {
   const fresh = await rigToCharacterGroup(rig, spec, mouthShapes, movie, 0);
   const table: Record<string, Asset> = {};
   for (const a of fresh.assets) table[a.asset.id] = a.asset;
   const g = fresh.contents[0];
   const oldMouth = partContent(movie, charId, 'mouth');
+  const old = characterOf(movie, charId);
+  const highlight = new Map(old ? old.tracks.flatMap((t) => t.content).map((x) => [x.id, x.highlight]) : []);
+  const before = old?.character?.build ? builtParts(old.character.build) : null;
   const r = mergeFromSource(movie, charId, g, table);
+  // a cast part this build does not draw is hidden with its keys, not marked missing; one drawn again by a later build shows
+  const hidden = r.missing.filter(isCastPart);
+  const back = Object.keys(g.character?.parts ?? {}).filter((n) => isCastPart(n) && before && !before.has(n));
   const freshMouth = g.character?.parts.mouth ? g.tracks.flatMap((t) => t.content).find((c) => c.id === g.character?.parts.mouth) : undefined;
   const next = updateDeep(r.movie, charId, (c) => {
-    const ch = c.character;
-    if (!ch) return c;
-    let tracks = c.tracks;
+    const ch0 = c.character;
+    if (!ch0) return c;
+    const hideIds = new Set(hidden.map((n) => ch0.parts[n]));
+    const showIds = new Set(back.map((n) => ch0.parts[n]));
+    let tracks = c.tracks.map((t) => (t.content.some((x) => hideIds.has(x.id) || showIds.has(x.id)) ? { ...t, content: t.content.map((x) => {
+      if (hideIds.has(x.id)) return { ...x, hidden: true as const, highlight: highlight.get(x.id) ?? x.highlight };
+      if (showIds.has(x.id) && x.hidden) { const { hidden: _h, ...rest } = x; return rest as Content; }
+      return x;
+    }) } : t));
+    const { missing: m0, missingWas: w0, ...base } = ch0;
+    const missing = (m0 ?? []).filter((n) => !hidden.includes(n));
+    const was = Object.fromEntries(Object.entries(w0 ?? {}).filter(([n]) => !hidden.includes(n)));
+    const ch = { ...base, ...(missing.length ? { missing } : {}), ...(missing.length && Object.keys(was).length ? { missingWas: was } : {}) };
     const mouthId = ch.parts.mouth;
     if (oldMouth?.kind === 'flipbook' && freshMouth?.kind === 'flipbook' && mouthId === oldMouth.id) {
       const art = new Map<string, FlipbookFrame>();
@@ -348,7 +367,25 @@ export async function rebuildCharacter(movie: Movie, charId: string, rig: CastRi
     const mouthC = mouthId ? tracks.flatMap((t) => t.content).find((x) => x.id === mouthId) : undefined;
     return { ...c, tracks, character: { ...ch, build: spec, ...(mouthC?.kind === 'flipbook' ? { mouth: mouthId } : {}) } };
   });
-  return { ...r, movie: next, assets: fresh.assets };
+  return { ...r, movie: next, missing: r.missing.filter((n) => !isCastPart(n)), hidden, assets: fresh.assets };
+}
+
+const CAST_PARTS = new Set(Object.values(PART));
+const isCastPart = (name: string): boolean => CAST_PARTS.has(name);
+
+/** The part names a recipe's build draws; null when it cannot be built. */
+function builtParts(spec: CastSpec): Set<string> | null {
+  try {
+    const out = new Set<string>();
+    for (const s of build(spec).slots) {
+      if (!s.prims.length) continue;
+      const n = s.name === OPEN_SLOT ? 'mouth' : castPartName(s.name);
+      if (n) out.add(n);
+    }
+    // the mouth chart is made from the recipe's mouth shapes whatever its slots hold
+    out.add('mouth');
+    return out;
+  } catch { return null; }
 }
 
 /** A recipe built and made a character at frame `at`, its mouth chart from the recipe's own mouth shapes. */
@@ -358,7 +395,7 @@ export function castToCharacterGroup(spec: CastSpec, movie: Movie, at = 0): Prom
 }
 
 /** Rebuilds the character `charId` from a recipe (see rebuildCharacter). */
-export function rebuildFromSpec(movie: Movie, charId: string, spec: CastSpec): Promise<SourceMerge & { assets: ImportResult['assets'] }> {
+export function rebuildFromSpec(movie: Movie, charId: string, spec: CastSpec): Promise<CastRebuild> {
   const rig = build(spec);
   return rebuildCharacter(movie, charId, rig, spec, visemes(spec, rig));
 }
