@@ -158,7 +158,9 @@ export class CharactersPanel {
   private readonly starterList: HTMLElement;
   private readonly empty: HTMLElement;
   private starters: StarterEntry[] | null = null;
-  private manifestRead = false;
+  private readonly manifest: Promise<void>;
+  private mineRead = false;
+  private opening = false;
   private mine: CharacterItem[] = [];
   private mineNote = '';
   private busy = new Set<string>();
@@ -203,36 +205,48 @@ export class CharactersPanel {
       else if (onStage) void this.add(key, 'stage');
     });
     engine.on('movie', () => { if (this.isOpen) this.paint(); });
+    // read at startup, so the panel opens at its full height instead of growing a Starter section above Mine
+    this.manifest = this.readManifest();
+    void this.refresh();
   }
 
   get isOpen(): boolean { return !this.root.hidden; }
 
   toggle(opener?: HTMLElement | null): void { if (this.isOpen) this.hide(); else this.show(opener); }
 
+  /** Opens once the starter list is known (it is read at startup), so no section appears above another after. */
   show(opener?: HTMLElement | null): void {
     this.opener = opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    setHidden(this.root, false);
-    this.paint();
-    void this.refresh();
-    q(this.root, '[data-act="close"]').focus();
+    if (this.opening) return;
+    this.opening = true;
+    void this.manifest.then(() => {
+      if (!this.opening) return;
+      this.opening = false;
+      this.paint();
+      setHidden(this.root, false);
+      void this.refresh();
+      q(this.root, '[data-act="close"]').focus();
+    });
   }
 
   hide(): void {
+    this.opening = false;
     if (this.root.hidden) return;
     setHidden(this.root, true);
     this.opener?.focus?.();
   }
 
-  /** Reads the starter manifest (once) and the library, then patches the rows. */
+  private async readManifest(): Promise<void> {
+    try {
+      const res = await fetch(`${STARTERS}manifest.json`);
+      const body = res.ok ? ((await res.json()) as { format?: number; characters?: StarterEntry[] }) : null;
+      this.starters = (body?.characters ?? []).filter((c) => c && typeof c.id === 'string' && typeof c.file === 'string' && typeof c.name === 'string');
+    } catch { this.starters = null; }
+  }
+
+  /** Reads the library (after the starter manifest), then patches the rows. */
   async refresh(): Promise<void> {
-    if (!this.manifestRead) {
-      this.manifestRead = true;
-      try {
-        const res = await fetch(`${STARTERS}manifest.json`);
-        const body = res.ok ? ((await res.json()) as { format?: number; characters?: StarterEntry[] }) : null;
-        this.starters = (body?.characters ?? []).filter((c) => c && typeof c.id === 'string' && typeof c.file === 'string' && typeof c.name === 'string');
-      } catch { this.starters = null; }
-    }
+    await this.manifest;
     try {
       this.mine = (await charactersApi.list()).items;
       this.mineNote = '';
@@ -240,6 +254,7 @@ export class CharactersPanel {
       this.mine = [];
       this.mineNote = e instanceof ApiError && e.status === 0 ? t(e.message) : t('The Characters library could not be read.');
     }
+    this.mineRead = true;
     this.paint();
   }
 
@@ -256,7 +271,7 @@ export class CharactersPanel {
     const keys = new Set(this.mine.map((c) => `mine:${c.name}`));
     for (const [k, p] of this.posters) if (!keys.has(k)) { if (p.url) URL.revokeObjectURL(p.url); this.posters.delete(k); }
     setText(this.empty, this.mineNote || t('No characters saved yet. Choose Save to Characters on a character to keep it here.'));
-    setHidden(this.empty, this.mine.length > 0);
+    setHidden(this.empty, !this.mineRead || this.mine.length > 0);
   }
 
   private createRow(r: RowItem): HTMLElement {

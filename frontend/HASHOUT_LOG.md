@@ -7,6 +7,14 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · the Characters panel opens at its height
+
+- refers-to: ui/characters-panel.ts :: manifest, readManifest, mineRead, opening, show, hide, refresh, paint
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **No jump on open.** The starter manifest was fetched on the first open, after the panel showed, so the Starter section appeared above Mine and pushed it down (y 145 to 450), and Mine said "No characters saved yet" until the library answered. The manifest is now read when the panel is made at startup (`readManifest`, kept as a promise), and the library is listed then too, into the hidden panel, so its rows and posters are ready. `show` waits on that promise (already settled in practice; a close meanwhile cancels the open with `opening`), paints, then unhides, so the panel's first frame has both sections. The empty Mine text stays hidden until a list has been read (`mineRead`, set on success or failure); every open still re-reads the library and patches the rows in place.
+
 ## v0.25.0 · saved characters' posters
 
 - refers-to: io/characters-api.ts :: charactersApi.poster (was posterUrl); ui/characters-panel.ts :: posters, loadPoster, paint, updateRow
