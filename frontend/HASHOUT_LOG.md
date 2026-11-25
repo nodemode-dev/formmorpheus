@@ -7,6 +7,16 @@ Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
 
+## v0.31.0 · spots across the frame at full size
+
+- refers-to: engine/starter-scene.ts :: spotX (new `scale`); ui/characters-panel.ts :: placeCharacter
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **What the report saw.** Built starters do take spots: Karl then Pip in a new 1920 by 1080 movie came in at x 0 and x +280. But the 280 px step was made for a starter scene, where a character stands at half its drawn size. In a plain movie a character keeps its size (about 900 px tall, 280 px across the shoulders, a fox with its tail about 420), so a 280 px step put Karl's hand on Pip's arm and their shadows over each other.
+- **The step follows the drawn size.** `spotX(movie, scale)` takes the scale the 1080 character art is drawn at in the movie (0.5 in a scene, the default; in a plain movie the importer's fit `min(1, W/1080, H/1080)` times the shrink for a character from a larger movie times its own scale) and grows the step with it, capped so the five spots (middle, right, left, further right, further left) fit between the margins. At 1920 wide and full size the step is 345 px: Karl 960, Pip 1305, then 615, 1650 and 270, bodies apart. A starter scene's spots are unchanged (280 px at 1920 wide, under the cap at every width down to 720).
+- **Limits.** A square or narrow movie still holds only two or three full-height characters side by side; the outer spots are held inside the margins as before.
+
 ## v0.31.0 · the builder in long languages and right to left
 
 - refers-to: styles/character-builder.css :: .fm-cb-roster, .fm-cb-panel, .fm-cb-sl, .fm-cb-sl span (new), .fm-cb-out

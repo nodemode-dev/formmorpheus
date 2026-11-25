@@ -70,12 +70,13 @@ const SPOTS = [0, 1, -1, 2, -2];
 const STEP = 280;
 
 /** The x the next character's middle takes across `movie`: one spot along per character already in it, so two never land on each other. */
-export function spotX(movie: Movie): number {
+export function spotX(movie: Movie, scale: number = STARTER_ART.scale): number {
   const W = movie.width;
   let n = 0;
   for (const t of movie.tracks) for (const c of t.content) if (c.character) n++;
-  const margin = Math.min(W / 2, (STARTER_ART.w * STARTER_ART.scale) / 4);
-  return Math.min(W - margin, Math.max(margin, W / 2 + SPOTS[n % SPOTS.length] * STEP * (W / 1920)));
+  const margin = Math.min(W / 2, (STARTER_ART.w * scale) / 4);
+  const step = Math.min(STEP * (W / 1920) * (scale / STARTER_ART.scale), (W / 2 - margin) / 2);
+  return Math.min(W - margin, Math.max(margin, W / 2 + SPOTS[n % SPOTS.length] * step));
 }
 
 /** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size, at its spot. */

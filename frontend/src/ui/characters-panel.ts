@@ -6,7 +6,7 @@ import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
 import { floorOf } from '../engine/guides';
-import { spotX, standOnFloor } from '../engine/starter-scene';
+import { spotX, standOnFloor, STARTER_ART } from '../engine/starter-scene';
 import { newMovie, track as makeTrack } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
@@ -151,7 +151,10 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   // made in a larger movie: shrunk to fit, about the movie centre where its parts are placed from
   const k = Math.min(1, m.width / Math.max(1, src.width), m.height / Math.max(1, src.height));
   if (floorY !== null && src.width === m.width && src.height === m.height) copy.transform = standOnFloor(copy, m, floorY);
-  else copy.transform = { ...copy.transform, scale: copy.transform.scale * k, x: copy.transform.x + spotX(m) - m.width / 2 };
+  else {
+    const drawn = Math.min(1, src.width / STARTER_ART.w, src.height / STARTER_ART.h) * k * copy.transform.scale;
+    copy.transform = { ...copy.transform, scale: copy.transform.scale * k, x: copy.transform.x + spotX(m, drawn) - m.width / 2 };
+  }
   const table: Record<string, Asset> = {};
   const pics = new Map<string, Blob>();
   for (const [id, { asset, blob }] of src.assets) {
