@@ -551,6 +551,17 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   const span = (g.character.acts ?? []).find((s) => s.from <= lo && hi <= s.to);
   const src = span ? findAction(g.character, span.action) : null;
   if (loop && src?.loop && src.blend) action.blend = atRate(src, movie.fps).blend;
+  // and the mouth shapes that span set over the range, as runs from the range's first frame
+  if (span && src?.mouth?.length) {
+    const a = atRate(src, movie.fps), say = a.mouth ?? [], first = span.start ?? span.from, mouth: NonNullable<ActionDef['mouth']> = [];
+    for (let f = 0; f <= length; f++) {
+      const local = lo + f - first, t = a.loop ? local % a.length : Math.min(local, a.length);
+      let s: Viseme = 'rest';
+      for (const k of say) { if (k.frame <= t) s = k.shape; else break; }
+      if (!mouth.length || mouth[mouth.length - 1].shape !== s) mouth.push({ frame: f, shape: s });
+    }
+    action.mouth = mouth;
+  }
   return { movie: put(movie, withChar(g, { actions: [...g.character.actions, action] })), action };
 }
 
