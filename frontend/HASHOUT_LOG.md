@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · an outside agent adds a character
+
+- refers-to: app/agent-bridge.ts :: addCharacter, take; ui/characters-panel.ts :: placeCharacter, unpackCharacter; io/characters-api.ts :: charactersApi.read
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
+- **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
+
 ## v0.25.0 · Lip-sync onto a character's mouth
 
 - refers-to: ui/lipsync-dialog.ts :: targets, fillBooks, span, overlap, cur, pickSound, limit, show, show2; engine/lipsync-ops.ts :: applyLipsync, groupHolding; ui/content-menu.ts :: lipOk; engine/character-ops.ts :: findDeep, movieStart, listCharacters

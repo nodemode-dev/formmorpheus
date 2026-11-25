@@ -7,6 +7,8 @@ import { startExportRouted } from '../export/route';
 import { startEngineExport, type EngineTarget } from '../export/engine-jobs';
 import { outsideAgents } from '../dock-adapter';
 import { api } from '../io/api';
+import { charactersApi } from '../io/characters-api';
+import { placeCharacter, unpackCharacter } from '../ui/characters-panel';
 import { t } from '../ui/i18n';
 
 export interface BridgeDeps {
@@ -123,6 +125,21 @@ export function startAgentBridge(d: BridgeDeps): void {
     return { ok: true, content: file.name.replace(/\.[^.]+$/, ''), saved };
   };
 
+  const addCharacter = async (a: Args): Promise<Result> => {
+    const name = text(a.movie);
+    if (name) {
+      const blocked = await front(name);
+      if (blocked) return { ok: false, error: blocked };
+    }
+    if (!d.engine.movie) return { ok: false, error: t('FormMorpheus could not open that movie.') };
+    const src = await unpackCharacter(await charactersApi.read(text(a.character)));
+    const at = whole(a.at);
+    const id = await placeCharacter(d.engine, d.renderer, src, at === undefined ? 'playhead' : { frame: Math.max(0, at), index: 0 });
+    if (!id) return { ok: false, error: t('The character could not be added.') };
+    const saved = await d.save();
+    return { ok: true, content: src.group.character?.name ?? src.group.name, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
+  };
+
   const answer = (id: string, result: Result): Promise<unknown> => fetch('/api/mcp/bridge/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, result }) }).catch(() => undefined);
 
   const take = async (item: Item): Promise<void> => {
@@ -138,7 +155,7 @@ export function startAgentBridge(d: BridgeDeps): void {
     else {
       working = true;
       try {
-        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
+        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
       } catch (e) {
         result = { ok: false, error: said(e, t('FormMorpheus could not do that.')) };
       }
