@@ -7,6 +7,14 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · Lip-sync targets read apart
+
+- refers-to: ui/lipsync-dialog.ts :: fillBooks
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Unique labels.** Two copies of one character were both listed as "Marisol (character)", so the Mouth flipbook list could not tell them apart. After the labels are made, a label already used in the list gets a number through the template `{name} {n}` (translated whole), from 2 up until it is free, in list order: the first copy keeps its plain label. Flipbooks of the same name are numbered the same way. Only the text changes; the values are still the Flipbooks' ids.
+
 ## v0.25.0 · the Characters panel opens at its height
 
 - refers-to: ui/characters-panel.ts :: manifest, readManifest, mineRead, opening, show, hide, refresh, paint

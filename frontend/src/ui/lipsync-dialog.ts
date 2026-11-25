@@ -125,7 +125,16 @@ export class LipsyncDialog extends Dialog {
 
   private fillBooks(m: Movie): void {
     const { mouths, books } = this.targets(m);
-    fill(this.book, [...mouths.map((x): [string, string] => [x.mouth.id, tf('{name} (character)', { name: x.char.character?.name ?? x.char.name })]), ...books.map((c): [string, string] => [c.id, c.name])]);
+    const items = [...mouths.map((x): [string, string] => [x.mouth.id, tf('{name} (character)', { name: x.char.character?.name ?? x.char.name })]), ...books.map((c): [string, string] => [c.id, c.name])];
+    // two copies of one character read the same: the second and later get a number, in list order
+    const used = new Set<string>();
+    for (const it of items) {
+      let label = it[1];
+      for (let n = 2; used.has(label); n++) label = tf('{name} {n}', { name: it[1], n });
+      used.add(label);
+      it[1] = label;
+    }
+    fill(this.book, items);
   }
 
   /** A block's first frame and length in movie frames, wherever it sits. */
