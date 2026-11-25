@@ -15,7 +15,7 @@ import { svgToCharacterGroup, svgToMouthChart } from '../io/svg-import';
 import { platform } from '../platform';
 import { PERSON_SVG } from './character-glyph';
 import { chooseOrCancel, confirmAction, promptName } from './dialogs';
-import { el, patchList, q, setClass, setDisabled, setHidden, setText } from './dom';
+import { el, patchList, q, setClass, setDisabled, setHidden, setText, swapMedia } from './dom';
 import { t } from './i18n';
 import { tf } from './i18n-fill';
 import type { TimelineView } from './timeline';
@@ -149,7 +149,7 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   return ok ? copy.id : null;
 }
 
-interface RowItem { key: string; name: string; meta: string; poster: string; mine: boolean }
+interface RowItem { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean }
 
 export class CharactersPanel {
   readonly root: HTMLElement;
@@ -162,6 +162,8 @@ export class CharactersPanel {
   private mine: CharacterItem[] = [];
   private mineNote = '';
   private busy = new Set<string>();
+  /** A saved character's poster per row: the version asked for and the object URL showing it. */
+  private readonly posters = new Map<string, { want: string; url: string }>();
   private opener: HTMLElement | null = null;
 
   constructor(private readonly engine: Engine, private readonly deps: CharactersDeps) {
@@ -250,7 +252,9 @@ export class CharactersPanel {
       update: (n, r) => this.updateRow(n, r),
     });
     rows(this.starterList, starters.map((s) => ({ key: `starter:${s.id}`, name: s.name, meta: t('Starter character'), poster: s.poster ? `${STARTERS}${s.poster}` : '', mine: false })));
-    rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: charactersApi.posterUrl(c.name, c.modified), mine: true })));
+    rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: `${c.name}\n${c.modified}`, v: c.modified, mine: true })));
+    const keys = new Set(this.mine.map((c) => `mine:${c.name}`));
+    for (const [k, p] of this.posters) if (!keys.has(k)) { if (p.url) URL.revokeObjectURL(p.url); this.posters.delete(k); }
     setText(this.empty, this.mineNote || t('No characters saved yet. Choose Save to Characters on a character to keep it here.'));
     setHidden(this.empty, this.mine.length > 0);
   }
@@ -271,7 +275,8 @@ export class CharactersPanel {
     setText(q(row, '.fm-bin-name'), r.name);
     setText(q(row, '.fm-bin-meta'), r.meta);
     const img = q<HTMLImageElement>(row, '.fm-chars-img');
-    if (r.poster && img.getAttribute('src') !== r.poster) img.setAttribute('src', r.poster);
+    if (r.mine) this.loadPoster(row, img, r);
+    else if (r.poster && img.getAttribute('src') !== r.poster) img.setAttribute('src', r.poster);
     setHidden(q(row, '[data-act="rename"]'), !r.mine);
     setHidden(q(row, '[data-act="delete"]'), !r.mine);
     const busy = this.busy.has(r.key);
@@ -280,6 +285,23 @@ export class CharactersPanel {
     const main = q(row, '.fm-bin-main');
     main.draggable = !!this.engine.movie;
     if (main.getAttribute('aria-label') !== r.name) main.setAttribute('aria-label', r.name);
+  }
+
+  /** The glyph stays until the picture is decoded; a newer version replaces the old one in one write. */
+  private loadPoster(row: HTMLElement, img: HTMLImageElement, r: RowItem): void {
+    const had = this.posters.get(r.key);
+    if (had?.want === r.poster) return;
+    const slot = { want: r.poster, url: had?.url ?? '' };
+    this.posters.set(r.key, slot);
+    void charactersApi.poster(r.name, r.v, row).then((blob) => {
+      if (!blob || this.posters.get(r.key) !== slot) return;
+      const url = URL.createObjectURL(blob);
+      swapMedia(img, url).then(() => {
+        if (this.posters.get(r.key) !== slot) { URL.revokeObjectURL(url); return; }
+        if (slot.url) URL.revokeObjectURL(slot.url);
+        slot.url = url;
+      }, () => URL.revokeObjectURL(url));
+    });
   }
 
   private async act(act: string, key: string): Promise<void> {

@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · saved characters' posters
+
+- refers-to: io/characters-api.ts :: charactersApi.poster (was posterUrl); ui/characters-panel.ts :: posters, loadPoster, paint, updateRow
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Fetched, not linked.** A saved character's poster was an `<img src>` on `/api/characters/{name}/poster`, which the engine refused (403): an image cannot send the window key, and every `/api/` route asks for it. `posterUrl` is gone; `charactersApi.poster(name, v, row)` fetches it through the low-priority picture queue (`lowFetch`, as movie posters in `io/api.ts` `picture`), so the key rides on it and visible rows go first. Null when there is none or it fails.
+- **Shown as an object URL.** The panel keeps one `{want, url}` per saved row. A row asks again only when its name or modified time changes; the answer is decoded off-screen and set with `swapMedia` in one write, the glyph staying until then in the thumb's fixed 56 x 42 box, and the old URL is revoked after the swap. A row that leaves the list has its URL revoked in `paint`; an answer for a row that is gone or newer is revoked unused. Starter posters are plain files outside `/api/` and keep their `src`.
+
 ## v0.25.0 · review fixes, characters
 
 - refers-to: ui/characters-panel.ts :: save, packCharacter, useMouthChart; ui/character-commands.ts :: character.mouth; ui/content-menu.ts :: mouthChar; app/app.ts :: Content menu; ui/dialogs.ts :: Confirm, confirmAction, chooseOrCancel; io/svg-import.ts :: makePart, markupOf, parseCss, top, parseSvgParts, partContent, chartLike, chartBook, svgToMouthChart, svgToCharacterGroup, importSvg

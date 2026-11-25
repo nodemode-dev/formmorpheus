@@ -1,6 +1,7 @@
 // The Characters library on the engine (/api/characters): one .fmo per character in the data folder's Characters
 // folder. Writes carry the window key like every engine call (io/window-key.ts adds it to /api requests).
 import { ApiError, serviceReady } from './api';
+import { lowFetch } from './thumb-queue';
 
 export interface CharacterItem { name: string; file: string; path: string; size: number; modified: number; created?: number }
 
@@ -43,9 +44,15 @@ export const charactersApi = {
   async remove(name: string): Promise<void> {
     await call(at(name), { method: 'DELETE' });
   },
-  /** The poster's address for an <img>; `v` (the modified time) lets the browser keep it until the character changes. */
-  posterUrl(name: string, v?: number): string {
-    return `${at(name)}/poster${v ? `?v=${v}` : ''}`;
+  /** The poster as a picture, fetched with the window key (an <img> cannot send it) through the low-priority queue; `v`
+   * (the modified time) lets the browser keep it until the character changes. Null when there is none. */
+  async poster(name: string, v?: number, el?: Element | null): Promise<Blob | null> {
+    if (!(await serviceReady())) return null;
+    try {
+      const res = await lowFetch(`${at(name)}/poster${v ? `?v=${v}` : ''}`, { el });
+      const b = res.ok ? await res.blob() : null;
+      return b && b.size ? b : null;
+    } catch { return null; }
   },
 };
 
