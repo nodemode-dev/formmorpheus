@@ -41,6 +41,18 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 
 ---
 
+## v0.25.0 · the text of a character's linked SVG
+
+- refers-to: app/routers/files.py :: read_source, _source_file, stat_source; ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What it is for.** When the stat of a linked SVG changes, the window needs the new text to read the character again. A page cannot read a file by its path, so `GET /api/files/source?path=` returns it as `image/svg+xml`.
+- **Limits.** Exactly the stat route's: both call `_source_file` (window key in the route, absolute path, `.svg`, a regular file and not a symbolic link, at most 20 MB). The read stops at 20 MB plus one byte and refuses with 413 if the file grew past the limit between the check and the read.
+- **Stat of what was sent.** `X-Source-Size`, `X-Source-Mtime` and `X-Source-Sha256` describe exactly the bytes in the answer, so the window stores the stat of the text it read and a save that lands between a stat and a read is caught on the next poll.
+- **Served as.** `Cache-Control: no-store` and `Content-Security-Policy: sandbox`, so the SVG never runs as a page of the engine's origin even if opened directly (the guard already refuses a request without the window key).
+- **iPad.** Not served there (`DESKTOP_ONLY`); the iPad picks the file again with Update from Source...
+
 ## v0.25.0 · the stat of a character's linked SVG
 
 - refers-to: app/routers/files.py :: stat_source, MAX_SOURCE_BYTES; ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json; ../SECURITY.md (Files)
