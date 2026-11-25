@@ -23,6 +23,7 @@ import { eyedropButton } from './fx-stage-tools';
 import { ActionGroups, FILTER_GROUPS, MOTION_GROUPS } from './action-groups';
 import { FxStack } from './fx-stack';
 import { PERSON_SVG } from './character-glyph';
+import { pickedPart } from './inner-pick';
 import { buildCurves, buildSwatch, groupHead, type CurvesExtra, type Swatch } from './fx-params';
 
 export const CLAPPER = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 6.4l16.8-3.3.8 3.9-16.8 3.3z"/><path d="M4 11h16v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8.4 4.6l1.6 3.2M13.6 3.6l1.6 3.2"/></svg>';
@@ -120,7 +121,7 @@ export class ActionMenu {
     this.pop = new Popover('fm-ka');
     setLaneBase((c) => (engine.movie ? fitBase(engine.movie, c) : 1));
     // lanes show for the chosen blocks only (a lane being dragged or edited always belongs to a chosen block)
-    setLaneShown((c) => engine.selection.content.includes(c.id));
+    setLaneShown((c) => engine.selection.content.includes(c.id) || pickedPart(engine)?.part.id === c.id);
     this.stack =new FxStack(engine, (k) => this.choose(k));
     const action = el('<div class="fm-ka-view"><div class="fm-ka-title">Action</div><div class="fm-ka-btns"></div></div>');
     const btns = q(action, '.fm-ka-btns');

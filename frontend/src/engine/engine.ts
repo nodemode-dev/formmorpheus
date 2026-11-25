@@ -254,6 +254,11 @@ export class Engine extends Emitter<EngineEvents> {
 
   select(ids: string[], track: string | null = null): void {
     const m = this.movie;
+    // one content inside a group: its outermost group is selected and the content picked in it (groupCtx.picked)
+    const outer = m && ids.length === 1 && !locate(m, ids[0]) ? groupInner.outerGroup(m.tracks, ids[0]) : null;
+    const was = groupCtx.picked;
+    if (outer) { groupCtx.picked = ids[0]; ids = [outer.id]; }
+    else if (was && !(m && ids.length === 1 && groupInner.outerGroup(m.tracks, was)?.id === ids[0])) groupCtx.picked = null;
     // many ids (select all) are checked against one pass over the movie, not one search per id
     let valid: string[] = [];
     if (m && ids.length > 8) {
@@ -263,9 +268,16 @@ export class Engine extends Emitter<EngineEvents> {
       valid = ids.filter((id) => have.has(id));
     } else if (m) valid = ids.filter((id) => !!locate(m, id));
     const t = track ?? (valid.length && m ? locate(m, valid[valid.length - 1])?.track.id ?? null : this.selection.track);
-    const same = valid.length === this.selection.content.length && valid.every((id, i) => id === this.selection.content[i]) && t === this.selection.track;
+    const same = valid.length === this.selection.content.length && valid.every((id, i) => id === this.selection.content[i]) && t === this.selection.track && groupCtx.picked === was;
     if (same) return;
     this.selection = { content: valid, track: t };
+    this.emit('selection', this.selection);
+  }
+
+  /** Picks a content inside the selected group (null: none), or leaves it; tells the views like a selection change. */
+  pick(id: string | null): void {
+    if (groupCtx.picked === id) return;
+    groupCtx.picked = id;
     this.emit('selection', this.selection);
   }
 
@@ -283,6 +295,7 @@ export class Engine extends Emitter<EngineEvents> {
       for (const t of m.tracks) for (const c of t.content) have.add(c.id);
       keep = keep.filter((id) => have.has(id));
     } else keep = keep.filter((id) => !!locate(m, id));
+    if (groupCtx.picked && !groupInner.outerGroup(m.tracks, groupCtx.picked)) groupCtx.picked = null;
     const track = this.selection.track && m.tracks.some((t) => t.id === this.selection.track) ? this.selection.track : m.tracks[0]?.id ?? null;
     if (keep.length !== this.selection.content.length || track !== this.selection.track) {
       this.selection = { content: keep, track };

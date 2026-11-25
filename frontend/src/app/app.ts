@@ -619,7 +619,7 @@ export function startApp(): void {
     { id: 'group', label: 'Group', keys: ['Mod+G'], enabled: sel, run: () => { const ids = engine.selection.content.slice(); engine.run('Group', (m) => { const r = ops.groupContent(m, ids); return { movie: r.movie, select: [r.group] }; }); } },
     { id: 'ungroup', label: 'Ungroup', keys: ['Shift+Mod+G'], enabled: () => engine.selected.length === 1 && engine.selected[0].kind === 'group' && document.querySelector('[data-act="multi"]')?.getAttribute('aria-pressed') !== 'true', run: () => { const g = engine.selected.length === 1 ? engine.selected.find((c) => c.kind === 'group') : undefined; if (g) engine.run('Ungroup', (m) => { const r = ops.ungroupContent(m, g.id); return { movie: r.movie, select: r.ids }; }); } },
     { id: 'select-all', label: 'Select All', keys: ['Mod+A'], enabled: has, run: () => { const m = engine.movie; if (m) engine.select(m.tracks.flatMap((tr) => tr.content.map((c) => c.id))); } },
-    { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => engine.select([]) },
+    { id: 'deselect', label: 'Deselect', keys: ['Escape'], enabled: sel, run: () => { if (groupCtx.picked) engine.pick(null); else engine.select([]); } },
     { id: 'add-drawing', label: 'Drawing', icon: 'drawing', enabled: has, run: () => afterCreate(engine.insert('drawing')) },
     { id: 'add-flipbook', label: 'Flipbook', icon: 'flipbook', enabled: has, run: () => afterCreate(engine.insert('flipbook')) },
     { id: 'create-opens-paint', label: 'Open Draw & Paint after adding', enabled: has, checked: () => openPaintOnCreate(), run: () => setOpenPaintOnCreate(!openPaintOnCreate()) },
