@@ -67,7 +67,7 @@ function parseDecl(s: string): Style {
   return out;
 }
 
-function parseCss(text: string, start: number): Rule[] {
+function parseCss(text: string, start: number, complex: string[]): Rule[] {
   const out: Rule[] = [];
   const clean = text.replace(/\/\*[\s\S]*?\*\//g, '');
   const re = /([^{}]+)\{([^{}]*)\}/g;
@@ -77,8 +77,9 @@ function parseCss(text: string, start: number): Rule[] {
     const decl = parseDecl(m[2]);
     for (const raw of m[1].split(',')) {
       const s = raw.trim();
-      // simple selectors only: tag, #id, .class and their joins; anything with a space, > or : is left to the picture path
-      if (!s || /[\s>+~:[\]*]/.test(s)) continue;
+      // simple selectors only: tag, #id, .class and their joins; the elements any other selector matches make their part a picture
+      if (!s) continue;
+      if (/[\s>+~:[\]*]/.test(s)) { complex.push(s); continue; }
       const tag = /^[a-zA-Z][\w-]*/.exec(s)?.[0] ?? null;
       const id = /#([\w-]+)/.exec(s)?.[1] ?? null;
       const cls = Array.from(s.matchAll(/\.([\w-]+)/g), (x) => x[1]);
@@ -354,6 +355,8 @@ function area(nodes: BezNode[]): number {
 interface Ctx {
   rules: Rule[];
   ids: Map<string, Element>;
+  /** Elements a style rule this reader does not apply would paint. */
+  styled: Set<Element>;
   parts: SvgPart[];
   names: Set<string>;
   ref: { w: number; h: number };
@@ -548,6 +551,7 @@ function own(cx: Ctx, w: PartWork, container: Element, m0: Mat, st0: Style, nest
       continue;
     }
     if (el.localName === 'g') { nested.push([el, m0, st0, st]); w.cut.push(el); continue; }
+    if (cx.styled.has(el)) w.part.raster ??= 'a complex style rule';
     if (el.localName === 'a') { own(cx, w, el, m, st, nested); continue; }
     if (st.visibility === 'hidden' || st.visibility === 'collapse') continue;
     if (DRAWN.has(el.localName)) {
@@ -574,6 +578,7 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
   if (has(st.filter)) part.raster = 'a filter';
   else if (has(st.mask)) part.raster = 'a mask';
   else if (has(st['clip-path'])) part.raster = 'a clipping path';
+  else if (cx.styled.has(el)) part.raster = 'a complex style rule';
   const index = cx.parts.push(part) - 1;
   const w: PartWork = { part, el, outer, outerStyle, cut: [] };
   out.push(w);
@@ -642,14 +647,17 @@ export function parseSvgParts(text: string): SvgDoc {
   const ids = new Map<string, Element>();
   for (const el of Array.from(doc.querySelectorAll('[id]'))) { const id = el.getAttribute('id'); if (id && !ids.has(id)) ids.set(id, el); }
   let rules: Rule[] = [];
-  for (const s of Array.from(doc.getElementsByTagNameNS(SVG_NS, 'style'))) rules = rules.concat(parseCss(s.textContent ?? '', rules.length));
+  const complex: string[] = [];
+  for (const s of Array.from(doc.getElementsByTagNameNS(SVG_NS, 'style'))) rules = rules.concat(parseCss(s.textContent ?? '', rules.length, complex));
   rules.sort((a, b) => a.spec - b.spec || a.order - b.order);
+  const styled = new Set<Element>();
+  for (const s of complex) { try { for (const el of Array.from(doc.querySelectorAll(s))) styled.add(el); } catch { /* a selector the parser cannot run applies to nothing it could draw */ } }
   const xml = new XMLSerializer();
   // every definition is carried into each part's picture, wherever the file kept it
   const inDefs = (el: Element): boolean => { for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (DEFS.has(p.localName)) return true; return false; };
   const defs = Array.from(root.querySelectorAll('*')).filter((el) => isSvg(el) && DEFS.has(el.localName) && el.localName !== 'script' && !inDefs(el));
   const cx: Ctx = {
-    rules, ids, parts: [], names: new Set(), ref: { w: hasVb ? vb[2] : width, h: hasVb ? vb[3] : height },
+    rules, ids, styled, parts: [], names: new Set(), ref: { w: hasVb ? vb[2] : width, h: hasVb ? vb[3] : height },
     defs: defs.map((d) => xml.serializeToString(d)).join(''), width, height,
     xmlns: Array.from(root.attributes).filter((a) => a.name.startsWith('xmlns:') && a.name !== 'xmlns:xlink').map((a) => ` ${a.name}="${escAttr(a.value)}"`).join(''),
   };
