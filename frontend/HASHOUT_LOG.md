@@ -7,6 +7,18 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · the Characters panel and library
+
+- refers-to: io/characters-api.ts (new) :: charactersApi, freeName; ui/characters-panel.ts (new) :: CharactersPanel, packCharacter, unpackCharacter, starterCharacter, placeCharacter; styles/characters.css (new); ui/character-commands.ts :: characters-panel, character.save; ui/content-menu.ts :: saveChar; app/app.ts :: charactersPanel, View and Content menus
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Client.** `/api/characters` as the engine and the iPad answer it: list (`{folder, items}`, newest first), read, write (an `.fmo`), rename (`{to}`, 409 when taken), delete (to Recently Deleted), poster. Its own small `call` beside `io/api.ts`'s, with the same not-running sentence and error detail; the window key rides on every `/api` fetch already (`io/window-key.ts`).
+- **What is saved.** A movie the size of the current one holding one track with the character group (its own `parent` link dropped, start 0) and only the pictures it uses, packed by `packMovie` with no history and a 320 px poster drawn by `renderer.thumb` at the Playhead. The engine replaces a name silently, so Save to Characters asks when the name is taken: Replace, or Keep Both, which saves as "Name 2" (Escape keeps both, never losing one).
+- **Placing.** Add to Movie, or a drag of a row onto the Stage or a Timeline row (the media bin's way: a private drag type, window drop listeners, `timeline.dropTarget`), puts `ops.cloneContent` of the group at the Playhead or the dropped frame on a new track named for it: every inner id is new and `parts`, `mouth` and `parent` follow through the paste remap, so two copies move apart. One undo step. A character made in a larger movie is scaled down to fit about the movie centre. Its pictures go into the blob store and the renderer's preload before the run, as an import does.
+- **Starter.** Reads `/starters/characters/manifest.json` once (`{format, characters: [{id, name, file, poster?, mouths?}]}`, files beside it). No manifest or no entries: the Starter section stays hidden. Adding one fetches its SVG, runs the SVG importer, names the character after the entry, and with `mouths` runs the mouth chart importer and `attachMouthChart`. Starter rows have no Rename or Delete.
+- **Built once.** The panel is the media bin's frame and rows (`fm-bin` classes) placed on the left so both can be open; two section lists patched with `patchList`. A poster `<img>` changes `src` only when the address changes (the modified time is in it), keeps the person glyph until the picture loads, and goes back to the glyph when there is none (204).
+
 ## v0.25.0 · Make Character
 
 - refers-to: ui/character-commands.ts (new) :: characterCommands, makeCharacterFlow, selectedGroup, selectedCharacter; ui/character-glyph.ts (new) :: PERSON_D, PERSON_SVG, drawPerson; ui/icons-morph.ts :: character; ui/action-menu.ts :: charBtn; ui/content-menu.ts :: makeChar; ui/timeline.ts :: PERSON_ROOM, block chip, chipWidth; app/app.ts :: commands, Content menu; engine/character-ops.ts :: makeCharacter, characterInfoOf
