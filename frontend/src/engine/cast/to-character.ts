@@ -337,10 +337,15 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
   const oldMouth = partContent(movie, charId, 'mouth');
   const old = characterOf(movie, charId);
   const highlight = new Map(old ? old.tracks.flatMap((t) => t.content).map((x) => [x.id, x.highlight]) : []);
-  const before = old?.character?.build ? builtParts(old.character.build) : null;
+  const locked = new Set(old ? old.tracks.filter((t) => t.locked).flatMap((t) => t.content.map((x) => x.id)) : []);
+  const onLock = (n: string): boolean => locked.has(old?.character?.parts[n] ?? '');
+  const prev = old?.character?.builtHidden ?? [];
   const r = mergeFromSource(movie, charId, g, table);
-  const hidden = r.missing.filter(isCastPart);
-  const back = Object.keys(g.character?.parts ?? {}).filter((n) => isCastPart(n) && before && !before.has(n));
+  const hidden = r.missing.filter((n) => isCastPart(n) && !onLock(n));
+  const back = prev.filter((n) => n in (g.character?.parts ?? {}) && !onLock(n));
+  const wasHidden = new Set(old ? old.tracks.flatMap((t) => t.content).filter((x) => x.hidden).map((x) => x.id) : []);
+  const byPerson = (n: string): boolean => wasHidden.has(old?.character?.parts[n] ?? '') && !prev.includes(n);
+  const builtHidden = [...prev.filter((n) => !back.includes(n) && !hidden.includes(n) && n in (old?.character?.parts ?? {})), ...hidden.filter((n) => !byPerson(n))];
   const freshName = new Map(Object.entries(g.character?.parts ?? {}).map(([n, id]) => [id, n]));
   const freshOrder = g.tracks.map((t) => freshName.get(t.content[0]?.id ?? '') ?? '').filter(Boolean).reverse();
   const freshMouth = g.character?.parts.mouth ? g.tracks.flatMap((t) => t.content).find((c) => c.id === g.character?.parts.mouth) : undefined;
@@ -349,7 +354,7 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
     if (!ch0) return c;
     const hideIds = new Set(hidden.map((n) => ch0.parts[n]));
     const showIds = new Set(back.map((n) => ch0.parts[n]));
-    const keepIds = new Set(r.missing.filter((n) => !isCastPart(n)).map((n) => ch0.parts[n]));
+    const keepIds = new Set(r.missing.filter((n) => !hidden.includes(n)).map((n) => ch0.parts[n]));
     let tracks = c.tracks.map((t) => (t.content.some((x) => hideIds.has(x.id) || showIds.has(x.id) || keepIds.has(x.id)) ? { ...t, content: t.content.map((x) => {
       if (keepIds.has(x.id)) return { ...x, highlight: highlight.get(x.id) ?? x.highlight };
       if (hideIds.has(x.id)) return { ...x, hidden: true as const, highlight: highlight.get(x.id) ?? x.highlight };
@@ -357,11 +362,11 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
       return x;
     }) } : t));
     tracks = placeAdded(tracks, freshOrder, r.added, ch0.parts);
-    const { missing: _m, missingWas: _w, ...base } = ch0;
-    const gone = (n: string): boolean => !hidden.includes(n) && !(n in (g.character?.parts ?? {}));
+    const { missing: _m, missingWas: _w, builtHidden: _b, ...base } = ch0;
+    const gone = (n: string): boolean => !isCastPart(n) && !(n in (g.character?.parts ?? {}));
     const missing = (old?.character?.missing ?? []).filter(gone);
     const was = Object.fromEntries(Object.entries(old?.character?.missingWas ?? {}).filter(([n]) => gone(n)));
-    const ch = { ...base, ...(missing.length ? { missing } : {}), ...(missing.length && Object.keys(was).length ? { missingWas: was } : {}) };
+    const ch = { ...base, ...(missing.length ? { missing } : {}), ...(missing.length && Object.keys(was).length ? { missingWas: was } : {}), ...(builtHidden.length ? { builtHidden } : {}) };
     const mouthId = ch.parts.mouth;
     if (oldMouth?.kind === 'flipbook' && freshMouth?.kind === 'flipbook' && mouthId === oldMouth.id) {
       const art = new Map<string, FlipbookFrame>();
@@ -398,20 +403,6 @@ function placeAdded(tracks: Track[], order: string[], added: string[], parts: Re
 
 const CAST_PARTS = new Set(Object.values(PART));
 const isCastPart = (name: string): boolean => CAST_PARTS.has(name);
-
-/** The part names a recipe's build draws; null when it cannot be built. */
-function builtParts(spec: CastSpec): Set<string> | null {
-  try {
-    const out = new Set<string>();
-    for (const s of build(spec).slots) {
-      if (!s.prims.length) continue;
-      const n = s.name === OPEN_SLOT ? 'mouth' : castPartName(s.name);
-      if (n) out.add(n);
-    }
-    out.add('mouth');
-    return out;
-  } catch { return null; }
-}
 
 /** A recipe built and made a character at frame `at`, its mouth chart from the recipe's own mouth shapes. */
 export function castToCharacterGroup(spec: CastSpec, movie: Movie, at = 0): Promise<ImportResult> {
