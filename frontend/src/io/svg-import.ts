@@ -36,6 +36,8 @@ export interface SvgPart {
   hidden: boolean;
   /** A standalone SVG of this part alone, used to draw it as a picture. */
   markup: string;
+  /** When the part's groups are a mouth chart: one drawing per group, and the part becomes their Flipbook. */
+  frames?: SvgPart[];
 }
 
 export interface SvgDoc { width: number; height: number; parts: SvgPart[] }
@@ -589,6 +591,15 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
     const r = DRAWN.has(el.localName) ? drawElement(cx, el, m, st) : { why: WHY[el.localName] ?? 'an element that is not a shape' };
     if ('why' in r) part.raster = r.why; else part.shapes.push(...r.shapes);
   }
+  if (nested.length >= 2 && chartLike(nested.map(([g]) => labelOf(g) ?? ''))) {
+    // each mouth is drawn whole as a frame of this part, not made a part of its own
+    part.frames = nested.map(([g, gm, gOuter, gs]) => {
+      const frame: SvgPart = { name: labelOf(g) ?? part.name, parent: index, shapes: [], raster: null, pivot: null, opacity: 1, hidden: gs.visibility === 'hidden' || gs.visibility === 'collapse', markup: '' };
+      out.push({ part: frame, el: g, outer: gm, outerStyle: gOuter, cut: [] });
+      return frame;
+    });
+    return;
+  }
   for (const [g, gm, gOuter, gs] of nested) makePart(cx, g, gm, gOuter, part.hidden && gs.visibility === undefined ? { ...gs, visibility: 'hidden' } : gs, index, part.opacity, out);
 }
 
@@ -763,7 +774,9 @@ function boxOfContents(list: Content[], f: Fit): [number, number, number, number
 
 async function partContent(p: SvgPart, doc: SvgDoc, f: Fit, dur: number, assets: ImportResult['assets']): Promise<Content> {
   let c: Content;
-  if (p.raster || !p.shapes.length) {
+  const book = p.frames ? await chartBook(p.frames, doc, f, 0, dur, assets) : null;
+  if (book) c = { ...book, name: p.name };
+  else if (p.raster || !p.shapes.length) {
     const pic = p.raster ? await drawPart(p.markup, doc, f) : null;
     if (pic) {
       const blob = await pic.cv.convertToBlob({ type: 'image/png' });
@@ -791,8 +804,8 @@ async function partContent(p: SvgPart, doc: SvgDoc, f: Fit, dur: number, assets:
  * An SVG with one group per body part as a new character Group at frame `at`: each part on its own inner track,
  * nested groups parented to the part they sit in, pivots from each part's pivot element or its centre.
  */
-export async function svgToCharacterGroup(text: string, fileName: string, movie: Movie, at: number): Promise<ImportResult> {
-  const doc = parseSvgParts(text, baseOf(fileName));
+export async function svgToCharacterGroup(src: string | SvgDoc, fileName: string, movie: Movie, at: number): Promise<ImportResult> {
+  const doc = typeof src === 'string' ? parseSvgParts(src, baseOf(fileName)) : src;
   if (!doc.parts.length) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
   const f = fitOf(doc, movie);
   const dur = Math.max(1, movie.duration - at);
@@ -824,32 +837,28 @@ function visemeOf(name: string): string | null {
   return null;
 }
 
-/** True when an SVG's top-level groups are a mouth chart: most of them named for the eight mouth shapes. */
-export function isMouthChart(doc: SvgDoc): boolean {
-  const topParts = doc.parts.filter((p) => p.parent < 0);
-  const named = new Set(topParts.map((p) => visemeOf(p.name)).filter(Boolean));
-  return named.size >= 6 && topParts.length <= VISEMES.length + 2;
+/** True when names are a mouth chart's: most of them the eight mouth shapes, and not many more. */
+function chartLike(names: string[]): boolean {
+  const named = new Set(names.map(visemeOf).filter(Boolean));
+  return named.size >= 6 && names.length <= VISEMES.length + 2;
 }
 
-/**
- * A mouth chart SVG (top-level groups named Rest, MBP, AI, E, O, U, FV and L / th; data-name, label or id) as one
- * Flipbook at frame `at`, its frames named for the shapes in chart order, drawn where the SVG draws them on the movie.
- */
-export async function svgToMouthChart(text: string, movie: Movie, at = 0, fileName = 'Mouth chart.svg'): Promise<ImportResult & { content: Content }> {
-  const doc = parseSvgParts(text);
-  const topParts = doc.parts.filter((p) => p.parent < 0);
-  if (!topParts.length) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
-  const f = fitOf(doc, movie);
-  const named = topParts.map((p) => ({ p, v: visemeOf(p.name) }));
+/** True when an SVG's top-level groups are a mouth chart: most of them named for the eight mouth shapes. */
+export function isMouthChart(doc: SvgDoc): boolean {
+  return chartLike(doc.parts.filter((p) => p.parent < 0).map((p) => p.name));
+}
+
+/** Parts drawn as one mouth Flipbook from frame `at`, a frame each named for its shape in chart order; null when none draws. */
+async function chartBook(parts: SvgPart[], doc: SvgDoc, f: Fit, at: number, dur: number, assets: ImportResult['assets']): Promise<Content | null> {
+  const named = parts.map((p) => ({ p, v: visemeOf(p.name) }));
   const order = (v: string | null): number => (v ? Object.values(VISEME_NAMES).indexOf(v) : VISEMES.length);
   named.sort((a, b) => order(a.v) - order(b.v));
   const pics: Array<{ name: string; pic: Awaited<ReturnType<typeof drawPart>> }> = [];
   for (const { p, v } of named) pics.push({ name: v ?? p.name, pic: await drawPart(p.markup, doc, f) });
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const { pic } of pics) if (pic) { x0 = Math.min(x0, pic.x); y0 = Math.min(y0, pic.y); x1 = Math.max(x1, pic.x + pic.cv.width); y1 = Math.max(y1, pic.y + pic.cv.height); }
-  if (!(x1 > x0)) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
+  if (!(x1 > x0)) return null;
   const rect: CanvasRect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-  const assets: ImportResult['assets'] = [];
   const frames: FlipbookFrame[] = [];
   for (const { name, pic } of pics) {
     const layer = drawingLayer(name);
@@ -864,8 +873,20 @@ export async function svgToMouthChart(text: string, movie: Movie, at = 0, fileNa
     frames.push({ id: uid('f'), hold: 1, layers: [layer], name });
   }
   const row = { ...flipTrack('Mouth', 1), frames };
-  const content = makeContent('flipbook', at, Math.max(frames.length, movie.duration - at), { name: 'Mouth', flip: [row], canvas: rect });
-  return { assets, contents: [content], ownTrack: [true], notice: tf('{name}: a mouth chart of {n} drawings.', { name: fileName, n: frames.length }), content };
+  return makeContent('flipbook', at, dur, { name: 'Mouth', flip: [row], canvas: rect });
+}
+
+/**
+ * A mouth chart SVG (top-level groups named Rest, MBP, AI, E, O, U, FV and L / th; data-name, label or id) as one
+ * Flipbook at frame `at`, its frames named for the shapes in chart order, drawn where the SVG draws them on the movie.
+ */
+export async function svgToMouthChart(src: string | SvgDoc, movie: Movie, at = 0, fileName = 'Mouth chart.svg'): Promise<ImportResult & { content: Content }> {
+  const doc = typeof src === 'string' ? parseSvgParts(src) : src;
+  const topParts = doc.parts.filter((p) => p.parent < 0);
+  const assets: ImportResult['assets'] = [];
+  const content = topParts.length ? await chartBook(topParts, doc, fitOf(doc, movie), at, Math.max(topParts.length, movie.duration - at), assets) : null;
+  if (!content) throw new Error(tf('{name} has no shapes FormMorpheus can read.', { name: fileName }));
+  return { assets, contents: [content], ownTrack: [true], notice: tf('{name}: a mouth chart of {n} drawings.', { name: fileName, n: topParts.length }), content };
 }
 
 /** True for a file that is an SVG by its name, type or first bytes. */
@@ -877,7 +898,7 @@ export function isSvgFile(file: File, head: Uint8Array): boolean {
 
 /** An SVG file as a character, or as a mouth chart Flipbook when its groups are named for the mouth shapes. */
 export async function importSvg(file: File, movie: Movie, at: number): Promise<ImportResult> {
-  const text = await file.text();
-  if (isMouthChart(parseSvgParts(text))) return svgToMouthChart(text, movie, at, file.name);
-  return svgToCharacterGroup(text, file.name, movie, at);
+  const doc = parseSvgParts(await file.text(), baseOf(file.name));
+  if (isMouthChart(doc)) return svgToMouthChart(doc, movie, at, file.name);
+  return svgToCharacterGroup(doc, file.name, movie, at);
 }
