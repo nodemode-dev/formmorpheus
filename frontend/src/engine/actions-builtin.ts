@@ -60,10 +60,6 @@ const sitArmY: Key[] = seq([[0, 0], [5, -4], [21, 164], [25, 149], [30, 150]]);
 const sitLegY: Key[] = seq([[0, 0], [4, 0], [20, 154.8], [24, 151.36], [30, 154.8]]);
 const sitLegS: Key[] = seq([[0, 1], [4, 1], [20, 0.55], [24, 0.56], [30, 0.55]]);
 
-// ---- The character builder's own animations, as its studio wrote them -------------------------------------------
-// Times are fractions of one pass of `dur` seconds; r in degrees (clockwise on screen, as here); x and y in rig pixels at
-// body height 1; sx and sy scale. A key's letter is the ease leaving it (s, o, i, l). L is the Stage's left.
-
 type SEase = 's' | 'o' | 'i' | 'l';
 type SKey = [t: number, v: number, e?: SEase];
 type STrack = Partial<Record<'r' | 'x' | 'y' | 'sx' | 'sy', SKey[]>>;
@@ -243,7 +239,6 @@ const sitBy = (fn: (s: number) => number): Key[] => seq(SIT.map(([f, s]): Pt => 
  * to the lap. No knee turn: a turn between the squashed thigh and the shin would shear the shin and foot.
  */
 function rigSit(): ActionDef {
-  // keyed every frame: the shin's scale must undo the thigh's on each frame shown, or the feet leave the floor between keys
   const drop = sitBy((s) => s), at: number[] = [];
   for (let f = 0; f <= 30; f++) at.push(evalChannel(drop, f) ?? 0);
   const each = (fn: (s: number) => number): Key[] => at.map((s, f) => ({ frame: f, value: fn(s), ease: 'linear' }));
@@ -268,7 +263,6 @@ const RIG_ACTIONS: ReadonlyMap<string, ActionDef> = new Map([
   { ...fromStudio('builtin:idle', 'Idle', true, S_IDLE), blend: 4 },
   fromStudio('builtin:walk', 'Walk in place', true, S_WALK),
   { ...fromStudio('builtin:run', 'Run', true, S_RUN), blend: 4 },
-  // our Wave Hello lifts arm-r; the studio waves with its R arm, so it plays mirrored
   fromStudio('builtin:wave', 'Wave Hello', false, S_WAVE, true),
   fromStudio('builtin:jump', 'Jump', false, S_JUMP),
   { ...fromStudio('builtin:dance', 'Dance', true, S_DANCE), blend: 4 },
@@ -303,9 +297,12 @@ function chained(a: ActionDef): ActionDef {
   return { ...a, lanes };
 }
 
+/** A character with the builder's parts: a hip and a forearm. */
+export const rigged = (parts: Readonly<Record<string, string>>): boolean => !!parts.hip && !!(parts['forearm-r'] || parts['forearm-l']);
+
 /** The starter to play for `id` on a character with these parts: the builder's version when it has a hip and a forearm. */
 export function builtinFor(def: ActionDef, parts: Readonly<Record<string, string>>): ActionDef {
-  if (!parts.hip || !(parts['forearm-r'] || parts['forearm-l'])) return def;
+  if (!rigged(parts)) return def;
   return RIG_ACTIONS.get(def.id) ?? CHAINED.get(def.id) ?? def;
 }
 

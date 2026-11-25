@@ -6,7 +6,7 @@ import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
 import { floorOf } from '../engine/guides';
-import { spotX, standOnFloor } from '../engine/starter-scene';
+import { spotX, standOnFloor, STARTER_ART } from '../engine/starter-scene';
 import { newMovie, track as makeTrack } from '../engine/model';
 import * as ops from '../engine/ops';
 import type { Renderer } from '../engine/render';
@@ -51,7 +51,7 @@ const TEMPLATE = `<section class="fm-bin fm-chars" role="dialog" hidden>
 </section>`;
 
 const ROW = `<div class="fm-bin-row" role="listitem">
-  <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name"></span><span class="fm-bin-meta"></span></span></button>
+  <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name" data-no-i18n></span><span class="fm-bin-meta"></span></span></button>
   <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="open" hidden></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
 </div>`;
 
@@ -151,7 +151,10 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   // made in a larger movie: shrunk to fit, about the movie centre where its parts are placed from
   const k = Math.min(1, m.width / Math.max(1, src.width), m.height / Math.max(1, src.height));
   if (floorY !== null && src.width === m.width && src.height === m.height) copy.transform = standOnFloor(copy, m, floorY);
-  else copy.transform = { ...copy.transform, scale: copy.transform.scale * k, x: copy.transform.x + spotX(m) - m.width / 2 };
+  else {
+    const drawn = Math.min(1, src.width / STARTER_ART.w, src.height / STARTER_ART.h) * k * copy.transform.scale;
+    copy.transform = { ...copy.transform, scale: copy.transform.scale * k, x: copy.transform.x + spotX(m, drawn) - m.width / 2 };
+  }
   const table: Record<string, Asset> = {};
   const pics = new Map<string, Blob>();
   for (const [id, { asset, blob }] of src.assets) {

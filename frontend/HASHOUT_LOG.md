@@ -2,10 +2,72 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.30.0
-Last updated: 2026-11-25 · the studio's animations as starter actions
+Current build version: v0.31.0
+Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
+
+## v0.31.0 · line comments moved here
+
+- refers-to: engine/actions-builtin.ts :: S_IDLE to S_CHEER (above them), rigSit, RIG_ACTIONS (S_WAVE); engine/action-ops.ts :: sizeOf, applyAction (end), actionFromKeys; io/fmact.ts :: parseFmact (blend); ui/character-builder.ts :: apply (busy)
+- kind: removed-comment
+- logged: v0.31.0 · 2026-11-25
+
+- Above the studio data: the character builder's own animations, as its studio wrote them. Times are fractions of one pass of `dur` seconds; r in degrees (clockwise on screen, as here); x and y in rig pixels at body height 1; sx and sy scale. A key's letter is the ease leaving it (s, o, i, l). L is the Stage's left.
+- rigSit: keyed every frame, because the shin's scale must undo the thigh's on each frame shown, or the feet leave the floor between keys.
+- Wave in RIG_ACTIONS: our Wave Hello lifts arm-r; the studio waves with its R arm, so it plays mirrored.
+- sizeOf: on a built character the leg is in two parts and a foot, so the sole is the lowest of them.
+- applyAction, end: a built character without hair or a shadow is complete, so its optional parts are never named.
+- actionFromKeys: saved from inside one placed span of a blended loop, it keeps easing in and out where it is placed, and keeps the mouth shapes that span set over the range, as runs from the range's first frame.
+- parseFmact: `blend` is optional and new in 0.30.0; a file without it reads as before, and an older reader passes it by.
+- character-builder apply: the Apply button is marked busy rather than disabled, so the focused button keeps focus and Escape still reaches the dialog.
+
+## v0.31.0 · starter actions: old spans, the person's lip-sync, cut loops
+
+- refers-to: engine/action-ops.ts :: spanAction, plain, blends, easeCut, shapeAt, SHAPE_OF (new), speak, seal, clearRange, sizeOf, applyAction, clearAction, actionFromKeys; engine/actions-builtin.ts :: rigged (new), builtinFor; engine/types.ts :: ActSpan.rig, ActSpan.said (new); engine/normalize.ts :: character acts; io/fmact.ts :: parseFmact
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Spans remember which version wrote them.** A starter placed on a built character in 0.28.0 or 0.29.0 holds the plain lanes, but 0.30.0 cleared, swapped and covered it with the builder version's channels, so Idle left head y, arm y, body y and scale behind. A span placed with a builder version now carries `rig: true`; `spanAction` reads an unmarked starter span as the plain starter, and `owned` (through clearRange and the merge in applyAction), `seal`, `clearAction` and Save as Action all go through it. normalize keeps `rig` only when it is `true`. Nine-part characters never get the field: their spans and keys are as at 0.25.0 (checked against 0a7e706 with the review's dump for kofi, noor and bram, every apply, clear, combo and swap equal).
+- **The person's lip-sync is never written over.** Of the two choices (only Talk writes when a Lip-sync row exists, or a starter writes only where the mouth shows Rest) the second is safer and is the rule for every mouth chart, Lip-sync row or not: no starter, Talk included, replaces a shape the person or Lip-sync put there. The frames a starter does write are kept on its span as `said` runs (character frames). Clearing it, or laying another action over part of it, puts Rest back only on the overlap and only on frames inside those runs that still show the shape the starter put there; a span placed before 0.31.0 has no runs and is matched by shape alone. Frames named for no shape are never touched. Seen and left: a starter with mouth shapes fills the Rest pauses inside a person's lip-sync over its span.
+- **Cut loops keep easing.** Laying an action into a blended loop (Cheer at 40 over Cheer from 0) used to drop the arms in one frame: `easeCut` now runs the left remnant into the cut over its last `blend` frames (to the new span's first pose) and starts a right remnant at rest, easing into the loop over its first `blend` frames.
+- **Short blended spans.** One rule, `blends`: a blended loop eases and rests at its ends only when the span (or remnant) has room for both eases and a frame between (2 x blend + 2). A shorter one plays as a plain loop, so a short Cheer shows its arms up instead of nothing; seal no longer rests it.
+- **Smaller fixes.** `parseFmact` keeps one mouth entry per frame (the last in the file) and at most length + 1 of them. Save as Action caps a kept blend at half the new action's length, as the reader does. `sizeOf` measures to the shin and foot only on a built character (`rigged`: a hip and a forearm), so a drawn SVG character whose parts happen to be named `shin-r` or `foot-r` scales as at 0.25.0.
+- Two commits, not one per finding: the engine fixes touch the same functions of action-ops (spanAction is read by the mouth and the cut code) and part of a file is never staged with a patch; the file reader is its own commit.
+
+## v0.31.0 · spots across the frame at full size
+
+- refers-to: engine/starter-scene.ts :: spotX (new `scale`); ui/characters-panel.ts :: placeCharacter
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **What the report saw.** Built starters do take spots: Karl then Pip in a new 1920 by 1080 movie came in at x 0 and x +280. But the 280 px step was made for a starter scene, where a character stands at half its drawn size. In a plain movie a character keeps its size (about 900 px tall, 280 px across the shoulders, a fox with its tail about 420), so a 280 px step put Karl's hand on Pip's arm and their shadows over each other.
+- **The step follows the drawn size.** `spotX(movie, scale)` takes the scale the 1080 character art is drawn at in the movie (0.5 in a scene, the default; in a plain movie the importer's fit `min(1, W/1080, H/1080)` times the shrink for a character from a larger movie times its own scale) and grows the step with it, capped so the five spots (middle, right, left, further right, further left) fit between the margins. At 1920 wide and full size the step is 345 px: Karl 960, Pip 1305, then 615, 1650 and 270, bodies apart. A starter scene's spots are unchanged (280 px at 1920 wide, under the cap at every width down to 720).
+- **Limits.** A square or narrow movie still holds only two or three full-height characters side by side; the outer spots are held inside the margins as before.
+
+## v0.31.0 · the builder in long languages and right to left
+
+- refers-to: styles/character-builder.css :: .fm-cb-roster, .fm-cb-panel, .fm-cb-sl, .fm-cb-sl span (new), .fm-cb-out
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Checked in a browser in all 29 tables** (Pip, Rex, Sprig and Karl on the Hair tab; Look; Outfit): the hair note stays inside the empty cells of the last style row in every language (at most 64 px tall in Greek against a 91 px row), and the style grid is the same height with the note shown and hidden, so nothing shifts. The grid is 15 px taller in Japanese, Korean, Thai and Chinese for every recipe alike, from the line height of their tile labels.
+- **Slider labels.** The 76 px label column let "Телосложение", "Ruumiinrakenne", "Kroppsbyggnad" and "Σωματότυπος" run under the slider track. It is 96 px, and a label still too long breaks onto a second line (`overflow-wrap: anywhere` is the last resort for one long word), never under the track.
+- **Right to left.** The roster's and the panel's dividers were `border-right` and `border-left`, so in Arabic both sat on the dialog's outer edges and the columns had none between them; they are `border-inline-end` and `border-inline-start`. A slider's value is `text-align: end`, at the outer edge in both directions. The columns, tabs, tiles, swatches and the hair note mirror by the grid and flex order with no other change.
+- **Not changed.** Tile labels keep one line with an ellipsis (a second line would make the rows uneven between languages); the full label is the tile's tooltip.
+
+## v0.31.0 · builder labels with their own entries
+
+- refers-to: ui/character-builder.ts :: SENSE (new), tw (new), relabel, sync; ui/i18n/* (27 full tables), ui/i18n/es-MX.ts, ui/i18n/fr-CA.ts
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Four English words already meant something else.** The tables are keyed by the English label, so a builder label that shares its word with an older label shares its translation too. Checked against the 0.25.0 tables: `Trim` (the outfit channel of Sundress and Varsity Jacket) was the clip's trim ("Kürzen", "Rognage"), `Frame` (the Frame A or B group's name) was a movie frame, `Height` (the body slider) was a shape's height ("Hauteur", 高さ where a person's height is "Taille", 身長) and `Head size` was an arrow's head ("Spitzengröße", 矢じりのサイズ). The others (`Build`, `Body`, `Jacket`, `Vest`, `Coat`, `Look`, `Full`, `Bob`, `Fabric`, `Style`, `None`, `Name`, `Color`, `Apply`, `Presets`) had no older entry or one of the same meaning.
+- **`SENSE` and `tw`.** The builder looks these four up under their own keys, `Trim (clothing)`, `Frame (body)`, `Height (body)` and `Head size (body)`, and shows the English word where a table has none, so English and the studio's drawing (whose outfit labels stay `Trim`) are unchanged. `relabel` and the outfit color labels in `sync` go through `tw`; every other label is a plain `t`.
+- **The page translator.** It translates any text that matches a key with plain `t`, so it would put the old meaning back on these four labels after a language change and it turned a starter's name into a word (Moss became the moss of the brush list, 苔, طحلب). The four labels and the outfit color labels carry `data-no-i18n` and the builder relabels everything itself on `onLanguage`; the names in the Characters panel rows, the builder's roster tiles and the stage name carry `data-no-i18n` as well.
+- **Tags.** The builder showed a starter's tag ("Woodland fox") in English beside the name and in the roster tooltip while the Characters panel translated it; all three now go through `t`. A hair, outfit or kind tile also carries its translated label as a tooltip, as a long one ends in an ellipsis.
+- **Wording.** hu `Frame A` and `Frame B` read as an A/B test phrase ("A testtípus": "A" is also the article) and are `Alkat A` and `Alkat B`, beside `Testalkat` for Build. de `Custom color` follows the table's `Benutzerdefiniert`.
+- **Regional tables.** es-MX gains the Mexican words for the new clothing and face pieces (Playera, Mezclilla, Chamarra, Tenis, Short, Overol, Moño for the bow tie, Chongo for the top bun, Lentes, Aretes, Rubor, Candado, Partido de lado, Sudadera y pants, Pants deportivos, Uniforme quirúrgico), El inventor, and "se agregó" for the one new sentence where es says "se añadió". fr-CA gains Espadrilles, Souliers de course, Souliers, Pantoufles, Camisole, Kangourou, Manteau d'hiver, Blouson de collège, Lulus, T-shirt et jeans, Jeans, Le gameur and Veste for the vest; as Veste is the vest there, `Jacket` is Manteau rather than the French Veste. Each key was checked against the es and fr tables and the regional ones; none overrides a regional word already there.
 
 ## v0.29.0 · the eight new characters as starters and in the Character Builder
 

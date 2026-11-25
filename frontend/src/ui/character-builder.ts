@@ -16,7 +16,7 @@ import type { Movie } from '../engine/types';
 import { placeCharacter, type CharacterSource, type CharactersPanel } from './characters-panel';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setDisabled, setHidden, setText, setTitle, setValue } from './dom';
-import { t } from './i18n';
+import { onLanguage, t } from './i18n';
 import { tf } from './i18n-fill';
 import { toast } from './toast';
 
@@ -46,6 +46,8 @@ const HAIR_NOTE: Record<string, string> = {
 const STYLE_FREE = new Set(['dino', 'sprout']);
 const BEARDS: ReadonlyArray<readonly [Beard, string]> = [['none', 'None'], ['stubble', 'Stubble'], ['mustache', 'Mustache'], ['goatee', 'Goatee'], ['full', 'Full']];
 const LIPS: readonly string[] = ['#b5485a', '#8a4a3c', '#8a2f45', '#c46a6a', '#6b3a3a'];
+const SENSE: Record<string, string> = { Trim: 'Trim (clothing)', Frame: 'Frame (body)', Height: 'Height (body)', 'Head size': 'Head size (body)' };
+const tw = (en: string): string => { const k = SENSE[en]; if (!k) return t(en); const s = t(k); return s === k ? en : s; };
 
 /** The studio's stage: a 600 by 640 view, the character's feet at 300, 588 at 1.08. */
 const VIEW_W = 600, VIEW_H = 640, ROOT: Mat = [1.08, 0, 0, 1.08, 300, 588];
@@ -172,7 +174,7 @@ export class CharacterBuilder {
     }, true);
     const root = el<HTMLElement>(`<div class="fm-cb">
       <nav class="fm-cb-roster"></nav>
-      <div class="fm-cb-stage"><div class="fm-cb-stagename" aria-live="polite"></div><div class="fm-cb-canvaswrap"><canvas class="fm-cb-canvas" role="img"></canvas></div></div>
+      <div class="fm-cb-stage"><div class="fm-cb-stagename" aria-live="polite" data-no-i18n></div><div class="fm-cb-canvaswrap"><canvas class="fm-cb-canvas" role="img"></canvas></div></div>
       <section class="fm-cb-panel"><div class="fm-cb-tabs" role="tablist"></div><div class="fm-cb-panes"></div></section>
     </div>`);
     this.dlg.body.appendChild(root);
@@ -324,7 +326,7 @@ export class CharacterBuilder {
     outfit.appendChild(this.colHead);
     const cols = el<HTMLElement>('<div class="fm-cb-cols"></div>');
     for (let i = 0; i < 3; i++) {
-      const lab = el<HTMLElement>('<label class="fm-cb-col"><input type="color"><span></span></label>');
+      const lab = el<HTMLElement>('<label class="fm-cb-col" data-no-i18n><input type="color"><span></span></label>');
       const input = q<HTMLInputElement>(lab, 'input'), at = i;
       input.addEventListener('input', () => {
         const of = OUTFITS[this.spec.outfit];
@@ -349,6 +351,7 @@ export class CharacterBuilder {
 
     this.dlg.onClose = () => { cancelAnimationFrame(this.raf); this.raf = 0; window.clearTimeout(this.thumbTimer); };
     new ResizeObserver(() => this.fitCanvas()).observe(this.wrap);
+    onLanguage(() => { for (const [n, en] of this.labels) this.relabel(n, en); if (this.dlg.isOpen) this.sync(); });
 
     this.setPresets(presets);
     this.base = clone(this.presetSpecs[0] ?? mkSpec(CAST_PRESETS[0]));
@@ -376,7 +379,7 @@ export class CharacterBuilder {
           this.rosterTiles.set(p.id, tile);
         }
         setText(tile.label, p.name);
-        setTitle(tile.btn, `${p.name} · ${p.tag}`);
+        setTitle(tile.btn, `${p.name} · ${t(p.tag)}`);
         if (tile.btn.parentElement !== grid) grid.appendChild(tile.btn);
         drawThumb(tile.cv, this.presetSpecs[i], 'head');
       });
@@ -433,15 +436,17 @@ export class CharacterBuilder {
   private lab<T extends HTMLElement>(n: T, en: string, attr: 'text' | 'aria-label' = 'text'): T {
     n.dataset.cbEn = en;
     n.dataset.cbAttr = attr;
+    if (SENSE[en]) n.dataset.noI18n = '';
     this.labels.push([n, en]);
     this.relabel(n, en);
     return n;
   }
 
   private relabel(n: HTMLElement, en: string): void {
-    const s = t(en);
+    const s = tw(en);
     if (n.dataset.cbAttr === 'aria-label') { if (n.getAttribute('aria-label') !== s) n.setAttribute('aria-label', s); }
     else setText(n, s);
+    if (n.parentElement?.classList.contains('fm-cb-tc')) setTitle(n.parentElement, s);
   }
 
   private head(en: string): HTMLElement { return this.lab(el<HTMLElement>('<h4 class="fm-cb-h"></h4>'), en); }
@@ -480,7 +485,7 @@ export class CharacterBuilder {
     const btn = el<HTMLButtonElement>('<button type="button" class="fm-cb-tc" aria-pressed="false"><canvas></canvas><span></span></button>');
     const cv = q<HTMLCanvasElement>(btn, 'canvas'), label = q(btn, 'span');
     cv.width = w * 2; cv.height = h * 2;
-    if (plain) setText(label, en); else this.lab(label, en);
+    if (plain) { label.dataset.noI18n = ''; setText(label, en); } else this.lab(label, en);
     return { btn, cv, label };
   }
 
@@ -535,7 +540,7 @@ export class CharacterBuilder {
   }
 
   private syncName(): void {
-    setText(this.stageName, this.spec.tag ? `${this.spec.name} · ${this.spec.tag}` : this.spec.name);
+    setText(this.stageName, this.spec.tag ? `${this.spec.name} · ${t(this.spec.tag)}` : this.spec.name);
     setText(q(this.resetBtn, '.fm-cb-reset-text'), tf('Reset {name}', { name: this.base.name }));
   }
 
@@ -543,7 +548,7 @@ export class CharacterBuilder {
   private sync(): void {
     const c = this.spec, f = c.face, note = HAIR_NOTE[c.species] ?? '', styled = !STYLE_FREE.has(c.species);
     setValue(this.nameIn, c.name);
-    setText(this.tagOut, c.tag);
+    setText(this.tagOut, c.tag ? t(c.tag) : c.tag);
     this.syncName();
     for (const [k, b] of this.species) this.press(b, c.species === k);
     for (const [k, b] of this.frames) this.press(b, c.frame === k);
@@ -563,7 +568,7 @@ export class CharacterBuilder {
     for (const [id, tl] of this.rosterTiles) this.press(tl.btn, this.presetAt >= 0 && this.presets[this.presetAt]?.id === id);
     const of = OUTFITS[c.outfit], col = c.colors[c.outfit] ?? of.def;
     setText(this.colHead, tf('{outfit} colors', { outfit: t(of.name) }));
-    this.cols.forEach((x, i) => { setValue(x.input, col[i]); setText(x.label, t(of.labels[i])); if (x.input.getAttribute('aria-label') !== t(of.labels[i])) x.input.setAttribute('aria-label', t(of.labels[i])); });
+    this.cols.forEach((x, i) => { setValue(x.input, col[i]); const s = tw(of.labels[i]); setText(x.label, s); if (x.input.getAttribute('aria-label') !== s) x.input.setAttribute('aria-label', s); });
   }
 
   private press(b: HTMLButtonElement, on: boolean): void {
@@ -639,7 +644,6 @@ export class CharacterBuilder {
   private async run(job: () => Promise<void>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    // marked busy rather than disabled, so the focused button keeps focus and Escape still reaches the dialog
     const btns = [this.addBtn, this.saveBtn, this.applyBtn];
     for (const b of btns) { b.setAttribute('aria-disabled', 'true'); setClass(b, 'is-busy', true); }
     try { await job(); } catch (e) { toast(e instanceof Error ? e.message : t('The character could not be built.'), 'error'); } finally {

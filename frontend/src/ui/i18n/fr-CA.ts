@@ -17,4 +17,7 @@ export const frCA: Record<string, string> = {
   'The Outside agents setting was changed outside FormMorpheus, so FormMorpheus asks again.': "Le paramètre « Agents externes » a été modifié en dehors de FormMorpheus ; FormMorpheus pose donc de nouveau la question.",
   'The Outside agents setting was changed outside {app}, so {app} asks again.': "Le paramètre « Agents externes » a été modifié en dehors de {app} ; {app} pose donc de nouveau la question.",
   'The engine did not keep the Outside agents setting. Start it with ./formmorpheus, then try again.': "Le moteur n'a pas conservé le paramètre « Agents externes ». Lancez-le avec ./formmorpheus, puis réessayez.",
+  'Hoodie': 'Kangourou', 'Jacket': 'Manteau', 'Hoodie & Joggers': 'Kangourou et jogging', 'Jeans': 'Jeans', 'Pigtails': 'Lulus', 'Shoes': 'Souliers', 'Slippers': 'Pantoufles',
+  'Sneakers': 'Espadrilles', 'Tank': 'Camisole', 'Tee & Jeans': 'T-shirt et jeans', 'The gamer': 'Le gameur', 'Trainers': 'Souliers de course', 'Varsity Jacket': 'Blouson de collège',
+  'Vest': 'Veste', 'Winter Puffer': "Manteau d'hiver",
 };

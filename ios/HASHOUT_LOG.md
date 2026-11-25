@@ -2,6 +2,15 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.31.0 · the device check, and no Swift change
+
+- refers-to: docs/ios/BUILD.md (`## Check on the iPad (0.31.0)`)
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- Read for 0.26.0 to 0.31.0: the Character Builder, the built characters, their mouths and the new starter actions are interface only (`frontend/src/engine/cast`, `ui/character-builder.ts`, `engine/actions-builtin.ts`). No engine route, file type or saved format the iPad serves changed: a built character is saved as the same `.fmo` through `CharactersRoutes` (its recipe rides inside the movie JSON, which the iPad stores and never reads), and a `.fmact` with an ease or mouth shapes is still a small JSON file the interface reads. The iPad strings in `App/*.lproj` gain nothing, as the builder's labels are the interface's own. So nothing in `ios/` changes beyond the version the release commit bumps.
+- Nine numbered checks above the 0.25.0 ones: opening the builder, sliders by finger and Pencil, swatches and tiles, adding built starters side by side, Edit in Character Builder and Apply, Run, Dance, Talk and Cheer, lip-sync on a built character, save and reopen, and German and Arabic. Each has the expected result and an empty `Result:` line for the owner's own words.
+
 ## v0.25.0 · Characters match the desktop engine on delete, size and rename
 
 - refers-to: Engine/CharactersRoutes.swift (`write`, `rename`, `delete`), Engine/EngineSupport.swift (`EngineConfig.maxCharacterBytes`)

@@ -190,6 +190,42 @@ Perform records a gesture instead of placing keys by hand.
 
 A character is a Group whose inner blocks are named parts: a head, a body, arms, legs, a mouth. FormMorpheus keeps the names, so actions, lip-sync and the link to a vector app know which block is which. A character shows a small person glyph on its Timeline chip.
 
+There are three ways to get one: build it in the **Character Builder** by choosing, start from one of the **26 starter characters** in the Characters panel, or draw it yourself in a vector app and open the SVG.
+
+### The Character Builder
+
+Choose **Build a character** at the top of the Characters panel, Content · **Character Builder...**, or Character Builder in command search. A large window opens in three columns.
+
+- **Presets** on the left: the built starter characters, grouped as Women, Men and Specials. Press one to start from it. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
+- **The preview** in the middle shows the character as it will be added, redrawn as you change it.
+- **Look**: the name; the kind (Human, Robot, Alien, Monster, Fox, Dino or Sprout); skin; the body sliders Height, Build, Shoulders and Head size, and Frame A or B; and the face: eye color, Jaw, Lashes, Blush, Freckles, Earrings, Glasses, facial hair (None, Stubble, Mustache, Goatee, Full) and lip color. A kind dims the face options it does not draw: a robot has no jaw or lip color, for example. Each row of swatches ends in a custom color.
+- **Hair**: 16 styles and None, and the hair color. A fox shows a tuft between its ears for any style but None; for a dino the hair color paints its crest and the spikes on its tail, and for a sprout its leaves and petals, so their styles are dimmed. A note beside the last style says so.
+- **Outfit**: 16 outfits (Tee & Jeans, Hoodie & Joggers, Business Suit, Sundress, Athletic, Lab Coat, Chef, Hi-Vis Crew, Tuxedo, Winter Puffer, Hero Suit, Pajamas, Overalls, Varsity Jacket, Cardigan and Scrubs), each with a color for each of its three pieces. **Reset colors** puts back the outfit's own.
+- **Randomize** makes a new look of the same kind, and **Reset** goes back to the preset you started from.
+
+At the foot, **Add to Movie** puts the character in the open movie at the Playhead on a track of its own, in one undo step, at its own spot across the frame (on a starter scene's floor, standing on it). **Save to Characters** keeps it in Mine with its recipe, asking before it replaces a saved name. The window stays open, so you can add the same look again or change it and add another.
+
+### A built character's parts
+
+A character from the Character Builder, a built starter included, is an ordinary character with a part for each piece, each following the part it hangs from and turning about a pivot at its joint:
+
+- `hip`, with `body` on it, and `neck`, the arms and the `head` on the body
+- `arm-l` and `arm-r` (the upper arms), each with its `forearm` and its `hand`
+- `leg-l` and `leg-r` (the thighs), each with its `shin` and its `foot`
+- on the head: `eyes`, `brows`, `mouth`, `hair-front`, `hair-back` and `hair-sway` (the hair that swings), and `head-behind` and `head-acc` for what an outfit or a kind draws behind or on the head
+- what the outfit or the kind adds: `skirt` on the hip, `cape` and `hood-back` on the body, and a `tail` on the hip for a fox or a dino
+- `shadow`, the shadow on the floor, which follows nothing
+
+`-l` is the character's own left, on your right as it faces you. A piece the look does not draw makes no part, so a character in trousers has no `skirt`. The `mouth` is a mouth chart of the eight shapes drawn to match the face, so Lip-sync from Sound works on it at once. Every part can be picked, moved and keyed like a part of any character, and the starter actions know these names.
+
+### Edit in Character Builder
+
+Select a character made in the Character Builder and choose **Edit in Character Builder...** on its block's menu (or in Content and command search). On a built starter's row in the Characters panel, **Open in Character Builder** starts the builder from that starter.
+
+When the builder opens on a character in the movie, **Apply** takes the place of Add to Movie. Apply builds the character again from the new look in one undo step and keeps its keys, actions, strips and lip-sync, matched by part name. A part the new look no longer draws (a skirt when the outfit changes to trousers, hair when you choose None) is **hidden** with its keys, not deleted, and the notice names it; it comes back with its keys when a later look draws it again.
+
+A built character keeps its recipe, also when you save it to Characters. Update from Source... with an SVG of your own drops the recipe, so the builder no longer offers to paint over the art from your file.
+
 ### A character from an SVG
 
 Draw the character in a vector app with **one group per part**, and open the SVG with Import (Ctrl+I) or drop it on the window. It arrives as one Group named after the file, already a character, with one part on its own inner track for each group.
@@ -226,10 +262,10 @@ To move, turn or key one part of a character, such as an arm, pick that part.
 
 View · **Characters** opens a panel beside the Stage with two lists. It sits on the left, so the Media Bin can stay open too.
 
-- **Starter** holds five original characters: Kofi, Ines, Marisol, Bram and Noor. Each has the same part names and a pivot at every joint, plus a mouth chart of eight drawings, so every action and Lip-sync from Sound works on it at once. Starter rows cannot be renamed or deleted.
+- **Starter** holds 26 original characters, each row with its figure and what it is. Kofi, Ines, Marisol, Bram and Noor are drawn, with the nine part names of an SVG character (`head`, `body`, the arms and legs, a hand on each arm and the `mouth`). The other 21 are built in the Character Builder's style, with the parts listed in "A built character's parts": Maya, Ingrid, Zuri, Mei, Rosa, Amara and Jade; Leo, Karl, Arjun, Finn, Otto, Dev, Walt and Sami; and Bolt (a robot), Zib (a visitor from space), Moss (a friendly monster), Pip (a woodland fox), Rex (a little dino) and Sprig (a garden sprite). Every starter has a pivot at every joint and a mouth chart of eight drawings, so every action and Lip-sync from Sound works on it at once. A built starter's row also has **Open in Character Builder**. Starter rows cannot be renamed or deleted.
 - **Mine** holds the characters you saved, each with its picture. A row shows a person glyph for a moment and then its picture, and the panel opens with both lists in place. Each row has **Add to Movie**, **Rename** and **Delete**. Delete moves the character to Recently Deleted.
 
-**Add to Movie**, or dragging a row onto the Stage or onto the Timeline, puts an independent copy at the Playhead (or where you dropped it) on a new track named for it. Every part is new, so two copies of the same character move apart. A character saved from a larger movie is scaled down to fit. It is one undo step. Each character you add takes its own spot across the frame, so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left, each keeping its size and height. A starter character added to a movie made from a starter scene stands on that scene's floor (see Starter scenes).
+**Add to Movie**, or dragging a row onto the Stage or onto the Timeline, puts an independent copy at the Playhead (or where you dropped it) on a new track named for it. Every part is new, so two copies of the same character move apart. A character saved from a larger movie is scaled down to fit. It is one undo step. Each character you add takes its own spot across the frame, so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left, each keeping its size and height. The spots are spaced for that size, so five full-height characters stand side by side in a 1920 by 1080 movie. A starter character added to a movie made from a starter scene stands on that scene's floor (see Starter scenes).
 
 ### Save to Characters
 
@@ -253,13 +289,13 @@ An action is a named piece of motion for a character: Move and Bones keys for so
 
 ### Apply an action
 
-Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
+Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the twelve **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
 
 - With no loop range set, the action goes in once, from the Playhead.
 - With a loop range (Alt+I sets its start and Alt+O its end), the action starts at the range's start, and a looping action repeats as many times as fit.
-- The starter actions are written for a character that faces you, with parts named `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r`. On a character with a `hip` and forearms (one made in the character builder) Idle, Walk in place, Run, Wave Hello, Jump, Dance, Talk and Cheer play the builder's own versions, which also move the forearms, shins, `eyes` (a blink), `brows`, `hair-sway` and `shadow`; on such a character Sit folds the thighs toward you with the feet kept on the floor, and Nod, Shake head and Point move each part only by its own share, since the head and arms follow the body there. Run, Dance and Cheer (and the builder's Idle) ease in from the rest pose over their first few frames and back to it over their last. Talk, Run, Dance and Cheer (and the builder's Wave Hello and Jump) also set the shapes of a `mouth` that is a mouth chart, as Lip-sync does, and Clear Action puts it back to Rest; the other starters never touch the mouth. If your character draws its right arm on the other side, they are mirrored as they go in. Their moves are scaled to the character's own size, measured from its right leg (or from everything it draws), so Sit and Jump keep a small character's feet on the floor. Walk in place swings each arm against the leg on its own side. They are written at 24 frames a second and keep their speed in a movie at another rate. Your own actions are not scaled: they keep the pixels they were made with.
+- The starter actions are written for a character that faces you, with parts named `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r`. On a character with a `hip` and forearms (one made in the character builder) Idle, Walk in place, Run, Wave Hello, Jump, Dance, Talk and Cheer play the builder's own versions, which also move the forearms, shins, feet, `eyes` (a blink), `brows`, `hair-sway`, `shadow` and the `tail` of a fox or a dino, which swings with the hips; on such a character Sit folds the thighs toward you with the feet kept on the floor, and Nod, Shake head and Point move each part only by its own share, since the head and arms follow the body there. Run, Dance and Cheer (and the builder's Idle) ease in from the rest pose over their first few frames and back to it over their last. Talk, Run, Dance and Cheer (and the builder's Wave Hello and Jump) also set the shapes of a `mouth` that is a mouth chart, as Lip-sync does, and Clear Action puts it back to Rest; the other starters never touch the mouth. If your character draws its right arm on the other side, they are mirrored as they go in. Their moves are scaled to the character's own size, measured from its right leg (or from everything it draws), so Sit and Jump keep a small character's feet on the floor. Walk in place swings each arm against the leg on its own side. They are written at 24 frames a second and keep their speed in a movie at another rate. Your own actions are not scaled: they keep the pixels they were made with.
 - An action starts from each part's rest pose, the move, turn and pivot the part has with no keys, not from what the part's keys show at the first frame.
-- A part the character does not have is skipped, and the status line names it: "This character has no leg-r, so that part of the action was skipped."
+- A part the character does not have is skipped, and the status line names it: "This character has no leg-r, so that part of the action was skipped." The parts a built character has and others may not (`hip`, the forearms, hands, shins and feet, `eyes`, `brows`, `hair-sway`, `shadow` and `tail`) are skipped without a note, so a drawn starter or your own SVG character takes every starter action as before.
 - Keys outside the span the action takes are never touched. With a loop range the span ends at Out at the latest: a looping action repeats as many whole passes as fit and then one more cut at Out. Where a span is cut short, it gets a key at that frame with the action's own value there, so the motion stops cleanly instead of sliding toward the next key.
 - Where two actions touch, they share one frame and each keeps its own keys: the frame belongs to the later action on the parts it moves. Clearing one keeps the other's keys and removes its own.
 
@@ -506,6 +542,20 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.31.0
+
+**The Character Builder.** Make a character by choosing instead of drawing: Build a character in the Characters panel, or Content · Character Builder.... Start from a preset, then shape it on a live preview: seven kinds (Human, Robot, Alien, Monster, Fox, Dino and Sprout), skin, height, build, shoulders, head size and frame, the face, 16 hair styles and 16 outfits with a color for each piece. Randomize makes a new look and Reset goes back. Add to Movie puts it in the movie in one undo step, and Save to Characters keeps it with its recipe. See The Character Builder under Characters.
+
+**Built characters.** A built character is a real character with a part for every piece: hip, body, neck, head, eyes, brows, mouth, upper arm, forearm and hand, thigh, shin and foot on each side, the hair in three parts and the outfit's own pieces, each following the part it hangs from with a pivot at its joint. A fox and a dino have a tail of their own on the hip. Its mouth is a mouth chart of the eight shapes drawn for its face, so Lip-sync from Sound works on it at once. Edit in Character Builder... on its menu opens it again, and Apply changes it in one undo step, keeping its keys, actions and lip-sync; a piece the new look no longer draws is hidden with its keys and comes back when it returns.
+
+**26 starter characters.** The Characters panel's Starter list holds the five drawn ones and 21 built ones: Maya, Ingrid, Zuri, Mei, Rosa, Amara, Jade, Leo, Karl, Arjun, Finn, Otto, Dev, Walt, Sami, Bolt, Zib, Moss, Pip, Rex and Sprig, each row with its figure and what it is. Open in Character Builder starts the builder from a built one. They stand on a starter scene's floor like the drawn ones.
+
+**Starter actions.** Twelve now: Run, Dance, Talk and Cheer join the first eight. On a built character the starters use its forearms, shins, feet, eyes, brows, hair, shadow and tail: Idle breathes and blinks, Walk in place lifts each leg, Wave Hello waves from the elbow and wrist, Jump crouches and reaches, Sit keeps the feet on the floor. Talk steps the mouth through its shapes, Run, Dance, Cheer, Wave Hello and Jump open it, and the looping ones ease in and out at the ends of their span. On the drawn starters and your own SVG characters the actions are as before.
+
+**Placement.** Characters added to a movie without a floor take spots spaced for their full size, so they stand side by side instead of overlapping.
+
+**In your language.** The Character Builder, the starter characters, their tags and the new actions are in all 30 languages, with Mexican Spanish and Canadian French words for the clothes, and the builder lays out right to left in Arabic.
 
 ## New in 0.25.0
 

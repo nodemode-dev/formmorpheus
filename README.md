@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.30.0" src="https://img.shields.io/badge/version-v0.30.0-eef0f4?style=flat-square">
+  <img alt="version 0.31.0" src="https://img.shields.io/badge/version-v0.31.0-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
   <img alt="macOS, Linux and Windows" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-native-2f7bf5?style=flat-square">
@@ -97,11 +97,11 @@
   <tr>
     <td width="33%" valign="top">
       <h4>Content blocks</h4>
-      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups · Characters · Starter content
+      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups · Characters · Character Builder · 26 starter characters · Starter scenes
     </td>
     <td width="33%" valign="top">
       <h4>Animation tools</h4>
-      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions
+      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions, 12 ready to apply
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
@@ -118,7 +118,7 @@
 - **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
 - **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg, or the family's LGPL build that Preferences, Video Tools downloads on request.
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
-- **Characters:** an SVG with one group per body part opens as a character with parts, pivots and parenting; save it to the Characters library, apply actions to it, and send it to a vector app and back, where it updates by part name and keeps its animation. Starter characters and scenes are included.
+- **Characters:** build one in the Character Builder by choosing a kind, body, face, hair and outfit, start from one of 26 original starter characters, or open an SVG with one group per body part. Every character has named parts, pivots and parenting, and a built one has a part for every joint, from hip and forearm to shin, foot, eyes, brows, hair and tail, with a mouth ready for lip-sync. Save it to the Characters library, apply the 12 starter actions or your own, change a built one again with Edit in Character Builder and keep its animation, and send any character to a vector app and back, where it updates by part name and keeps its animation. Five starter scenes are included.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
 - **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is built and runs on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked. It is a beta that you build yourself on a Mac with Xcode: see [`docs/ios/BUILD.md`](docs/ios/BUILD.md). An App Store version is planned only if the iPad app gets real adoption.

@@ -351,6 +351,10 @@ export interface ActSpan {
   to: number;
   /** Where the action's first pass began, when that is before `from` (a span cut from the left by another). */
   start?: number;
+  /** A starter placed in its character builder version. Absent: the starter as it is for any character (spans saved before 0.31.0). */
+  rig?: true;
+  /** The frames (from inclusive, to exclusive) where it put shapes in the mouth chart; only those go back to Rest. Absent on an action with mouth shapes: placed before 0.31.0, every frame showing its shape does. */
+  said?: Array<[number, number]>;
 }
 
 export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';
