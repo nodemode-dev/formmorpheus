@@ -1,8 +1,9 @@
 // Commands for characters: Make Character on one selected Group (Action menu, Content menu, command palette),
-// Save to Characters, and the Characters panel.
+// Save to Characters, the Characters panel and the Character Builder.
 import { makeCharacter } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import type { Content } from '../engine/types';
+import type { CharacterBuilder } from './character-builder';
 import type { CharactersPanel } from './characters-panel';
 import type { Command } from './commands';
 import { promptName } from './dialogs';
@@ -28,8 +29,24 @@ export async function makeCharacterFlow(engine: Engine, id?: string): Promise<vo
   engine.run('Make Character', (m) => ({ movie: makeCharacter(m, g.id, name), select: [g.id] }));
 }
 
-export function characterCommands(engine: Engine, panel: CharactersPanel): Command[] {
+/** The one selected character that was built from a recipe, or null. */
+export function selectedBuilt(engine: Engine): Content | null {
+  const g = selectedCharacter(engine);
+  return g?.character?.build ? g : null;
+}
+
+export function characterCommands(engine: Engine, panel: CharactersPanel, builder: () => CharacterBuilder): Command[] {
   return [
+    {
+      id: 'character.builder', label: 'Character Builder...', icon: 'character',
+      group: 'Content', description: 'Opens the Character Builder: pick a preset, change the body, face, hair and outfit, then add the character to the movie or save it to Characters.',
+      run: () => builder().open(),
+    },
+    {
+      id: 'character.builder-edit', label: 'Edit in Character Builder...', icon: 'character', enabled: () => !!selectedBuilt(engine),
+      group: 'Content', description: 'Opens the selected built character in the Character Builder; Apply rebuilds it and keeps its keyframes and actions.',
+      run: () => { const g = selectedBuilt(engine); if (g) builder().edit(g.id); },
+    },
     {
       id: 'characters-panel', label: 'Characters', icon: 'character', checked: () => panel.isOpen,
       group: 'View', description: 'Shows or hides the Characters panel: starter characters and the ones saved to the Characters library.',
