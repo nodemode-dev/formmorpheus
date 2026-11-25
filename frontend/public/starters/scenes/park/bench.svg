@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="440" height="220" viewBox="0 0 440 220">
-  <rect x="40" y="60" width="22" height="160" rx="8" fill="#2b3646"/>
-  <rect x="380" y="60" width="22" height="160" rx="8" fill="#2b3646"/>
-  <rect x="10" y="20" width="420" height="30" rx="8" fill="#3f7a8a"/>
-  <rect x="10" y="42" width="420" height="8" rx="4" fill="#30606d"/>
-  <rect x="10" y="58" width="420" height="30" rx="8" fill="#3f7a8a"/>
-  <rect x="10" y="80" width="420" height="8" rx="4" fill="#30606d"/>
-  <rect x="0" y="112" width="440" height="34" rx="8" fill="#3f7a8a"/>
-  <rect x="0" y="138" width="440" height="10" rx="4" fill="#30606d"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="236" viewBox="0 0 440 236">
+  <ellipse cx="220" cy="231" rx="200" ry="8" fill="#000000" fill-opacity="0.16"/>
+  <path d="M30 230 L40 18.099999999999994 L60 18.099999999999994 L56 230 Z" fill="#2f4f5a"/>
+  <path d="M410 230 L400 18.099999999999994 L380 18.099999999999994 L384 230 Z" fill="#2f4f5a"/>
+  <rect x="10" y="8.1" width="420" height="26" rx="8" fill="#3f7f8c"/>
+  <rect x="10" y="28.1" width="420" height="6" rx="3" fill="#2f6470"/>
+  <rect x="10" y="44.1" width="420" height="26" rx="8" fill="#3f7f8c"/>
+  <rect x="10" y="64.1" width="420" height="6" rx="3" fill="#2f6470"/>
+  <rect x="0" y="104.8" width="440" height="28" rx="8" fill="#3f7f8c"/>
+  <rect x="0" y="126.8" width="440" height="8" rx="4" fill="#2f6470"/>
+  <rect x="4" y="76.8" width="30" height="14" rx="6" fill="#2f4f5a"/>
+  <rect x="406" y="76.8" width="30" height="14" rx="6" fill="#2f4f5a"/>
+  <path d="M51 23.4 L69 10.8" fill="none" stroke="#6aa6b2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="216" viewBox="0 0 160 216">
-  <path d="M30 200 L130 200 L118 216 L42 216 Z" fill="#3f4b8e"/>
-  <rect x="74" y="150" width="12" height="54" fill="#3f4b8e"/>
-  <path d="M150 80 A70 70 0 0 1 80 150" fill="none" stroke="#c4533b" stroke-width="8"/>
-  <circle cx="80" cy="80" r="62" fill="#6fb7d1"/>
-  <path d="M40 50 Q70 30 90 60 Q80 90 50 92 Q30 80 40 50 Z" fill="#7fb069"/>
-  <path d="M96 96 Q126 84 130 110 Q110 132 94 120 Z" fill="#7fb069"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="112" viewBox="0 0 80 112">
+  <rect x="9.8" y="99.3" width="60" height="12" rx="5" fill="#3e4f86"/>
+  <rect x="34.8" y="71.6" width="10" height="35.7" rx="3" fill="#3e4f86"/>
+  <circle cx="39.8" cy="43.8" r="31.8" fill="#6fb4d8"/>
+  <path d="M20.67 27.9 Q36.57 15.18 42.93 32.67 Q33.39 43.8 22.26 46.98 Z" fill="#7cae64"/>
+  <path d="M46.11 48.56999999999999 Q62.01 43.8 57.239999999999995 61.28999999999999 Q47.7 66.06 46.11 48.56999999999999 Z" fill="#7cae64"/>
+  <path d="M-0.04999999999999716 24.72 A41.8 41.8 0 0 0 49.29 83.6" fill="none" stroke="#c8553d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19.7 30.3 L31.2 22.3" fill="none" stroke="#c4e4f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

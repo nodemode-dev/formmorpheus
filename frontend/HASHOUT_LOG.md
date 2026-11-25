@@ -114,6 +114,18 @@ Last updated: 2026-11-23 · the interface's test suite
 - **An action starts from each part's unkeyed rest pose.** Values are offsets from the part's transform and pivot as set, not from whatever keys the part shows at the span's first frame. For the release notes.
 - **Removed.** `mirrored(g, a)` returned false for anything but a starter action; it now takes the character only. The old `write` loop moved into `eachChannel`, shared with `seal`.
 
+## v0.25.0 · Starter scenes redrawn to the characters' scale
+
+- refers-to: public/starters/scenes (every background and prop SVG, manifest.json :: conventions.size, layers x y scale)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One scale.** An adult starter at scale 0.5 is about 450 px, 1.7 m, so the props are drawn at 265 px to the metre at the floor: bench seats 0.45 m with backs at 0.86 m, the kitchen table 0.75 m, the chair seat 0.45 m with its back at 0.94 m, the classroom desk 0.75 m, the bookshelf 1.5 m, the bar stool 0.76 m, the microphone head at 1.5 m (mouth height), the speaker 1.0 m, the post box 1.1 m, the lamp post 3.4 m, the street's planter tree 2.9 m and the park's tree 3.6 m.
+- **Depth in the backgrounds.** Each background is drawn in perspective with the horizon 1.5 m above the floor line (an adult's eye), and what stands at the back is drawn at the scale of its distance. The street's buildings stand across the road behind a kerb and a far pavement, at about 72 px to the metre, so their 2.1 m doors are about 150 px. The kitchen counter (0.9 m), wall cabinets, window and fridge stand at the back wall, about 200 px to the metre; the classroom's board, windows and dado likewise. Floors and ceilings have boards running to the vanishing point.
+- **On the floor.** Every standing prop's feet are on the centre line of its own contact shadow at the bottom of its SVG, and its layer y puts that line on the scene's floorY (the street's was 930 with props ending at 920 to 940, the classroom desk ended 10 px below the floor, the stage's stool and speaker 2 and 10 px above). The kettle stands on the table top and the globe on the desk. The kite flies.
+- **Removed.** The five `scene.json` files, copies of the manifest entries that nothing read, and the sentence about them in the manifest conventions.
+- The gradient ids (`sky`, `win`, `back`, `spot`, `curtain`) and file names are the same as before; the family's violet comes back as one small detail per scene, the same way the characters carry it.
+
 ## v0.25.0 · Starter scenes: review fixes
 
 - refers-to: app/app.ts :: starterScenes, prepareOpen; engine/starter-scene.ts :: rasterScale, standOnFloor, SPOTS, STEP; ui/starter-scene-dialog.ts :: StarterSceneDialog.load, show, thumb, choose; engine/guides.ts :: tidyGuides; engine/normalize.ts :: normalizeMovie

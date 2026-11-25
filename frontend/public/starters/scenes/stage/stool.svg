@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="180" height="260" viewBox="0 0 180 260">
-  <ellipse cx="90" cy="30" rx="90" ry="26" fill="#c4533b"/>
-  <ellipse cx="90" cy="22" rx="86" ry="20" fill="#e06b4f"/>
-  <rect x="30" y="40" width="16" height="220" rx="6" fill="#3b4a5c"/>
-  <rect x="134" y="40" width="16" height="220" rx="6" fill="#3b4a5c"/>
-  <rect x="40" y="160" width="100" height="12" rx="6" fill="#3b4a5c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="117" height="202" viewBox="0 0 117 202">
+  <ellipse cx="58.3" cy="197.4" rx="58.3" ry="6" fill="#000000" fill-opacity="0.16"/>
+  <path d="M24 30 L10 195.4 M92.6 30 L106.6 195.4" fill="none" stroke="#3b4a5c" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 30 L36 193.4 M76.6 30 L80.6 193.4" fill="none" stroke="#2f3a4a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="16" y="124.9" width="84.6" height="9" rx="4" fill="#3b4a5c"/>
+  <ellipse cx="58.3" cy="22" rx="56.3" ry="16" fill="#c8553d"/>
+  <ellipse cx="58.3" cy="16" rx="54.3" ry="13" fill="#e0664f"/>
+  <path d="M25.4 16.6 L38.6 7.4" fill="none" stroke="#f0937f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
