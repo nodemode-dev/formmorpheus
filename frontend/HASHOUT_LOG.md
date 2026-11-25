@@ -114,6 +114,19 @@ Last updated: 2026-11-23 · the interface's test suite
 - **An action starts from each part's unkeyed rest pose.** Values are offsets from the part's transform and pivot as set, not from whatever keys the part shows at the span's first frame. For the release notes.
 - **Removed.** `mirrored(g, a)` returned false for anything but a starter action; it now takes the character only. The old `write` loop moved into `eachChannel`, shared with `seal`.
 
+## v0.25.0 · Starter characters redrawn: necks, hands, mouths and a family look
+
+- refers-to: public/starters/characters (five character SVGs, five mouth charts, posters, manifest.json :: conventions.joints, conventions.style, mouthCenter)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+- refers-to (checks): io/svg-import.ts :: parseSvgParts, svgToCharacterGroup, svgToMouthChart; engine/lipsync-ops.ts :: looksLikeMouth
+
+- **Necks.** The neck in `body` is short and wide (60 to 80 units wide, about 30 visible) and reaches well up inside the head; the head's pivot is at the neck base under the collar (Kofi 374, Ines 430, Marisol 568, Bram 444, Noor 436), a collar, scarf, shirt points or beard covering the joint. Checked by drawing every head turned 15 degrees each way, dropped 14 px (Nod) and lifted 8 px (Jump): no gap, no long thin neck. The old necks were up to 130 units long and about 50 wide, so a tilt showed a stick.
+- **Hands and arms.** Same parts, same pivots by role. Each arm is drawn as an upper arm and a forearm meeting at a slightly bent elbow, the sleeve ending at the wrist; each hand is a flat mitten with a thumb on the inner side and two finger lines, drawn from just above the wrist so it turns without a gap.
+- **Mouths.** Each chart is fitted to its face: width (Kofi 22, Ines 19, Marisol 18, Bram 24, Noor 19 units half-width), lip color, lip weight, how far the mouth opens (Ines least, Marisol most), and a cupid's bow on Marisol and Noor; Marisol's E shows her tongue, not lower teeth. Bram's mouths sit under his moustache (drawn after the `mouth` group in `head`), his Rest a small lower lip on the beard. Rest is never wider than MBP, so the width does not jump between them. FV is the upper teeth resting on the lower lip tucked up under them, with no dark gap and no lower teeth, so it reads apart from E. Ids and `data-name` values are unchanged; `mouthCenter` follows the new mouths.
+- **A family look.** A softened-square head, rounded-rectangle eyes with a square catch-light, one highlight shape everywhere (a short pill leaning up to the right), flat shading lit from the upper left, and the family's violet as one detail per character (Kofi's pouch clasp, Ines's earrings, Marisol's hair ties and star, Bram's pocket square, Noor's belt) plus a stripe on every sole. Written into the manifest as `conventions.style` for whoever draws the final art.
+- **Checks.** The S1 check (throwaway, outside the tree) passes again: 9 parts with exact names and nesting, a pivot per part at its joint, no part a picture, 8 mouth frames named as `VISEME_NAMES`, `looksLikeMouth` true, every mouth within 40 px of `mouthCenter`. Posters redrawn from the new art.
+
 ## v0.25.0 · Starter scenes redrawn to the characters' scale
 
 - refers-to: public/starters/scenes (every background and prop SVG, manifest.json :: conventions.size, layers x y scale)

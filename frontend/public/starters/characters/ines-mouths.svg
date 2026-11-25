@@ -1,37 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
   <g id="Rest" data-name="Rest">
-    <path d="M519.8 344.1 Q540 358.5 560.2 344.1" fill="none" stroke="#8a3d3a" stroke-width="5.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M521 349 Q540 361 559 349" fill="none" stroke="#8a3d3a" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="MBP" data-name="MBP">
-    <ellipse cx="540" cy="347.9" rx="17.3" ry="4.8" fill="#8a3d3a"/>
-    <path d="M520.8 347 Q540 349.8 559.2 347" fill="none" stroke="#5c1f30" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M516 352 Q540 344 564 352 Q540 361 516 352 Z" fill="#b4646a"/>
+    <path d="M517.5 352 Q540 355 562.5 352" fill="none" stroke="#8a3d3a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="AI" data-name="AI">
-    <path d="M516 340.2 Q540 331.6 564 340.2 C563 367.6 551.5 380.6 540 380.6 C528.5 380.6 517 367.6 516 340.2 Z" fill="#5c1f30"/>
-    <path d="M522.7 337.8 Q540 332.6 557.3 337.8 L555.8 344.1 Q540 340.2 524.2 344.1 Z" fill="#fffaf2"/>
-    <path d="M526.6 372.9 Q540 360.4 553.4 372.9 Q540 381.5 526.6 372.9 Z" fill="#e0707e"/>
+    <path d="M519.5 347 Q540 340 560.5 347 C559.5 370.1 549.2 379.9 540 379.9 C530.8 379.9 520.5 370.1 519.5 347 Z" fill="#4a1c22"/>
+    <path d="M524 345 Q540 340 556 345 L554.8 353 Q540 349 525.2 353 Z" fill="#fffaf2"/>
+    <path d="M529.7 374.1 Q540 362.7 550.3 374.1 Q540 381.5 529.7 374.1 Z" fill="#d97f82"/>
+    <path d="M519.5 347 Q540 340 560.5 347 C559.5 370.1 549.2 379.9 540 379.9 C530.8 379.9 520.5 370.1 519.5 347 Z" fill="none" stroke="#b4646a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="E" data-name="E">
-    <path d="M513.1 342.2 Q540 337.4 566.9 342.2 Q559.2 365.2 540 365.2 Q520.8 365.2 513.1 342.2 Z" fill="#5c1f30"/>
-    <path d="M517.9 341.2 Q540 337.8 562.1 341.2 L559.2 348.4 Q540 346 520.8 348.4 Z" fill="#fffaf2"/>
-    <path d="M525.6 360.4 Q540 356.6 554.4 360.4 Q540 365.7 525.6 360.4 Z" fill="#fffaf2"/>
+    <path d="M515.3 349 Q540 343 564.7 349 Q557.3 365.9 540 365.9 Q522.7 365.9 515.3 349 Z" fill="#4a1c22"/>
+    <path d="M519.7 347 Q540 343 560.3 347 L558.3 355 Q540 352 521.7 355 Z" fill="#fffaf2"/>
+    <path d="M525.2 362.7 Q540 358.6 554.8 362.7 L552.4 365.1 Q540 366.8 527.6 365.1 Z" fill="#fffaf2"/>
+    <path d="M515.3 349 Q540 343 564.7 349 Q557.3 365.9 540 365.9 Q522.7 365.9 515.3 349 Z" fill="none" stroke="#b4646a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="O" data-name="O">
-    <ellipse cx="540" cy="354.6" rx="13" ry="16.3" fill="#5c1f30" stroke="#8a3d3a" stroke-width="3.4"/>
-    <path d="M531.8 365.2 Q540 358.5 548.2 365.2 Q540 369 531.8 365.2 Z" fill="#e0707e"/>
+    <ellipse cx="540" cy="359.4" rx="12.7" ry="14.4" fill="#b4646a"/>
+    <ellipse cx="540" cy="359.4" rx="8.5" ry="10.2" fill="#4a1c22"/>
+    <path d="M533.7 366.9 Q540 361.8 546.3 366.9 Q540 369.7 533.7 366.9 Z" fill="#d97f82"/>
   </g>
   <g id="U" data-name="U">
-    <ellipse cx="540" cy="351.8" rx="7.7" ry="8.2" fill="#5c1f30" stroke="#8a3d3a" stroke-width="4.8"/>
+    <ellipse cx="540" cy="357" rx="11.3" ry="12.4" fill="#b4646a"/>
+    <ellipse cx="540" cy="357" rx="5.5" ry="6.6" fill="#4a1c22"/>
+    <path d="M531 353.6 L534 348.4" fill="none" stroke="#d98a8e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="FV" data-name="FV">
-    <path d="M520.8 345 Q540 339.3 559.2 345 Q540 358.5 520.8 345 Z" fill="#5c1f30"/>
-    <path d="M525.6 343.1 Q540 339.8 554.4 343.1 L553 350.8 Q540 352.2 527 350.8 Z" fill="#fffaf2"/>
-    <path d="M523.7 350.8 Q540 348.9 556.3 350.8 Q540 360.4 523.7 350.8 Z" fill="#8a3d3a"/>
+    <path d="M522 356 Q540 352 558 356 Q550.8 369.2 540 369.2 Q529.2 369.2 522 356 Z" fill="#b4646a"/>
+    <path d="M525.9 347 Q540 343 554.1 347 L552.6 359 Q540 362 527.4 359 Z" fill="#fffaf2"/>
+    <path d="M534.6 346 L534.6 359" fill="none" stroke="#d9d2c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M545.4 346 L545.4 359" fill="none" stroke="#d9d2c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M520 348 Q540 341 560 348" fill="none" stroke="#b4646a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <g id="L-th" data-name="L / th">
-    <path d="M518.9 341.2 Q540 334.5 561.1 341.2 C560.2 359.4 549.6 368.1 540 368.1 C530.4 368.1 519.8 359.4 518.9 341.2 Z" fill="#5c1f30"/>
-    <path d="M524.6 339.3 Q540 335.4 555.4 339.3 L553.9 344.6 Q540 341.7 526.1 344.6 Z" fill="#fffaf2"/>
-    <path d="M527.5 363.3 C528.5 350.8 534.2 343.1 540 343.1 C545.8 343.1 551.5 350.8 552.5 363.3 Q540 370 527.5 363.3 Z" fill="#e0707e"/>
+    <path d="M521.4 348 Q540 341 558.6 348 C557.7 365.3 548.4 372.5 540 372.5 C531.6 372.5 522.3 365.3 521.4 348 Z" fill="#4a1c22"/>
+    <path d="M526.2 346 Q540 341 553.8 346 L552.7 352 Q540 348 527.3 352 Z" fill="#fffaf2"/>
+    <path d="M530.3 370 C530.7 356.9 535.3 351 540 351 C544.7 351 549.3 356.9 549.7 370 Q540 375 530.3 370 Z" fill="#d97f82"/>
+    <path d="M521.4 348 Q540 341 558.6 348 C557.7 365.3 548.4 372.5 540 372.5 C531.6 372.5 522.3 365.3 521.4 348 Z" fill="none" stroke="#b4646a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>
