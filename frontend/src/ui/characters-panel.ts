@@ -13,7 +13,7 @@ import { charactersApi, freeName, type CharacterItem } from '../io/characters-ap
 import { packMovie, unpackMovie } from '../io/fmo';
 import { svgToCharacterGroup, svgToMouthChart } from '../io/svg-import';
 import { PERSON_SVG } from './character-glyph';
-import { confirmAction, promptName } from './dialogs';
+import { chooseOrCancel, confirmAction, promptName } from './dialogs';
 import { el, patchList, q, setClass, setDisabled, setHidden, setText } from './dom';
 import { t } from './i18n';
 import { tf } from './i18n-fill';
@@ -314,14 +314,15 @@ export class CharactersPanel {
   /** Save to Characters: the selected character into the library, under a free name unless the person replaces one. */
   async save(g: Content): Promise<void> {
     if (!g.character) return;
-    const base = g.character.name || g.name;
+    const base = freeName(g.character.name || g.name, []);
     let taken: CharacterItem[];
     try { taken = (await charactersApi.list()).items; } catch (e) { toast(e instanceof Error ? e.message : t('The Characters library could not be read.'), 'error'); return; }
     let name = base;
     if (taken.some((c) => c.name.toLowerCase() === base.toLowerCase())) {
-      const replace = await confirmAction(t('Save to Characters'), tf('A character named {name} is already saved. Replace it, or keep both?', { name: base }), t('Replace'), true, t('Keep Both'));
+      const replace = await chooseOrCancel(t('Save to Characters'), tf('A character named {name} is already saved. Replace it, or keep both?', { name: base }), t('Replace'), t('Keep Both'), true);
+      if (replace === null) return;
       if (!replace) name = freeName(base, taken.map((c) => c.name));
-    } else name = freeName(base, []);
+    }
     try {
       const data = await packCharacter(this.engine, this.deps.renderer, g);
       await charactersApi.write(name, data);

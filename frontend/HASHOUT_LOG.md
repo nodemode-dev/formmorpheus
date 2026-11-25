@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · review fixes, characters
+
+- refers-to: ui/characters-panel.ts :: save; ui/dialogs.ts :: Confirm, confirmAction, chooseOrCancel
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Save to Characters compares the cleaned name.** The name is cleaned with `freeName(base, [])` first (`A/B` becomes `A B`) and that is what is compared with the saved names and written, so saving `A/B` twice asks before replacing instead of quietly replacing `A B`.
+- **The replace question can be cancelled.** There was no three-way question but the Unsaved Changes one, which has fixed words. `Confirm` now reports a close (Escape, the close button, a click outside) as `null` instead of `false`; `confirmAction` turns that back into `false`, so every caller is unchanged. The new `chooseOrCancel` hands the `null` through: Replace is `true`, Keep Both `false`, a close saves nothing. Without the window's own dialogs it asks two system questions, the second one the other answer.
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg

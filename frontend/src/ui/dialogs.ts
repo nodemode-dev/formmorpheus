@@ -311,28 +311,28 @@ class Confirm extends Dialog {
   private readonly note = el<HTMLElement>('<p class="cv-note"></p>');
   private readonly ok: HTMLButtonElement;
   private readonly cancel: HTMLButtonElement;
-  private resolve: ((v: boolean) => void) | null = null;
+  private resolve: ((v: boolean | null) => void) | null = null;
 
   constructor() {
     super('Confirm', 400);
     this.body.appendChild(this.note);
     this.cancel = this.button('Cancel', 'ghost', () => this.finish(false));
     this.ok = this.button('OK', 'primary', () => this.finish(true));
-    this.onClose = () => this.finish(false);
+    this.onClose = () => this.finish(null);
   }
 
   /** A destructive question opens with Cancel focused, so Return alone never confirms it; the arrow keys move between the buttons. */
-  ask(title: string, text: string, okLabel: string, danger: boolean, cancelLabel = 'Cancel'): Promise<boolean> {
+  ask(title: string, text: string, okLabel: string, danger: boolean, cancelLabel = 'Cancel'): Promise<boolean | null> {
     this.setTitle(title);
     setText(this.note, text);
     setText(this.ok, okLabel);
     setText(this.cancel, cancelLabel);
     this.ok.className = danger ? 'cv-btn cv-btn-danger' : 'cv-btn cv-btn-primary';
     this.open(danger ? this.cancel : this.ok);
-    return new Promise<boolean>((resolve) => { this.resolve = resolve; });
+    return new Promise<boolean | null>((resolve) => { this.resolve = resolve; });
   }
 
-  private finish(v: boolean): void {
+  private finish(v: boolean | null): void {
     const done = this.resolve;
     this.resolve = null;
     if (this.isOpen) this.close();
@@ -384,9 +384,20 @@ export function confirmAction(title: string, text: string, okLabel = 'OK', dange
   try {
     if (!windowDialogs()) throw new Error('no overlay root');
     confirmDlg ??= new Confirm();
-    return confirmDlg.ask(title, text, okLabel, danger, cancelLabel);
+    return confirmDlg.ask(title, text, okLabel, danger, cancelLabel).then((v) => v === true);
   } catch {
     return Promise.resolve(window.confirm(`${title}\n\n${text}`));
+  }
+}
+
+/** Two answers and a way out: true for `okLabel`, false for `otherLabel`, null when closed (Escape, the close button, a click outside). */
+export function chooseOrCancel(title: string, text: string, okLabel: string, otherLabel: string, danger = false): Promise<boolean | null> {
+  try {
+    if (!windowDialogs()) throw new Error('no overlay root');
+    confirmDlg ??= new Confirm();
+    return confirmDlg.ask(title, text, okLabel, danger, otherLabel);
+  } catch {
+    return Promise.resolve(window.confirm(`${title}\n\n${text}\n\n${okLabel}?`) ? true : window.confirm(`${otherLabel}?`) ? false : null);
   }
 }
 
