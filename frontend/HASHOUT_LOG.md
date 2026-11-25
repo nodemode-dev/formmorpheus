@@ -2,10 +2,62 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.25.0
-Last updated: 2026-11-25 · labels that translate cleanly
+Current build version: v0.26.0
+Last updated: 2026-11-25 · characters built from a recipe
 
 ---
+
+## v0.26.0 · rebuild review fixes
+
+- refers-to: engine/cast/to-character.ts :: prepareRebuild, mergeRebuild (new), CastPrepared (new), CastRebuild; rebuildCharacter and rebuildFromSpec (removed); engine/cast/index.ts
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **Prepare, then merge.** A rebuild awaited its mouth PNGs and then merged into the movie it was handed, so an edit made while the pictures were encoding was lost when the caller stored the result. It is now split as Update from Source splits it (app/source-link.ts): `prepareRebuild(spec, movie, rig?, mouthShapes?)` is async and builds against an empty copy of the movie (its size only), answering `{ fresh, assets, spec }`; `mergeRebuild(movie, charId, prepared)` is synchronous and runs inside the caller's `engine.run` against the current movie. The caller stores the asset blobs (and preloads them) before the edit. `rebuildCharacter` and `rebuildFromSpec` are removed: as one async call they invite the stale merge. `CastRebuild` no longer carries assets.
+- **New parts in draw order.** `mergeFromSource` puts every new part on the top track, so a first cape, hair back or hair sway covered the face. After the merge `placeAdded` walks the fresh build's draw order bottom first and moves each added part's track directly above the track of the nearest part below it in that order (to the bottom when none is). Matched parts and the person's own parts are not moved. Checked: Leo in outfit 10 changing to hair 3, 4, 5, 6, 7, 9 and 12 for the first time keeps hair back under the head and hair front over it, and the drawn parts follow the fresh order exactly; a first cape lands just over the shadow.
+- **The person's own parts.** A part named outside the cast part map is something the person added; a cast rebuild leaves it completely alone: its track stays where it is, its highlight is put back to what it was before the merge (not red), and it is not listed in `missing` (always empty for a cast rebuild) nor added to `character.missing`. `character.missing` and `missingWas` keep what they held before (an earlier Update from Source), less the names the build draws or hides.
+- **Only what the build hid comes back.** The show-again rule judged by the old recipe's parts, so a part the person hid could be shown again by a later rebuild. `CharacterInfo.builtHidden` (optional, checked on load like `missing`) now lists the cast parts a rebuild hid; a rebuild shows again only those it draws, and drops them from the list. A part already hidden before the rebuild (the person's) is hidden still but not listed, so no rebuild shows it.
+- **Locked tracks.** A cast part on a locked track is neither hidden nor shown by a rebuild (and keeps its highlight); it stays in or out of `builtHidden` as it was. A drawn part on a locked track still stops the whole rebuild, as `mergeFromSource` refuses to change it.
+- **A mouth with the person's own drawings.** Each chart drawing named for a shape takes the new art, but the Flipbook's canvas is shared by every frame, so a frame with pixels and no shape name (drawn by the person) would be stretched or shifted by the new canvas. When any row has such a frame the mouth is left exactly as it was: old rows, old canvas, old pivot; the rest of the rebuild goes ahead. Fitting the new shapes into the old canvas was the other choice, but it needs new pictures painted inside the synchronous merge (or a second prepare), and it would still change the shape drawings around the person's frame; leaving it untouched is the safer.
+
+## v0.26.0 · cast comments moved here
+
+- refers-to: engine/cast/to-character.ts (file head, primDefs, rebuild, builtParts); engine/cast/build.ts :: build (eyes slot)
+- kind: removed
+- logged: v0.26.0 · 2026-11-25
+
+- to-character.ts head: "A built rig as a FormMorpheus character: one Group, one inner track per drawn slot in the rig's draw order, each part following its parent part, the mouth a mouth chart Flipbook. Placed as an SVG starter of the 1080 convention is. No DOM."
+- primDefs: "an open run that is filled and stroked: the fill closes it, the stroke does not."
+- rebuild: "a cast part this build does not draw is hidden with its keys, not marked missing; one drawn again by a later build shows."
+- builtParts: "the mouth chart is made from the recipe's mouth shapes whatever its slots hold."
+- build.ts, after the slots: "Eye prims sit on the eye line already, so the slot takes no offset." (the studio sets the eyes slot's oy back to 0 after `SL` gave it H * .44).
+
+## v0.26.0 · a built rig becomes a character
+
+- refers-to: engine/cast/to-character.ts :: rigToCharacterGroup, rebuildCharacter, castPartName, CAST_UNIT (all new)
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **Same result as an SVG import.** `rigToCharacterGroup` answers the importer's `ImportResult` (one character Group, the mouth pictures as assets with their blobs), so whatever places an imported or starter character places a built one. It is async for the same reason the importer is: the mouth drawings are pictures, and a picture's PNG is only made asynchronously. Without an OffscreenCanvas (a test run) the mouth frames keep empty layers, as a chart drawing that fails to draw does in the importer. No notice is written: that text is the interface's, and the engine has no translations.
+- **Parts.** One part per slot with prims, in the rig's slot order (first slot on the bottom track), named by the contract's part map (`_L` is the character's right, so `-r`). A part with one shape is a Shape, with more a Group of Shapes top first, as the importer does. Pivot is the slot's bone origin in rest pose. Parents follow the map and climb past a missing part (no `head` part: its children follow `body`); the links are made with `setParent`, as the importer makes them.
+- **Prims.** Every prim becomes a path Shape in movie pixels from the centre: the slot's matrix is its bone's rest world matrix times `translate(ox, oy)` when `oy` is set (the studio's own rule, which ignores `ox` alone). Ellipses are four cubic arcs turned by `rot` about their centre, rects get cubic corners of `min(r, w/2, h/2)`, `Q` becomes a cubic. Caps are the prim's (round by default) and joins round, as the studio writes them; `op` multiplies the fill and stroke alpha, as the importer reads `opacity`. An open path that is filled and stroked becomes two shapes (the fill closed, the stroke open), since one Shape fills only a closed outline.
+- **Scale.** Rig units go into the 1080 character space at `CAST_UNIT` 2.25 per unit, x on 540 and the rig's floor (y 0) on 1012; that space is then fitted to the movie as the importer fits a 1080 viewBox (`k = min(1, W / 1080, H / 1080)`, centred on whole pixels). One constant rather than one per character, so the cast keeps the studio's relative heights: the studio's adults at body h 1 are 401 to 414 units, 902 to 932 tall.
+- **Mouth.** A Flipbook named `mouth` of eight drawings named by `VISEME_NAMES` in `VISEMES` order, resting on Rest through `restingChart`, its canvas the union of the eight shapes, painted with the Stage's own shape painter. Given no mouth shapes, the mouth slot is Rest, the open mouth slot (its bone is folded to scale 0 at rest, read unfolded) is AI, and Rest stands in for the rest. The open mouth slot never becomes a part.
+- **Rebuild.** `rebuildCharacter` builds afresh in the same movie and lays it over the character with `mergeFromSource`, so parts keep their ids, keys, parents and actions and new parts are added; then the recipe is written as `character.build`. The merge would hand the mouth the fresh resting chart and drop what lip-sync wrote, so the old mouth rows are kept and each drawing named for a shape takes the new art of that name. A part named in the cast part map that the new build does not draw (a skirt after an outfit without one) is kept hidden with its keys and its own highlight, left out of `missing` and reported in `hidden`; when a later build draws it again it is shown with the fresh art. "Drawn again" is judged against the parts the old recipe built, so a part the person hid while the build drew it stays hidden. Parts with other names (the person's own) are left as the merge leaves them: kept, red, listed in `missing`. Actions with lanes for a hidden part still write its keys and lip-sync never touches it, both without error.
+- **From a recipe.** `castToCharacterGroup(spec, movie, at)` and `rebuildFromSpec(movie, charId, spec)` build the rig and its mouth shapes (`visemes`) and call the two above; both are in the cast index. The part map already holds `tail` (a slot on the hip bone, following `hip`) for the builds that will draw one.
+- **Not shared with the importer.** Its fit and shape helpers live in `io/`, which reads translations from `ui/`; the engine never imports either, so the few lines of fit and node conversion are written here against engine modules only.
+
+## v0.26.0 · the character generator in the engine
+
+- refers-to: engine/cast/ (new) :: palettes, prims, metrics, body, outfits, hair, head, build (build, mkSpec), svg (rigToSvg, solveRest), visemes, presets (STUDIO_PRESETS), index
+- kind: decision
+- logged: v0.26.0 · 2026-11-25
+
+- **A faithful port.** The owner's character studio generator is ported as typed engine code with the same numbers, shapes, names and draw order: prims, metrics, garments and limbs, the 13 outfits, the 13 hair styles, the four species heads, the bone and slot build, `mkSpec` (the studio's `mkChar`) and the rest-pose SVG. No DOM. Only unused locals were dropped (the sundress and athletic torso length and waist, the head's mouth line), which changes no output. The monster's two fangs moved into `monsterFangs` so the mouth shapes can reuse them; the closed mouth is unchanged.
+- **rigToSvg.** The studio's static SVG with no animation: `solveRest` is its solve with no tracks and no deltas, from the identity root, so `W` matches the studio's per bone. `opts.mode` 'head' gives the studio's head close-up box.
+- **Mouth shapes** (`visemes`). Eight shapes in the lip-sync VISEMES order, in the mouth bone's space. Rest is the studio's closed mouth exactly. AI is the studio's closed mouth with its open mouth over it, what the studio shows at full open. The other six are drawn in each species' own style and line weight: people use the face's lip colour for strokes and the studio's open-mouth inside and tongue colours, MBP a pressed line, E wide, O and U rounded lips, FV upper teeth on the lower lip, L the tongue raised; robots use eye-coloured rounded bars on the screen, aliens small shapes in the darker skin shade, monsters keep their fangs except on the small round O and U.
+- **Presets.** `STUDIO_PRESETS` holds the studio's 13 inputs verbatim, except its Kofi is Karl (id `karl`), for the starters in 0.28.0.
+- Checked headlessly (a throwaway node script outside the tree running the studio's own functions): `rigToSvg(build(mkSpec(p)))` equals the studio's static SVG for all 13 presets (Karl compared under the studio's name) and 200 random recipes (every outfit, hair -1 to 12, all species, both frames, random sliders, face options and colour overrides); the head close-up, `solveRest` and the palettes, outfit and hair lists match too. `spec.ts` needed no change.
 
 ## v0.25.0 · characters added to any movie each take their own spot
 

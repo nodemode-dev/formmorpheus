@@ -1,7 +1,7 @@
 {
   "name": "formmorpheus",
   "private": true,
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "FormMorpheus · animation studio in the Form family",
   "license": "Apache-2.0",
   "type": "module",

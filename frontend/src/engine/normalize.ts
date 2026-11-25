@@ -129,6 +129,8 @@ function character(c: Obj, kind: string): void {
   const was: Obj = {};
   if (isObj(ch.missingWas)) for (const [k, v] of Object.entries(ch.missingWas)) if (lost.includes(k) && typeof v === 'string' && (HIGHLIGHTS as readonly string[]).includes(v)) was[k] = v;
   if (Object.keys(was).length) ch.missingWas = was; else delete ch.missingWas;
+  if (Array.isArray(ch.builtHidden)) ch.builtHidden = ch.builtHidden.filter((n): n is string => typeof n === 'string' && n in parts);
+  if (!Array.isArray(ch.builtHidden) || !ch.builtHidden.length) delete ch.builtHidden;
   characterDef(ch);
 }
 
