@@ -2,7 +2,7 @@
    recipe changes. Tokens only; the swatches carry the character's own colours. */
 .cv-dialog.fm-cb-dlg { width: min(1120px, calc(100vw - 48px)); }
 .fm-cb-dlg .cv-dialog-body { padding: 0; overflow: hidden; }
-.fm-cb { display: grid; grid-template-columns: 196px minmax(0, 1fr) 356px; height: min(660px, calc(100vh - 200px)); min-height: 420px; }
+.fm-cb { display: grid; grid-template-columns: 196px minmax(0, 1fr) 356px; height: min(660px, calc(100vh - 200px)); min-height: min(420px, calc(100vh - 160px)); }
 .fm-cb-roster { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-1) var(--space-3) var(--space-4); border-right: 1px solid var(--border-color); background: var(--surface-1); }
 .fm-cb-h { margin: var(--space-3) 2px var(--space-2); color: var(--text-muted); font-size: var(--fs-10); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
 .fm-cb-rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }

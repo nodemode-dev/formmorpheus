@@ -118,7 +118,7 @@ export class CharacterBuilder {
   private previewDirty = true;
   private raf = 0;
   private thumbTimer = 0;
-  private thumbsFor: Record<Tab, string> = { look: '', hair: '', outfit: '' };
+  private readonly thumbsFor = new Map<HTMLCanvasElement, string>();
   private busy = false;
   private floor = '';
 
@@ -153,6 +153,12 @@ export class CharacterBuilder {
 
   constructor(private readonly engine: Engine, private readonly deps: BuilderDeps, presets: readonly CastInput[] = STUDIO_PRESETS) {
     q<HTMLElement>(this.dlg.scrim, '.cv-dialog').classList.add('fm-cb-dlg');
+    this.dlg.scrim.addEventListener('keydown', (e) => {
+      if ((e.key !== 'z' && e.key !== 'Z') || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const a = document.activeElement;
+      if (!(a instanceof HTMLInputElement && a.type === 'text')) e.preventDefault();
+      e.stopPropagation();
+    }, true);
     const root = el<HTMLElement>(`<div class="fm-cb">
       <nav class="fm-cb-roster"></nav>
       <div class="fm-cb-stage"><div class="fm-cb-stagename" aria-live="polite"></div><div class="fm-cb-canvaswrap"><canvas class="fm-cb-canvas" role="img"></canvas></div></div>
@@ -196,7 +202,6 @@ export class CharacterBuilder {
       this.panes.set(id, p);
     }
 
-    // Look
     const look = this.panes.get('look') as HTMLElement;
     const who = el<HTMLElement>('<div class="fm-cb-who"><input class="fm-cb-name" type="text" maxlength="14" spellcheck="false"><small class="fm-cb-tag"></small></div>');
     this.nameIn = q<HTMLInputElement>(who, 'input');
@@ -274,7 +279,6 @@ export class CharacterBuilder {
     this.resetBtn.addEventListener('click', () => { this.spec = clone(this.base); this.changed(); });
     look.appendChild(row);
 
-    // Hair
     const hair = this.panes.get('hair') as HTMLElement;
     hair.appendChild(this.head('Style'));
     const hg = el<HTMLElement>('<div class="fm-cb-tgrid" role="group"></div>');
@@ -291,7 +295,6 @@ export class CharacterBuilder {
     this.hairCol = this.swatches(HAIRCOL, 'Hair color', (c) => { this.spec.hair.color = c; });
     hair.appendChild(this.hairCol.root);
 
-    // Outfit
     const outfit = this.panes.get('outfit') as HTMLElement;
     outfit.appendChild(this.head('Outfit'));
     const og = el<HTMLElement>('<div class="fm-cb-tgrid is-tall" role="group"></div>');
@@ -375,6 +378,17 @@ export class CharacterBuilder {
     this.show();
   }
 
+  openPreset(id: string): void {
+    const i = this.presets.findIndex((p) => p.id === id);
+    if (i < 0) { this.open(); return; }
+    if (this.dlg.isOpen) { if (!this.editing) this.pick(id); return; }
+    this.editing = null;
+    this.presetAt = i;
+    this.base = clone(this.presetSpecs[i]);
+    this.spec = clone(this.base);
+    this.show();
+  }
+
   /** Opens on a character of the movie whose recipe is known; Apply rebuilds it from the edited recipe. */
   edit(charId: string): void {
     if (this.dlg.isOpen) return;
@@ -393,7 +407,7 @@ export class CharacterBuilder {
     setHidden(this.applyBtn, !this.editing);
     setClass(this.addBtn, 'cv-btn-primary', !this.editing);
     this.floor = getComputedStyle(this.wrap).getPropertyValue('--fm-cb-floor').trim();
-    this.thumbsFor = { look: '', hair: '', outfit: '' };
+    this.thumbsFor.clear();
     this.sync();
     this.setTab(this.tab);
     this.dlg.open(this.tabs.get(this.tab) ?? null);
@@ -579,11 +593,17 @@ export class CharacterBuilder {
   /** The open tab's tiles show the recipe with each choice; only redrawn when the recipe changed since. */
   private thumbs(): void {
     if (!this.dlg.isOpen) return;
-    const key = JSON.stringify(this.spec);
-    if (this.thumbsFor[this.tab] === key) return;
-    this.thumbsFor[this.tab] = key;
-    if (this.tab === 'hair') this.hairTiles.forEach((tl, i) => { const k = clone(this.spec); k.hair.style = i - 1; drawThumb(tl.cv, k, 'head'); });
-    else if (this.tab === 'outfit') this.outfitTiles.forEach((tl, i) => { const k = clone(this.spec); k.outfit = i; drawThumb(tl.cv, k, 'full'); });
+    const hair = this.tab === 'hair';
+    const tiles = hair ? this.hairTiles : this.tab === 'outfit' ? this.outfitTiles : [];
+    tiles.forEach((tl, i) => {
+      const k = clone(this.spec);
+      if (hair) k.hair.style = i - 1; else k.outfit = i;
+      const { id: _id, name: _name, tag: _tag, colors, ...look } = k;
+      const key = JSON.stringify([look, colors[k.outfit] ?? null]);
+      if (this.thumbsFor.get(tl.cv) === key) return;
+      this.thumbsFor.set(tl.cv, key);
+      drawThumb(tl.cv, k, hair ? 'head' : 'full');
+    });
   }
 
   private async made(movie: Movie): Promise<CharacterSource> {
@@ -614,9 +634,10 @@ export class CharacterBuilder {
     return this.run(async () => {
       const m = this.engine.movie;
       if (!m) { toast(t('Open or create a movie first.')); return; }
+      const name = this.spec.name;
       const src = await this.made(m);
       const id = await placeCharacter(this.engine, this.deps.renderer, src, 'playhead', floorOf(this.engine.movie?.guides));
-      if (id) toast(tf('{name} added to the movie.', { name: this.spec.name }));
+      if (id) toast(tf('{name} added to the movie.', { name }));
     });
   }
 

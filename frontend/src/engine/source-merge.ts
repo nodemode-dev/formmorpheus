@@ -125,7 +125,7 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
   const taken = [...matched.values(), ...born.map((b) => b.c)];
   const table: Record<string, Asset> = {};
   for (const id of usedAssetIds([], taken)) if (assets[id] && !movie.assets[id]) table[id] = assets[id];
-  const { missing: _was, missingWas: _wasHl, ...info } = g.character;
+  const { missing: _was, missingWas: _wasHl, build: _build, builtHidden: _hid, ...info } = g.character;
   const kept = Object.keys(was).length ? { missingWas: was } : {};
   const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing, ...kept } : {}) } });
   const withAssets: Movie = Object.keys(table).length ? { ...movie, assets: { ...movie.assets, ...table } } : movie;

@@ -1,6 +1,7 @@
-// Characters panel (View, Characters): Starter characters that ship with the app (read-only, made from their SVG on
-// use) and the person's own, saved in the Characters library on the engine. Add to Movie, or a drag onto the Stage or
+// Characters panel (View, Characters): Starter characters that ship with the app (read-only, made on use from their SVG
+// or, for the studio's cast, from their recipe) and the person's own, saved in the Characters library on the engine. Add to Movie, or a drag onto the Stage or
 // the Timeline, places a copy with fresh ids at the Playhead. Built once; rows are patched in place.
+import { build, castToCharacterGroup, mkSpec, rigToSvg, STUDIO_PRESETS, type CastInput } from '../engine/cast';
 import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
@@ -51,7 +52,7 @@ const TEMPLATE = `<section class="fm-bin fm-chars" role="dialog" hidden>
 
 const ROW = `<div class="fm-bin-row" role="listitem">
   <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name"></span><span class="fm-bin-meta"></span></span></button>
-  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
+  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="open" hidden></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
 </div>`;
 
 type Where = 'playhead' | 'stage' | { frame: number; index: number };
@@ -124,6 +125,22 @@ export async function starterCharacter(entry: StarterEntry, movie: Movie): Promi
   return { group, width: movie.width, height: movie.height, assets };
 }
 
+export async function castStarter(p: CastInput, movie: Movie): Promise<CharacterSource> {
+  const r = await castToCharacterGroup(structuredClone(mkSpec(p)), movie, 0);
+  return { group: r.contents[0], width: movie.width, height: movie.height, assets: new Map(r.assets.map((a) => [a.asset.id, a])) };
+}
+
+const castPosters = new Map<string, string>();
+
+export function castPoster(p: CastInput): string {
+  let url = castPosters.get(p.id);
+  if (!url) {
+    url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(rigToSvg(build(mkSpec(p)), { mode: 'full' }))}`;
+    castPosters.set(p.id, url);
+  }
+  return url;
+}
+
 /** Places a fresh-id copy of a character at the Playhead (or the dropped frame), on a new track of its own; one undo step. */
 export async function placeCharacter(engine: Engine, renderer: Renderer, src: CharacterSource, where: Where, floorY: number | null = null): Promise<string | null> {
   const m = engine.movie;
@@ -154,7 +171,7 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   return ok ? copy.id : null;
 }
 
-interface RowItem { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean }
+interface RowItem { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean; cast?: boolean }
 
 export class CharactersPanel {
   readonly root: HTMLElement;
@@ -174,6 +191,8 @@ export class CharactersPanel {
   private opener: HTMLElement | null = null;
   /** Build a character: opens the Character Builder. */
   onBuild: (() => void) | null = null;
+  onOpenPreset: ((id: string) => void) | null = null;
+  private shown = false;
 
   constructor(private readonly engine: Engine, private readonly deps: CharactersDeps) {
     this.root = el(TEMPLATE);
@@ -230,6 +249,7 @@ export class CharactersPanel {
     void this.manifest.then(() => {
       if (!this.opening) return;
       this.opening = false;
+      this.shown = true;
       this.paint();
       setHidden(this.root, false);
       void this.refresh();
@@ -268,13 +288,16 @@ export class CharactersPanel {
 
   private paint(): void {
     const starters = this.starters ?? [];
-    setHidden(this.starterSec, !starters.length);
+    setHidden(this.starterSec, !starters.length && !STUDIO_PRESETS.length);
     const rows = (list: HTMLElement, items: RowItem[]): void => patchList(list, items, {
       key: (r) => r.key,
       create: (r) => { const n = this.createRow(r); this.updateRow(n, r); return n; },
       update: (n, r) => this.updateRow(n, r),
     });
-    rows(this.starterList, starters.map((s) => ({ key: `starter:${s.id}`, name: s.name, meta: t('Starter character'), poster: s.poster ? `${STARTERS}${s.poster}` : '', mine: false })));
+    rows(this.starterList, [
+      ...starters.map((s): RowItem => ({ key: `starter:${s.id}`, name: s.name, meta: t('Starter character'), poster: s.poster ? `${STARTERS}${s.poster}` : '', mine: false })),
+      ...STUDIO_PRESETS.map((p): RowItem => ({ key: `cast:${p.id}`, name: p.name, meta: t(p.tag), poster: this.shown ? castPoster(p) : '', mine: false, cast: true })),
+    ]);
     rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: `${c.name}\n${c.modified}`, v: c.modified, mine: true })));
     const keys = new Set(this.mine.map((c) => `mine:${c.name}`));
     for (const [k, p] of this.posters) if (!keys.has(k)) { if (p.url) URL.revokeObjectURL(p.url); this.posters.delete(k); }
@@ -286,6 +309,7 @@ export class CharactersPanel {
     const row = el(ROW);
     row.dataset.key = r.key;
     setText(q(row, '[data-act="add"]'), t('Add to Movie'));
+    setText(q(row, '[data-act="open"]'), t('Open in Character Builder'));
     setText(q(row, '[data-act="rename"]'), t('Rename'));
     setText(q(row, '[data-act="delete"]'), t('Delete'));
     const img = q<HTMLImageElement>(row, '.fm-chars-img');
@@ -299,7 +323,11 @@ export class CharactersPanel {
     setText(q(row, '.fm-bin-meta'), r.meta);
     const img = q<HTMLImageElement>(row, '.fm-chars-img');
     if (r.mine) this.loadPoster(row, img, r);
-    else if (r.poster && img.getAttribute('src') !== r.poster) img.setAttribute('src', r.poster);
+    else if (r.poster && img.getAttribute('src') !== r.poster) {
+      if (r.cast) setHidden(q(row, '.fm-bin-glyph'), true);
+      img.setAttribute('src', r.poster);
+    }
+    setHidden(q(row, '[data-act="open"]'), !r.cast);
     setHidden(q(row, '[data-act="rename"]'), !r.mine);
     setHidden(q(row, '[data-act="delete"]'), !r.mine);
     const busy = this.busy.has(r.key);
@@ -331,6 +359,7 @@ export class CharactersPanel {
     if (act === 'close') { this.hide(); return; }
     if (act === 'build') { this.onBuild?.(); return; }
     if (act === 'add') { await this.add(key, 'playhead'); return; }
+    if (act === 'open') { if (key.startsWith('cast:')) this.onOpenPreset?.(key.slice(5)); return; }
     const name = key.startsWith('mine:') ? key.slice(5) : '';
     if (!name) return;
     if (act === 'rename') {
@@ -353,8 +382,12 @@ export class CharactersPanel {
     this.paint();
     try {
       let src: CharacterSource;
-      const starter = key.startsWith('starter:');
-      if (starter) {
+      const starter = key.startsWith('starter:') || key.startsWith('cast:');
+      if (key.startsWith('cast:')) {
+        const p = STUDIO_PRESETS.find((c) => `cast:${c.id}` === key);
+        if (!p) return;
+        src = await castStarter(p, m);
+      } else if (starter) {
         const entry = (this.starters ?? []).find((s) => `starter:${s.id}` === key);
         if (!entry) return;
         src = await starterCharacter(entry, m);
