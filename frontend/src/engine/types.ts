@@ -319,11 +319,16 @@ export interface ActionDef {
   fps?: number;
 }
 
+/** The longest action a file or a movie may carry, in frames (ten minutes at 24 fps). */
+export const ACTION_MAX_FRAMES = 24 * 60 * 10;
+
 /** An action placed on a character: `from` and `to` (inclusive) count the frames the character's own tracks see. */
 export interface ActSpan {
   action: string;
   from: number;
   to: number;
+  /** Where the action's first pass began, when that is before `from` (a span cut from the left by another). */
+  start?: number;
 }
 
 export type TransitionKind = 'crossfade' | 'dip' | 'wipe' | 'push';

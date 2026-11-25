@@ -2,10 +2,12 @@
 // Spans count the frames the character's own tracks see, so they stay put when the block is moved or trimmed.
 // Keys outside the span being written are never touched. Pure, no DOM.
 import type { ActionDef, ActSpan, CharacterInfo, Content, Ease, Key, KeyKind, KeyLane, Movie, Track } from './types';
+import { hasCanvas } from './canvas';
 import { evalChannel, kindSpec, laneRank } from './keys';
 import { uid } from './model';
 import { OpError } from './ops';
 import { srcFrame } from './retime';
+import { bounds, outline, shapeBase } from './shape';
 import { findContent, levelFrameOf } from './transform';
 import { BUILTIN_ACTIONS } from './actions-builtin';
 
@@ -13,8 +15,24 @@ import { BUILTIN_ACTIONS } from './actions-builtin';
 const KINDS: ReadonlySet<KeyKind> = new Set<KeyKind>(['move', 'bones']);
 const SCALES = new Set(['scaleX', 'scaleY']);
 const MIRRORED = new Set(['x', 'rotation', 'px']);
+const PIXELS = new Set(['x', 'y', 'px', 'py']);
+/** The starter actions' pixel values are drawn for a leg this long from hip to sole, or a figure this tall. */
+const REF_LEG = 344;
+const REF_HEIGHT = 900;
 
 export interface ActResult { movie: Movie; skipped: string[] }
+
+/** Lane kind and channel ids each part keys; null for every channel of that kind. */
+type Own = Map<string, Map<KeyKind, Set<string> | null>>;
+
+/** How an action lands on one character: mirrored when it is drawn the other way round, pixel values times `k`. */
+interface Fit { mirror: boolean; k: number }
+
+/** Passes of a loop over `span` frames: whole passes, and one more cut at the end for what is left. */
+export function loopPasses(length: number, span: number): number {
+  const n = Math.max(1, Math.floor(span / length));
+  return n * length < span ? n + 1 : n;
+}
 
 interface PartRef {
   c: Content;
@@ -31,7 +49,9 @@ export function characterOf(movie: Movie, id: string): Content & { character: Ch
 
 /** The character's own action with this id, else a built-in one. */
 export function findAction(ch: CharacterInfo, id: string): ActionDef | null {
-  return ch.actions.find((a) => a.id === id) ?? BUILTIN_ACTIONS.find((a) => a.id === id) ?? null;
+  for (let i = 0; i < ch.actions.length; i++) if (ch.actions[i].id === id) return ch.actions[i];
+  for (let i = 0; i < BUILTIN_ACTIONS.length; i++) if (BUILTIN_ACTIONS[i].id === id) return BUILTIN_ACTIONS[i];
+  return null;
 }
 
 /** The frame the character's tracks see at a movie frame (the Playhead). */
@@ -110,8 +130,8 @@ function atRate(a: ActionDef, fps: number): ActionDef {
 }
 
 /** Lane kind and channel ids each part of an action keys; null for an action no longer known (everything it could key). */
-function owned(a: ActionDef | null, ch: CharacterInfo): Map<string, Map<KeyKind, Set<string> | null>> {
-  const out = new Map<string, Map<KeyKind, Set<string> | null>>();
+function owned(a: ActionDef | null, ch: CharacterInfo): Own {
+  const out: Own = new Map();
   if (!a) {
     for (const name of Object.keys(ch.parts)) out.set(name, new Map<KeyKind, Set<string> | null>([['move', null], ['bones', null]]));
     return out;
@@ -129,7 +149,12 @@ function owned(a: ActionDef | null, ch: CharacterInfo): Map<string, Map<KeyKind,
   return out;
 }
 
-function merge(into: Map<string, Map<KeyKind, Set<string> | null>>, from: Map<string, Map<KeyKind, Set<string> | null>>): void {
+function moves(o: Own, part: string, kind: KeyKind, id: string): boolean {
+  const ids = o.get(part)?.get(kind);
+  return ids === null || (ids !== undefined && ids.has(id));
+}
+
+function merge(into: Own, from: Own): void {
   for (const [part, kinds] of from) {
     const have = into.get(part) ?? new Map<KeyKind, Set<string> | null>();
     for (const [kind, ids] of kinds) {
@@ -143,7 +168,7 @@ function merge(into: Map<string, Map<KeyKind, Set<string> | null>>, from: Map<st
 }
 
 /** Removes keys between `lo` and `hi` (key frames, inclusive) on the given channels, except at frames `guard` keeps. */
-function dropRange(c: Content, kinds: Map<KeyKind, Set<string> | null>, lo: number, hi: number, guard: (f: number) => boolean): Content {
+function dropRange(c: Content, kinds: Map<KeyKind, Set<string> | null>, lo: number, hi: number, guard: (f: number, kind: KeyKind, id: string) => boolean): Content {
   let changed = false;
   const keys: KeyLane[] = [];
   for (const lane of c.keys) {
@@ -154,7 +179,7 @@ function dropRange(c: Content, kinds: Map<KeyKind, Set<string> | null>, lo: numb
     for (const id in lane.channels) {
       const list = lane.channels[id];
       if (ids !== null && !ids.has(id)) { channels[id] = list; continue; }
-      const kept = list.filter((k) => k.frame < lo || k.frame > hi || guard(k.frame));
+      const kept = list.filter((k) => k.frame < lo || k.frame > hi || guard(k.frame, lane.kind, id));
       if (kept.length !== list.length) laneChanged = true;
       if (kept.length) channels[id] = kept;
     }
@@ -165,15 +190,21 @@ function dropRange(c: Content, kinds: Map<KeyKind, Set<string> | null>, lo: numb
   return changed ? { ...c, keys } : c;
 }
 
-/** Clears the span `from..to` on the parts and channels `who` names, keeping keys at frames inside the `keep` spans. */
-function clearRange(g: Content, who: Map<string, Map<KeyKind, Set<string> | null>>, from: number, to: number, keep: readonly ActSpan[]): Content {
+/**
+ * Clears the span `from..to` on the parts and channels `who` names. A key stays only where one of the `keep` spans covers
+ * its frame and that span's action moves the same part and channel (a shared boundary frame).
+ */
+function clearRange(g: Content, who: Own, from: number, to: number, keep: readonly ActSpan[]): Content {
   let out = g;
+  const ch = g.character as CharacterInfo;
+  const owns = keep.map((s) => owned(findAction(ch, s.action), ch));
   for (const [name, kinds] of who) {
     const p = partRef(out, name);
     if (!p) continue;
     const a = keyFrame(p, from), b = keyFrame(p, to);
-    const spans = keep.map((s) => { const x = keyFrame(p, s.from), y = keyFrame(p, s.to); return [Math.min(x, y), Math.max(x, y)]; });
-    const next = dropRange(p.c, kinds, Math.min(a, b), Math.max(a, b), (f) => spans.some(([x, y]) => f >= x && f <= y));
+    const spans = keep.map((s, i) => { const x = keyFrame(p, s.from), y = keyFrame(p, s.to); return { lo: Math.min(x, y), hi: Math.max(x, y), own: owns[i] }; });
+    const guard = (f: number, kind: KeyKind, id: string): boolean => spans.some((s) => f >= s.lo && f <= s.hi && moves(s.own, name, kind, id));
+    const next = dropRange(p.c, kinds, Math.min(a, b), Math.max(a, b), guard);
     if (next !== p.c) out = { ...out, tracks: mapDeep(out.tracks, p.c.id, () => next) };
   }
   return out;
@@ -193,11 +224,12 @@ function restOf(c: Content, kind: KeyKind, id: string): number {
   }
 }
 
-function absolute(c: Content, kind: KeyKind, id: string, v: number, mirror: boolean): number {
-  if (kind === 'bones') return mirror ? -v : v;
+function absolute(c: Content, kind: KeyKind, id: string, v: number, fit: Fit): number {
+  if (kind === 'bones') return fit.mirror ? -v : v;
   if (kind !== 'move') return v;
   if (SCALES.has(id)) return restOf(c, kind, id) * v;
-  return restOf(c, kind, id) + (mirror && MIRRORED.has(id) ? -v : v);
+  const d = PIXELS.has(id) ? v * fit.k : v;
+  return restOf(c, kind, id) + (fit.mirror && MIRRORED.has(id) ? -d : d);
 }
 
 function relative(c: Content, kind: KeyKind, id: string, v: number): number {
@@ -219,76 +251,151 @@ function putChannel(c: Content, kind: KeyKind, id: string, add: Key[]): Content 
   return { ...c, keys: [...c.keys, lane].sort((p, q) => laneRank(p.kind) - laneRank(q.kind)) };
 }
 
-/** Built-ins are drawn with arm-r on the Stage's left; a character drawn the other way round gets them mirrored. */
-function mirrored(g: Content, a: ActionDef): boolean {
-  if (!a.id.startsWith('builtin:')) return false;
+/** Actions are kept with arm-r on the Stage's left; a character drawn the other way round plays them mirrored. */
+function mirrored(g: Content): boolean {
   const r = partRef(g, 'arm-r'), l = partRef(g, 'arm-l');
   if (!r || !l) return false;
   const x = (c: Content): number => c.transform.x + (c.pivot?.x ?? 0);
   return x(r.c) > x(l.c);
 }
 
-/** Writes the action's keys from `from`, `reps` passes; parts the character lacks are returned by name. */
-function write(g: Content, a: ActionDef, from: number, reps: number): { g: Content; skipped: string[] } {
-  const mirror = mirrored(g, a);
-  const skipped: string[] = [];
+/** Lowest and highest y a part's drawing reaches, from the movie centre, unmoved; null when it draws nothing. */
+function reach(c: Content, h: number, out: { lo: number; hi: number } | null = null): { lo: number; hi: number } | null {
+  let r = out;
+  const add = (lo: number, hi: number): void => { if (r) { r.lo = Math.min(r.lo, lo); r.hi = Math.max(r.hi, hi); } else r = { lo, hi }; };
+  if (c.kind === 'shape' && c.shape) { const b = bounds(outline(c.shape, shapeBase(c.shape))); if (b) add(b[1], b[3]); }
+  if (hasCanvas(c) && c.canvas) add(c.canvas.y - h / 2, c.canvas.y + c.canvas.h - h / 2);
+  for (const t of c.tracks) for (const x of t.content) r = reach(x, h, r);
+  return r;
+}
+
+/** The character's size against the one the starter actions are drawn for: its leg-r from hip to sole, else its height. */
+function sizeOf(g: Content, h: number): number {
+  const leg = partRef(g, 'leg-r');
+  const lr = leg?.c.pivot ? reach(leg.c, h) : null;
+  if (leg && lr && leg.c.pivot) {
+    const len = (lr.hi - leg.c.pivot.y) * Math.abs(leg.c.transform.scale);
+    if (len > 1) return Math.min(20, Math.max(0.05, len / REF_LEG));
+  }
+  let all: { lo: number; hi: number } | null = null;
+  for (const t of g.tracks) for (const x of t.content) all = reach(x, h, all);
+  const tall = all ? all.hi - all.lo : 0;
+  return tall > 1 ? Math.min(20, Math.max(0.05, tall / REF_HEIGHT)) : 1;
+}
+
+function fitFor(g: Content, a: ActionDef, h: number): Fit {
+  return { mirror: mirrored(g), k: a.id.startsWith('builtin:') ? sizeOf(g, h) : 1 };
+}
+
+/** Each channel the action can write on this character, its keys inside the action's frames; missing parts are named in `skipped`. */
+function eachChannel(g: Content, a: ActionDef, skipped: string[] | null, fn: (pc: Content, p: PartRef, part: string, kind: KeyKind, id: string, src: Key[]) => Content): Content {
   let out = g;
   for (const l of a.lanes) {
     const p = partRef(out, l.part);
-    if (!p) { if (!skipped.includes(l.part)) skipped.push(l.part); continue; }
+    if (!p) { if (skipped && !skipped.includes(l.part)) skipped.push(l.part); continue; }
     let pc = p.c;
     for (const k of l.keys) {
       if (!KINDS.has(k.kind)) continue;
       for (const id in k.channels) {
         if (k.kind === 'bones' && !pc.rig?.bones.some((b) => b.id === id)) continue;
         if (k.kind === 'move' && !kindSpec('move').channels.some((s) => s.id === id)) continue;
-        const src = [...k.channels[id]].sort((x, y) => x.frame - y.frame);
-        const at = new Map<number, Key>();
-        for (let r = 0; r < reps; r++) {
-          for (const key of src) {
-            const f = keyFrame(p, from + r * a.length + key.frame);
-            if (f < 0 || f > pc.duration - 1) continue;
-            // a later pass's first key takes the place of the last pass's closing key, with the ease that leaves it
-            at.set(f, { ...key, frame: f, value: absolute(p.c, k.kind, id, key.value, mirror) });
-          }
-        }
-        pc = putChannel(pc, k.kind, id, [...at.values()].sort((x, y) => x.frame - y.frame));
+        const src = k.channels[id].filter((x) => x.frame >= 0 && x.frame <= a.length).sort((x, y) => x.frame - y.frame);
+        if (src.length) pc = fn(pc, p, l.part, k.kind, id, src);
       }
     }
     if (pc !== p.c) { const next = pc; out = { ...out, tracks: mapDeep(out.tracks, p.c.id, () => next) }; }
   }
+  return out;
+}
+
+/** Writes the action's keys from `from`, `reps` passes, none past `limit`; parts the character lacks are returned by name. */
+function write(g: Content, a: ActionDef, from: number, reps: number, fit: Fit, limit = Infinity): { g: Content; skipped: string[] } {
+  const skipped: string[] = [];
+  const out = eachChannel(g, a, skipped, (pc, p, _part, kind, id, src) => {
+    const at = new Map<number, Key>();
+    for (let r = 0; r < reps; r++) {
+      for (const key of src) {
+        const t = from + r * a.length + key.frame;
+        if (t > limit) break;
+        const f = keyFrame(p, t);
+        if (f < 0 || f > pc.duration - 1) continue;
+        // a later pass's first key takes the place of the last pass's closing key, with the ease that leaves it
+        at.set(f, { ...key, frame: f, value: absolute(p.c, kind, id, key.value, fit) });
+      }
+    }
+    return putChannel(pc, kind, id, [...at.values()].sort((x, y) => x.frame - y.frame));
+  });
   return { g: out, skipped };
+}
+
+/** The action's key at frame `t` of a pass: its own key there, else the value shown there with the ease that runs on. */
+function keyAt(src: Key[], t: number): Key {
+  for (const k of src) if (k.frame === t) return k;
+  return { frame: t, value: evalChannel(src, t) ?? 0, ease: easeBefore(src, t) };
+}
+
+/**
+ * Writes each span's own key at the frames given where it starts or ends. A span owns its first frame, and its last
+ * only on the channels no span starting there moves, so spans that touch share one key and a cut span ends cleanly.
+ */
+function seal(g: Content, spans: readonly ActSpan[], frames: readonly number[], h: number, fps: number): Content {
+  const ch = g.character as CharacterInfo;
+  let out = g;
+  for (const f of frames) {
+    const starts = spans.filter((s) => s.from === f).map((s) => owned(findAction(ch, s.action), ch));
+    for (const s of spans) {
+      if (s.from !== f && s.to !== f) continue;
+      const def = findAction(ch, s.action);
+      if (!def) continue;
+      const a = atRate(def, fps);
+      const head = s.from === f;
+      const local = f - (s.start ?? s.from);
+      const m = local % a.length;
+      const t = !a.loop ? Math.min(local, a.length) : !head && m === 0 && local > 0 ? a.length : m;
+      const fit = fitFor(out, a, h);
+      out = eachChannel(out, a, null, (pc, p, part, kind, id, src) => {
+        if (!head && starts.some((o) => moves(o, part, kind, id))) return pc;
+        const k = keyAt(src, t), at = keyFrame(p, f);
+        if (at < 0 || at > pc.duration - 1) return pc;
+        return putChannel(pc, kind, id, [{ ...k, frame: at, value: absolute(p.c, kind, id, k.value, fit) }]);
+      });
+    }
+  }
+  return out;
 }
 
 /**
  * Applies an action at `at` (a frame of the character's tracks), `repeats` passes when it loops. The span takes its frames
  * from any span it lands on (those keep what lies outside it) and replaces the keys inside it on the parts it moves.
+ * With `limit` (a frame of the character's tracks, inclusive) nothing is written past it and the span ends there.
  */
-export function applyAction(movie: Movie, charId: string, actionId: string, at: number, repeats = 1): ActResult {
+export function applyAction(movie: Movie, charId: string, actionId: string, at: number, repeats = 1, limit?: number): ActResult {
   const g = characterOf(movie, charId);
   const ch = g.character;
   const def = findAction(ch, actionId);
   if (!def) throw new OpError('That action no longer exists.');
   const a = atRate(def, movie.fps);
-  const from = Math.round(at), reps = a.loop ? Math.max(1, Math.round(repeats)) : 1, to = from + a.length * reps;
+  const from = Math.round(at), reps = a.loop ? Math.max(1, Math.round(repeats)) : 1;
+  const to = limit === undefined ? from + a.length * reps : Math.min(from + a.length * reps, Math.max(from + 1, Math.round(limit)));
   const acts = ch.acts ?? [];
   const hit = (s: ActSpan): boolean => s.from < to && s.to > from;
   const who = owned(a, ch);
   for (const s of acts) if (hit(s)) merge(who, owned(findAction(ch, s.action), ch));
   const others = acts.filter((s) => !hit(s));
   const cleared = clearRange(g, who, from, to, others);
-  const { g: written, skipped } = write(cleared, a, from, reps);
+  const { g: written, skipped } = write(cleared, a, from, reps, fitFor(cleared, a, movie.height), to);
   const names = new Set(a.lanes.map((l) => l.part));
   if (skipped.length >= names.size) throw new OpError('This character has none of the parts the action moves.');
   const kept: ActSpan[] = [];
   for (const s of acts) {
     if (!hit(s)) { kept.push(s); continue; }
     if (s.from < from) kept.push({ ...s, to: from });
-    if (s.to > to) kept.push({ ...s, from: to });
+    if (s.to > to) kept.push({ ...s, from: to, start: s.start ?? s.from });
   }
   kept.push({ action: def.id, from, to });
   kept.sort((p, q) => p.from - q.from);
-  return { movie: put(movie, withChar(written, { acts: kept })), skipped };
+  const sealed = seal(written, kept, [from, to], movie.height, movie.fps);
+  return { movie: put(movie, withChar(sealed, { acts: kept })), skipped };
 }
 
 /** Removes the keys of one placed action (inside its span, on the parts and channels it moves) and the span. */
@@ -300,18 +407,19 @@ export function clearAction(movie: Movie, charId: string, spanIndex: number): Mo
   if (!s) throw new OpError('That action is no longer on the Timeline.');
   const others = acts.filter((_, i) => i !== spanIndex);
   const cleared = clearRange(g, owned(findAction(ch, s.action), ch), s.from, s.to, others);
-  return put(movie, withChar(cleared, { acts: others }));
+  const sealed = seal(cleared, others, [s.from, s.to], movie.height, movie.fps);
+  return put(movie, withChar(sealed, { acts: others }));
 }
 
-/** Puts another action over a placed one: its keys go, the new action fills the same span (a loop as many passes as fit). */
+/** Puts another action over a placed one: its keys go, the new action fills the same span and never runs past it. */
 export function swapAction(movie: Movie, charId: string, spanIndex: number, actionId: string): ActResult {
   const s = (characterOf(movie, charId).character.acts ?? [])[spanIndex];
   if (!s) throw new OpError('That action is no longer on the Timeline.');
   const def = findAction(characterOf(movie, charId).character, actionId);
   if (!def) throw new OpError('That action no longer exists.');
   const a = atRate(def, movie.fps);
-  const reps = a.loop ? Math.max(1, Math.round((s.to - s.from) / a.length)) : 1;
-  return applyAction(clearAction(movie, charId, spanIndex), charId, actionId, s.from, reps);
+  const reps = a.loop ? loopPasses(a.length, s.to - s.from) : 1;
+  return applyAction(clearAction(movie, charId, spanIndex), charId, actionId, s.from, reps, s.to);
 }
 
 function easeBefore(list: Key[], f: number): Ease {
@@ -330,6 +438,7 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
   if (hi - lo < 1) throw new OpError('Choose a range of at least two frames.');
   const length = hi - lo;
   const lanes: ActionDef['lanes'] = [];
+  const flip = mirrored(g);
   let loop = true;
   for (const part of Object.keys(g.character.parts)) {
     const p = partRef(g, part);
@@ -343,7 +452,8 @@ export function actionFromKeys(movie: Movie, charId: string, from: number, to: n
         const list = lane.channels[id];
         const inside = list.filter((k) => k.frame >= a0 && k.frame <= a1);
         if (!inside.length) continue;
-        const rel = (v: number): number => relative(p.c, lane.kind, id, v);
+        const turn = flip && (lane.kind === 'bones' || MIRRORED.has(id));
+        const rel = (v: number): number => (turn ? -relative(p.c, lane.kind, id, v) : relative(p.c, lane.kind, id, v));
         const out: Key[] = [];
         if (inside[0].frame > a0) out.push({ frame: 0, value: rel(evalChannel(list, a0) ?? 0), ease: easeBefore(list, a0) });
         for (const k of inside) out.push({ ...k, frame: Math.min(length, k.frame - a0), value: rel(k.value) });

@@ -1,7 +1,7 @@
 // Actions on the selected character: save its keys as an action, apply one at the Playhead or over the loop range,
 // swap or clear a placed one (its strip on the Timeline), delete one of its own. Each change is one undo step.
 import type { Engine } from '../engine/engine';
-import { actionFromKeys, addAction, applyAction, characterOf, charFrame, clearAction, findAction, removeAction, swapAction } from '../engine/action-ops';
+import { actionFromKeys, addAction, applyAction, characterOf, charFrame, clearAction, findAction, loopPasses, removeAction, swapAction } from '../engine/action-ops';
 import { fmactBlob, fmactName, readFmact } from '../io/fmact';
 import { groupCtx } from '../engine/group-ctx';
 import { srcFrame } from '../engine/retime';
@@ -52,6 +52,14 @@ function loopRange(m: Movie, g: Content): [number, number] | null {
 
 export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(x: number, y: number, id: string, index: number): void } {
   const { engine, picker } = d;
+  let future = engine.history.future.length;
+  engine.on('history', () => {
+    const n = engine.history.future.length;
+    if (n === future) return;
+    future = n;
+    actPick.id = null;
+    actPick.index = -1;
+  });
   const char = (): boolean => !!selectedCharacter(engine);
   const placed = (): { g: Content; index: number } | null => {
     const g = selectedCharacter(engine);
@@ -70,9 +78,9 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
     const range = loopRange(m, g);
     const at = range ? range[0] : charFrame(m, g, engine.frame);
     const len = Math.max(1, Math.round(def.length * (def.fps ? m.fps / def.fps : 1)));
-    const reps = range && def.loop ? Math.max(1, Math.round((range[1] - range[0]) / len)) : 1;
+    const reps = range && def.loop ? loopPasses(len, range[1] - range[0]) : 1;
     let skipped: string[] = [];
-    if (engine.run('Apply Action', (mv) => { const r = applyAction(mv, g.id, actionId, at, reps); skipped = r.skipped; return r.movie; })) {
+    if (engine.run('Apply Action', (mv) => { const r = applyAction(mv, g.id, actionId, at, reps, range ? range[1] : undefined); skipped = r.skipped; return r.movie; })) {
       const acts = selectedCharacter(engine)?.character?.acts ?? [];
       actPick.id = g.id;
       actPick.index = acts.findIndex((s) => s.from === at && s.action === actionId);

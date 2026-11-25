@@ -15,15 +15,25 @@ function seq(pts: Pt[]): Key[] {
 /**
  * A loop of `len` frames through cyclic extremes, shifted later by `lag` (follow-through). The span that crosses the
  * loop's end is split there at its eased value, leaving slowly and arriving fast, so the first and last key are equal.
+ * The lane is then shifted so frame 0 is `rest`: placed later on the Timeline, it starts from the pose before it.
  */
-function cyc(len: number, pts: Array<[number, number]>, lag = 0): Key[] {
+function cyc(len: number, pts: Array<[number, number]>, lag = 0, rest = 0): Key[] {
   const at = pts.map(([f, v]) => [((f + lag) % len + len) % len, v] as [number, number]).sort((a, b) => a[0] - b[0]);
+  return anchor(cycle(len, at), rest);
+}
+
+function cycle(len: number, at: Array<[number, number]>): Key[] {
   if (at[0][0] === 0) return seq([...at, [len, at[0][1]]]);
   const last = at[at.length - 1], first = at[0];
   const u = (len - last[0]) / (first[0] + len - last[0]);
   const edge = last[1] + (first[1] - last[1]) * INOUT(u);
   const mid: Pt[] = at.map(([f, v], i) => [f, v, i === at.length - 1 ? 'out' : 'inout']);
   return seq([[0, edge, 'in'], ...mid, [len, edge]]);
+}
+
+function anchor(keys: Key[], rest: number): Key[] {
+  const d = rest - keys[0].value;
+  return d ? keys.map((k) => ({ ...k, value: k.value + d })) : keys;
 }
 
 function move(channels: Record<string, Key[]>): KeyLane {
@@ -40,11 +50,11 @@ const WALK = 24;
 const walkBody: Array<[number, number]> = [[2, 5], [8, -4], [14, 5], [20, -4]];
 const jumpArm: Key[] = seq([[0, 0], [6, -12], [11, 40], [16, 25], [21, -8], [26, 3], [30, 0]]);
 const jumpArmY: Key[] = seq([[0, 0], [6, 32, 'in'], [14, -124, 'out'], [21, 32], [27, -4], [30, 0]]);
-const jumpLegY: Key[] = seq([[0, 0], [6, 22, 'in'], [14, -120, 'out'], [21, 20], [27, -3], [30, 0]]);
+const jumpLegY: Key[] = seq([[0, 0], [6, 24.08, 'in'], [14, -120, 'out'], [21, 20.64], [26, 0], [30, 0]]);
 const jumpLegS: Key[] = seq([[0, 1], [6, 0.93, 'in'], [10, 1.02], [14, 0.96], [18, 1], [21, 0.94], [26, 1], [30, 1]]);
 const sitArm: Key[] = seq([[0, 0], [8, 6], [22, 12], [30, 10]]);
 const sitArmY: Key[] = seq([[0, 0], [5, -4], [21, 164], [25, 149], [30, 150]]);
-const sitLegY: Key[] = seq([[0, 0], [4, -2], [20, 158], [24, 155], [30, 157]]);
+const sitLegY: Key[] = seq([[0, 0], [4, 0], [20, 154.8], [24, 151.36], [30, 154.8]]);
 const sitLegS: Key[] = seq([[0, 1], [4, 1], [20, 0.55], [24, 0.56], [30, 0.55]]);
 
 /** Built-in actions; ids start with `builtin:` so a saved span names one without copying it into the character. */
@@ -52,7 +62,7 @@ export const BUILTIN_ACTIONS: readonly ActionDef[] = [
   {
     id: 'builtin:idle', name: 'Idle', length: IDLE, loop: true, fps: 24,
     lanes: [
-      part('body', { y: cyc(IDLE, [[0, 0], [24, -3]]), scaleY: cyc(IDLE, [[0, 1], [24, 1.015]]) }),
+      part('body', { y: cyc(IDLE, [[0, 0], [24, -3]]), scaleY: cyc(IDLE, [[0, 1], [24, 1.015]], 0, 1) }),
       part('head', { y: cyc(IDLE, [[0, 0], [24, -5]], 3), rotation: cyc(IDLE, [[12, 1], [36, -1]], 4) }),
       part('arm-r', { y: cyc(IDLE, [[0, 0], [24, -3]], 2), rotation: cyc(IDLE, [[0, 0], [24, 1.5]], 5) }),
       part('arm-l', { y: cyc(IDLE, [[0, 0], [24, -3]], 2), rotation: cyc(IDLE, [[0, 0], [24, -1.5]], 5) }),
