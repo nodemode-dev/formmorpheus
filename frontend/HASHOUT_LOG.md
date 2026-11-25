@@ -301,6 +301,19 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Removing an action** drops its spans; their keys stay as plain keys.
 - **Old files.** A character saved without `actions` is given `[]` on load in `normalize.ts`, so the field is required in the type and no code reads it with a fallback.
 
+## v0.25.0 · Update from Source: the merge by part name
+
+- refers-to: engine/types.ts :: SourceLink, CharacterInfo.source; engine/source-merge.ts (new) :: mergeFromSource, MISSING_HIGHLIGHT
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What the merge takes.** A part matched by name takes the fresh part's kind, `shape`, `asset`, `layers`, `canvas` and `pivot` (a field the fresh part lacks is removed, so a part that turned from a shape into a picture drops its outline). Everything else is the part's own: id, keys (Shape lane keys included), parent, rig, transform, opacity, blend, highlight, timing, name. Acts and actions live on the character, which the merge copies whole apart from `parts`.
+- **A Flipbook stays.** A matched part that is a Flipbook and comes back as anything else keeps its drawings: the mouth chart is drawn in the app, and the SVG export writes only its first drawing.
+- **New parts.** Cloned with `ops.cloneContent` (the paste command's re-id), each on its own new inner track at the top of the group, in the file's order, spanning the frames the existing parts span. A new part's parent follows the file: a matched part's own id, another new part's new id, or nothing when the file's parent is not a part.
+- **Missing parts.** Kept with the red highlight and returned by name, so the window can show the hint "Not in the source file". A highlight is never cleared when a part comes back: the person may have chosen red themselves.
+- **Locks.** A matched part on a locked inner track refuses the whole update with the part's name; a missing part on a locked track is reported but not recoloured. A locked character track is refused by `ops.updateContent`.
+- **Assets.** The optional fourth argument is the import's asset table; the records the taken and new parts use are added to `movie.assets`. Blobs stay the caller's (`engine.assets.set` and `renderer.preload`, as `app/import-flow.ts` place does). Old pictures are not removed here: undo needs them, and the engine's sweep of stray pixels lets them go.
+
 ## v0.24.0 · the interface's test suite
 
 - refers-to: vitest.config.ts (new); tests/unit/** (new); tests/unit/_support/* (new); tests/unit/version.test.ts (new); package.json :: scripts.test, devDependencies; ../setup/test (new); ../docs/TESTING.md (new)
