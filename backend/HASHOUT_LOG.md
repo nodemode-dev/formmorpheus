@@ -41,6 +41,18 @@ Last updated: 2026-11-25 · the Characters library and its MCP tools
 
 ---
 
+## v0.25.0 · the stat of a character's linked SVG
+
+- refers-to: app/routers/files.py :: stat_source, MAX_SOURCE_BYTES; ../setup/api_contract_check (DESKTOP_ONLY); ../docs/api-contract.json; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What it is for.** The window polls `GET /api/files/stat?path=` every two seconds while it has focus, for each character whose `source` names a file, and updates the character when the answer differs from the stored `{size, mtime, sha256}`. A poll of stat, not a watcher library: no new dependency.
+- **Limits.** The window key is checked in the route as well as by the guard, as the other window-only routes do. Refused: a path that does not end in `.svg` (400), a relative path (400), a missing file, a folder or a symbolic link (404), a file over 20 MB (413). A link is refused so a `.svg` name cannot point the hash at some other file. Only size, change time and hash come back, never the bytes.
+- **Not checked against open movies.** The plan said "only for a path that a character in an open movie names"; the engine does not know which movies the window has open, so the decision in the dev plan (the `.svg`, regular file and size limits) is what holds.
+- **The hash.** Read in 1 MB blocks. The change time alone is not enough: some editors write the same bytes again on save, and a copy over the file can keep its old time.
+- **iPad.** Not served there (`DESKTOP_ONLY` in `api_contract_check`); the window sees 404 and offers Update from Source... only.
+
 ## v0.24.0 · the engine's test suite
 
 - refers-to: pytest.ini (new); requirements-test.txt (new); tests/conftest.py (new); tests/core, library, jobs, mcp, agents, assets, penlink, media, routes, scripts (new); ../setup/test (new); ../.github/workflows/ci.yml :: tests
