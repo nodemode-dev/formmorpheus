@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · characters in Recently Deleted
+
+- refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Shown as characters.** An item of kind `character` has the person glyph (`PERSON_SVG`, sized by `.fm-trash-glyph svg`), the kind "Character" and its name without `.fmo`, which the engine already strips. Movies and exports are as before.
+- **Restore.** A character's restore always says where it went: "{name} is back in Characters.", or "Restored to Characters as {name}" when the engine had to give it a free name. The engine answers `{restored, kind: "character"}`; `restored` is the file name, so `.fmo` is taken off as for a movie.
+
 ## v0.25.0 · an outside agent adds a character
 
 - refers-to: app/agent-bridge.ts :: addCharacter, take; ui/characters-panel.ts :: placeCharacter, unpackCharacter; io/characters-api.ts :: charactersApi.read

@@ -15,7 +15,7 @@ export interface Capabilities {
 export interface LibraryItem { name: string; file: string; path: string; modified: number; size: number; created?: number }
 export interface LibraryStack { id: string; name: string; items: string[] }
 export interface OutputItem { name: string; path: string; modified: number; size: number; kind: string }
-export interface TrashItem { id: string; name: string; original: string; kind: 'movie' | 'export'; deleted: number; size: number; daysLeft: number }
+export interface TrashItem { id: string; name: string; original: string; kind: 'movie' | 'character' | 'export'; deleted: number; size: number; daysLeft: number }
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
