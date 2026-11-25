@@ -48,6 +48,7 @@ const IDLE = 48;
 const WALK = 24;
 
 const walkBody: Array<[number, number]> = [[2, 5], [8, -4], [14, 5], [20, -4]];
+const walkArm: Key[] = cyc(WALK, [[6, -5], [18, 5]], 2);
 const jumpArm: Key[] = seq([[0, 0], [6, -12], [11, 40], [16, 25], [21, -8], [26, 3], [30, 0]]);
 const jumpArmY: Key[] = seq([[0, 0], [6, 32, 'in'], [14, -124, 'out'], [21, 32], [27, -4], [30, 0]]);
 const jumpLegY: Key[] = seq([[0, 0], [6, 24.08, 'in'], [14, -120, 'out'], [21, 20.64], [26, 0], [30, 0]]);
@@ -114,8 +115,8 @@ export const BUILTIN_ACTIONS: readonly ActionDef[] = [
       part('leg-l', { y: seq([[0, 0, 'linear'], [12, 0], [18, -30, 'out'], [24, 0]]), rotation: seq([[0, 0, 'linear'], [12, 0], [18, -3, 'out'], [24, 0]]) }),
       part('body', { y: cyc(WALK, walkBody), rotation: cyc(WALK, [[6, 1.5], [18, -1.5]]) }),
       part('head', { y: cyc(WALK, walkBody, 2), rotation: cyc(WALK, [[9, -1.2], [21, 1.2]]) }),
-      part('arm-r', { y: cyc(WALK, walkBody, 1), rotation: cyc(WALK, [[6, -5], [18, 5]], 2) }),
-      part('arm-l', { y: cyc(WALK, walkBody, 1), rotation: cyc(WALK, [[6, -5], [18, 5]], 2) }),
+      part('arm-r', { y: cyc(WALK, walkBody, 1), rotation: walkArm }),
+      part('arm-l', { y: cyc(WALK, walkBody, 1), rotation: neg(walkArm) }),
     ],
   },
   {

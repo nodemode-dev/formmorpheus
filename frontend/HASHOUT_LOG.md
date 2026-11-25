@@ -77,6 +77,17 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ## v0.25.0 · actions: files and saved movies are bounded
 
+## v0.25.0 · actions: Walk in place swings its arms against each other
+
+- refers-to: engine/actions-builtin.ts :: walkArm, neg, BUILTIN_ACTIONS (builtin:walk)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **The bug.** Both arms took the same rotation keys, so both hands swung to the same side at once. `arm-l` now plays `neg(walkArm)`: the same frames and eases with every value negated, so the pair is opposite at every frame, frame 0 is still rest (0 stays 0) and the loop still closes exactly.
+- **Which way each arm goes.** `arm-r` is back (negative) when `leg-r` lifts at frame 6 and forward when `leg-l` lifts at frame 18, two frames behind each leg; `arm-l` is the reverse, so each arm is against the leg on its own side. Forward is read from the lift, not from the leg's rotation sign: `leg-l` lifts with -3 (its splay mirrors `leg-r`'s +3), so the legs were left as they were.
+- **Mirroring.** Actions are kept for arm-r on the Stage's left and a character drawn the other way round negates every rotation, arms and legs together; the pair stays opposite and each arm stays against its leg, so one set of keys serves both orientations.
+- **Idle, Jump and Sit left alone.** Their `arm-l` is already the negation of `arm-r` (Idle 1.5 and -1.5, `neg(jumpArm)`, `neg(sitArm)`): both arms rise or settle outward together, which is right for a pose that is the same on both sides. Only a walk wants the arms against each other.
+
 - refers-to: io/fmact.ts :: lane, key, parseFmact, BAD_IDS; engine/normalize.ts :: characterDef, actionLane, BAD_IDS; engine/types.ts :: ACTION_MAX_FRAMES; engine/action-ops.ts :: eachChannel
 - kind: decision
 - logged: v0.25.0 · 2026-11-25
