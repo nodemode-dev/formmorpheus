@@ -132,6 +132,16 @@ Last updated: 2026-11-23 · the interface's test suite
 - **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
 - **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
 
+## v0.25.0 · Starter characters read by the SVG importer (S1 check)
+
+- refers-to: io/svg-import.ts :: parseSvgParts, svgToCharacterGroup, svgToMouthChart, isMouthChart; engine/lipsync-ops.ts :: looksLikeMouth; public/starters/characters
+- kind: explainer
+- logged: v0.25.0 · 2026-11-25
+
+- Every starter character and mouth chart was run through the importer headlessly (a throwaway script outside the tree, happy-dom, the picture path stubbed). Each character reads as 9 parts with the exact names, `hand-l` in `arm-l`, `hand-r` in `arm-r`, `mouth` in `head`, the rest at the top; no part becomes a picture (no assets made); every part has its pivot: legs at the top of the leg, arms at the shoulder, hands at the wrist, body at the pelvis on the centre line, the mouth within 2 px of the manifest's `mouthCenter`, and the -l parts on the viewer's right. Each mouth chart reads as 8 frames named exactly as `VISEME_NAMES` in order, `looksLikeMouth` true, no shape a picture, every mouth centred near `mouthCenter`.
+- The head's pivot sits below the head's own shapes (at the neck base, inside the body's neck) by the starter conventions, so the head turns on its neck; that is intended, not a fault.
+- Nothing failed: neither the importer nor the art was changed.
+
 ## v0.25.0 · Starter characters stand on a starter scene's floor
 
 - refers-to: engine/starter-scene.ts :: STARTER_ART, standOnFloor; ui/characters-panel.ts :: placeCharacter, CharactersPanel.add
