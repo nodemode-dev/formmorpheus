@@ -2,6 +2,15 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.29.0 · 2026-11-25
+
+Eight new starter characters and the pieces they wear, for 26 starters in all.
+
+### New
+- Starter characters Dev (the gamer), Walt (the grandpa), Sami (the medic), Amara (the librarian), Jade (the drummer), Pip (a woodland fox), Rex (a little dino) and Sprig (a garden sprite), in View, Characters and in the Character Builder.
+- In the Character Builder: three outfits (Varsity Jacket, Cardigan, Scrubs), three hair styles (Short Curls, Long Braid, Mohawk) and three kinds (Fox, Dino, Sprout). The fox and the dino have a tail, a part of its own that follows the hip. For a dino or a sprout the hair colour paints its crest or its leaves; a fox shows a tuft between its ears when you choose a style.
+- Each kind dims the face options it does not draw.
+
 ## 0.28.0 · 2026-11-25
 
 Thirteen more starter characters, ready to add or to change in the Character Builder.
