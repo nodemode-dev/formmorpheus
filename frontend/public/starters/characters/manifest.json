@@ -6,6 +6,7 @@
     "sides": "The -l and -r suffixes are the character's own left and right, so in this front view the -l parts are on the viewer's right.",
     "pivot": "Each part group has exactly one direct child marking its joint: a circle r 4 with data-role=\"pivot\" and id \"pivot-<part>\" (pivot-leg-l, pivot-hand-r, pivot-mouth and so on). XML ids are unique per file, so no element is literally id \"pivot\": find a part's pivot as its direct child with data-role=\"pivot\", or else the element whose id is \"pivot-\" plus the part name. The pivot is a marker, not art: drop it from the drawing. Joints: legs at the hip, body at the pelvis centre, arms at the shoulder, hands at the wrist, head at the neck base, mouth at the mouth centre.",
     "joints": "Parts overlap at every joint (rounded caps centred on the pivot, the neck kept in body under the head), so a part rotated about its pivot shows no gap.",
+    "mouths": "The mouth chart <id>-mouths.svg is the same size, with the mouths at the same place as the head's mouth group (mouthCenter). It has 8 top-level groups in lip-sync order: Rest, MBP, AI, E, O, U, FV, L-th. Each group's data-name is the shape name exactly as the lip-sync analysis names it (Rest, MBP, AI, E, O, U, FV, L / th); use data-name as the frame name, else the id. The id of the last group is L-th because an id cannot hold spaces or a slash. The mouth group inside head holds the Rest drawing.",
     "elements": "Only path, rect, circle, ellipse, line, polyline and polygon, styled by attributes (fill, stroke, stroke-width, stroke-linecap, stroke-linejoin), solid colors only. No transforms, no defs, no text, no CSS. fill=\"none\" appears on outline-only shapes (glasses, a belt buckle).",
     "license": "Original artwork made for this project and covered by the repository's own license."
   },
@@ -14,6 +15,7 @@
       "id": "kofi",
       "name": "Kofi",
       "file": "kofi.svg",
+      "mouths": "kofi-mouths.svg",
       "poster": "posters/kofi.png",
       "description": "Young man, tall and slim, short twists, knit sweater and a cross-body pouch.",
       "mouthCenter": [
@@ -25,6 +27,7 @@
       "id": "ines",
       "name": "Ines",
       "file": "ines.svg",
+      "mouths": "ines-mouths.svg",
       "poster": "posters/ines.png",
       "description": "Older woman, silver bun, round glasses, long coat and a knitted scarf.",
       "mouthCenter": [
@@ -36,6 +39,7 @@
       "id": "marisol",
       "name": "Marisol",
       "file": "marisol.svg",
+      "mouths": "marisol-mouths.svg",
       "poster": "posters/marisol.png",
       "description": "Girl of about nine, two hair puffs, pinafore dress and rain boots.",
       "mouthCenter": [
@@ -47,6 +51,7 @@
       "id": "bram",
       "name": "Bram",
       "file": "bram.svg",
+      "mouths": "bram-mouths.svg",
       "poster": "posters/bram.png",
       "description": "Broad man in his fifties, full beard, waistcoat and rolled shirt sleeves.",
       "mouthCenter": [
@@ -58,6 +63,7 @@
       "id": "noor",
       "name": "Noor",
       "file": "noor.svg",
+      "mouths": "noor-mouths.svg",
       "poster": "posters/noor.png",
       "description": "Woman in her thirties, headscarf, belted jumpsuit and sneakers.",
       "mouthCenter": [

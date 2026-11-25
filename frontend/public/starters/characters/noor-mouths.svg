@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <g id="Rest" data-name="Rest">
+    <path d="M520.7 328.2 Q540 342 559.3 328.2" fill="none" stroke="#6e2c2a" stroke-width="5.1" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="MBP" data-name="MBP">
+    <ellipse cx="540" cy="331.8" rx="16.6" ry="4.6" fill="#6e2c2a"/>
+    <path d="M521.6 330.9 Q540 333.7 558.4 330.9" fill="none" stroke="#5c1f30" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="AI" data-name="AI">
+    <path d="M517 324.5 Q540 316.2 563 324.5 C562.1 350.7 551 363.1 540 363.1 C529 363.1 517.9 350.7 517 324.5 Z" fill="#5c1f30"/>
+    <path d="M523.4 322.2 Q540 317.1 556.6 322.2 L555.2 328.2 Q540 324.5 524.8 328.2 Z" fill="#fffaf2"/>
+    <path d="M527.1 355.8 Q540 343.8 552.9 355.8 Q540 364 527.1 355.8 Z" fill="#e0707e"/>
+  </g>
+  <g id="E" data-name="E">
+    <path d="M514.2 326.3 Q540 321.7 565.8 326.3 Q558.4 348.4 540 348.4 Q521.6 348.4 514.2 326.3 Z" fill="#5c1f30"/>
+    <path d="M518.8 325.4 Q540 322.2 561.2 325.4 L558.4 332.3 Q540 330 521.6 332.3 Z" fill="#fffaf2"/>
+    <path d="M526.2 343.8 Q540 340.1 553.8 343.8 Q540 348.9 526.2 343.8 Z" fill="#fffaf2"/>
+  </g>
+  <g id="O" data-name="O">
+    <ellipse cx="540" cy="338.3" rx="12.4" ry="15.6" fill="#5c1f30" stroke="#6e2c2a" stroke-width="3.2"/>
+    <path d="M532.2 348.4 Q540 342 547.8 348.4 Q540 352.1 532.2 348.4 Z" fill="#e0707e"/>
+  </g>
+  <g id="U" data-name="U">
+    <ellipse cx="540" cy="335.5" rx="7.4" ry="7.8" fill="#5c1f30" stroke="#6e2c2a" stroke-width="4.6"/>
+  </g>
+  <g id="FV" data-name="FV">
+    <path d="M521.6 329.1 Q540 323.6 558.4 329.1 Q540 342 521.6 329.1 Z" fill="#5c1f30"/>
+    <path d="M526.2 327.2 Q540 324 553.8 327.2 L552.4 334.6 Q540 336 527.6 334.6 Z" fill="#fffaf2"/>
+    <path d="M524.4 334.6 Q540 332.8 555.6 334.6 Q540 343.8 524.4 334.6 Z" fill="#6e2c2a"/>
+  </g>
+  <g id="L-th" data-name="L / th">
+    <path d="M519.8 325.4 Q540 319 560.2 325.4 C559.3 342.9 549.2 351.2 540 351.2 C530.8 351.2 520.7 342.9 519.8 325.4 Z" fill="#5c1f30"/>
+    <path d="M525.3 323.6 Q540 319.9 554.7 323.6 L553.3 328.6 Q540 325.9 526.7 328.6 Z" fill="#fffaf2"/>
+    <path d="M528 346.6 C529 334.6 534.5 327.2 540 327.2 C545.5 327.2 551 334.6 552 346.6 Q540 353 528 346.6 Z" fill="#e0707e"/>
+  </g>
+</svg>
