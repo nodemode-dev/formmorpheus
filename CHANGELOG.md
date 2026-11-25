@@ -2,6 +2,28 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.31.0 · 2026-11-25
+
+The Character Builder in every language, and the finishing touches on characters and actions.
+
+### New
+- The Character Builder, the 26 starter characters, the new outfits, hair styles and kinds, and the starter actions Run, Dance, Talk and Cheer are translated into all 27 full languages, with Mexican Spanish and Canadian French words where they differ.
+- The manual covers the Character Builder, a built character's parts and what each follows, Edit in Character Builder, the 26 starters and the twelve starter actions, with a section New in 0.31.0. The README lists them, and the iPad build guide has a check for this version.
+
+### Improved
+- The Character Builder lays out right to left in Arabic, keeps long slider labels clear of the slider, and shows a character's full tag on its tile.
+- Clothing trim, body frame, height and head size each have their own word in every language, apart from trimming a clip, a movie frame, a shape's height and an arrow's head.
+- Starter character names stay as written in every language.
+
+### Fixed
+- Windows: the app no longer opens to a black window on PCs where another program has changed the file type the system gives to `.js` files. The window's scripts, styles, pictures and fonts are now always served with their own types.
+- Characters added to a plain movie at full size stand far enough apart, so two never touch.
+- A starter action placed on a built character before 0.30.0 clears and swaps without leaving its old keys.
+- A starter action never writes over your lip-sync: it fills only frames that show Rest, and clearing it gives back only the frames it set.
+- Laying one action into the middle of a looping one eases the loop out and back in instead of snapping the arms.
+- A looping action shortened below its ease plays its moves instead of standing still.
+- An action file keeps one mouth shape per frame.
+
 ## 0.30.0 · 2026-11-25
 
 Characters made in the Character Builder move the way they were designed to, and four new starter actions.

@@ -2,7 +2,7 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.30.0
+Current build version: v0.31.0
 Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---

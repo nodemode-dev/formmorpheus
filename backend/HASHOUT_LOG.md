@@ -2,7 +2,7 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.30.0
+Current build version: v0.31.0
 Last updated: 2026-11-25 · the window's files keep their types on Windows
 
 ---
