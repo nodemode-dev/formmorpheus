@@ -74,7 +74,7 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
     if (!f) continue;
     const mine = oldParts[name] ? have.get(oldParts[name]) : undefined;
     if (mine) {
-      if (mine.track.locked) throw new ops.OpError(`The part ${name} is on a locked track.`);
+      if (mine.track.locked) throw new ops.OpError('A part of this character is on a locked track. Unlock it, then update again.');
       matched.set(mine.c.id, f);
       continue;
     }

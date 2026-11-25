@@ -3,9 +3,18 @@
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-25 · the source link is followed only where this computer made it
+Last updated: 2026-11-25 · labels that translate cleanly
 
 ---
+
+## v0.25.0 · labels that translate cleanly
+
+- refers-to: engine/actions-builtin.ts :: builtin:wave; engine/source-merge.ts :: mergeFromSource
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Wave Hello.** The starter action was named "Wave", a key the tables already hold for the wave shape and brush ("Welle", "Onda"), so every language would have shown the wrong sense. It is "Wave Hello"; its id `builtin:wave` is unchanged, so saved spans still find it.
+- **Locked part.** The refusal named the part through a template literal, which no table key can match. It is one fixed sentence now, so the page translator finds it; the part is the one the person just tried to update.
 
 ## v0.25.0 · a part picked inside a character
 
