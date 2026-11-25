@@ -2,6 +2,15 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.26.0 · 2026-11-25
+
+FormMorpheus can make characters from a recipe, the groundwork for the Character Builder.
+
+### New
+- Characters built from a recipe of body, face, hair and outfit, drawn in one consistent style: 13 outfits, 13 hair styles, four kinds (person, robot, alien, monster), and sliders for height, build, shoulders and head size. A built character is a real character: a part for each piece (hip, body, head, eyes, brows, mouth, upper arm, forearm and hand, thigh, shin and foot on each side, hair, and the outfit's extra pieces), each following the part it hangs from, with a pivot at every joint.
+- A built character's mouth is a mouth chart of the eight shapes, drawn to match its face, so Lip-sync from Sound works on it at once.
+- A built character keeps its recipe. Building it again with a change keeps its keys, actions and lip-sync. A piece the new outfit or hair no longer has is hidden with its keys kept, and comes back when it returns.
+
 ## 0.25.0 · 2026-11-25
 
 FormMorpheus gets characters: draw the parts in a vector app, animate them with ready actions, and keep the art and the animation in step.
