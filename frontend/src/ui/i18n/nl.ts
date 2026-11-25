@@ -926,4 +926,5 @@ export const nl: Record<string, string> = {
   'Badge': 'Naambadge', 'Cardigan': 'Vest', 'Dino': 'Dino', 'Fox': 'Vos', 'Garden sprite': 'Tuinelfje', 'Little dino': 'Kleine dino', 'Long Braid': 'Lange vlecht',
   'Mohawk': 'Hanenkam', 'Scrubs': 'Zorguniform', 'Short Curls': 'Korte krullen', 'Slacks': 'Pantalon', 'Sleeves': 'Mouwen', 'Sprout': 'Kiempje', 'The drummer': 'De drummer',
   'The gamer': 'De gamer', 'The grandpa': 'De opa', 'The librarian': 'De bibliothecaris', 'The medic': 'De dokter', 'Varsity Jacket': 'Collegejack', 'Woodland fox': 'Bosvos',
+  'Frame (body)': 'Postuur', 'Head size (body)': 'Hoofdgrootte', 'Height (body)': 'Lengte', 'Trim (clothing)': 'Bies',
 };

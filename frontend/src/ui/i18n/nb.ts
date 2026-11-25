@@ -926,4 +926,5 @@ export const nb: Record<string, string> = {
   'Badge': 'Navneskilt', 'Cardigan': 'Cardigan', 'Dino': 'Dino', 'Fox': 'Rev', 'Garden sprite': 'Hagenisse', 'Little dino': 'Liten dino', 'Long Braid': 'Lang flette',
   'Mohawk': 'Hanekam', 'Scrubs': 'Sykehusklær', 'Short Curls': 'Korte krøller', 'Slacks': 'Dressbukser', 'Sleeves': 'Ermer', 'Sprout': 'Spire', 'The drummer': 'Trommeslageren',
   'The gamer': 'Gameren', 'The grandpa': 'Bestefaren', 'The librarian': 'Bibliotekaren', 'The medic': 'Legen', 'Varsity Jacket': 'Collegejakke', 'Woodland fox': 'Skogsrev',
+  'Frame (body)': 'Kroppsform', 'Head size (body)': 'Hodestørrelse', 'Height (body)': 'Høyde', 'Trim (clothing)': 'Kant',
 };

@@ -763,4 +763,5 @@ export const uk: Record<string, string> = {
   'Badge': 'Бейдж', 'Cardigan': 'Кардиган', 'Dino': 'Динозавр', 'Fox': 'Лисиця', 'Garden sprite': 'Садовий ельф', 'Little dino': 'Маленький динозавр', 'Long Braid': 'Довга коса',
   'Mohawk': 'Ірокез', 'Scrubs': 'Медичний костюм', 'Short Curls': 'Короткі кучері', 'Slacks': 'Слакси', 'Sleeves': 'Рукави', 'Sprout': 'Паросток', 'The drummer': 'Барабанщиця',
   'The gamer': 'Геймер', 'The grandpa': 'Дідусь', 'The librarian': 'Бібліотекарка', 'The medic': 'Медик', 'Varsity Jacket': 'Університетська куртка', 'Woodland fox': 'Лісова лисиця',
+  'Frame (body)': 'Фігура', 'Head size (body)': 'Розмір голови', 'Height (body)': 'Зріст', 'Trim (clothing)': 'Оздоблення',
 };

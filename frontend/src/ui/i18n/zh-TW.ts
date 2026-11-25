@@ -939,4 +939,5 @@ export const zhTW: Record<string, string> = {
   'Badge': '識別證', 'Cardigan': '開襟衫', 'Dino': '恐龍', 'Fox': '狐狸', 'Garden sprite': '花園精靈', 'Little dino': '小恐龍', 'Long Braid': '長辮子',
   'Mohawk': '莫霍克頭', 'Scrubs': '手術服', 'Short Curls': '短捲髮', 'Slacks': '休閒褲', 'Sleeves': '袖子', 'Sprout': '嫩芽', 'The drummer': '鼓手',
   'The gamer': '玩家', 'The grandpa': '爺爺', 'The librarian': '圖書館員', 'The medic': '醫護人員', 'Varsity Jacket': '棒球外套', 'Woodland fox': '森林狐狸',
+  'Frame (body)': '體格', 'Head size (body)': '頭部大小', 'Height (body)': '身高', 'Trim (clothing)': '飾邊',
 };

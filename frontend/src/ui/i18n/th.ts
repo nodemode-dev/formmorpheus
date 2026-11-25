@@ -944,4 +944,5 @@ export const th: Record<string, string> = {
   'Badge': 'ป้ายชื่อ', 'Cardigan': 'เสื้อคาร์ดิแกน', 'Dino': 'ไดโนเสาร์', 'Fox': 'จิ้งจอก', 'Garden sprite': 'ภูตสวน', 'Little dino': 'ไดโนน้อย', 'Long Braid': 'เปียยาว',
   'Mohawk': 'ทรงโมฮอว์ก', 'Scrubs': 'ชุดสครับ', 'Short Curls': 'ผมหยิกสั้น', 'Slacks': 'กางเกงสแล็ค', 'Sleeves': 'แขนเสื้อ', 'Sprout': 'ต้นอ่อน', 'The drummer': 'มือกลอง',
   'The gamer': 'เกมเมอร์', 'The grandpa': 'คุณตา', 'The librarian': 'บรรณารักษ์', 'The medic': 'เจ้าหน้าที่การแพทย์', 'Varsity Jacket': 'แจ็กเก็ตวาร์ซิตี้', 'Woodland fox': 'จิ้งจอกป่า',
+  'Frame (body)': 'โครงร่าง', 'Head size (body)': 'ขนาดศีรษะ', 'Height (body)': 'ส่วนสูง', 'Trim (clothing)': 'ขอบ',
 };

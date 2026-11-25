@@ -900,7 +900,7 @@ export const de: Record<string, string> = {
   'Afro': 'Afro', 'Alien': 'Alien', 'Apply Character Builder': 'Figuren-Baukasten anwenden', 'Apron': 'Schürze', 'Athletic': 'Sportlich', 'Blush': 'Rouge',
   'Bob': 'Bob', 'Body': 'Körper', 'Boots': 'Stiefel', 'Bow tie': 'Fliege', 'Build': 'Statur', 'Build a character': 'Figur bauen',
   'Business Suit': 'Business-Anzug', 'Buzz Cut': 'Stoppelschnitt', 'Cape & trim': 'Umhang und Besatz', 'Character Builder': 'Figuren-Baukasten',
-  'Character options': 'Figuroptionen', 'Character preview': 'Figurvorschau', 'Chef': 'Koch', 'Coat': 'Kittel', 'Custom color': 'Eigene Farbe',
+  'Character options': 'Figuroptionen', 'Character preview': 'Figurvorschau', 'Chef': 'Koch', 'Coat': 'Kittel', 'Custom color': 'Benutzerdefinierte Farbe',
   'Denim': 'Jeansstoff', 'Dress': 'Kleid', 'Earrings': 'Ohrringe', 'Edit in Character Builder': 'Im Figuren-Baukasten bearbeiten', 'Emblem': 'Emblem',
   'Eye color': 'Augenfarbe', 'Face': 'Gesicht', 'Facial hair': 'Bart', 'Frame A': 'Körperform A', 'Frame B': 'Körperform B', 'Freckles': 'Sommersprossen',
   'Full': 'Vollbart', 'Glasses': 'Brille', 'Goatee': 'Spitzbart', 'Hair': 'Haare', 'Hair color': 'Haarfarbe', 'Hair style': 'Frisur',
@@ -926,4 +926,5 @@ export const de: Record<string, string> = {
   'Badge': 'Ausweis', 'Cardigan': 'Strickjacke', 'Dino': 'Dino', 'Fox': 'Fuchs', 'Garden sprite': 'Gartengeist', 'Little dino': 'Kleiner Dino', 'Long Braid': 'Langer Zopf',
   'Mohawk': 'Irokese', 'Scrubs': 'OP-Kleidung', 'Short Curls': 'Kurze Locken', 'Slacks': 'Stoffhose', 'Sleeves': 'Ärmel', 'Sprout': 'Spross', 'The drummer': 'Die Schlagzeugerin',
   'The gamer': 'Der Gamer', 'The grandpa': 'Der Opa', 'The librarian': 'Die Bibliothekarin', 'The medic': 'Der Arzt', 'Varsity Jacket': 'College-Jacke', 'Woodland fox': 'Waldfuchs',
+  'Frame (body)': 'Körperform', 'Head size (body)': 'Kopfgröße', 'Height (body)': 'Größe', 'Trim (clothing)': 'Besatz',
 };

@@ -764,4 +764,5 @@ export const ru: Record<string, string> = {
   'Badge': 'Бейдж', 'Cardigan': 'Кардиган', 'Dino': 'Динозавр', 'Fox': 'Лиса', 'Garden sprite': 'Садовый эльф', 'Little dino': 'Маленький динозавр', 'Long Braid': 'Длинная коса',
   'Mohawk': 'Ирокез', 'Scrubs': 'Медицинский костюм', 'Short Curls': 'Короткие кудри', 'Slacks': 'Слаксы', 'Sleeves': 'Рукава', 'Sprout': 'Росток', 'The drummer': 'Барабанщица',
   'The gamer': 'Геймер', 'The grandpa': 'Дедушка', 'The librarian': 'Библиотекарь', 'The medic': 'Медик', 'Varsity Jacket': 'Университетская куртка', 'Woodland fox': 'Лесная лиса',
+  'Frame (body)': 'Фигура', 'Head size (body)': 'Размер головы', 'Height (body)': 'Рост', 'Trim (clothing)': 'Отделка',
 };

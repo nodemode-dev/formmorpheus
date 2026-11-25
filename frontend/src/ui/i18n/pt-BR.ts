@@ -1013,4 +1013,5 @@ export const ptBR: Record<string, string> = {
   'Badge': 'Crachá', 'Cardigan': 'Cardigã', 'Dino': 'Dino', 'Fox': 'Raposa', 'Garden sprite': 'Duende do jardim', 'Little dino': 'Dinossaurinho', 'Long Braid': 'Trança longa',
   'Mohawk': 'Moicano', 'Scrubs': 'Pijama cirúrgico', 'Short Curls': 'Cachos curtos', 'Slacks': 'Calça social', 'Sleeves': 'Mangas', 'Sprout': 'Broto', 'The drummer': 'A baterista',
   'The gamer': 'O gamer', 'The grandpa': 'O vovô', 'The librarian': 'A bibliotecária', 'The medic': 'O médico', 'Varsity Jacket': 'Jaqueta college', 'Woodland fox': 'Raposa da floresta',
+  'Frame (body)': 'Silhueta', 'Head size (body)': 'Tamanho da cabeça', 'Height (body)': 'Estatura', 'Trim (clothing)': 'Acabamento',
 };

@@ -868,4 +868,5 @@ export const tr: Record<string, string> = {
   'Badge': 'Yaka kartı', 'Cardigan': 'Hırka', 'Dino': 'Dinozor', 'Fox': 'Tilki', 'Garden sprite': 'Bahçe perisi', 'Little dino': 'Küçük dinozor', 'Long Braid': 'Uzun örgü',
   'Mohawk': 'Mohikan', 'Scrubs': 'Sağlık forması', 'Short Curls': 'Kısa kıvırcık', 'Slacks': 'Kumaş pantolon', 'Sleeves': 'Kollar', 'Sprout': 'Filiz', 'The drummer': 'Davulcu',
   'The gamer': 'Oyuncu', 'The grandpa': 'Dede', 'The librarian': 'Kütüphaneci', 'The medic': 'Sağlıkçı', 'Varsity Jacket': 'Kolej ceketi', 'Woodland fox': 'Orman tilkisi',
+  'Frame (body)': 'Vücut tipi', 'Head size (body)': 'Baş boyutu', 'Height (body)': 'Boy', 'Trim (clothing)': 'Şerit',
 };

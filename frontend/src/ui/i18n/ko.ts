@@ -939,4 +939,5 @@ export const ko: Record<string, string> = {
   'Badge': '명찰', 'Cardigan': '카디건', 'Dino': '공룡', 'Fox': '여우', 'Garden sprite': '정원 요정', 'Little dino': '꼬마 공룡', 'Long Braid': '긴 땋은 머리',
   'Mohawk': '모히칸', 'Scrubs': '수술복', 'Short Curls': '짧은 곱슬머리', 'Slacks': '슬랙스', 'Sleeves': '소매', 'Sprout': '새싹', 'The drummer': '드러머',
   'The gamer': '게이머', 'The grandpa': '할아버지', 'The librarian': '사서', 'The medic': '의료진', 'Varsity Jacket': '야구 점퍼', 'Woodland fox': '숲속 여우',
+  'Frame (body)': '체형', 'Head size (body)': '머리 크기', 'Height (body)': '키', 'Trim (clothing)': '장식',
 };

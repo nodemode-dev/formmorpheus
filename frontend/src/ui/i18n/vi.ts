@@ -939,4 +939,5 @@ export const vi: Record<string, string> = {
   'Badge': 'Thẻ tên', 'Cardigan': 'Áo cardigan', 'Dino': 'Khủng long', 'Fox': 'Cáo', 'Garden sprite': 'Tinh linh khu vườn', 'Little dino': 'Khủng long nhỏ', 'Long Braid': 'Tóc tết dài',
   'Mohawk': 'Tóc mohawk', 'Scrubs': 'Đồng phục y tế', 'Short Curls': 'Tóc xoăn ngắn', 'Slacks': 'Quần âu', 'Sleeves': 'Tay áo', 'Sprout': 'Mầm cây', 'The drummer': 'Tay trống',
   'The gamer': 'Game thủ', 'The grandpa': 'Ông', 'The librarian': 'Thủ thư', 'The medic': 'Nhân viên y tế', 'Varsity Jacket': 'Áo khoác bóng chày', 'Woodland fox': 'Cáo rừng',
+  'Frame (body)': 'Khung người', 'Head size (body)': 'Cỡ đầu', 'Height (body)': 'Chiều cao', 'Trim (clothing)': 'Viền',
 };

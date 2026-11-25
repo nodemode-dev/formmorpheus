@@ -737,7 +737,7 @@ export const hu: Record<string, string> = {
   'Business Suit': 'Öltöny', 'Buzz Cut': 'Gépi nyírás', 'Cape & trim': 'Palást és szegély', 'Character Builder': 'Karakterépítő',
   'Character options': 'Karakterbeállítások', 'Character preview': 'Karakter előnézete', 'Chef': 'Szakács', 'Coat': 'Köpeny', 'Custom color': 'Egyéni szín',
   'Denim': 'Farmer', 'Dress': 'Ruha', 'Earrings': 'Fülbevaló', 'Edit in Character Builder': 'Szerkesztés a Karakterépítőben', 'Emblem': 'Embléma',
-  'Eye color': 'Szemszín', 'Face': 'Arc', 'Facial hair': 'Arcszőrzet', 'Frame A': 'A testtípus', 'Frame B': 'B testtípus', 'Freckles': 'Szeplők',
+  'Eye color': 'Szemszín', 'Face': 'Arc', 'Facial hair': 'Arcszőrzet', 'Frame A': 'Alkat A', 'Frame B': 'Alkat B', 'Freckles': 'Szeplők',
   'Full': 'Körszakáll', 'Glasses': 'Szemüveg', 'Goatee': 'Kecskeszakáll', 'Hair': 'Haj', 'Hair color': 'Hajszín', 'Hair style': 'Frizura',
   'Hero Suit': 'Szuperhősjelmez', 'Hi-Vis Crew': 'Láthatósági munkaruha', 'Hoodie': 'Kapucnis pulóver', 'Hoodie & Joggers': 'Kapucnis pulóver és melegítőnadrág', 'Human': 'Ember',
   'Jacket': 'Kabát', 'Jaw': 'Állkapocs', 'Jeans': 'Farmernadrág', 'Joggers': 'Melegítőnadrág', 'Lab Coat': 'Laborköpeny', 'Lashes': 'Szempilla', 'Lip color': 'Ajakszín',
@@ -761,4 +761,5 @@ export const hu: Record<string, string> = {
   'Badge': 'Névkártya', 'Cardigan': 'Kardigán', 'Dino': 'Dínó', 'Fox': 'Róka', 'Garden sprite': 'Kerti tündér', 'Little dino': 'Kis dínó', 'Long Braid': 'Hosszú fonat',
   'Mohawk': 'Irokéz', 'Scrubs': 'Műtősruha', 'Short Curls': 'Rövid göndör', 'Slacks': 'Szövetnadrág', 'Sleeves': 'Ujjak', 'Sprout': 'Hajtás', 'The drummer': 'Dobos',
   'The gamer': 'Játékos', 'The grandpa': 'Nagypapa', 'The librarian': 'Könyvtáros', 'The medic': 'Ápoló', 'Varsity Jacket': 'Egyetemi dzseki', 'Woodland fox': 'Erdei róka',
+  'Frame (body)': 'Alkat', 'Head size (body)': 'Fejméret', 'Height (body)': 'Testmagasság', 'Trim (clothing)': 'Szegély',
 };

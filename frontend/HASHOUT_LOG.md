@@ -3,9 +3,22 @@
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
 Current build version: v0.30.0
-Last updated: 2026-11-25 · the studio's animations as starter actions
+Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
+
+## v0.31.0 · builder labels with their own entries
+
+- refers-to: ui/character-builder.ts :: SENSE (new), tw (new), relabel, sync; ui/i18n/* (27 full tables), ui/i18n/es-MX.ts, ui/i18n/fr-CA.ts
+- kind: decision
+- logged: v0.31.0 · 2026-11-25
+
+- **Four English words already meant something else.** The tables are keyed by the English label, so a builder label that shares its word with an older label shares its translation too. Checked against the 0.25.0 tables: `Trim` (the outfit channel of Sundress and Varsity Jacket) was the clip's trim ("Kürzen", "Rognage"), `Frame` (the Frame A or B group's name) was a movie frame, `Height` (the body slider) was a shape's height ("Hauteur", 高さ where a person's height is "Taille", 身長) and `Head size` was an arrow's head ("Spitzengröße", 矢じりのサイズ). The others (`Build`, `Body`, `Jacket`, `Vest`, `Coat`, `Look`, `Full`, `Bob`, `Fabric`, `Style`, `None`, `Name`, `Color`, `Apply`, `Presets`) had no older entry or one of the same meaning.
+- **`SENSE` and `tw`.** The builder looks these four up under their own keys, `Trim (clothing)`, `Frame (body)`, `Height (body)` and `Head size (body)`, and shows the English word where a table has none, so English and the studio's drawing (whose outfit labels stay `Trim`) are unchanged. `relabel` and the outfit color labels in `sync` go through `tw`; every other label is a plain `t`.
+- **The page translator.** It translates any text that matches a key with plain `t`, so it would put the old meaning back on these four labels after a language change and it turned a starter's name into a word (Moss became the moss of the brush list, 苔, طحلب). The four labels and the outfit color labels carry `data-no-i18n` and the builder relabels everything itself on `onLanguage`; the names in the Characters panel rows, the builder's roster tiles and the stage name carry `data-no-i18n` as well.
+- **Tags.** The builder showed a starter's tag ("Woodland fox") in English beside the name and in the roster tooltip while the Characters panel translated it; all three now go through `t`. A hair, outfit or kind tile also carries its translated label as a tooltip, as a long one ends in an ellipsis.
+- **Wording.** hu `Frame A` and `Frame B` read as an A/B test phrase ("A testtípus": "A" is also the article) and are `Alkat A` and `Alkat B`, beside `Testalkat` for Build. de `Custom color` follows the table's `Benutzerdefiniert`.
+- **Regional tables.** es-MX gains the Mexican words for the new clothing and face pieces (Playera, Mezclilla, Chamarra, Tenis, Short, Overol, Moño for the bow tie, Chongo for the top bun, Lentes, Aretes, Rubor, Candado, Partido de lado, Sudadera y pants, Pants deportivos, Uniforme quirúrgico), El inventor, and "se agregó" for the one new sentence where es says "se añadió". fr-CA gains Espadrilles, Souliers de course, Souliers, Pantoufles, Camisole, Kangourou, Manteau d'hiver, Blouson de collège, Lulus, T-shirt et jeans, Jeans, Le gameur and Veste for the vest; as Veste is the vest there, `Jacket` is Manteau rather than the French Veste. Each key was checked against the es and fr tables and the regional ones; none overrides a regional word already there.
 
 ## v0.29.0 · the eight new characters as starters and in the Character Builder
 

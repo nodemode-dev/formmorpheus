@@ -926,4 +926,5 @@ export const da: Record<string, string> = {
   'Badge': 'Navneskilt', 'Cardigan': 'Cardigan', 'Dino': 'Dino', 'Fox': 'Ræv', 'Garden sprite': 'Havenisse', 'Little dino': 'Lille dino', 'Long Braid': 'Lang fletning',
   'Mohawk': 'Hanekam', 'Scrubs': 'Hospitalstøj', 'Short Curls': 'Korte krøller', 'Slacks': 'Habitbukser', 'Sleeves': 'Ærmer', 'Sprout': 'Spire', 'The drummer': 'Trommeslageren',
   'The gamer': 'Gameren', 'The grandpa': 'Bedstefaren', 'The librarian': 'Bibliotekaren', 'The medic': 'Lægen', 'Varsity Jacket': 'Collegejakke', 'Woodland fox': 'Skovræv',
+  'Frame (body)': 'Kropsform', 'Head size (body)': 'Hovedstørrelse', 'Height (body)': 'Højde', 'Trim (clothing)': 'Kant',
 };

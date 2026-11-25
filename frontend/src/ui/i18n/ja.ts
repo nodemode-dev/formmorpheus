@@ -939,4 +939,5 @@ export const ja: Record<string, string> = {
   'Badge': '名札', 'Cardigan': 'カーディガン', 'Dino': '恐竜', 'Fox': 'キツネ', 'Garden sprite': '庭の妖精', 'Little dino': 'ちび恐竜', 'Long Braid': 'ロング三つ編み',
   'Mohawk': 'モヒカン', 'Scrubs': 'スクラブ', 'Short Curls': 'ショートカール', 'Slacks': 'スラックス', 'Sleeves': '袖', 'Sprout': '新芽', 'The drummer': 'ドラマー',
   'The gamer': 'ゲーマー', 'The grandpa': 'おじいちゃん', 'The librarian': '司書', 'The medic': '医療スタッフ', 'Varsity Jacket': 'スタジャン', 'Woodland fox': '森のキツネ',
+  'Frame (body)': '体型', 'Head size (body)': '頭の大きさ', 'Height (body)': '身長', 'Trim (clothing)': '縁取り',
 };

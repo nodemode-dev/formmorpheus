@@ -1011,4 +1011,5 @@ export const es: Record<string, string> = {
   'Badge': 'Identificación', 'Cardigan': 'Chaqueta de punto', 'Dino': 'Dino', 'Fox': 'Zorro', 'Garden sprite': 'Duende del jardín', 'Little dino': 'Pequeño dino', 'Long Braid': 'Trenza larga',
   'Mohawk': 'Mohicano', 'Scrubs': 'Uniforme sanitario', 'Short Curls': 'Rizos cortos', 'Slacks': 'Pantalón de vestir', 'Sleeves': 'Mangas', 'Sprout': 'Brote', 'The drummer': 'La baterista',
   'The gamer': 'El gamer', 'The grandpa': 'El abuelo', 'The librarian': 'La bibliotecaria', 'The medic': 'El médico', 'Varsity Jacket': 'Chaqueta universitaria', 'Woodland fox': 'Zorro del bosque',
+  'Frame (body)': 'Silueta', 'Head size (body)': 'Tamaño de la cabeza', 'Height (body)': 'Estatura', 'Trim (clothing)': 'Ribete',
 };

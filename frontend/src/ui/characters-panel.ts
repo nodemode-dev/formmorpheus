@@ -51,7 +51,7 @@ const TEMPLATE = `<section class="fm-bin fm-chars" role="dialog" hidden>
 </section>`;
 
 const ROW = `<div class="fm-bin-row" role="listitem">
-  <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name"></span><span class="fm-bin-meta"></span></span></button>
+  <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name" data-no-i18n></span><span class="fm-bin-meta"></span></span></button>
   <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="open" hidden></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
 </div>`;
 

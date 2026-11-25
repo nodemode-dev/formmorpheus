@@ -868,4 +868,5 @@ export const el: Record<string, string> = {
   'Badge': 'Καρτελάκι', 'Cardigan': 'Ζακέτα', 'Dino': 'Δεινόσαυρος', 'Fox': 'Αλεπού', 'Garden sprite': 'Ξωτικό του κήπου', 'Little dino': 'Μικρός δεινόσαυρος', 'Long Braid': 'Μακριά πλεξούδα',
   'Mohawk': 'Μοϊκανή', 'Scrubs': 'Ιατρική στολή', 'Short Curls': 'Κοντές μπούκλες', 'Slacks': 'Υφασμάτινο παντελόνι', 'Sleeves': 'Μανίκια', 'Sprout': 'Βλαστάρι', 'The drummer': 'Η ντράμερ',
   'The gamer': 'Ο γκέιμερ', 'The grandpa': 'Ο παππούς', 'The librarian': 'Η βιβλιοθηκονόμος', 'The medic': 'Ο νοσηλευτής', 'Varsity Jacket': 'Κολεγιακό μπουφάν', 'Woodland fox': 'Αλεπού του δάσους',
+  'Frame (body)': 'Σιλουέτα', 'Head size (body)': 'Μέγεθος κεφαλιού', 'Height (body)': 'Ύψος', 'Trim (clothing)': 'Μπορντούρα',
 };

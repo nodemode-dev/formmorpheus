@@ -854,4 +854,5 @@ export const sv: Record<string, string> = {
   'Badge': 'Namnbricka', 'Cardigan': 'Kofta', 'Dino': 'Dino', 'Fox': 'Räv', 'Garden sprite': 'Trädgårdsande', 'Little dino': 'Liten dino', 'Long Braid': 'Lång fläta',
   'Mohawk': 'Tuppkam', 'Scrubs': 'Sjukhuskläder', 'Short Curls': 'Korta lockar', 'Slacks': 'Chinos', 'Sleeves': 'Ärmar', 'Sprout': 'Grodd', 'The drummer': 'Trummisen',
   'The gamer': 'Gamern', 'The grandpa': 'Farfar', 'The librarian': 'Bibliotekarien', 'The medic': 'Sjukvårdaren', 'Varsity Jacket': 'Collegejacka', 'Woodland fox': 'Skogsräv',
+  'Frame (body)': 'Kroppstyp', 'Head size (body)': 'Huvudstorlek', 'Height (body)': 'Längd', 'Trim (clothing)': 'Kantband',
 };

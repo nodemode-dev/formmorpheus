@@ -763,4 +763,5 @@ export const cs: Record<string, string> = {
   'Badge': 'Jmenovka', 'Cardigan': 'Kardigan', 'Dino': 'Dinosaurus', 'Fox': 'Liška', 'Garden sprite': 'Zahradní skřítek', 'Little dino': 'Malý dinosaurus', 'Long Braid': 'Dlouhý cop',
   'Mohawk': 'Čírka', 'Scrubs': 'Zdravotnický oděv', 'Short Curls': 'Krátké kudrny', 'Slacks': 'Chino kalhoty', 'Sleeves': 'Rukávy', 'Sprout': 'Výhonek', 'The drummer': 'Bubenice',
   'The gamer': 'Hráč', 'The grandpa': 'Děda', 'The librarian': 'Knihovnice', 'The medic': 'Zdravotník', 'Varsity Jacket': 'Baseballová bunda', 'Woodland fox': 'Lesní liška',
+  'Frame (body)': 'Typ těla', 'Head size (body)': 'Velikost hlavy', 'Height (body)': 'Výška postavy', 'Trim (clothing)': 'Lemování',
 };

@@ -939,4 +939,5 @@ export const zhCN: Record<string, string> = {
   'Badge': '胸牌', 'Cardigan': '开衫', 'Dino': '恐龙', 'Fox': '狐狸', 'Garden sprite': '花园精灵', 'Little dino': '小恐龙', 'Long Braid': '长辫子',
   'Mohawk': '莫西干头', 'Scrubs': '手术服', 'Short Curls': '短卷发', 'Slacks': '休闲裤', 'Sleeves': '袖子', 'Sprout': '嫩芽', 'The drummer': '鼓手',
   'The gamer': '游戏玩家', 'The grandpa': '爷爷', 'The librarian': '图书管理员', 'The medic': '医护人员', 'Varsity Jacket': '棒球夹克', 'Woodland fox': '森林狐狸',
+  'Frame (body)': '体格', 'Head size (body)': '头部大小', 'Height (body)': '身高', 'Trim (clothing)': '饰边',
 };

@@ -926,4 +926,5 @@ export const fi: Record<string, string> = {
   'Badge': 'Nimikyltti', 'Cardigan': 'Neuletakki', 'Dino': 'Dino', 'Fox': 'Kettu', 'Garden sprite': 'Puutarhakeiju', 'Little dino': 'Pikku dino', 'Long Braid': 'Pitkä letti',
   'Mohawk': 'Irokeesi', 'Scrubs': 'Sairaalavaatteet', 'Short Curls': 'Lyhyet kiharat', 'Slacks': 'Puvunhousut', 'Sleeves': 'Hihat', 'Sprout': 'Verso', 'The drummer': 'Rumpali',
   'The gamer': 'Pelaaja', 'The grandpa': 'Vaari', 'The librarian': 'Kirjastonhoitaja', 'The medic': 'Lääkäri', 'Varsity Jacket': 'College-takki', 'Woodland fox': 'Metsäkettu',
+  'Frame (body)': 'Vartalomalli', 'Head size (body)': 'Pään koko', 'Height (body)': 'Pituus', 'Trim (clothing)': 'Reunus',
 };

@@ -763,4 +763,5 @@ export const srLatn: Record<string, string> = {
   'Badge': 'Bedž', 'Cardigan': 'Kardigan', 'Dino': 'Dinosaurus', 'Fox': 'Lisica', 'Garden sprite': 'Baštenski vilenjak', 'Little dino': 'Mali dinosaurus', 'Long Braid': 'Duga pletenica',
   'Mohawk': 'Irokeza', 'Scrubs': 'Medicinska uniforma', 'Short Curls': 'Kratke kovrdže', 'Slacks': 'Platnene pantalone', 'Sleeves': 'Rukavi', 'Sprout': 'Izdanak', 'The drummer': 'Bubnjarka',
   'The gamer': 'Gejmer', 'The grandpa': 'Deka', 'The librarian': 'Bibliotekarka', 'The medic': 'Medicinski tehničar', 'Varsity Jacket': 'Koledž jakna', 'Woodland fox': 'Šumska lisica',
+  'Frame (body)': 'Tip tela', 'Head size (body)': 'Veličina glave', 'Height (body)': 'Visina', 'Trim (clothing)': 'Porub',
 };

@@ -944,4 +944,5 @@ export const id: Record<string, string> = {
   'Badge': 'Tanda pengenal', 'Cardigan': 'Kardigan', 'Dino': 'Dino', 'Fox': 'Rubah', 'Garden sprite': 'Peri taman', 'Little dino': 'Dino kecil', 'Long Braid': 'Kepang panjang',
   'Mohawk': 'Mohawk', 'Scrubs': 'Baju medis', 'Short Curls': 'Keriting pendek', 'Slacks': 'Celana bahan', 'Sleeves': 'Lengan', 'Sprout': 'Tunas', 'The drummer': 'Si penabuh drum',
   'The gamer': 'Si gamer', 'The grandpa': 'Si kakek', 'The librarian': 'Si pustakawan', 'The medic': 'Si petugas medis', 'Varsity Jacket': 'Jaket varsity', 'Woodland fox': 'Rubah hutan',
+  'Frame (body)': 'Rangka', 'Head size (body)': 'Ukuran kepala', 'Height (body)': 'Tinggi badan', 'Trim (clothing)': 'Lis',
 };

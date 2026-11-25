@@ -943,4 +943,5 @@ export const hi: Record<string, string> = {
   'Badge': 'बैज', 'Cardigan': 'कार्डिगन', 'Dino': 'डायनासोर', 'Fox': 'लोमड़ी', 'Garden sprite': 'बगीचे की परी', 'Little dino': 'नन्हा डायनासोर', 'Long Braid': 'लंबी चोटी',
   'Mohawk': 'मोहॉक', 'Scrubs': 'स्क्रब्स', 'Short Curls': 'छोटे घुँघराले', 'Slacks': 'फ़ॉर्मल पैंट', 'Sleeves': 'आस्तीन', 'Sprout': 'अंकुर', 'The drummer': 'ड्रमर',
   'The gamer': 'गेमर', 'The grandpa': 'दादाजी', 'The librarian': 'लाइब्रेरियन', 'The medic': 'स्वास्थ्यकर्मी', 'Varsity Jacket': 'वार्सिटी जैकेट', 'Woodland fox': 'जंगल की लोमड़ी',
+  'Frame (body)': 'ढाँचा', 'Head size (body)': 'सिर का आकार', 'Height (body)': 'क़द', 'Trim (clothing)': 'किनारी',
 };

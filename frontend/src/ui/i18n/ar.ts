@@ -948,4 +948,5 @@ export const ar: Record<string, string> = {
   'Badge': 'بطاقة تعريف', 'Cardigan': 'كارديغان', 'Dino': 'ديناصور', 'Fox': 'ثعلب', 'Garden sprite': 'روح الحديقة', 'Little dino': 'ديناصور صغير', 'Long Braid': 'ضفيرة طويلة',
   'Mohawk': 'قصة موهوك', 'Scrubs': 'زي طبي', 'Short Curls': 'مجعد قصير', 'Slacks': 'بنطال قماش', 'Sleeves': 'الأكمام', 'Sprout': 'برعم', 'The drummer': 'عازفة الطبول',
   'The gamer': 'محب الألعاب', 'The grandpa': 'الجد', 'The librarian': 'أمينة المكتبة', 'The medic': 'المسعف', 'Varsity Jacket': 'سترة جامعية', 'Woodland fox': 'ثعلب الغابة',
+  'Frame (body)': 'القوام', 'Head size (body)': 'حجم الرأس', 'Height (body)': 'الطول', 'Trim (clothing)': 'الحواف',
 };

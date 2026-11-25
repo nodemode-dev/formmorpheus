@@ -86,4 +86,8 @@ export const esMX: Record<string, string> = {
   'Walk in place': "Caminar en el lugar",
   '{file} was linked on another computer: choose Relink Source... to follow it.': "{file} se vinculó en otra computadora: elige «Volver a vincular origen...» para seguirlo.",
   '{name} moved to Recently Deleted.': "{name} se movió a Borrados recientemente.",
+  'Blush': 'Rubor', 'Bow tie': 'Moño', 'Denim': 'Mezclilla', 'Earrings': 'Aretes', 'Glasses': 'Lentes', 'Goatee': 'Candado', 'Hoodie & Joggers': 'Sudadera y pants',
+  'Jacket': 'Chamarra', 'Jeans': 'Jeans', 'Joggers': 'Pants deportivos', 'Overalls': 'Overol', 'Scrubs': 'Uniforme quirúrgico', 'Shorts': 'Short', 'Side Part': 'Partido de lado',
+  'Sneakers': 'Tenis', 'Tank': 'Playera sin mangas', 'Tee': 'Playera', 'Tee & Jeans': 'Playera y jeans', 'The tinkerer': 'El inventor', 'Top Bun': 'Chongo', 'Trainers': 'Tenis',
+  'Varsity Jacket': 'Chamarra universitaria', 'Winter Puffer': 'Chamarra acolchada', '{name} added to the movie.': '{name} se agregó a la película.',
 };
