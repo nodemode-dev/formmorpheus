@@ -375,6 +375,17 @@ export class CharacterBuilder {
     this.show();
   }
 
+  openPreset(id: string): void {
+    const i = this.presets.findIndex((p) => p.id === id);
+    if (i < 0) { this.open(); return; }
+    if (this.dlg.isOpen) { if (!this.editing) this.pick(id); return; }
+    this.editing = null;
+    this.presetAt = i;
+    this.base = clone(this.presetSpecs[i]);
+    this.spec = clone(this.base);
+    this.show();
+  }
+
   /** Opens on a character of the movie whose recipe is known; Apply rebuilds it from the edited recipe. */
   edit(charId: string): void {
     if (this.dlg.isOpen) return;

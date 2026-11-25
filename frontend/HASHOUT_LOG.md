@@ -7,6 +7,19 @@ Last updated: 2026-11-25 · the Character Builder
 
 ---
 
+## v0.28.0 · the studio's cast as starters
+
+- refers-to: ui/characters-panel.ts :: castStarter (new), castPoster (new), onOpenPreset (new), CharactersPanel.paint, updateRow, act, add; ui/character-builder.ts :: CharacterBuilder.openPreset (new); app/app.ts; ui/i18n/* (27 tables)
+- kind: decision
+- logged: v0.28.0 · 2026-11-25
+
+- **A code list, not manifest entries.** The Starter section is the manifest's drawn starters, then `STUDIO_PRESETS` as built starters, keyed `cast:<id>`. The presets already carry id, name and tag and are the list the Character Builder shows, so one list feeds both and the 0.29.0 originals appear in both when added there. Manifest entries with `cast` would have repeated each name and tag, mixed recipes into a file whose conventions describe SVG drawings, and needed a fetch for data the bundle already has. The 0.25.0 starters and the manifest are unchanged; the studio's Kofi is Karl in the presets, so both appear.
+- **Posters at runtime.** A built starter's poster is `rigToSvg(build(mkSpec(p)), { mode: 'full' })` as an SVG data URL, the full figure like the drawn posters, made once per session in `castPosters` and only from the first open of the panel (not at startup): 13 take about 46 ms cold at 4x CPU, 13 ms warm. The image is set once; the thumb box is the bin's fixed 56 by 42, so nothing moves while it decodes, and the person glyph is hidden for those rows so the box is empty for that frame rather than showing the glyph.
+- **Placing.** Add to Movie and a drop on the Stage or the Timeline go through the same `add`: `castStarter` builds with `castToCharacterGroup` on a clone of the recipe for the open movie, then `placeCharacter` with the floor guide exactly as a drawn starter, so starter scenes' floor and spots apply. The group keeps `character.build`, so Edit in Character Builder works on it.
+- **Open in Character Builder.** A row button shown only on built starters; `openPreset(id)` opens the builder on that preset as if its tile were picked (when the builder is already open on a new recipe, it picks the preset).
+- **Meta text.** A built starter's row shows its tag through `t()` (The optimist, The executive...); the tags are in the 27 full tables in English until the release pass. The panel has no search, so none was added.
+- **Agents and iPad.** `list_characters` and `add_character` read only the saved Characters library; starters are not exposed to agents today, so nothing changed there. No iPad route serves the starters manifest (the files ship in the bundle), so `ios/Engine` needs nothing.
+
 ## v0.27.0 · the Character Builder
 
 - refers-to: ui/character-builder.ts (new) :: CharacterBuilder, prepareApply; styles/character-builder.css (new); ui/character-commands.ts :: character.builder, character.builder-edit, selectedBuilt (new); ui/characters-panel.ts :: packCharacter, CharactersPanel.save, onBuild, Build a character; ui/content-menu.ts :: Edit in Character Builder; app/app.ts; ui/i18n/* (27 tables)

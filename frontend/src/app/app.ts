@@ -218,6 +218,7 @@ export function startApp(): void {
   let characterBuilder: CharacterBuilder | null = null;
   const builder = (): CharacterBuilder => (characterBuilder ??= new CharacterBuilder(engine, { renderer, characters: charactersPanel }));
   charactersPanel.onBuild = () => builder().open();
+  charactersPanel.onOpenPreset = (id) => builder().openPreset(id);
   new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);

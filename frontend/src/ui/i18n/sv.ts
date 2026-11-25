@@ -844,4 +844,7 @@ export const sv: Record<string, string> = {
   'Winter Puffer': 'Winter Puffer', 'Women': 'Women', '{name} added to the movie.': '{name} added to the movie.', '{name} updated.': '{name} updated.',
   '{name} updated. Parts it no longer draws are hidden: {parts}.': '{name} updated. Parts it no longer draws are hidden: {parts}.',
   '{outfit} colors': '{outfit} colors',
+  'Friendly monster': 'Friendly monster', 'Open in Character Builder': 'Open in Character Builder', 'The athlete': 'The athlete', 'The chef': 'The chef',
+  'The executive': 'The executive', 'The foreman': 'The foreman', 'The hero': 'The hero', 'The host': 'The host', 'The optimist': 'The optimist',
+  'The scientist': 'The scientist', 'The student': 'The student', 'The tinkerer': 'The tinkerer', 'Visitor': 'Visitor',
 };
