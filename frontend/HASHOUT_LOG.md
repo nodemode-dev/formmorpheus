@@ -7,6 +7,23 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · SVG parts become a character
+
+- refers-to: io/svg-import.ts (new) :: parseSvgParts, pathRuns, svgToCharacterGroup, svgToMouthChart, isMouthChart, isSvgFile, importSvg; engine/character-ops.ts (new); engine/model.ts :: relinkCharacter; engine/ops.ts :: cloneContent; engine/track-ops.ts :: cloneTrack; engine/normalize.ts :: character; media/import.ts :: Sniff, EXT, sniff, importMedia; app/app.ts :: MEDIA_ACCEPT
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **One entry point.** Every way a file arrives (Import, a drop, the iPad's Files, the MCP `import_file`) goes through `importMedia`, so `.svg` is routed there: `svg` in the extension table and a text sniff (`<svg`, or `<?xml` with an `.svg` name). `drop-files.ts` only lists files and needed no change. SVG used to fail as an unknown file.
+- **Parts.** Each top-level `<g>` is a part; a loose top-level element is a part of its own; a nested `<g>` is its own part, linked with `setParent` to the part it sits in, so turning an arm turns its hand. An editor's layer group (`inkscape:groupmode="layer"`) and a lone wrapper group holding only groups are opened, not made parts. Name: the editor's label, then `data-name` (what other vector apps write when an id had to be cleaned), then `id`, then `Part N`; a repeated name gets a number.
+- **Coordinates.** Every part sits at rest with no Move: shape nodes and pictures are placed in movie pixels from the movie centre, so a parent's transform does not shift its children. The SVG keeps its pixel size and is shrunk only when larger than the movie, centred on whole pixels, like layered artwork.
+- **Shapes.** A Shape holds one outline, so each subpath of an element is its own Shape; a part with one outline is that Shape, a part with several is a Group of them. Paths read every command, relative and absolute; arcs become cubic pieces of at most 90 degrees. Transforms (matrix, translate, scale, rotate with a centre, skew) compose down the tree with the viewBox and `preserveAspectRatio` (none or centred meet). Paint comes from attributes, simple `<style>` rules (tag, id, class), then `style`; linear and radial gradients with their href chain map onto the Shape gradient (stop offsets moved onto the run the renderer draws across the box); more than 8 stops are sampled down. A stroke's width, dashes and offset scale with the transform.
+- **Pictures.** Text, images, reused elements, filters, masks, clipping, patterns, markers and a filled subpath inside another that cuts a hole (even-odd, or wound the other way) make that whole part a picture: a standalone SVG of the part alone (nested parts and the pivot cut out, every definition carried, the inherited paint and the file's namespaces kept) drawn by the browser at the movie's scale, cropped to what it covers, and placed as a Drawing with its own canvas, so it can be touched up in Draw & Paint. The notice names each such part and why.
+- **Pivots.** An element inside the part's own art (not a nested part's) with `id="pivot"`, an id starting `pivot-`, or `data-role="pivot"` gives the pivot at its centre and is left out of the art. Without one, the part's box centre.
+- **Opened as a character.** The new Group carries `character` at once (named after the file, parts by name), so an SVG opens ready to animate; Make Character is for groups built by hand.
+- **Mouth charts.** An SVG whose top-level groups are named for the mouth shapes (6 or more of Rest, MBP, AI, E, O, U, FV, L / th, matched ignoring case and punctuation, so `L-th` and `data-name="L / th"` both read) opens as one Flipbook with its drawings in chart order and named as `VISEME_NAMES`, so lip-sync recognises it. `attachMouthChart` (engine) puts such a Flipbook in place of a character's `mouth` part, keeping its id, parent, pivot, Move and keys.
+- **Copies.** The id remap that Paste, Duplicate and Split use (`ops.cloneContent`) and the one Duplicate Track uses (`track-ops.cloneTrack`) now also map `character.parts` and `mouth` through `relinkCharacter` in `model.ts` (kept there so `ops.ts` does not import the character code, which imports `ops.ts`).
+- **Files.** `character` is a plain field, so `.fmo` and the history pack keep it as they keep any field. `normalize.ts` checks it on open: dropped on anything but a group, `parts` kept to string ids, `mouth` dropped when not a string; fields a newer build adds are left in place and written back.
+
 ## v0.24.0 · the interface's test suite
 
 - refers-to: vitest.config.ts (new); tests/unit/** (new); tests/unit/_support/* (new); tests/unit/version.test.ts (new); package.json :: scripts.test, devDependencies; ../setup/test (new); ../docs/TESTING.md (new)

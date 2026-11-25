@@ -549,7 +549,7 @@ export function startApp(): void {
   }
   const pickFor = (accept: string): void => { pickMode = 'import'; picker.accept = accept; picker.click(); };
 
-  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
+  const MEDIA_ACCEPT = 'image/*,video/*,audio/*,.svg,image/svg+xml,.fmo,.tif,.tiff,.otf,.ttf,.ttc,.woff,.woff2,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2,.tga,.heic,.heif,.psd,.psb,.ora,.kra,.krz,.pdn,.procreate,.fvd,.fvxproj,.zip,.drm';
   const picker = el<HTMLInputElement>(`<input type="file" hidden multiple accept="${MEDIA_ACCEPT}">`);
   document.body.appendChild(picker);
   let pickMode: 'open' | 'import' = 'import';

@@ -1,6 +1,6 @@
 // Whole-track Cut, Copy, Duplicate and Paste. A copied or duplicated track lands directly above the track it
 // was made from (or above the chosen one). Pure model code: no DOM.
-import { uid } from './model';
+import { relinkCharacter, uid } from './model';
 import { OpError } from './ops';
 import type { Content, Movie, Track } from './types';
 
@@ -24,7 +24,7 @@ export function cloneTrack(t: Track): Track {
     return { ...x, id, tracks: x.tracks.map((s) => ({ ...s, id: uid('t'), content: s.content.map(fresh) })) };
   };
   const relink = (x: Content): Content => {
-    const next: Content = x.tracks.length ? { ...x, tracks: x.tracks.map((s) => ({ ...s, content: s.content.map(relink) })) } : x;
+    const next = relinkCharacter(x.tracks.length ? { ...x, tracks: x.tracks.map((s) => ({ ...s, content: s.content.map(relink) })) } : x, ids);
     return next.parent && ids.has(next.parent) ? { ...next, parent: ids.get(next.parent) } : next;
   };
   const content = raw.content.map(fresh).map(relink);
