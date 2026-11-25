@@ -33,6 +33,27 @@ Debug builds let Safari inspect the web view. On the iPad turn on Settings > App
 3. The same file stays in the Files app under On My iPad > FormMorpheus > Diagnostics.
 4. Send that file together with any Xcode build errors.
 
+## Check on the iPad (0.25.0)
+
+Device: iPad Pro 13-inch (M5), Apple Pencil Pro, iPadOS 26.3. Build with `./formmorpheus ios`, then Run. For step 1 put an SVG in the Files app that has one group per body part (`head`, `body`, `arm-l`, `arm-r`, `leg-l`, `leg-r`, with a `mouth` group inside `head` and an `arm-l` that holds a `hand-l` group), and for step 5 a short sound with speech. Write what happened under each step, in your own words.
+
+1. SVG character from Files: open a movie, then in the Files app tap the SVG (or long-press it, Share, FormMorpheus). Expected: FormMorpheus comes forward and the Timeline shows one Group named after the file with 8 parts; rotating `arm-l` turns `hand-l` with it. In the Files app, On My iPad > FormMorpheus now has a Characters folder.
+   Result:
+2. Save to Characters: make the group a character (Action menu), then choose Save to Characters on its menu. Close the app from the app switcher and open it again. Expected: View > Characters lists it under Mine, the same file is in On My iPad > FormMorpheus > Characters, and Add to Movie twice gives two copies that move on their own. Delete it from the panel: it shows in Recently Deleted and Restore puts it back under Mine.
+   Result:
+3. A Starter Character and a Starter Scene: File > New from Starter Scene..., pick one, then add a Starter Character from View > Characters, Starter. Expected: a new untitled movie with the scene's background and props, and the character on the Stage at the playhead with its poster in the panel.
+   Result:
+4. Wave then swap to Nod: apply Wave to the starter character at frame 0, select its strip on the Timeline and choose Nod. Expected: the strip reads Nod, the character nods in playback, and Undo brings Wave back with the same motion. Nothing flashes while the strip changes.
+   Result:
+5. Lip-sync from Sound: put the speech sound on a track, then Lip-sync from Sound... and choose the character's mouth at the top of the list. Expected: the mouth changes shape while the voice speaks and rests outside it.
+   Result:
+6. Update from Source...: change the color of one part of the step 1 SVG in a vector app and save it to Files. On the character's menu choose Update from Source... and pick the file again. Expected: the part has the new color and keeps its keys and its action. There is no automatic update on iPad, and no message about one.
+   Result:
+7. Draw on a Flipbook with Apple Pencil Pro: add a Flipbook, draw a few frames. Squeeze and double tap do what Settings > Apple Pencil (or Preferences) says, as in 0.23.0, and barrel roll turns a brush that follows the Pencil's angle. Expected: pressure and tilt shape the stroke, the squeeze palette or the chosen action appears, and the haptic plays.
+   Result:
+8. Export MP4: export the movie from step 3 to 5 as MP4. Expected: the export finishes, plays in the Photos app or the Files app with the sound, and shows the character, its action and the lip-sync as on the Stage.
+   Result:
+
 ## Check on the iPad (0.23.0)
 
 Not yet run on a device; the app itself is built and runs (see the top of this guide).
@@ -48,4 +69,4 @@ Not yet run on a device; the app itself is built and runs (see the top of this g
 - `ios/project.yml`: the project spec. `ios/Config/Base.xcconfig`: shared build settings. `ios/App/FormMorpheus.entitlements`: iCloud Documents.
 - `ios/App`, `ios/Web`: the app, the web view host, the `fm://` scheme handler and the bridge.
 - `ios/Resources/web`: the built interface (generated, not committed).
-- Files you create appear in the Files app under On My iPad > FormMorpheus. A movie opened from anywhere else in Files is copied into the Library there; the original is never changed.
+- Files you create appear in the Files app under On My iPad > FormMorpheus, saved characters in its Characters folder. A movie opened from anywhere else in Files is copied into the Library there; the original is never changed.

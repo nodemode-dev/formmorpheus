@@ -13,6 +13,14 @@ Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN
 - Rename: the name-taken check runs inside the store lock, before the move, as `characters.py` checks inside its lock.
 - Nothing here was compiled (no Swift toolchain in this workspace). Every symbol used was already called in this file.
 
+## v0.25.0 · the device check
+
+- refers-to: docs/ios/BUILD.md (`## Check on the iPad (0.25.0)`, Where things are)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- Eight numbered checks, newest section first, above the 0.23.0 one, on the owner's iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3: SVG character from Files, save to Characters and Recently Deleted, a Starter Scene and a Starter Character, Wave swapped to Nod, Lip-sync from Sound, Update from Source..., drawing on a Flipbook with squeeze and barrel roll, MP4 export. Each has the expected result and an empty `Result:` line for the owner's own words; nothing there was written from a guess.
+
 ## v0.25.0 · SVG characters and actions from Files
 
 - refers-to: App/Info.plist (CFBundleDocumentTypes, UTExportedTypeDeclarations); UX/DocumentOpening.swift (comment)
