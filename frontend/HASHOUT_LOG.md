@@ -75,6 +75,15 @@ Last updated: 2026-11-23 · the interface's test suite
 - **The file is read once** (`importSvg`). It parsed the SVG to ask whether it is a mouth chart and then each importer parsed it again. `svgToCharacterGroup` and `svgToMouthChart` now take the text or the parsed `SvgDoc`, and `importSvg` hands them the one it read.
 - **Use as Mouth Chart...** (`character.mouth` in `character-commands.ts`, `CharactersPanel.useMouthChart`, a row in the block menu beside Save to Characters, built the same way, and in Content in the menu bar). On one selected character it opens the platform's file chooser for an SVG, reads it with `svgToMouthChart` (any SVG: one frame per top-level group), adds the pictures to the movie and puts the Flipbook in with `attachMouthChart` (in place of a `mouth` part, else on a new top inner track following `head`) in one `engine.run` step, which sets the character's mouth. So any character, an SVG one included, can be lip-synced from sound. A file that cannot be read says so and changes nothing; closing the chooser does nothing.
 
+## v0.25.0 · actions: files and saved movies are bounded
+
+- refers-to: io/fmact.ts :: lane, key, parseFmact, BAD_IDS; engine/normalize.ts :: characterDef, actionLane, BAD_IDS; engine/types.ts :: ACTION_MAX_FRAMES; engine/action-ops.ts :: eachChannel
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Bounds.** An action read from an `.fmact` file or a saved movie has its `length` rounded and kept between 1 and `ACTION_MAX_FRAMES` (14400, ten minutes at 24 fps), its `fps` kept between 1 and 240, and only keys from frame 0 to `length`; a key before 0 is dropped, not moved to 0. A lane left with no channel is dropped. `eachChannel` skips any key outside 0 to `length` too, as a backstop for an action that reached the movie another way, so a stray key can never be written thousands of frames down a part.
+- **No prototype writes.** Channel maps (and an `.fmact` lane's options) are built with `Object.create(null)` and never take the ids `__proto__`, `constructor` or `prototype`: `JSON.parse` makes `__proto__` an ordinary own key, and copying it into a plain object would have set that object's prototype.
+
 ## v0.25.0 · actions: review fixes (spans, boundaries, size, mirroring)
 
 - refers-to: engine/action-ops.ts :: loopPasses, findAction, clearRange, moves, mirrored, reach, sizeOf, fitFor, eachChannel, write, keyAt, seal, applyAction, clearAction, swapAction, actionFromKeys; engine/types.ts :: ActSpan.start, ACTION_MAX_FRAMES; engine/actions-builtin.ts :: cyc, cycle, anchor, jumpLegY, sitLegY; app/action-commands.ts :: apply, the history listener
