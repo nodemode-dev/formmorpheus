@@ -7,6 +7,15 @@ Last updated: 2026-11-23 · the interface's test suite
 
 ---
 
+## v0.25.0 · Lip-sync onto a character's mouth
+
+- refers-to: ui/lipsync-dialog.ts :: targets, fillBooks, span, overlap, cur, pickSound, limit, show, show2; engine/lipsync-ops.ts :: applyLipsync, groupHolding; ui/content-menu.ts :: lipOk; engine/character-ops.ts :: findDeep, movieStart, listCharacters
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Targets.** The Mouth flipbook list starts with every character whose `mouth` is a Flipbook, as "{name} (character)", then the other Flipbooks; a character's mouth is listed once, as its character. The default is the selected character's mouth, else the selected Flipbook, else the first character's, else as before. The block menu offers Lip-sync from Sound... on a character with a mouth.
+- **Nested mouths.** A character's mouth sits inside its group, where `locate` and `updateContent` do not reach. `applyLipsync` now, when the Flipbook is not at the top, takes the top-level group that holds it, runs itself on that group's tracks as a movie with the start frame moved into the group's frames (start and offset; a group's speed is not counted), and writes the tracks back in one edit, so it stays one undo step and still refuses a locked track. The dialog reads the block's place with `findDeep` and works its range in movie frames, cut to the room on the mouth's own track and to the end of its character. `media/lipsync.ts` is unchanged.
+
 ## v0.25.0 · the Characters panel and library
 
 - refers-to: io/characters-api.ts (new) :: charactersApi, freeName; ui/characters-panel.ts (new) :: CharactersPanel, packCharacter, unpackCharacter, starterCharacter, placeCharacter; styles/characters.css (new); ui/character-commands.ts :: characters-panel, character.save; ui/content-menu.ts :: saveChar; app/app.ts :: charactersPanel, View and Content menus

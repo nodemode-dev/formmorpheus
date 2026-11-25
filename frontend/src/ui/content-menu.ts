@@ -378,7 +378,7 @@ export class ContentMenu {
     setClass(this.toBoil.el, 'is-gone', !(sel.length === 1 && first.kind === 'drawing'));
     setClass(this.toTracks.el, 'is-gone', !(sel.length === 1 && first.kind === 'flipbook'));
     setClass(this.splitLayers.el, 'is-gone', !(sel.length === 1 && canSplitLayers(first)));
-    const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
+    const lipOk = sel.length === 1 && m !== null && (first.kind === 'flipbook' || (first.kind === 'group' && !!first.character?.mouth) || (!!first.asset && (first.kind === 'audio' || (first.kind === 'video' && !!m.assets[first.asset]?.hasAudio))));
     setClass(this.lip.el, 'is-gone', !lipOk);
     setClass(this.soundRow.el, 'is-gone', !(sel.length === 1 && first.kind === 'audio'));
     setClass(this.shapeRow.el, 'is-gone', !(sel.length === 1 && (first.kind === 'shape' || first.kind === 'solid' || first.kind === 'adjust')));

@@ -3,7 +3,7 @@ import { VISEMES, VISEME_NAMES, type Viseme } from '../media/lipsync';
 import { flipLength, flipTrack, freeSpan, locate, uid } from './model';
 import { flipDuration } from './flip-ops';
 import { OpError, updateContent } from './ops';
-import type { Content, DrawingLayer, FlipTrack, FlipbookFrame, Movie } from './types';
+import type { Content, DrawingLayer, FlipTrack, FlipbookFrame, Movie, Track } from './types';
 
 export const NEW_ROW = -1;
 
@@ -63,9 +63,24 @@ export interface LipsyncJob {
   map: Record<Viseme, number>;
 }
 
+/** The top-level group whose tracks hold `id` at any depth. */
+function groupHolding(tracks: Track[], id: string): Content | null {
+  const inside = (ts: Track[]): boolean => ts.some((t) => t.content.some((c) => c.id === id || (c.kind === 'group' && inside(c.tracks))));
+  for (const t of tracks) for (const c of t.content) if (c.kind === 'group' && inside(c.tracks)) return c;
+  return null;
+}
+
 /** Writes the shapes as holds into a row over the movie frames [from, from + shapes.length); the rest of the row stays. */
 export function applyLipsync(movie: Movie, job: LipsyncJob): Movie {
   const loc = locate(movie, job.content);
+  if (!loc) {
+    // a mouth inside a group (a character's): written in the group's own frames, the group's tracks taken as a movie
+    const g = groupHolding(movie.tracks, job.content);
+    if (g) {
+      const inner = applyLipsync({ ...movie, tracks: g.tracks }, { ...job, from: job.from - g.start + g.offset });
+      return updateContent(movie, g.id, (x) => ({ ...x, tracks: inner.tracks }));
+    }
+  }
   if (!loc || loc.content.kind !== 'flipbook') throw new OpError('That content is not a flipbook.');
   const c = loc.content;
   const chart = c.flip[job.chartRow >= 0 ? job.chartRow : job.row];
