@@ -1,6 +1,13 @@
 // Stage guides: grid, rule of thirds, title and action safe areas, and guide lines dragged from the rulers.
 // They are a drawing aid on the Stage only (never part of an exported picture). Pure maths, no DOM.
-export interface GuideLine { axis: 'x' | 'y'; at: number }
+/** `role` 'floor': the line a starter scene's characters stand on. */
+export interface GuideLine { axis: 'x' | 'y'; at: number; role?: 'floor' }
+
+/** Where the floor guide is (movie pixels from the top), or null when the movie has none. */
+export function floorOf(g: Guides | undefined): number | null {
+  const l = g?.lines?.find((x) => x.axis === 'y' && x.role === 'floor' && Number.isFinite(x.at));
+  return l ? l.at : null;
+}
 
 export interface Guides {
   /** The Stage shows rulers along its top and left edges. */

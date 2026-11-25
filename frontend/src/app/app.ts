@@ -55,6 +55,8 @@ import { openPaintOnCreate, setOpenPaintOnCreate } from '../ui/create-pref';
 import { MovieSettings } from '../ui/movie-settings';
 import { MENUS_IN_WINDOW_KEY, NativeMenus, menusInWindow, wantsNativeMenus } from '../ui/native-menu';
 import { NewMovieDialog } from '../ui/new-movie-dialog';
+import { StarterSceneDialog } from '../ui/starter-scene-dialog';
+import { buildSceneMovie } from '../io/starter-scenes';
 import { installNumberFields } from '../ui/number-fields';
 import { applyShellPrefs, loadPrefs, updatePrefs, type Prefs } from '../ui/prefs';
 import { SettingsDialog } from '../ui/settings-dialog';
@@ -183,6 +185,14 @@ export function startApp(): void {
   const stageMenu = new PopupMenu(commands, null, true);
   stage.nav.onContext = (x, y) => { stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
+  // like New: the movie opens unnamed and the library adopts it under a free "Untitled Movie" name
+  const starterScenes = new StarterSceneDialog(async (entry) => {
+    const { movie, assets } = await buildSceneMovie(entry);
+    if (!(await askToKeep())) return;
+    await renderer.preload(assets, true);
+    engine.open(movie, null, assets);
+    home.hide();
+  });
   const createMenu = new CreateMenu(commands, CREATE_MORE);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
     contentMenu: (x, y) => contentMenu.open(x, y),
@@ -585,6 +595,7 @@ export function startApp(): void {
   const afterCreate = (id: string | null): void => { if (id && openPaintOnCreate()) void paint.open(id); };
   const add: Command[] = [
     { id: 'new', label: 'New Movie...', keys: ['Mod+N'], run: () => newMovie.show(false) },
+    { id: 'new-from-scene', label: 'New from Starter Scene...', run: () => { void starterScenes.show(); } },
     { id: 'new-flipbook', label: 'New Flipbook...', run: () => newMovie.show(true) },
     { id: 'open', label: 'Open...', keys: ['Mod+O'], run: () => home.show('projects') },
     { id: 'open-file', label: 'Open Movie File...', keys: ['Shift+Mod+O'], run: () => { pickMode = 'open'; picker.accept = '.fmo'; picker.click(); } },
@@ -761,7 +772,7 @@ export function startApp(): void {
   setupOnboarding({ commands, engine, openMovie: openFromLibrary, closeHome: () => home.hide() });
   setupHelpCenter({ commands, engine, askToKeep, closeHome: () => home.hide() });
   menus.push(
-    { label: 'File', items: () => ['new', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
+    { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', { label: 'Actions', items: ACTION_MENU_ITEMS }] },

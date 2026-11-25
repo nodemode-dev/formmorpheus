@@ -132,6 +132,18 @@ Last updated: 2026-11-23 · the interface's test suite
 - **The window's half of `add_character`.** The bridge item `add_character` (`{character, movie?, at?}`) opens `movie` through the same `front` as an import, or uses the open movie when none is named (no movie open: "FormMorpheus could not open that movie."). It reads the character with `charactersApi.read`, unpacks it with `unpackCharacter` and places it with `placeCharacter`, the code behind the panel's Add to Movie, so the copy has fresh ids and is one undo step. Then it saves as an import does and answers `{ok, content, movie, saved}`, `content` being the character's name.
 - **Where.** No `at`: the Playhead, on a new track at the selected track, as Add to Movie. With `at`: that frame, on a new top track, the way a drop on the Stage places it; the Playhead is not moved.
 
+## v0.25.0 · New from Starter Scene
+
+- refers-to: engine/starter-scene.ts :: isSceneEntry, rasterScale, sceneMovie; io/starter-scenes.ts :: readSceneManifest, withSvgImage, rasterize, buildSceneMovie; ui/starter-scene-dialog.ts :: StarterSceneDialog; engine/guides.ts :: GuideLine.role, floorOf; app/app.ts :: starterScenes, new-from-scene
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **What opens.** File, New from Starter Scene... (beside New Movie...) reads `/starters/scenes/manifest.json` and shows each scene as a card: its name, its prop count and a small picture drawn once per card (every layer SVG decoded as an image and drawn at its place into a 320 x 180 canvas; a layer that fails is left out). Choosing a card builds a new movie of the scene's width, height, fps, duration (frames) and background, named "Untitled Movie", and opens it the way New does (no library name, so the library adopts it under a free "Untitled Movie" name); the open movie is written first with the same quiet save leaving a movie always does. The starter files are only fetched.
+- **Layers.** One track per layer, the first layer of the manifest at the bottom (so the last track), each holding one picture block named for the layer and spanning the whole movie. A layer SVG is drawn into a PNG picture asset (kind `image`, as picture imports store them) at twice its own size when that still fits inside the movie, else at its own size. Only whole steps: a fractional step rounded the sides differently and the Microphone Stand came out 1 px taller than its shape. The block's scale is `scale x svg width / picture width`, its move puts the picture's centre at the layer's x, y from the top-left.
+- **Camera.** The scene's preset (panX, panY, zoom) is written as the movie camera's keys at frame 0 with `setCameraKeys`, so it holds for the whole movie and shows on the camera lane like any key.
+- **Floor.** `floorY` becomes a horizontal guide line marked `role: 'floor'` (a new optional field on `GuideLine`; moving the line keeps it, removing it removes it). `floorOf` finds it. It is shown and snapped to like any guide and is never exported.
+- Not done: no starter `.fmo` files (DEV_PLAN Decisions: manifest plus SVG layers built on open); the Home screen's Start list was left as it was.
+
 ## v0.25.0 · Lip-sync onto a character's mouth
 
 - refers-to: ui/lipsync-dialog.ts :: targets, fillBooks, span, overlap, cur, pickSound, limit, show, show2; engine/lipsync-ops.ts :: applyLipsync, groupHolding; ui/content-menu.ts :: lipOk; engine/character-ops.ts :: findDeep, movieStart, listCharacters
