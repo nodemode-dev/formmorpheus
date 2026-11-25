@@ -7,6 +7,7 @@ import { bounds, outline, paintStops, shapeBase, type ShapeVals, type Sub } from
 import type { BezNode, ShapeDef } from '../engine/shape-types';
 import { findContent, mul, ownMatrix, type Mat } from '../engine/transform';
 import type { CanvasRect, Content, DrawingLayer, Movie, Track } from '../engine/types';
+import { tf } from '../ui/i18n-fill';
 
 type BlobOf = (id: string) => Blob | undefined;
 
@@ -242,6 +243,6 @@ export async function characterToSvg(movie: Movie, charId: string, blobOf: BlobO
     '</svg>',
     '',
   ].join('\n');
-  const note = w.left.length ? `Written without their art: ${w.left.join(', ')}.` : undefined;
+  const note = w.left.length ? tf('Written without their art: {names}.', { names: w.left.join(', ') }) : undefined;
   return { blob: new Blob([text], { type: 'image/svg+xml' }), name: `${safe(g.character.name)}.svg`, text, parts: order.length, ...(note ? { note } : {}) };
 }

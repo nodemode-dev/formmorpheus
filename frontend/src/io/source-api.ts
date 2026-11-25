@@ -3,6 +3,7 @@
 import type { SourceLink } from '../engine/types';
 import { platform } from '../platform';
 import { t } from '../ui/i18n';
+import { LINKED_SOURCE_LEN, LINKED_SOURCES_MAX, loadPrefs, updatePrefs } from '../ui/prefs';
 import { ApiError, serviceReady } from './api';
 
 const NOT_RUNNING = 'The FormMorpheus engine service is not running. Start it with ./formmorpheus.';
@@ -21,11 +22,19 @@ async function call(path: string): Promise<Response> {
 
 const q = (path: string): string => `?path=${encodeURIComponent(path)}`;
 
-/** True where the engine has the stat and source routes (the desktop engine, in the app or a browser). */
-export const canWatchSources = (): boolean => platform.kind === 'desktop';
-
-/** True where a file dialog hands the window a real path (the desktop app). */
+/** True where a file dialog hands the window a real path (the desktop app): the only place links are made, followed and unlinked. */
 export const canLinkPaths = (): boolean => platform.kind === 'desktop' && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/** Records that this computer linked a character to `path` (newest first, capped), so it is followed. */
+export function trustSource(path: string): void {
+  if (!path || path.length > LINKED_SOURCE_LEN) return;
+  const cur = loadPrefs().linkedSources;
+  if (cur[0] === path) return;
+  updatePrefs({ linkedSources: [path, ...cur.filter((p) => p !== path)].slice(0, LINKED_SOURCES_MAX) });
+}
+
+/** True when this computer made the link to exactly `path`; a link that came inside a movie, a paste or a character is not. */
+export const isTrusted = (path: string): boolean => loadPrefs().linkedSources.includes(path);
 
 export const sourceApi = {
   /** The file's stat now; ApiError 404 when there is no file at the path. */

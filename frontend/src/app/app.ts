@@ -7,12 +7,12 @@ import { Renderer } from '../engine/render';
 import { convertToFlipbook } from '../ui/flip-convert';
 import { setFlipServices } from '../ui/flip-services';
 import type { Asset, Content } from '../engine/types';
-import { api, capabilities, onServiceChange, serviceReady } from '../io/api';
+import { api, ApiError, capabilities, onServiceChange, serviceReady } from '../io/api';
 import { packMovie, unpackMovie } from '../io/fmo';
 import { Recovery } from '../io/recovery';
 import { drawingToFormvis, frameToFormvis, movieToFormvfx } from '../io/round-trip';
 import { characterToSvg } from '../io/svg-export';
-import { canLinkPaths, sourceApi } from '../io/source-api';
+import { canLinkPaths, sourceApi, trustSource } from '../io/source-api';
 import { setSourceLink } from '../engine/source-merge';
 import { pickDestination, saveFileTo } from '../ui/export-where';
 import { AudioEngine } from '../media/audio';
@@ -27,7 +27,7 @@ import { ExportDialog } from '../ui/export-dialog';
 import { TextCard } from '../ui/text-card';
 import { ShapePanel } from '../ui/shape-panel';
 import { shapeCommands, SHAPE_CREATE_ITEMS } from '../ui/shape-commands';
-import { characterCommands } from '../ui/character-commands';
+import { characterCommands, selectedCharacter } from '../ui/character-commands';
 import { setupSourceLink } from './source-link';
 import { CaptionButtons, wantsCustomTitleBar } from '../ui/caption-buttons';
 import { CommandPalette } from '../ui/command-palette';
@@ -375,6 +375,7 @@ export function startApp(): void {
       // an SVG handed over by its path becomes a character linked to that file
       try {
         const { text, link } = await sourceApi.read(path);
+        trustSource(path);
         await importFiles([new File([text], path.split(/[\\/]/).pop() ?? 'character.svg', { type: 'image/svg+xml' })], { link });
       } catch (e) {
         toast(e instanceof Error ? e.message : 'The file could not be imported.', 'error');
@@ -579,28 +580,38 @@ export function startApp(): void {
       engine.endJob(job);
     }
   }
-  const selectedCharacter = (): Content | undefined => engine.selected.find((c) => c.kind === 'group' && !!c.character);
   async function characterOut(): Promise<void> {
-    const m = engine.movie, c = selectedCharacter();
+    const m = engine.movie, c = selectedCharacter(engine);
     if (!m || !c) return;
     // the desktop app's folder dialog gives a real path, so the saved file becomes the character's source
     const dest = canLinkPaths() ? await pickDestination() : 'unavailable';
     if (dest === null) return;
-    const job = engine.startJob('Character as SVG', 1);
+    const job = engine.startJob(t('Character as SVG'), 1);
     try {
       const out = await characterToSvg(m, c.id, (id) => engine.assets.get(id));
+      const note = out.note ? ` ${out.note}` : '';
+      const saved = (file: string): string => tf('{file} saved with {n} parts. Edit it in a vector app, keep one group per part, then choose Update from Source... on the character.', { file, n: out.parts });
       if (dest !== 'unavailable') {
         const path = await saveFileTo(dest, out.blob, out.name);
         if (dest.kind === 'engine') {
-          const link = await sourceApi.stat(path);
-          engine.run('Link Source', (mv) => setSourceLink(mv, c.id, link));
-          toast(`${tf('{file} saved with {n} parts and linked. Edit it in a vector app, keep one group per part, and save: the character updates when you come back.', { file: path, n: out.parts })}${out.note ? ` ${out.note}` : ''}`);
+          let why: string;
+          try {
+            const link = await sourceApi.stat(path);
+            engine.run('Link Source', (mv) => setSourceLink(mv, c.id, link));
+            trustSource(path);
+            toast(`${tf('{file} saved with {n} parts and linked. Edit it in a vector app, keep one group per part, and save: the character updates when you come back.', { file: path, n: out.parts })}${note}`);
+            return;
+          } catch (e) {
+            why = e instanceof ApiError && e.status === 413 ? t('Saved, not linked: larger than 20 MB.')
+              : tf('Saved, not linked: {reason}', { reason: e instanceof Error ? e.message : t('the file could not be read.') });
+          }
+          toast(`${saved(path)}${note} ${why}`);
           return;
         }
       } else platform.files.download(out.blob, out.name);
-      toast(`${out.name} saved with ${out.parts} parts. Edit it in a vector app, keep one group per part, then choose Update from Source... on the character.${out.note ? ` ${out.note}` : ''}`);
+      toast(`${saved(out.name)}${note}`);
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'The export failed.', 'error');
+      toast(e instanceof Error ? e.message : t('The export failed.'), 'error');
     } finally {
       engine.endJob(job);
     }
@@ -647,7 +658,7 @@ export function startApp(): void {
     { id: 'export-fmo-history', label: 'Share Movie File with History', enabled: has, run: () => { void exportFile(true); } },
     { id: 'export-fvd', label: 'Current frame as formvis document...', enabled: has, run: () => { void roundTripOut('frame'); } },
     { id: 'export-fvfx', label: 'Movie as formvfx composition...', enabled: has, run: () => { void roundTripOut('movie'); } },
-    { id: 'export-char-svg', label: 'Character as SVG for Vector App...', enabled: () => !!selectedCharacter(), run: () => { void characterOut(); } },
+    { id: 'export-char-svg', label: 'Character as SVG for Vector App...', enabled: () => !!selectedCharacter(engine), run: () => { void characterOut(); } },
     { id: 'import-fvd', label: 'Import formvis document...', enabled: has, run: () => pickFor('.fvd,application/zip') },
     { id: 'import-fvfx', label: 'Import formvfx composition...', enabled: has, run: () => pickFor('.fvxproj,.zip,application/zip') },
     { id: 'import-media', label: 'Import...', keys: ['Mod+I'], enabled: has, run: () => { pickMode = 'import'; picker.accept = MEDIA_ACCEPT; picker.click(); } },

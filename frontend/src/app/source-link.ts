@@ -1,5 +1,5 @@
-// A character's source link: while the window has focus, every 2 seconds, the stat of each linked SVG is asked for
-// (one request in flight per file); a changed file is read again and laid over its characters as one undo step,
+// A character's source link: in the desktop app, while the window has focus, every 2 seconds, the stat of each linked SVG
+// this computer linked is asked for (one request in flight in all); a changed file is read again and laid over its characters as one undo step,
 // "Update from Source". The character menu's Update from Source..., Unlink Source and Relink Source... live here too.
 import type { Engine } from '../engine/engine';
 import * as ops from '../engine/ops';
@@ -8,7 +8,7 @@ import { linkedCharacters, mergeFromSource, setSourceLink } from '../engine/sour
 import { findContent } from '../engine/transform';
 import type { SourceLink } from '../engine/types';
 import { ApiError } from '../io/api';
-import { canLinkPaths, canWatchSources, pickSvgPath, sourceApi } from '../io/source-api';
+import { canLinkPaths, isTrusted, pickSvgPath, sourceApi, trustSource } from '../io/source-api';
 import { svgToCharacterGroup } from '../io/svg-import';
 import { platform } from '../platform';
 import { selectedCharacter } from '../ui/character-commands';
@@ -25,10 +25,11 @@ export interface SourceLinkDeps { engine: Engine; renderer: Renderer }
 export function setupSourceLink({ engine, renderer }: SourceLinkDeps): { commands: Command[] } {
   /** Per character, the file hash already laid over it this session: an undone update is not put back by the next poll. */
   const seen = new Map<string, string>();
-  const busy = new Set<string>();
   const told = new Set<string>();
   const refused = new Set<string>();
+  const warned = new Set<string>();
   let timer = 0;
+  let running = false;
 
   /** Reads `text` as a character and lays it over `ids` in one step; `link` undefined keeps each character's link as it is. */
   async function apply(ids: string[], text: string, file: string, link: SourceLink | null | undefined, label: string): Promise<boolean> {
@@ -78,6 +79,7 @@ export function setupSourceLink({ engine, renderer }: SourceLinkDeps): { command
   async function fromPath(ids: string[], path: string, label: string): Promise<void> {
     try {
       const { text, link } = await sourceApi.read(path);
+      trustSource(path);
       if (await apply(ids, text, leaf(path), link, label)) for (const id of ids) seen.set(id, link.sha256);
       refused.delete(path);
       told.delete(path);
@@ -97,26 +99,33 @@ export function setupSourceLink({ engine, renderer }: SourceLinkDeps): { command
     const m = engine.movie;
     if (!m) return;
     const stale = linkedCharacters(m).filter((l) => l.source.path === path && l.source.sha256 !== now.sha256 && seen.get(l.id) !== now.sha256).map((l) => l.id);
-    if (!stale.length) return;
+    if (!stale.length || !isTrusted(path)) return;
     let read;
     try { read = await sourceApi.read(path); } catch { return; }
     for (const id of stale) seen.set(id, read.link.sha256);
     await apply(stale, read.text, leaf(path), read.link, 'Update from Source');
   }
 
-  function tick(): void {
+  /** One request in flight in all: the trusted linked paths are checked one after another. */
+  async function tick(): Promise<void> {
     const m = engine.movie;
-    if (!m) return;
-    for (const path of new Set(linkedCharacters(m).map((l) => l.source.path))) {
-      if (busy.has(path) || refused.has(path)) continue;
-      busy.add(path);
-      void check(path).finally(() => busy.delete(path));
-    }
+    if (!m || running) return;
+    running = true;
+    try {
+      for (const path of new Set(linkedCharacters(m).map((l) => l.source.path))) {
+        if (refused.has(path)) continue;
+        if (!isTrusted(path)) {
+          if (!warned.has(m.id)) { warned.add(m.id); toast(tf('{file} was linked on another computer: choose Relink Source... to follow it.', { file: leaf(path) })); }
+          continue;
+        }
+        await check(path);
+      }
+    } finally { running = false; }
   }
 
-  const start = (): void => { if (!timer) { timer = window.setInterval(tick, EVERY_MS); tick(); } };
+  const start = (): void => { if (!timer) { timer = window.setInterval(() => { void tick(); }, EVERY_MS); void tick(); } };
   const stop = (): void => { window.clearInterval(timer); timer = 0; };
-  if (canWatchSources()) {
+  if (canLinkPaths()) {
     window.addEventListener('focus', start);
     window.addEventListener('blur', stop);
     if (document.hasFocus()) start();
@@ -150,7 +159,7 @@ export function setupSourceLink({ engine, renderer }: SourceLinkDeps): { command
       run: () => { void update(); },
     },
     {
-      id: 'character.source-unlink', label: 'Unlink Source', icon: 'unlink', mutates: true, enabled: () => canWatchSources() && linked(),
+      id: 'character.source-unlink', label: 'Unlink Source', icon: 'unlink', mutates: true, enabled: () => canLinkPaths() && linked(),
       group: 'Content', description: 'Stops the selected character following its SVG file.',
       run: () => {
         const g = selectedCharacter(engine);

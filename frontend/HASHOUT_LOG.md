@@ -3,7 +3,7 @@
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
 Current build version: v0.24.0
-Last updated: 2026-11-23 · the interface's test suite
+Last updated: 2026-11-25 · the source link is followed only where this computer made it
 
 ---
 
@@ -152,6 +152,20 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Guide roles.** `tidyGuides` writes each line as `{axis, at}` and keeps `role` only when it is `'floor'`; it also keeps `squareFrame` and `portraitFrame`, which it dropped (the 1:1 and 4:5 frame switches did not stay on). `normalizeMovie` now tidies `guides` on load, so a file's line roles are checked on open like the rest of the movie.
 - **Scene layers are pictures (removed plan).** The DEV_PLAN said starter scenes would reuse the SVG importer. They do not: each layer is rasterized into a picture block. The backgrounds use linear and radial gradients in `defs` and soft shadows, which the part importer does not keep, and the props are scenery, not rigged parts, so there is nothing to pose. A person edits one by opening the layer's SVG in their vector app (or bringing it in as a character, when it should move in parts) and putting the result in with Replace the picture or video....
 
+## v0.25.0 · the source link is followed only where this computer made it
+
+- refers-to: ui/prefs.ts :: Prefs.linkedSources, LINKED_SOURCES_MAX, LINKED_SOURCE_LEN, loadPrefs; io/source-api.ts :: trustSource, isTrusted, canLinkPaths (canWatchSources removed); app/source-link.ts :: tick, check, fromPath, start, Unlink Source; ui/content-menu.ts :: srcUnlink; app/app.ts :: openFromPath, characterOut; ../SECURITY.md (Files)
+- kind: decision
+- logged: v0.25.0 · 2026-11-25
+
+- **Why.** A movie, a saved character or a paste carries `character.source.path` from wherever it was made. Followed as it was, a movie from someone else made this window hash and read whatever `.svg` sat at a path they chose, every 2 seconds, and lay it into the movie.
+- **The rule (orchestrator decision).** Only links made on this computer are followed automatically. `Prefs.linkedSources` (per computer, in the prefs store; newest first, at most 200 paths of at most 4096 characters, cleaned by `strings` like the other lists) holds the paths this computer produced. `trustSource(path)` puts a path first; `isTrusted(path)` is an exact match. Written only by: `openFromPath` for an `.svg` the desktop app handed over, `fromPath` after a successful read (Update from Source... and Relink Source... in the dialog), and `characterOut` after the desktop save is linked. Never on movie open, Characters Add to Movie, paste, `.fmo` import or `add_character`: those copy the movie data only.
+- **Polling.** `tick` skips an untrusted path with no request at all, and `check` asks `isTrusted` again right before reading the text. The first untrusted link of a movie (by `movie.id`, once per session) shows "{file} was linked on another computer: choose Relink Source... to follow it."; Relink Source... picks the file in the dialog, which makes it trusted.
+- **One request in flight in all.** `tick` is async and guarded by `running`: it walks the trusted linked paths one after another, awaiting each stat (and read), so a slow engine never has several requests from the poll at once. The per-path `busy` set is gone.
+- **Desktop app only.** Polling and Unlink Source are gated on `canLinkPaths()` (the desktop app, where a dialog gives a real path); `canWatchSources()` (any desktop engine, a browser included) is removed, since a browser can never make a trusted link. Update from Source... (pick the file again) stays everywhere.
+- **Character as SVG.** The stat-and-link step has its own `try`: when it fails the export still says saved, with the platform-neutral sentence, and adds "Saved, not linked: larger than 20 MB." for 413 or "Saved, not linked: {reason}" otherwise. Its texts, the job label and the note "Written without their art: {names}." (`io/svg-export.ts`) go through `t` and `tf`. The local `selectedCharacter` (first selected group that is a character) is replaced by the shared one in `ui/character-commands.ts` (exactly one selected character).
+
+
 ## v0.25.0 · characters in Recently Deleted
 
 - refers-to: ui/home-trash.ts :: restore, render, fill; io/api.ts :: TrashItem; styles/trash.css :: .fm-trash-glyph svg
@@ -213,7 +227,7 @@ Last updated: 2026-11-23 · the interface's test suite
 - **Missing parts.** `mergeFromSource` now writes the names it did not find into `character.missing` (removed when none). The status bar's selection text adds "Not in the source file" for such a part: it is where the window describes the selected block, and the Timeline chip is drawn on a canvas with no per-block hint. The red highlight from the merge stays as before.
 - **Menu.** On a selected character, beside Save to Characters: Update from Source... (always), Unlink Source (linked, desktop engine), Relink Source... (desktop app only, where a dialog gives a path). Update from Source... in the desktop app opens the system dialog (`plugin:dialog|open`, SVG filter, starting at the linked file) and links the chosen path with the stat of what was read; elsewhere it uses the platform picker, which gives no path, and keeps the link as it was. Relink Source... links and reads the file in one step named "Relink Source"; Unlink Source drops `source` as an undo step.
 - **Opened by path.** Paths the desktop app hands the window (Open With, a second launch, the command line: `formmorpheus://open-paths` and `take_pending_opens`) reached only `.fmo` before. An `.svg` path now reads the file through `/api/files/source` and imports it into the open movie with `ImportOptions.link`, so the character it makes is linked at import. `.svg` is not a declared document type of the app, so double-clicking an SVG does not offer FormMorpheus; Open With and the command line do. The Import command and drops use the browser's file chooser, which gives no path: those characters are linked with Relink Source...
-- **Files.** `normalize.ts` keeps `source` only with a string path ending in `.svg`, finite `size` and `mtime` and a string `sha256`, and keeps `missing` to names that are parts. A link in a movie from someone else names a path on their computer; on this one it answers 404 (said once) or is a different file of that name, which the window reads only if it is an SVG under 20 MB.
+- **Files.** `normalize.ts` keeps `source` only with a string path ending in `.svg`, finite `size` and `mtime` and a string `sha256`, and keeps `missing` to names that are parts. Only links made on this computer are followed: a path is followed only when it is in `Prefs.linkedSources`, written where this computer produced the path (an `.svg` opened by a path the desktop app handed over, Update from Source... and Relink Source... through the dialog, the desktop save of Character as SVG). A link that arrived inside a movie, a saved character, a paste, an `.fmo` import or an agent's `add_character` is never asked for until the person chooses Relink Source... once (see "the source link is followed only where this computer made it").
 
 ## v0.25.0 · Lip-sync onto a character's mouth
 

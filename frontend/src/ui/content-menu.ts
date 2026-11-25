@@ -10,7 +10,7 @@ import { Popover, popField, popRow, popSep, type PopRow } from './popover';
 import { TrackMenu } from './track-menu';
 import { BoilMake } from './boil-make';
 import { canConvert } from './flip-convert';
-import { canLinkPaths, canWatchSources } from '../io/source-api';
+import { canLinkPaths } from '../io/source-api';
 import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
@@ -417,7 +417,7 @@ export class ContentMenu {
     setClass(this.saveChar.el, 'is-gone', !isChar);
     setClass(this.mouthChar.el, 'is-gone', !isChar);
     setClass(this.srcUpdate.el, 'is-gone', !isChar);
-    setClass(this.srcUnlink.el, 'is-gone', !(isChar && canWatchSources() && !!first.character?.source));
+    setClass(this.srcUnlink.el, 'is-gone', !(isChar && canLinkPaths() && !!first.character?.source));
     setClass(this.srcRelink.el, 'is-gone', !(isChar && canLinkPaths()));
     this.del.setDisabled(none);
     this.syncSections();
