@@ -2,10 +2,29 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.31.0
-Last updated: 2026-11-25 · the window's files keep their types on Windows
+Current build version: v0.32.0
+Last updated: 2026-11-27 · AI voices at /api/voice
 
 ---
+
+## v0.32.0 · AI voices at /api/voice
+
+- refers-to: app/routers/voice.py; app/services/voice_runtime.py; app/services/voice_remote.py; app/routers/mcp.py :: list_voices, add_voice, _voice_state
+- kind: decision
+- logged: v0.32.0 · 2026-11-27
+
+- **Ported from formcut 2.20.2** (`local_speech.py`, `tts.py`, the download pins of `model_manager.py`), answering issue #31. Three engines behind one `POST /api/voice/speak`: builtin (Kokoro), local (a voice app on this computer answering the common speech API, which is how a cloned voice is used) and online (ElevenLabs with the person's key). formcut's two PyTorch engines were not brought over: a voice app on this computer covers cloning without the engine installing PyTorch.
+- **The engine never imports kokoro_onnx, numpy or onnxruntime.** pip installs kokoro-onnx with phonemizer and espeakng-loader (eSpeak NG), both GPL by their own metadata (read in the installed runtime on 2026-11-27). So Kokoro runs in a venv of its own in the data folder (`voice/runtime`), made by the person's own Python on request, and is only ever started as a separate program through `-c` scripts with JSON on stdin. The same separation formcut keeps. NOTICE.md has the rows.
+- **Setup is a job on a thread** with three steps (python, runtime, model). Its output goes to a temp file so a full pipe cannot hang it; cancel kills the process and stops the download between 1 MiB blocks. A failed or cancelled runtime step deletes the whole runtime folder, because a half-installed environment can look installed to pip.
+- **The model files are pinned.** SHA-256 and exact size are checked once, on the `.part` file before the rename. `status()` compares sizes only, so it stays cheap enough to poll.
+- **A frozen engine looks for Python itself**: the python.org framework paths and the Homebrew paths on macOS before `python3` and `python`, and `py -3` on Windows, each probed for 3.10 to 3.13, since an app's PATH is short and `/usr/bin/python3` on macOS can be a stub.
+- **One cue per sentence.** The worker speaks sentence by sentence with a 0.12 s pause and reports each start and end, so the sound's `Asset.spoken.cues` are exact for the built-in voice. Fragments under 3 characters join a neighbour. An empty `language` means the voice's own language.
+- **local is loopback only.** The address is normalised to scheme, host and port; userinfo, query and fragment are refused; requests use no proxy and follow no redirect, so the text and an optional key cannot leave the computer through this route. The mime is taken from the bytes when the header is generic, and anything that is not a sound is a 502.
+- **Keys live in the keyring** (service FormMorpheus, accounts voice-local-key and voice-online-key), never in settings.json. With no keyring the online key may come from `FORMMORPHEUS_VOICE_ONLINE_KEY`.
+- **A spoken sound waits in `voice/out`** under a random id until the window fetches and drops it; `sweep()` removes what is older than an hour on the next speak.
+- **add_voice is carried out by the window** (bridge kind add_voice), like add_character, so the sound arrives through the normal import, gets its note and lands in the movie's history. The tool refuses before asking the person when the engine is not ready, with the same sentences list_voices gives. VOICE_WAIT is 600 s.
+- **`/api/voice/*` is desktop only** in `setup/api_contract_check`: an iPad has no Python runtime to make and no voice app to reach on loopback.
+- Run here on 2026-11-27 (Linux, Python 3.13): a fresh setup, 54 voices listed, English and Spanish spoken through the routes, the fetch and drop of the sound, the refusals for a missing key, a silent voice app and an address that is not on this computer.
 
 ## v0.31.0 · the window's files keep their types on Windows
 
