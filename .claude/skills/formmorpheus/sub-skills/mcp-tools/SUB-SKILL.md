@@ -18,9 +18,9 @@ Each tool's description starts with its class, and its annotations say it too (`
 
 | Class | Tools | What happens |
 | --- | --- | --- |
-| Reads | `get_context`, `list_movies`, `get_movie`, `get_movie_picture`, `list_characters`, `list_voices`, `list_commands` | runs at once; refused only when the person blocked agents |
+| Reads | `get_context`, `list_movies`, `get_movie`, `get_movie_picture`, `list_characters`, `list_voices`, `list_subtitles`, `list_commands` | runs at once; refused only when the person blocked agents |
 | Changes the library | `manage_movie`, and `run_command` for a command of that class | runs when the person allowed outside agents; otherwise asks in the window (deny, once, always), and with no window open it is refused |
-| Asks first | `export_movie`, `import_file`, `add_character`, `add_voice` | always asks the person in the window (deny, once), then the window carries it out; with no window open it is refused at once with "Open FormMorpheus first" |
+| Asks first | `export_movie`, `import_file`, `add_character`, `add_voice`, `set_subtitles` | always asks the person in the window (deny, once), then the window carries it out; with no window open it is refused at once with "Open FormMorpheus first" |
 
 The rules live in `_gate` in `backend/app/routers/mcp.py`. The person's standing choice (ask, allowed, blocked) is `backend/app/services/agent_access.py`. An agent tab the person opened in the app's own dock carries an in-app token and is not asked for library changes; it is still asked before an export or an import.
 
@@ -33,7 +33,8 @@ The rules live in `_gate` in `backend/app/routers/mcp.py`. The person's standing
 5. `import_file {path, movie, at?, track?}`: `path` must be inside the library folder; copy the file there first.
 6. `list_characters {query?}` reads the Characters library (one `.fmo` per character in the data folder's `Characters` folder). `add_character {character, movie?, at?}` asks first, then the window opens `movie` (or uses the open one), places a copy of the character with fresh ids at `at` or the Playhead, and saves the movie; the answer gives `content`, `movie` and `saved`.
 7. `list_voices {engine?}` reads which voice engines are ready (`builtin`, `local`, `online`) and their voices. `add_voice {text, engine?, voice?, language?, speed?, model?, movie?, at?}` asks first, then the window speaks the text, places the sound on the Timeline at `at` or the Playhead, and saves the movie. See `sub-skills/ai-voice`.
-8. `list_commands` shows the commands that are not tools (Recently Deleted, Exports, stacks, tags, fonts, ffmpeg's encoders); `run_command {id, params}` runs one.
+8. `list_subtitles {movie}` reads the movie's subtitles: whether the video shows them, the look, and each line in seconds and frames. `set_subtitles {movie?, lines?, srt?, mode?, show?, from_voices?, style?}` asks first, then the window changes the subtitles of the open movie (or `movie`, which it opens) and saves. See `sub-skills/subtitles`.
+9. `list_commands` shows the commands that are not tools (Recently Deleted, Exports, stacks, tags, fonts, ffmpeg's encoders); `run_command {id, params}` runs one.
 
 ## Refusals
 
@@ -41,7 +42,7 @@ Every refusal is one plain sentence. Pass it to the person as it is.
 
 - Outside agents are off: ask the person to open FormMorpheus and allow outside agents.
 - Blocked: the person turned agents off in Preferences; do not retry.
-- Open FormMorpheus first: export, import, add_character and add_voice need the window.
+- Open FormMorpheus first: export, import, add_character, add_voice and set_subtitles need the window.
 - The person said no: do not ask again at once; a repeat within `DECLINE_PAUSE` seconds is refused without asking.
 - Nobody answered within the wait: the question expired; ask the person to answer in the window.
 

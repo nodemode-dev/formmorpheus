@@ -47,7 +47,7 @@ Never retry around a refusal.
 
 ## Subtitles
 
-Each spoken sound remembers its words in the movie file: `Asset.spoken` has `text`, `engine`, `voice` and `cues`, one cue per sentence with `start` and `end` in seconds inside the sound. The built-in voice gives cues; a voice app or online voice gives none. Offset a cue by the sound's start frame to place a subtitle.
+Each spoken sound remembers its words in the movie file: `Asset.spoken` has `text`, `engine`, `voice` and `cues`, one cue per sentence with `start` and `end` in seconds inside the sound. The built-in voice gives cues; a voice app or online voice gives none. `set_subtitles` with `from_voices` true does the placing now: it offsets each cue by the sound's place on the Timeline and saves the lines as the movie's subtitles. See `sub-skills/subtitles`.
 
 ## Working in the source
 
