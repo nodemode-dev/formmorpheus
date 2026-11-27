@@ -37,3 +37,19 @@ The processor path is the reference and the fallback. The GPU path walks the tra
 ## Keys
 
 Each key lane has a kind (Move, Scale, Warp, Distort, Opacity, Blur, Sharpen, Noise, HSB, Lens blur, Volume). Easing of the span after a key is Linear, Ease in, Ease out, Ease in and out, or Hold, evaluated as a temporal Bezier. Perform mode records one key per frame, smooths the path with a zero-phase filter and thins it with Ramer-Douglas-Peucker.
+
+## The voice routes (`/api/voice`)
+
+`backend/app/routers/voice.py` is the router; the work is in two services. `services/voice_runtime.py` is the built-in voice: it finds a Python 3.10 to 3.13, makes the voice's own runtime in `voice/runtime` of the data folder, downloads the Kokoro model to `voice/models` with a SHA-256 check, and speaks through that runtime. `services/voice_remote.py` is a voice app on this computer (loopback addresses only) and the online voice, with the keys in the system keyring. Both use only the standard library.
+
+| Route | Does |
+|---|---|
+| `GET /status` | the three engines' state in one answer |
+| `POST /builtin/setup`, `GET` and `DELETE /builtin/job`, `DELETE /builtin` | start, watch, cancel the one-time setup; remove the built-in voice |
+| `GET /builtin/voices` | the built-in voice's voices |
+| `PUT /local`, `POST /local/probe` | save the voice app's address, model and voice; ask it what it has |
+| `PUT` and `DELETE /online/key`, `GET /online/voices` | keep or clear the online key; list its voices |
+| `POST /speak` | speak `{engine, text, voice, language, speed, model}`; answers the sound's id, voice, seconds and cues |
+| `GET` and `DELETE /audio/{id}` | the window fetches the spoken sound, then drops it |
+
+The rule: the engine process never imports the Kokoro packages (`kokoro_onnx`, `numpy`, `onnxruntime`). They run in the voice's own runtime as a separate program, because the loader they use brings eSpeak NG under GPL terms, and importing them would put that into the frozen engine.

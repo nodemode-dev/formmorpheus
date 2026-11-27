@@ -2,6 +2,21 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.32.0 · 2026-11-27
+
+AI Voice: type what to say, choose a voice and press Speak, and the spoken sound lands on the Timeline.
+
+### New
+- A new AI Voice card (Content, Add, AI Voice..., and under More in the Create card, next to Record sound...). Type the words, choose a voice and press Speak: the sound lands on the Timeline at the Playhead on a sound track, like any sound, so fades, pan, Lip-sync onto a character's mouth and export all work on it.
+- A built-in voice that works offline. Kokoro runs on this computer with no account and no internet after a one-time setup from the card, which needs Python 3.10 to 3.13 on the computer and downloads the voice model, about 340 MB, checking the download. It has 54 voices with American and British English first, a speed from 0.5 to 2, and the card can remove it again.
+- Any voice app on this computer that answers the common speech API can speak, which is how a cloned voice is used: clone the voice in that app, start it, press Check in the card and pick its model and voice. The default address is http://127.0.0.1:8080, and only an address on this computer is accepted.
+- An online voice (ElevenLabs) on the card's Online tab, with your own key kept in the system keychain and text of up to 2000 characters. Your text is sent to that service only when you press Speak on this tab.
+- Each spoken sound remembers its words and the timing of each sentence inside the movie file, for the subtitles coming in the next version.
+- Agents can list the voices that are ready (`list_voices`) and ask you to speak a line onto a movie's Timeline (`add_voice`, which asks first in the window).
+
+### Known issues
+- Subtitles in the video are not in this version, and the new card's labels are in English only for now.
+
 ## 0.31.0 · 2026-11-25
 
 The Character Builder in every language, and the finishing touches on characters and actions.

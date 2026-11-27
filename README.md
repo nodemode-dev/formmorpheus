@@ -101,7 +101,7 @@
     </td>
     <td width="33%" valign="top">
       <h4>Animation tools</h4>
-      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions, 12 ready to apply
+      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions, 12 ready to apply · AI Voice, spoken onto the Timeline
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
@@ -120,6 +120,7 @@
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
 - **Characters:** build one in the Character Builder by choosing a kind, body, face, hair and outfit, start from one of 26 original starter characters, or open an SVG with one group per body part. Every character has named parts, pivots and parenting, and a built one has a part for every joint, from hip and forearm to shin, foot, eyes, brows, hair and tail, with a mouth ready for lip-sync. Save it to the Characters library, apply the 12 starter actions or your own, change a built one again with Edit in Character Builder and keep its animation, and send any character to a vector app and back, where it updates by part name and keeps its animation. Five starter scenes are included.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
+- **AI Voice:** type what to say and the spoken sound lands on the Timeline like any sound, ready for fades, pan, lip-sync and export. A built-in offline voice (Kokoro, 54 voices, set up once from the card), a voice app on this computer for a cloned voice, or an online voice with your own key. Each spoken sound keeps its words and sentence timing for the subtitles coming in the next version. See `docs/MANUAL.md`.
 - **In your language:** the interface ships in 30 languages, right to left included, with a manual on F1.
 - **iPad:** the iPad app in `ios/` wraps the same interface in a Swift shell with Apple Pencil, Files and AVFoundation export. It is built and runs on an iPad Pro 13-inch (M5) with Apple Pencil Pro on iPadOS 26.3, where drawing, squeeze, barrel roll and hover were checked. It is a beta that you build yourself on a Mac with Xcode: see [`docs/ios/BUILD.md`](docs/ios/BUILD.md). An App Store version is planned only if the iPad app gets real adoption.
 

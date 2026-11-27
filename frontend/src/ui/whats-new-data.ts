@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.32.0', name: 'AI Voice',
+    additions: [
+      { title: 'Type it, hear it', text: 'Type what to say, choose a voice and press Speak. The sound lands on the Timeline like any sound, ready for fades, lip-sync and export.', command: 'ai-voice' },
+      { title: 'A voice on this computer', text: 'The built-in voice runs offline after a one-time setup, and a voice app on this computer can speak too, which is how a cloned voice is used.', command: 'ai-voice' },
+      { title: 'An online voice', text: 'Use your own key for an online voice. Your text is sent only when you press Speak on the Online tab.', command: 'ai-voice' },
+    ],
+  },
+  {
     version: '0.23.1', name: 'Every language, complete',
     additions: [
       { title: 'In your language', text: 'Every menu, notice and panel is translated into all 30 languages. Preferences, Interface sets the language.', command: 'settings' },

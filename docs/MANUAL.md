@@ -407,6 +407,40 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
 
 **From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: a **PNG** opens as a picture, a **PSD** opens as a Drawing with its layers, and an **SVG** opens as a character with a part for each group (see Characters). The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
 
+## AI Voice
+
+Type what to say, choose a voice and press **Speak**: the spoken sound lands on the Timeline at the Playhead, on a sound track, like any sound. Fades, pan, Lip-sync and export all work on it. Open the card from Content · Add · **AI Voice...**, or from More in the Create card, next to **Record sound...**. It has two tabs, **Offline** and **Online**.
+
+### The built-in voice
+
+On the **Offline** tab, **Voice from** · **Built-in voice** is Kokoro. It runs on this computer, with no account and no internet once it is set up.
+
+- **Set up once.** Press the setup button in the card. FormMorpheus makes the voice its own runtime in the data folder, which needs Python 3.10 to 3.13 on your computer, and downloads the voice model, about 340 MB, checking the download before it is used. The card shows the step it is on and can cancel it. When no suitable Python is found, the card says so and nothing is installed.
+- **Voices and speed.** There are 54 voices. American and British English are listed first. **Speed** goes from 0.5 to 2.
+- **Remove.** The card can take the built-in voice away again, runtime and model together.
+
+### A voice app on this computer (your own cloned voice)
+
+On the **Offline** tab, **Voice from** · **Voice app on this computer** speaks through any voice app on this computer that answers the common speech API. This is how a cloned voice is used.
+
+1. Clone the voice in that app, and start the app.
+2. In the card, set its address. The default is `http://127.0.0.1:8080`. Only an address on this computer is accepted (`127.0.0.1`, `localhost` or `[::1]`).
+3. Press **Check**. The card asks the app which models and voices it has.
+4. Pick its model and voice, then **Speak**.
+
+### An online voice
+
+On the **Online** tab, an online voice (ElevenLabs) speaks with your own key. The key is kept in the system keychain, never in the settings file, and can be cleared again. The text can be up to 2000 characters. Your text is sent to that service only when you press **Speak** on this tab; nothing is sent on the Offline tab.
+
+### Where the voice files are
+
+The built-in voice lives in the **voice** folder of your data folder: its runtime in `voice/runtime` and its model in `voice/models`. The data folder is the one that holds the settings file: Preferences · General shows the settings and library folders, and `FORMMORPHEUS_DATA_DIR` moves it. A sound you have just spoken waits in `voice/out` until the window has placed it, and is removed within the hour if it never was. The sound you placed is part of the movie and is saved in the `.fmo` like any other sound.
+
+### Subtitles and lip-sync
+
+- **Lip-sync works today.** Choose **Lip-sync from Sound...** on the spoken sound's block and the mouth of a character takes its shape (see Lip-sync onto a character's mouth under Characters).
+- **Subtitles follow in the next version.** Each spoken sound already remembers its words and the timing of each sentence inside the movie file, so they can be used then. Nothing shows in the video yet.
+
 ## Text
 
 Add Text from Create. Type the words, and the Text card opens: **font** (the bundled fonts and any you imported), **size**, **weight**, **color** and **alignment**. Double-click the block to edit again. Each change is one undo step.
@@ -488,9 +522,9 @@ An outside agent is a program on your computer, such as Claude Code, Codex, Curs
 
 ### What an agent can do
 
-- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
+- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), which voices are ready on this computer and what each can speak with (`list_voices`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
 - **Changes to the library** are made by `manage_movie`: create an empty movie, rename, duplicate, delete and restore. Delete moves a movie to Recently Deleted and never erases it. `run_command` also sets a movie's tags and its stack.
-- **Three always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, and `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie. All three need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character` uses the movie already open when the agent names none).
+- **Four always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie, and `add_voice` speaks a line with the built-in voice, a voice app on this computer or an online voice and puts the sound on the movie's Timeline at the Playhead (or a frame the agent names), as AI Voice does, and saves the movie. All four need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character` and `add_voice` use the movie already open when the agent names none).
 
 Agents work only on FormMorpheus's own data: your movie library, your Characters library (the Characters folder in the data folder), Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
 
@@ -542,6 +576,18 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.32.0
+
+**AI Voice.** Content · Add · AI Voice..., or More in the Create card, opens a card where you type what to say, choose a voice and press Speak. The spoken sound lands on the Timeline at the Playhead on a sound track, so fades, pan, Lip-sync onto a character's mouth and export work on it. See AI Voice.
+
+**Three voices.** The Offline tab's **Built-in voice** is Kokoro, which runs on this computer with no account and no internet after a one-time setup (Python 3.10 to 3.13 and a model of about 340 MB), with 54 voices and a speed from 0.5 to 2. **Voice app on this computer** speaks through a voice app that answers the common speech API on this computer, which is how a cloned voice is used. The Online tab speaks with your own key, kept in the system keychain, and sends your text only when you press Speak.
+
+**Words kept with the sound.** Each spoken sound remembers its words and the timing of each sentence inside the movie file, for the subtitles coming in the next version.
+
+**Agents.** `list_voices` reads which voices are ready, and `add_voice` speaks a line onto a movie's Timeline after you say yes in the window.
+
+**Not yet.** Subtitles in the video, and the card's labels in languages other than English.
 
 ## New in 0.31.0
 

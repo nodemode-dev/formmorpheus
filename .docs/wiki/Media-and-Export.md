@@ -13,6 +13,18 @@
 | Sound | `audio.ts` decodes, draws waveforms, plays on one AudioContext |
 | Fonts | `fonts.ts` registers them with the document |
 
+## AI Voice
+
+`frontend/src/app/voice-commands.ts` (`speakToTimeline`) asks the engine to speak, fetches the sound and brings it in through the same import as any sound file, at the Playhead or a given frame. The new sound's asset carries `spoken`: the text, the engine, the voice and the cues, one per sentence in seconds inside the sound. They are saved in the `.fmo`; the subtitles of the next version read them.
+
+| Engine | What speaks | Sound |
+|---|---|---|
+| `builtin` | Kokoro in its own runtime in the data folder (`services/voice_runtime.py`) | 16-bit mono WAV, with cues |
+| `local` | a voice app on a loopback address that answers `POST /v1/audio/speech` (`services/voice_remote.py`) | what the app returns, no cues |
+| `online` | ElevenLabs with the person's own key, text up to 2000 characters (`services/voice_remote.py`) | MP3, no cues |
+
+Files live in `voice/` of the data folder: `runtime/` and `models/` for the built-in voice, and `out/` for a spoken sound until the window fetches it (swept after an hour). Keys are in the system keyring, never in `settings.json`.
+
 ## Sync
 
 The AudioContext is the clock while sound plays. Loop turns restart the sound from the new frame without a clock jump. Output latency leaves sound a constant frame or two behind the Playhead readout.
