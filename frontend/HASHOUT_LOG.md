@@ -2,10 +2,29 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.32.0
-Last updated: 2026-11-27 · the AI Voice card
+Current build version: v0.33.0
+Last updated: 2026-11-27 · subtitles
 
 ---
+
+## v0.33.0 · subtitles
+
+- refers-to: engine/subtitles.ts; engine/types.ts :: Subtitles, SubtitleCue, SubtitleStyle, Movie.subtitles; engine/render.ts :: drawFrame (last line); engine/normalize.ts :: normalizeMovie (tidySubtitles); io/subtitle-files.ts; media/speech-pcm.ts; media/fonts.ts :: subtitleFace, loadTextFonts; export/worker-host.ts :: the subtitle face in loads; ui/subtitles-panel.ts; styles/subtitles.css; app/voice-commands.ts :: blockOf; app/agent-bridge.ts :: setSubtitles; app/app.ts :: subtitlesPanel, subFace
+- kind: decision
+- logged: v0.33.0 · 2026-11-27
+
+- **Subtitles are a movie field, not content on a track**: one list of lines and one look. They are drawn by `drawSubtitles` as the last thing `Renderer.drawFrame` does, over the finished frame and outside the camera, so the Stage, the posters and every export carry them from the one call. Nothing in `export/` draws them itself.
+- **Frames inside, seconds outside.** A line in the movie is in frames with the end not included. A voice, a listening and a file speak in seconds; `linesToCues` maps them through the block's start, `offset` (the trimmed-off beginning) and `speed`, and each enclosing group, the way `media/audio.ts` schedules the sound. Where playback is silent (speed 0, a Time Remap lane, a retimed group) there are no lines.
+- **`from`** on a line is the sound block it came from, so making the lines of one sound again replaces only those and leaves hand-written lines alone.
+- **An AI voice adds its lines in the same step that writes `Asset.spoken`** (`speakToTimeline`). A voice with no timing (a voice app, the online voice) gets each sentence a share of the sound's time by its length.
+- **`tidySubtitles` drops an object that holds only defaults**, so a movie that never used subtitles saves none; show off or a changed look is kept even with no lines.
+- **Drawing**: weight 600 in the Text content's own family quoting and fallback stack (`fontCss`), wrapped to 88 percent of the width and 3 lines with an ellipsis, 6 percent from the edge. The bands of all lines are one path with one fill, so overlapping paddings are not twice as dark. With no band the letters get an outline. The wrap of the last line drawn is cached, keyed with `fontEpoch()`.
+- **The face is loaded** when the movie opens, before an export (`subtitleFace` in `loadTextFonts` and in the worker's `loads`), and when the font or the words' scripts change (`subFace` in `app.ts`).
+- **The card never keeps its own copy of the lines**; it redraws from `engine.movie` on `movie` and `projects`. Rows are keyed by line id and values go through `setValue`, so a field being typed in is never overwritten. Size and colour drags merge into one undo step.
+- **Import asks Replace or Add** through `chooseOrCancel`, so Escape cancels instead of adding.
+- **Listening** decodes the whole asset, mixes to mono, resamples to 16 kHz with an OfflineAudioContext and reuses `encodeWav`. A listening that hears nothing does not touch the movie.
+- **The subtitle files reader** parses times by hand, not with a backtracking pattern, and builds times from whole milliseconds so a write and a read give the same numbers.
+- Looked at in Chromium on 2026-11-27 with the CPU throttled 4 times, dark theme: a spoken line made its two lines by itself, they showed on the Stage with the band, Top and Bottom moved them, and Subtitles from this sound heard the same two sentences.
 
 ## v0.32.0 · the AI Voice card
 

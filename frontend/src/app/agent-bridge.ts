@@ -9,6 +9,9 @@ import { outsideAgents } from '../dock-adapter';
 import { api, ApiError } from '../io/api';
 import { charactersApi } from '../io/characters-api';
 import type { SpeakRequest, VoiceEngine } from '../io/voice-api';
+import { parseSubtitles } from '../io/subtitle-files';
+import { addCues, cuesForSound, setCues, setSubtitleShow, setSubtitleStyle, type TimedLine } from '../engine/subtitles';
+import type { Movie, SubtitleStyle, Track } from '../engine/types';
 import { placeCharacter, unpackCharacter } from '../ui/characters-panel';
 import { t } from '../ui/i18n';
 import type { SpokenOnTimeline } from './voice-commands';
@@ -171,6 +174,52 @@ export function startAgentBridge(d: BridgeDeps): void {
     return { ok: true, content: done.name, seconds: done.seconds, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
   };
 
+  const setSubtitles = async (a: Args): Promise<Result> => {
+    const name = text(a.movie);
+    if (name) {
+      const blocked = await front(name);
+      if (blocked) return { ok: false, error: blocked };
+    }
+    const movie = d.engine.movie;
+    if (!movie) return { ok: false, error: t('FormMorpheus could not open that movie.') };
+    let lines: TimedLine[] | null = null;
+    if (typeof a.srt === 'string') {
+      lines = parseSubtitles(a.srt);
+      if (!lines.length) return { ok: false, error: t('No subtitles were found in that text.') };
+    } else if (Array.isArray(a.lines)) {
+      lines = a.lines.filter((l): l is TimedLine => !!l && typeof l === 'object' && typeof (l as TimedLine).start === 'number' && typeof (l as TimedLine).end === 'number' && typeof (l as TimedLine).text === 'string');
+    }
+    const s = (a.style && typeof a.style === 'object' ? a.style : {}) as Record<string, unknown>;
+    const position = (['top', 'middle', 'bottom'] as const).find((x) => x === s.position);
+    const style: Partial<SubtitleStyle> = {
+      ...(text(s.font) ? { font: text(s.font) } : {}), ...(typeof s.size === 'number' && Number.isFinite(s.size) ? { size: s.size } : {}),
+      ...(position ? { position } : {}), ...(text(s.color) ? { color: text(s.color) } : {}), ...(typeof s.band === 'boolean' ? { band: s.band } : {}),
+    };
+    // Every sound block an AI voice spoke, nested groups too: each makes its own lines again in place of the old ones.
+    const spokenIds = (m: Movie, tracks: Track[], out: string[]): string[] => {
+      for (const tr of tracks) for (const c of tr.content) {
+        if (c.asset && m.assets[c.asset]?.spoken) out.push(c.id);
+        if (c.kind === 'group') spokenIds(m, c.tracks, out);
+      }
+      return out;
+    };
+    d.engine.run('Subtitles', (m) => {
+      let next = m;
+      if (a.from_voices === true) for (const id of spokenIds(m, m.tracks, [])) next = addCues(next, cuesForSound(next, id), id);
+      if (lines) {
+        const fps = next.fps;
+        const cues = lines.map((l) => ({ start: Math.round(l.start * fps), end: Math.round(l.end * fps), text: l.text }));
+        next = a.mode === 'add' ? addCues(next, cues) : setCues(next, cues);
+      }
+      if (Object.keys(style).length) next = setSubtitleStyle(next, style);
+      if (typeof a.show === 'boolean') next = setSubtitleShow(next, a.show);
+      return next;
+    });
+    const after = d.engine.movie;
+    const saved = await d.save();
+    return { ok: true, lines: after?.subtitles?.cues.length ?? 0, show: after?.subtitles?.show === true, movie: d.engine.libraryName ?? after?.name ?? '', saved };
+  };
+
   const answer = (id: string, result: Result): Promise<unknown> => fetch('/api/mcp/bridge/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, result }) }).catch(() => undefined);
 
   const take = async (item: Item): Promise<void> => {
@@ -186,7 +235,7 @@ export function startAgentBridge(d: BridgeDeps): void {
     else {
       working = true;
       try {
-        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : item.kind === 'add_voice' ? await addVoice(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
+        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : item.kind === 'add_voice' ? await addVoice(a) : item.kind === 'set_subtitles' ? await setSubtitles(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
       } catch (e) {
         result = { ok: false, error: said(e, t('FormMorpheus could not do that.')) };
       }

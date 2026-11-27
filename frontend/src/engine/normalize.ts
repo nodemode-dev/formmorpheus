@@ -4,6 +4,7 @@
 import { ACTION_MAX_FRAMES, FORMAT_VERSION, HIGHLIGHTS, type Movie } from './types';
 import { hasKind } from './keys';
 import { tidyGuides, type Guides } from './guides';
+import { tidySubtitles } from './subtitles';
 import './fx/index'; // registers the effect lane kinds before lanes are checked
 
 type Obj = Record<string, unknown>;
@@ -233,6 +234,9 @@ export function normalizeMovie(raw: unknown): Movie {
   const guides = tidyGuides(isObj(m.guides) ? (m.guides as Guides) : null);
   if (guides) m.guides = guides;
   else delete m.guides;
+  const subtitles = tidySubtitles(m.subtitles);
+  if (subtitles) m.subtitles = subtitles;
+  else delete m.subtitles;
   let last = 0;
   const walk = (ts: Obj[]): void => { for (const t of ts) for (const c of t.content as Obj[]) { last = Math.max(last, (c.start as number) + (c.duration as number)); walk(c.tracks as Obj[]); } };
   walk(m.tracks as Obj[]);

@@ -1,13 +1,24 @@
 // Speaking text onto the Timeline: the engine speaks, the sound comes in through the same import as any sound file,
 // and the new sound remembers its words and voice (Asset.spoken) so subtitles can follow it.
 import type { Engine } from '../engine/engine';
-import type { Movie } from '../engine/types';
+import { addCues, cuesForSound } from '../engine/subtitles';
+import type { Movie, Track } from '../engine/types';
 import { voiceApi, type SpeakRequest, type Spoken } from '../io/voice-api';
 
 export interface SpokenOnTimeline { name: string; seconds: number; assetId: string; spoken: Spoken }
 export type PlaceSound = (file: File, frame: number) => Promise<void>;
 
 const EXT: Record<string, string> = { 'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/flac': 'flac', 'audio/aac': 'aac' };
+
+/** The id of the first block that plays the asset, groups included. */
+function blockOf(tracks: Track[], assetId: string): string | null {
+  for (const t of tracks) for (const c of t.content) {
+    if (c.asset === assetId) return c.id;
+    const inner = c.kind === 'group' ? blockOf(c.tracks, assetId) : null;
+    if (inner) return inner;
+  }
+  return null;
+}
 
 /** A file name from the first words spoken: letters, digits and spaces only, at most 40 characters. */
 export function spokenName(text: string): string {
@@ -38,7 +49,11 @@ export async function speakToTimeline(engine: Engine, place: PlaceSound, req: Sp
     const note = { text: spoken.text, engine: spoken.engine, voice: spoken.voice, cues: spoken.cues };
     engine.run('AI Voice', (mv: Movie) => {
       const a = mv.assets[added.id];
-      return a ? { ...mv, assets: { ...mv.assets, [a.id]: { ...a, spoken: note } } } : mv;
+      if (!a) return mv;
+      const noted: Movie = { ...mv, assets: { ...mv.assets, [a.id]: { ...a, spoken: note } } };
+      // an AI voice adds its own subtitles: the block that plays the new sound gives the frames
+      const block = blockOf(noted.tracks, a.id);
+      return block ? addCues(noted, cuesForSound(noted, block), block) : noted;
     });
     return { name, seconds: added.seconds ?? spoken.seconds ?? 0, assetId: added.id, spoken };
   } finally {

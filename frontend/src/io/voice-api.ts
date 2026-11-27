@@ -13,6 +13,9 @@ export interface OnlineStatus { hasKey: boolean; canStore: boolean }
 export interface VoiceStatus { builtin: BuiltinStatus; local: LocalStatus; online: OnlineStatus }
 export interface LocalProbe { ok: boolean; models: string[]; voices: VoiceOption[]; error: string }
 export interface SpeakRequest { engine: VoiceEngine; text: string; voice?: string; language?: string; speed?: number; model?: string }
+/** Listening (words from a sound): needs the built-in voice's runtime (`runtime`) and its own model (`model`). In a setup job, step is 'model'. */
+export interface ListenStatus { ready: boolean; runtime: boolean; model: boolean; name: string; bytes: number; job: VoiceJob | null }
+export interface Heard { language: string; seconds: number; cues: VoiceCue[] }
 export interface Spoken { id: string; mime: string; engine: VoiceEngine; voice: string; seconds: number | null; cues: VoiceCue[]; text: string; bytes: number }
 
 const NOT_RUNNING = 'The FormMorpheus engine service is not running. Start it with ./formmorpheus.';
@@ -51,4 +54,13 @@ export const voiceApi = {
   async speak(body: SpeakRequest, signal?: AbortSignal): Promise<Spoken> { return (await (await call('/speak', send('POST', body, signal))).json()) as Spoken; },
   async audio(id: string): Promise<Blob> { return (await call(`/audio/${encodeURIComponent(id)}`)).blob(); },
   async drop(id: string): Promise<void> { await call(`/audio/${encodeURIComponent(id)}`, send('DELETE')).catch(() => undefined); },
+  async listenStatus(): Promise<ListenStatus> { return (await (await call('/transcribe/status')).json()) as ListenStatus; },
+  async setupListen(): Promise<VoiceJob> { return (await (await call('/transcribe/setup', send('POST'))).json()) as VoiceJob; },
+  async listenJob(): Promise<VoiceJob | null> { return ((await (await call('/transcribe/job')).json()) as { job: VoiceJob | null }).job; },
+  async cancelListen(): Promise<void> { await call('/transcribe/job', send('DELETE')); },
+  async removeListen(): Promise<void> { await call('/transcribe', send('DELETE')); },
+  /** The words of a sound: `wav` is 16 kHz mono 16-bit PCM; `language` is a two-letter code or 'auto'. */
+  async listen(wav: Blob, language = 'auto', signal?: AbortSignal): Promise<Heard> {
+    return (await (await call(`/transcribe?language=${encodeURIComponent(language)}`, { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav, ...(signal ? { signal } : {}) })).json()) as Heard;
+  },
 };

@@ -426,6 +426,12 @@ export interface Asset {
   family?: string;
 }
 
+/** One subtitle line: shown from movie frame `start` up to, not including, `end`. `from` is the sound block it was made from, so making them again replaces only those. */
+export interface SubtitleCue { id: string; start: number; end: number; text: string; from?: string }
+/** The one look of every subtitle. `size` is a percent of the movie's height; `font` is a family as the Text card names it. */
+export interface SubtitleStyle { font: string; size: number; position: 'top' | 'middle' | 'bottom'; color: string; band: boolean }
+export interface Subtitles { show: boolean; style: SubtitleStyle; cues: SubtitleCue[] }
+
 export interface OnionSettings {
   enabled: boolean;
   /** Ghost frames shown before and after the current frame; 0 turns that side off. */
@@ -478,6 +484,8 @@ export interface Movie {
   guides?: import('./guides').Guides;
   /** Movie-wide motion blur (engine/fx/motion-blur.ts); a content's own Motion Blur lane overrides it. Absent: off. */
   motionBlur?: { on: boolean; shutter: number; samples: number };
+  /** Subtitles (engine/subtitles.ts): the lines, their one look, and whether the video shows them. Absent: none. */
+  subtitles?: Subtitles;
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;
