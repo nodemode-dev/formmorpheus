@@ -10,12 +10,13 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.core import config
-from app.services import voice_remote, voice_runtime
+from app.services import voice_remote, voice_runtime, voice_transcribe
 
 router = APIRouter(tags=["voice"])
 ENGINES = ("builtin", "local", "online")
@@ -206,6 +207,57 @@ def _sound(sid: str) -> tuple[Path, dict]:
 def audio(sid: str) -> FileResponse:
     path, info = _sound(sid)
     return FileResponse(path, media_type=info["mime"])
+
+
+MAX_LISTEN_BYTES = 256 * 1024 * 1024   # two hours of 16 kHz mono 16-bit sound
+
+
+@router.get("/transcribe/status")
+def transcribe_status() -> dict:
+    return voice_transcribe.status()
+
+
+@router.post("/transcribe/setup", status_code=202)
+def transcribe_setup() -> dict:
+    try:
+        return voice_transcribe.start_setup()
+    except (voice_transcribe.VoiceError, voice_runtime.VoiceError) as exc:
+        raise HTTPException(exc.status, str(exc))
+
+
+@router.get("/transcribe/job")
+def transcribe_job() -> dict:
+    return {"job": voice_transcribe.job()}
+
+
+@router.delete("/transcribe/job")
+def transcribe_cancel() -> dict:
+    return {"cancelled": voice_transcribe.cancel()}
+
+
+@router.delete("/transcribe")
+def transcribe_remove() -> dict:
+    try:
+        return {"removed": voice_transcribe.remove()}
+    except voice_transcribe.VoiceError as exc:
+        raise HTTPException(exc.status, str(exc))
+
+
+@router.post("/transcribe")
+async def transcribe(request: Request, language: str = "auto") -> dict:
+    """The words of a sound, with the seconds each phrase takes. The body is a 16 kHz mono 16-bit WAV the window made."""
+    parts, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_LISTEN_BYTES:
+            raise HTTPException(413, "That sound is too long to listen to in one go. Split the block and try each part.")
+        parts.append(chunk)
+    if size < 44:
+        raise HTTPException(422, "There is no sound to listen to.")
+    try:
+        return await run_in_threadpool(voice_transcribe.transcribe, b"".join(parts), language[:12])
+    except (voice_transcribe.VoiceError, voice_runtime.VoiceError) as exc:
+        raise HTTPException(exc.status, str(exc))
 
 
 @router.delete("/audio/{sid}")

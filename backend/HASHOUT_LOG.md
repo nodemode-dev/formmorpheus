@@ -2,10 +2,27 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.32.0
-Last updated: 2026-11-27 · AI voices at /api/voice
+Current build version: v0.33.0
+Last updated: 2026-11-27 · listening at /api/voice/transcribe, subtitles for agents
 
 ---
+
+## v0.33.0 · listening at /api/voice/transcribe, subtitles for agents
+
+- refers-to: app/services/voice_transcribe.py; app/routers/voice.py :: the /transcribe routes; app/services/movies.py :: read_subtitles; app/routers/mcp.py :: list_subtitles, set_subtitles
+- kind: decision
+- logged: v0.33.0 · 2026-11-27
+
+- **Ported from formcut 2.20.2's `transcribe.py`**: the mel filterbank, the tokenizer, the decoder loop, word times from the alignment heads, the repetition filter. All of it is a worker string run by the built-in voice's runtime Python, which already has numpy and onnxruntime; the engine stays standard library only (checked: neither module is loaded in the engine after a listening).
+- **One model, Whisper base multilingual**, the quantized files formcut uses, at formcut's pinned revision and SHA-256, about 80 MB, in `voice/listen/whisper-base`. It sits beside `voice/models`, not inside, so removing the voice or the listening model never takes the other.
+- **The window sends the sound** as a 16 kHz mono 16-bit WAV it made itself, so the engine needs no ffmpeg for this. The route reads at most 256 MB (about two hours) and the engine refuses any other WAV shape.
+- **The 30 s window seek follows Whisper's own rule** (consecutive timestamp pairs, a single ending timestamp, else the last timestamp). formcut's simpler pairing dropped words after an unpaired timestamp at a window edge.
+- **Phrases** break at sentence ends or a gap over 0.7 s, then into the fewest pieces within 7 words, 42 characters and 3.5 s, split evenly so a 9 word sentence is 4 and 5, not 7 and 2.
+- **Guards against words that were never said**: formcut's no-speech skip and quiet-segment rule, plus a sound quieter than RMS 0.001 or shorter than 0.1 s returns no lines without loading the model, text with no letter or digit is dropped, and the language is empty when nothing was heard.
+- **One listening at a time**; a second is refused, not queued. A listening cannot be cancelled on the engine: the window's Cancel drops the answer.
+- **CPU only** in the worker, so the words are the same on every computer.
+- **`read_subtitles`** reads a movie's subtitles from `movie.json` without media and tidies them, so `list_subtitles` works with no window. `set_subtitles` is carried out by the window like `add_voice`; an empty style or `from_voices: false` alone is refused so the person is never asked to approve nothing.
+- Run here on 2026-11-27: the model downloaded and checked; English and Spanish sounds from the built-in voice heard with every sentence boundary within 0.26 s of the voice's own; a 35 s sound across the window edge; silence and noise giving no lines; a wrong checksum refused; the refusals of both tools.
 
 ## v0.32.0 · AI voices at /api/voice
 
