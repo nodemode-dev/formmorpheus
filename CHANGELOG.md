@@ -2,6 +2,22 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.33.0 · 2026-11-27
+
+Subtitles: tick one box and the words of your movie are drawn on the Stage and in every export.
+
+### New
+- A new Subtitles card (Content, Add, Subtitles..., and under More in the Create card). Tick Show subtitles in the video and the lines are drawn on the Stage and in every export.
+- One look for all lines: font, size, position (top, middle or bottom), text color, and a dark band behind the words. Each change is one undo step.
+- AI voices add their subtitles by themselves when they speak, from the words and sentence timing each spoken sound already keeps. From AI voices makes them again for sounds spoken earlier.
+- Subtitles from a recording or a sound file: select its block on the Timeline and press Subtitles from this sound. Listening runs on this computer in the built-in voice's runtime with a model of its own, a one-time download from the card, and your sound is sent nowhere.
+- Lines can be edited in the card (text, start and end), added at the Playhead and deleted, each one an undo step.
+- Import a .srt or .vtt file, and export the lines as .srt or .vtt.
+- Agents can read a movie's subtitles (`list_subtitles`) and ask you to change them (`set_subtitles`, which asks first in the window).
+
+### Known issues
+- The Subtitles card's labels are in English only for now.
+
 ## 0.32.0 · 2026-11-27
 
 AI Voice: type what to say, choose a voice and press Speak, and the spoken sound lands on the Timeline.
@@ -15,7 +31,7 @@ AI Voice: type what to say, choose a voice and press Speak, and the spoken sound
 - Agents can list the voices that are ready (`list_voices`) and ask you to speak a line onto a movie's Timeline (`add_voice`, which asks first in the window).
 
 ### Known issues
-- Subtitles in the video are not in this version, and the new card's labels are in English only for now.
+- Subtitles in the video are not in this version (they come in 0.33.0), and the new card's labels are in English only for now.
 
 ## 0.31.0 · 2026-11-25
 

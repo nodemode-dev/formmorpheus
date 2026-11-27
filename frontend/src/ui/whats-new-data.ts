@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.33.0', name: 'Subtitles',
+    additions: [
+      { title: 'Words on the picture', text: 'Tick Show subtitles in the video and the lines are drawn on the Stage and in every export, in the font, size, position and color you choose.', command: 'subtitles' },
+      { title: 'From a voice or a sound', text: 'AI voices add their subtitles when they speak. For a recording or a sound file, select its block and press Subtitles from this sound; listening runs on this computer.', command: 'subtitles' },
+      { title: 'Edit and share lines', text: 'Change the text and times, add a line at the Playhead, and import or export .srt and .vtt files.', command: 'subtitles' },
+    ],
+  },
+  {
     version: '0.32.0', name: 'AI Voice',
     additions: [
       { title: 'Type it, hear it', text: 'Type what to say, choose a voice and press Speak. The sound lands on the Timeline like any sound, ready for fades, lip-sync and export.', command: 'ai-voice' },

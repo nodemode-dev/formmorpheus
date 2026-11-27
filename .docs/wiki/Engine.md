@@ -16,6 +16,7 @@
 | `gpu/` | the WebGL2 compositor: shaders, textures and a probe that decides whether it is used |
 | `warp-draw.ts` | draws Warp and Distort as textured triangles |
 | `flip-draw.ts` | draws Flipbook rows, including row masks |
+| `subtitles.ts` | the subtitle cues and their one look (`Movie.subtitles`): edits that return a new movie, cues from a sound's `spoken` words or from timed lines, and `drawSubtitles`, which `render.ts` calls over the finished frame |
 | `time.ts` | frame rates and timecode |
 | `events.ts` | a small typed emitter |
 
@@ -51,5 +52,8 @@ Each key lane has a kind (Move, Scale, Warp, Distort, Opacity, Blur, Sharpen, No
 | `PUT` and `DELETE /online/key`, `GET /online/voices` | keep or clear the online key; list its voices |
 | `POST /speak` | speak `{engine, text, voice, language, speed, model}`; answers the sound's id, voice, seconds and cues |
 | `GET` and `DELETE /audio/{id}` | the window fetches the spoken sound, then drops it |
+| `GET /transcribe/status` | whether listening is ready: the runtime, the model (Whisper base) and any download |
+| `POST /transcribe/setup`, `GET` and `DELETE /transcribe/job`, `DELETE /transcribe` | start, watch, cancel the one-time model download; remove the model |
+| `POST /transcribe?language=` | the body is a 16 kHz mono 16-bit WAV; answers the language, the seconds and phrases `{start, end, text}` in seconds (up to 256 MB of body) |
 
-The rule: the engine process never imports the Kokoro packages (`kokoro_onnx`, `numpy`, `onnxruntime`). They run in the voice's own runtime as a separate program, because the loader they use brings eSpeak NG under GPL terms, and importing them would put that into the frozen engine.
+The rule: the engine process never imports the Kokoro packages (`kokoro_onnx`, `numpy`, `onnxruntime`). They run in the voice's own runtime as a separate program, because the loader they use brings eSpeak NG under GPL terms, and importing them would put that into the frozen engine. The same rule holds for listening: `services/voice_transcribe.py` runs Whisper base in the voice's own runtime (`voice_runtime.runtime_python()`), with the model in `voice/listen/whisper-base`, so the engine process never imports `numpy` or `onnxruntime` for it either, and listening needs the built-in voice set up first.

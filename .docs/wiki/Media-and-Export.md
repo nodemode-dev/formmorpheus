@@ -15,7 +15,7 @@
 
 ## AI Voice
 
-`frontend/src/app/voice-commands.ts` (`speakToTimeline`) asks the engine to speak, fetches the sound and brings it in through the same import as any sound file, at the Playhead or a given frame. The new sound's asset carries `spoken`: the text, the engine, the voice and the cues, one per sentence in seconds inside the sound. They are saved in the `.fmo`; the subtitles of the next version read them.
+`frontend/src/app/voice-commands.ts` (`speakToTimeline`) asks the engine to speak, fetches the sound and brings it in through the same import as any sound file, at the Playhead or a given frame. The new sound's asset carries `spoken`: the text, the engine, the voice and the cues, one per sentence in seconds inside the sound. They are saved in the `.fmo`; the subtitles read them (see Subtitles).
 
 | Engine | What speaks | Sound |
 |---|---|---|
@@ -24,6 +24,14 @@
 | `online` | ElevenLabs with the person's own key, text up to 2000 characters (`services/voice_remote.py`) | MP3, no cues |
 
 Files live in `voice/` of the data folder: `runtime/` and `models/` for the built-in voice, and `out/` for a spoken sound until the window fetches it (swept after an hour). Keys are in the system keyring, never in `settings.json`.
+
+## Subtitles
+
+`Movie.subtitles` holds whether they show, one look and the cues. `engine/subtitles.ts` draws them: `render.ts` calls `drawSubtitles` over the finished frame, after the camera, for the Stage and for every export, so every export carries them while they are shown, and none when `show` is off or no cue covers the frame. `subtitleFonts` lists the families the export must have loaded.
+
+- **Units.** A cue is in movie frames, `end` not included. Lines from a voice, a listening or a subtitle file are in seconds, and `linesToCues` maps seconds inside a sound to frames through the block's start, its trimmed beginning and its speed. `size` is a percent of the movie's height (2 to 15, default 5).
+- **Sources.** An AI voice's sound carries `spoken` (see AI Voice), and `cuesForSound` turns it into cues, estimating the timing by sentence length when the sound has none. A recording or a sound file is listened to by `media/speech-pcm.ts`, which makes a 16 kHz mono WAV of the whole asset, and the engine's `POST /api/voice/transcribe` (Whisper base in the built-in voice's runtime).
+- **Files.** `io/subtitle-files.ts` reads `.srt` and `.vtt` (told apart by content, tags stripped) and writes either.
 
 ## Sync
 

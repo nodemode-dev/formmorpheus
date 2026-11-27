@@ -439,7 +439,53 @@ The built-in voice lives in the **voice** folder of your data folder: its runtim
 ### Subtitles and lip-sync
 
 - **Lip-sync works today.** Choose **Lip-sync from Sound...** on the spoken sound's block and the mouth of a character takes its shape (see Lip-sync onto a character's mouth under Characters).
-- **Subtitles follow in the next version.** Each spoken sound already remembers its words and the timing of each sentence inside the movie file, so they can be used then. Nothing shows in the video yet.
+- **Subtitles come with the voice.** Each spoken sound remembers its words and the timing of each sentence inside the movie file, and an AI voice adds its subtitles by itself when it speaks. See Subtitles.
+
+## Subtitles
+
+Subtitles are words drawn over the picture, on the Stage and in every export. Open the card from Content · Add · **Subtitles...**, or from More in the Create card. All the lines share one look. Every change you make in the card is one undo step.
+
+### Show them in the video
+
+Tick **Show subtitles in the video**. The line that covers the Playhead is drawn on the Stage, and every export carries the lines too, over the finished picture and after the camera, so a camera move never shifts them. Untick it and nothing is drawn, but the lines stay in the movie. They are saved in the `.fmo`.
+
+### The look
+
+One look serves all the lines:
+
+- **Font**: the bundled fonts, the fonts you added and the fonts of the system.
+- **Size**: from 2 to 15 percent of the movie's height. The default is 5.
+- **Position**: **Top**, **Middle** or **Bottom**. Top and Bottom keep the words a little way in from the edge.
+- **Text color**.
+- **Dark band behind the words**: a dark rounded band behind each line. Without it the words get a dark outline, so they read on any picture.
+
+Long lines wrap to fit inside the movie, to at most three lines.
+
+### Lines from an AI voice
+
+An AI voice adds its subtitles by itself when it speaks, one line for each sentence, timed to the sound's block on the Timeline. If you trim, move or change the speed of the block afterwards, press **From AI voices** to make the lines again for every sound an AI voice spoke earlier. Lines made again for a sound take the place of the lines it made before. Lines you typed or imported stay.
+
+### Lines from a recording or a sound file
+
+1. Select the block of the recording or the sound file on the Timeline. A video with sound works too.
+2. Open the card and press **Subtitles from this sound**. Pick the **Language** first, or leave it on Detect.
+3. The lines land in the card, timed to the block.
+
+Listening runs on this computer. It uses the built-in voice's runtime, and its own model, Whisper base, which is a one-time download of about 80 MB that you start from the card with **Download the listening model**. The card shows the progress and can cancel it. Nothing you record or import is sent anywhere. Because it uses the built-in voice's runtime, set the built-in voice up first, in the AI Voice card; until then the card says so.
+
+The model is kept in the **voice** folder of your data folder, in `voice/listen`, beside the built-in voice's own model. A sound of up to about two hours can be listened to in one go: split a longer block and listen to each part.
+
+### Editing lines
+
+Each line is a row with its **start** and **end** in seconds (type `12.5` or `1:02.5`) and its words. Change a field and press Enter, or leave it, to keep the change. The start stays before the end. The play button on a row moves the Playhead to the line, and the line under the Playhead is marked while you play.
+
+- **Add line at the playhead** adds a two-second line there with its words ready to type over.
+- The bin button on a row deletes that line.
+
+### Subtitle files (.srt and .vtt)
+
+- **Import .srt or .vtt...** reads a subtitle file of either kind. When the movie already has lines, the card asks whether to replace them or add the file's lines to them.
+- **Export .srt** and **Export .vtt** write the lines, with their times in seconds, to a file named after the movie.
 
 ## Text
 
@@ -522,9 +568,9 @@ An outside agent is a program on your computer, such as Claude Code, Codex, Curs
 
 ### What an agent can do
 
-- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), which voices are ready on this computer and what each can speak with (`list_voices`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
+- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), which voices are ready on this computer and what each can speak with (`list_voices`), a movie's subtitles with their look and each line's start and end in seconds and frames (`list_subtitles`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
 - **Changes to the library** are made by `manage_movie`: create an empty movie, rename, duplicate, delete and restore. Delete moves a movie to Recently Deleted and never erases it. `run_command` also sets a movie's tags and its stack.
-- **Four always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie, and `add_voice` speaks a line with the built-in voice, a voice app on this computer or an online voice and puts the sound on the movie's Timeline at the Playhead (or a frame the agent names), as AI Voice does, and saves the movie. All four need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character` and `add_voice` use the movie already open when the agent names none).
+- **Five always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie, and `add_voice` speaks a line with the built-in voice, a voice app on this computer or an online voice and puts the sound on the movie's Timeline at the Playhead (or a frame the agent names), as AI Voice does, and saves the movie, and `set_subtitles` changes a movie's subtitles (lines in seconds or the text of a .srt or .vtt file, replacing or adding to the lines, making lines from AI voices, showing or hiding them and their look), as the Subtitles card does, and saves the movie. All five need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character`, `add_voice` and `set_subtitles` use the movie already open when the agent names none).
 
 Agents work only on FormMorpheus's own data: your movie library, your Characters library (the Characters folder in the data folder), Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
 
@@ -576,6 +622,20 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.33.0
+
+**Subtitles.** Content · Add · Subtitles..., or More in the Create card, opens a card. Tick Show subtitles in the video and the lines are drawn on the Stage and in every export. One look serves all the lines: font, size, position (top, middle or bottom), text color and a dark band behind the words. See Subtitles.
+
+**From AI voices.** AI voices add their subtitles by themselves when they speak, and From AI voices makes them again for sounds spoken earlier.
+
+**From a recording or a sound file.** Select its block on the Timeline and press Subtitles from this sound. Listening runs on this computer in the built-in voice's runtime with a model of its own, a one-time download from the card, and nothing is sent anywhere.
+
+**Editing and files.** Lines can be edited in the card (text, start, end), added at the Playhead and deleted, each one an undo step. Import a .srt or .vtt file, and export the lines as either.
+
+**Agents.** `list_subtitles` reads a movie's subtitles, and `set_subtitles` changes them after you say yes in the window.
+
+**Not yet.** The card's labels in languages other than English.
 
 ## New in 0.32.0
 
