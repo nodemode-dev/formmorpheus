@@ -108,6 +108,36 @@ def read_meta(path: Path) -> dict:
     }
 
 
+def read_subtitles(path: Path) -> dict:
+    """The movie's subtitles from movie.json, with the frame rate and height their times and size are read against. subtitles is None when it has none."""
+    try:
+        with zipfile.ZipFile(path) as zin:
+            manifest = _json(zin, "manifest.json") or {}
+            movie = _json(zin, "movie.json")
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise NotAMovie(f"{path.name} could not be read as a movie: {exc}") from None
+    if manifest.get("app") != "formmorpheus" or movie is None:
+        raise NotAMovie(f"{path.name} is not a FormMorpheus movie, or its movie.json is damaged.")
+    out = {"name": path.stem, "fps": max(1.0, _num(movie.get("fps"), 24)), "height": int(_num(movie.get("height"), 1080)), "subtitles": None}
+    raw = movie.get("subtitles")
+    if not isinstance(raw, dict):
+        return out
+    st = raw.get("style") if isinstance(raw.get("style"), dict) else {}
+    pos = st.get("position")
+    style = {"font": str(st.get("font") or "Inter"), "size": _num(st.get("size"), 5), "position": pos if pos in ("top", "middle", "bottom") else "bottom",
+             "color": str(st.get("color") or "#ffffff"), "band": st.get("band") is not False}
+    cues = []
+    for c in raw.get("cues") or [] if isinstance(raw.get("cues"), list) else []:
+        if not isinstance(c, dict):
+            continue
+        start, end = int(_num(c.get("start"), 0)), int(_num(c.get("end"), 0))
+        if end > start >= 0:
+            cues.append({"id": str(c.get("id") or ""), "start": start, "end": end, "text": str(c.get("text") or "")})
+    cues.sort(key=lambda c: c["start"])
+    out["subtitles"] = {"show": raw.get("show") is not False, "style": style, "cues": cues}
+    return out
+
+
 def picture(path: Path, member: str) -> bytes | None:
     try:
         with zipfile.ZipFile(path) as zin:
