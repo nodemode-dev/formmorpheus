@@ -6,10 +6,12 @@ import type { ExportFormat, ExportOptions } from '../export/types';
 import { startExportRouted } from '../export/route';
 import { startEngineExport, type EngineTarget } from '../export/engine-jobs';
 import { outsideAgents } from '../dock-adapter';
-import { api } from '../io/api';
+import { api, ApiError } from '../io/api';
 import { charactersApi } from '../io/characters-api';
+import type { SpeakRequest, VoiceEngine } from '../io/voice-api';
 import { placeCharacter, unpackCharacter } from '../ui/characters-panel';
 import { t } from '../ui/i18n';
+import type { SpokenOnTimeline } from './voice-commands';
 
 export interface BridgeDeps {
   engine: Engine;
@@ -21,6 +23,7 @@ export interface BridgeDeps {
   importFile(file: File, at: number | undefined, row: number | undefined): Promise<void>;
   exportBusy(): boolean;
   listed(): void;
+  speak: (req: SpeakRequest, frame?: number) => Promise<SpokenOnTimeline | null>;
 }
 
 type Args = Record<string, unknown>;
@@ -30,6 +33,7 @@ interface Item { id: string; kind: string; request?: unknown; arguments?: Args; 
 const ENGINE: Partial<Record<ExportFormat, EngineTarget>> = { 'prores-mov': 'prores', 'prores4444-mov': 'prores4444', 'hevc-mp4': 'hevc', 'hevc-mov': 'hevc', 'h264-mov': 'h264', 'h264-mp4': 'h264' };
 const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov', 'prores-mov', 'prores4444-mov', 'hevc-mp4', 'hevc-mov', 'h264-mov', 'h264-mp4'];
 const QUALITY = ['low', 'medium', 'high', 'very-high'] as const;
+const VOICES: VoiceEngine[] = ['builtin', 'local', 'online'];
 const RETRY_MS = 3000;
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 const whole = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : undefined);
@@ -140,6 +144,33 @@ export function startAgentBridge(d: BridgeDeps): void {
     return { ok: true, content: src.group.character?.name ?? src.group.name, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
   };
 
+  const addVoice = async (a: Args): Promise<Result> => {
+    const name = text(a.movie);
+    if (name) {
+      const blocked = await front(name);
+      if (blocked) return { ok: false, error: blocked };
+    }
+    if (!d.engine.movie) return { ok: false, error: t('FormMorpheus could not open that movie.') };
+    const speed = typeof a.speed === 'number' && Number.isFinite(a.speed) ? a.speed : undefined;
+    const req: SpeakRequest = {
+      engine: VOICES.find((x) => x === a.engine) ?? 'builtin', text: text(a.text),
+      ...(text(a.voice) ? { voice: text(a.voice) } : {}), ...(text(a.language) ? { language: text(a.language) } : {}),
+      ...(speed === undefined ? {} : { speed }), ...(text(a.model) ? { model: text(a.model) } : {}),
+    };
+    const at = whole(a.at);
+    let done: SpokenOnTimeline | null;
+    try {
+      done = await d.speak(req, at === undefined ? undefined : Math.max(0, at));
+    } catch (e) {
+      // The engine's own sentence says why the voice could not speak; anything else goes to take's catch.
+      if (e instanceof ApiError) return { ok: false, error: e.message };
+      throw e;
+    }
+    if (!done) return { ok: false, error: t('The voice could not be added.') };
+    const saved = await d.save();
+    return { ok: true, content: done.name, seconds: done.seconds, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
+  };
+
   const answer = (id: string, result: Result): Promise<unknown> => fetch('/api/mcp/bridge/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, result }) }).catch(() => undefined);
 
   const take = async (item: Item): Promise<void> => {
@@ -155,7 +186,7 @@ export function startAgentBridge(d: BridgeDeps): void {
     else {
       working = true;
       try {
-        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
+        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : item.kind === 'add_voice' ? await addVoice(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
       } catch (e) {
         result = { ok: false, error: said(e, t('FormMorpheus could not do that.')) };
       }

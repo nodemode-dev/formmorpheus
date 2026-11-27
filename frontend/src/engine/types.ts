@@ -420,6 +420,8 @@ export interface Asset {
   hasAudio?: boolean;
   /** Sound recorded in the app (a voice-over take): stored as 16-bit PCM WAV; `take` groups the takes made from one start frame. */
   recorded?: { take: number; start: number };
+  /** Sound an AI voice spoke: the words, which voice said them, and the seconds each sentence takes inside the sound (empty when the voice gave no timing). */
+  spoken?: { text: string; engine: 'builtin' | 'local' | 'online'; voice: string; cues: Array<{ start: number; end: number; text: string }> };
   /** Fonts: the family name registered for Text content. */
   family?: string;
 }

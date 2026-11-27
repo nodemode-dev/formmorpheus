@@ -2,10 +2,32 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.31.0
-Last updated: 2026-11-25 · the 0.31.0 release fixes
+Current build version: v0.32.0
+Last updated: 2026-11-27 · the AI Voice card
 
 ---
+
+## v0.32.0 · the AI Voice card
+
+- refers-to: ui/ai-voice-panel.ts; styles/ai-voice.css; io/voice-api.ts; app/voice-commands.ts :: speakToTimeline, spokenName; app/agent-bridge.ts :: addVoice; app/app.ts :: speakAt, the ai-voice command; engine/types.ts :: Asset.spoken
+- kind: decision
+- logged: v0.32.0 · 2026-11-27
+
+- **A spoken sound comes in through the same import as any sound file** (`importFiles` with a Timeline drop at the frame), so decoding, the waveform, the sound track and undo are the ones every sound has. `speakToTimeline` then finds the one new audio asset and writes `Asset.spoken` (text, engine, voice, cues) in a second step named AI Voice. That makes two undo steps for one Speak; folding them into one is left for the subtitles work, which reads the note.
+- **`spokenName`** keeps letters, digits and spaces of the first 40 characters and ends on a whole word when one ends in the last stretch, so a block is not named with half a word.
+- **The card is built once** with `el()` and afterwards only hidden states, classes, text and attributes change. The setup bar keeps its box while idle (hidden with `visibility`) and the step line has a minimum height, so starting the setup moves nothing. Voice selects are updated in place by voice id under optgroups; a list that did not change is not touched.
+- **It takes the Record sound card's spot** and `--z-companion`, so `app.ts` closes one when the other opens (the two commands and the track menu's Record row).
+- **The setup is polled every 700 ms** only while the card is open and a job runs; showing the card again reads the status and picks the polling up.
+- **Closing the card aborts nothing**: a running Speak finishes and lands. Escape closes only when nothing runs. Cancel aborts the request; the engine may still finish the sound, which its hourly sweep removes.
+- **The text area keeps maxlength 10000 on both tabs** so a tab switch never cuts the text; Online counts against 2000 and disables Speak above it.
+- **The first voice offered is af_heart**, the model's own default, not the first of the alphabet.
+- **Speed is sent only with the built-in voice**, the only engine that shows the control. The built-in voice is sent its own language, so a Spanish voice reads Spanish.
+- **The local app's address, model and voice are saved** when Check succeeds and before each local Speak; its key is sent only after the Key field was typed in.
+- **Remove the built-in voice** asks through `confirmAction` (`ui/dialogs.ts`).
+- **The online key line names ElevenLabs** because the person must know which key to paste; the name is not in `setup/lint_text_banned.txt`.
+- **AI Voice is off on iPad** (`platform.kind !== 'ipad'`): the routes are desktop only.
+- **New labels are English only** in this version; `t()` falls back to English in the other languages until the tables are filled.
+- Looked at in Chromium on 2026-11-27 with the CPU throttled 4 times, dark theme: the card opened from the command search, the built-in voice spoke two sentences, and the block with its waveform appeared on a new sound track at the playhead with nothing else moving.
 
 ## v0.31.0 · line comments moved here
 

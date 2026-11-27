@@ -1,0 +1,77 @@
+/* The AI Voice card (ui/ai-voice-panel.ts). It sits where the Record sound card sits: only one is open at a time. */
+.fm-aiv {
+  position: fixed;
+  inset-inline-end: var(--space-4);
+  bottom: calc(var(--space-4) + var(--cv-row-h) * 5.5);
+  z-index: var(--z-companion);
+  width: calc(var(--space-8) * 10);
+  max-width: calc(100vw - var(--space-8));
+  max-height: calc(100vh - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--glass-solid-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pop);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  text-align: start;
+}
+.fm-aiv[hidden], .fm-aiv [hidden] { display: none; }
+
+.fm-aiv-head { display: flex; align-items: center; gap: var(--space-2); margin-block-end: var(--space-2); font-weight: 600; }
+.fm-aiv-title { flex: 1; }
+.fm-aiv-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: calc(var(--space-1) / 2); border-radius: var(--radius-sm); line-height: 0; }
+.fm-aiv-x:hover { color: var(--text-primary); background: var(--surface-raised); }
+
+.fm-aiv-tabs { display: flex; gap: var(--space-1); padding: calc(var(--space-1) / 2); margin-block-end: var(--space-3); border-radius: var(--radius-md); background: var(--surface-field); border: 1px solid var(--border-light); }
+.fm-aiv-tab { flex: 1; height: var(--ctl-sm); border: 0; border-radius: var(--radius); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--fs-12); cursor: pointer; }
+.fm-aiv-tab:hover { color: var(--text-primary); }
+.fm-aiv-tab.is-on { background: var(--surface-raised); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.fm-aiv-tab:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+
+.fm-aiv-err { margin: 0 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--danger-fill); border-radius: var(--radius-md); color: var(--danger-text); font-size: var(--fs-12); line-height: 1.4; overflow-wrap: anywhere; }
+
+.fm-aiv-row { display: grid; grid-template-columns: calc(var(--space-8) * 2 + var(--space-5)) minmax(0, 1fr); gap: var(--space-2); align-items: center; margin-block-end: var(--space-2); }
+.fm-aiv-lab { color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-aiv-row .cv-input, .fm-aiv-split .cv-input { width: 100%; min-width: 0; }
+.fm-aiv-split { display: flex; gap: var(--space-2); min-width: 0; }
+.fm-aiv-split .cv-btn { flex: none; }
+.fm-aiv-src { margin-block-end: var(--space-2); }
+
+.fm-aiv-note { margin: var(--space-1) 0 var(--space-2); color: var(--text-muted); font-size: var(--fs-12); line-height: 1.4; }
+.fm-aiv-note.is-warn { color: var(--warn); }
+.fm-aiv-line, .fm-aiv-step { min-height: 1.4em; margin-block-end: var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+
+/* the bar keeps its box while idle so starting the setup moves nothing */
+.fm-aiv-prog { position: relative; height: var(--space-2); margin-block: var(--space-2); border-radius: var(--radius-sm); background: var(--bg-input); border: 1px solid var(--border-light); overflow: hidden; }
+.fm-aiv-prog.is-idle { visibility: hidden; }
+.fm-aiv-fill { position: absolute; inset-block: 0; inset-inline-start: 0; width: calc(var(--p, 0) * 100%); background: var(--accent-color); transition: width var(--dur-fast) linear; }
+.fm-aiv-prog.is-busy .fm-aiv-fill { width: 30%; transition: none; animation: fm-aiv-sweep 1.2s ease-in-out infinite; }
+@keyframes fm-aiv-sweep { from { inset-inline-start: -30%; } to { inset-inline-start: 100%; } }
+@media (prefers-reduced-motion: reduce) { .fm-aiv-prog.is-busy .fm-aiv-fill { animation: none; width: 100%; opacity: 0.5; } }
+
+.fm-aiv-speed { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--space-8) * 1.5); gap: var(--space-2); align-items: center; }
+.fm-aiv-speed input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-aiv-val { color: var(--text-secondary); font-size: var(--fs-12); text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.fm-aiv-link { display: inline-block; padding: 0; margin: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: var(--fs-12); cursor: pointer; text-align: start; }
+.fm-aiv-link:hover { color: var(--text-primary); text-decoration: underline; }
+.fm-aiv-link.is-danger:hover { color: var(--danger-text); }
+.fm-aiv-link:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+.fm-aiv-link:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; border-radius: var(--radius-xs); }
+
+.fm-aiv-texthead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-block: var(--space-2) var(--space-1); }
+.fm-aiv-count { color: var(--text-muted); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-aiv-count.is-over { color: var(--danger-text); }
+.fm-aiv-text { display: block; width: 100%; min-height: calc(var(--ctl) * 3); padding: var(--space-2); resize: vertical; box-sizing: border-box; font: inherit; font-size: var(--fs-13); line-height: 1.4; text-align: start; }
+
+.fm-aiv-start { margin-block: var(--space-2); color: var(--text-muted); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-aiv-acts { display: flex; gap: var(--space-2); }
+.fm-aiv-go { flex: 1; border-color: var(--cta-bg); background: var(--cta-bg); color: var(--cta-text); }
+.fm-aiv-go:hover:not(:disabled) { background: var(--cta-bg-hover); color: var(--cta-text); }
+.fm-aiv-go:disabled { opacity: 0.5; cursor: default; }
+.fm-aiv-go.is-busy:disabled { opacity: 0.8; cursor: progress; }
+.fm-aiv-status { min-height: 1.4em; margin-block-start: var(--space-2); color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
