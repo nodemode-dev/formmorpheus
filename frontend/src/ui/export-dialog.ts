@@ -10,12 +10,12 @@ import { pictureHasAlpha } from '../export/still-formats';
 import type { AudioKind, ExportFormat, ExportJob, ExportOptions, ExportProgress, PictureExt, ProresProfile } from '../export/types';
 import { ExportPreview, type PreviewSpec } from './export-preview';
 import { parseTime, timecode } from '../engine/time';
-import { downloadBlob } from '../io/api';
+import { askSaveFile, canAskSaveFile, downloadBlob, folderWritable, keepExportFolder, keptExportFolder, writeSavedFile } from '../io/api';
 import { canPickFolder, pickDestination, saveFileTo, saveFramesTo, type Dest } from './export-where';
 import { Dialog } from './dialogs';
 import { ExportExtras } from './export-extra';
 import { askMissingFonts, substitutedFonts } from './fonts-missing';
-import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText } from './dom';
+import { el, q, setClass, setDisabled, setHidden, setStyleVar, setText, setTitle } from './dom';
 import { t } from './i18n';
 import { toast } from './toast';
 import { AudioExportDialog } from './audio-export-dialog';
@@ -54,8 +54,10 @@ interface Saved {
   frameMs: number; smoothness: number; intensity: number; tab: Tab;
   /** Frames as images: a folder of pictures (where the platform has a folder dialog) or one zip. */
   framesTo: 'folder' | 'zip';
-  /** Other exports: ask for the folder to save to. */
+  /** Save to, Ask every time: a save dialog for each export (a folder dialog for a folder of pictures). */
   askWhere: boolean;
+  /** Save to, the chosen folder: its path in the desktop app, its name in a browser (the handle itself is in IndexedDB). Empty: the download. */
+  folder: string;
   /** GIF: one GIF frame per movie frame. */
   exactFrames: boolean;
 }
@@ -86,7 +88,7 @@ const DEFAULTS: Saved = {
   kind: 'video', codec: 'h264', container: 'mp4', profile: 'hq', audioKind: 'aac', picture: 'png', tiffDeflate: true,
   preset: 'movie', customW: 1920, customH: 1080, pingpong: false, audio: true, alpha: false,
   quality: 'high', colors: 256, dither: 'floyd-steinberg', loop: true, timing: 'exact', alphaThreshold: 128, palette: '', palOn: false,
-  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share', framesTo: 'folder', askWhere: false, exactFrames: true,
+  frameMs: 0, smoothness: 2, intensity: 50, tab: 'share', framesTo: 'folder', askWhere: false, folder: '', exactFrames: true,
 };
 
 const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (typeof v === 'string' && (all as readonly string[]).includes(v) ? (v as T) : fallback);
@@ -111,7 +113,7 @@ function load(): Saved {
       alphaThreshold: num(r.alphaThreshold, 0, 255, 128), palette: typeof r.palette === 'string' ? r.palette.slice(0, 2000) : '', palOn: r.palOn === true,
       frameMs: pick(String(r.frameMs ?? 0), DURATIONS.map((x) => String(x.ms)), '0') === '0' ? 0 : Number(r.frameMs), smoothness: num(r.smoothness, 0, 3, 2), intensity: num(r.intensity, 0, 100, 50),
       tab: pick(r.tab, ['share', 'advanced'] as const, 'share'),
-      framesTo: pick(r.framesTo, ['folder', 'zip'] as const, 'folder'), askWhere: r.askWhere === true, exactFrames: r.exactFrames !== false,
+      framesTo: pick(r.framesTo, ['folder', 'zip'] as const, 'folder'), askWhere: r.askWhere === true, folder: typeof r.folder === 'string' ? r.folder.slice(0, 4096) : '', exactFrames: r.exactFrames !== false,
     };
   } catch { return { ...DEFAULTS }; }
 }
@@ -144,6 +146,12 @@ const TILES: Tile[] = [
 
 /** The folder a sequence is saved in carries the movie's name (the same cleaning the zip's inner folder gets). */
 const safeFolder = (name: string): string => name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().replace(/^\.+|\.+$/g, '').trim() || 'movie';
+
+/** Where one export is written: a folder (a picture sequence unpacked into a folder of pictures when `unpack`, `name` set by
+ *  the desktop save dialog) or a file the person named in the browser's save dialog. No target: the download. */
+type Target = { dest: Dest; unpack: boolean; name?: string } | { file: FileSystemFileHandle };
+const inDesktop = (): boolean => '__TAURI_INTERNALS__' in window;
+const FILE_EXT: Partial<Record<ExportFormat, string>> = { webm: 'webm', mov: 'mov', gif: 'gif', apng: 'png', 'webp-anim': 'webp', psd: 'psd', 'prores-mov': 'mov', 'prores4444-mov': 'mov', 'hevc-mov': 'mov', 'h264-mov': 'mov' };
 
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 
@@ -183,7 +191,15 @@ export class ExportDialog {
   private readonly alphaNote = el<HTMLElement>('<span class="cv-note fm-ex-alpha-note" hidden></span>');
   private readonly noFfmpeg = ffmpegChip(() => this.close());
   private readonly framesTo = el<HTMLSelectElement>('<select class="cv-input" aria-label="Save frames as"><option value="folder">A folder of images</option><option value="zip">One zip file</option></select>');
-  private readonly askWhere = el<HTMLInputElement>('<input type="checkbox" aria-label="Choose where to save">');
+  private readonly askWhere = el<HTMLInputElement>('<input type="checkbox" aria-label="Ask every time">');
+  // Save to: where exports go, built once under both tabs and patched in place
+  private readonly whereRow = el<HTMLElement>('<div class="cv-field fm-ex-row fm-ex-where"><span></span><div class="fm-ex-ctl"><span class="fm-ex-where-text"></span></div></div>');
+  private readonly whereText = q<HTMLElement>(this.whereRow, '.fm-ex-where-text');
+  private readonly whereChoose = el<HTMLButtonElement>('<button class="cv-btn" type="button"></button>');
+  private readonly whereForget = el<HTMLButtonElement>('<button class="cv-btn" type="button"></button>');
+  private whereAsk: HTMLElement | null = null;
+  /** The browser folder chosen in Save to (kept in IndexedDB); null in the desktop app, which keeps a path. */
+  private dir: FileSystemDirectoryHandle | null = null;
   private readonly exactFrames = el<HTMLInputElement>('<input type="checkbox" aria-label="One GIF frame for every movie frame">');
   private readonly palOn = el<HTMLInputElement>('<input type="checkbox" aria-label="Custom palette">');
   private readonly palPick = el<HTMLInputElement>('<input type="color" class="fm-ex-pick" value="#ff6a00" aria-label="Add a palette color">');
@@ -258,7 +274,9 @@ export class ExportDialog {
     this.buildAdvanced();
     this.advBox.append(this.preview.root, this.formBox);
     q(this.fontNote, 'button').addEventListener('click', () => { void askMissingFonts().then(() => this.sync()); });
-    body.append(seg, this.fontNote, this.shareBox, this.advBox, this.runBox, this.notes);
+    this.buildWhere();
+    // Save to sits under the tabs so it shows on both without scrolling
+    body.append(seg, this.whereRow, this.fontNote, this.shareBox, this.advBox, this.runBox, this.notes);
     this.cancel = this.dlg.button('Close', 'ghost', () => this.onCancel());
     this.cancel.classList.add('fm-ex-cancel');
     this.run = this.dlg.button('Export', 'primary', () => {
@@ -373,6 +391,120 @@ export class ExportDialog {
     return l;
   }
 
+  // Save to ------------------------------------------------------------------------------------
+
+  private buildWhere(): void {
+    setText(q(this.whereRow, ':scope > span'), t('Save to'));
+    setText(this.whereChoose, t('Choose...'));
+    this.whereChoose.title = t('Choose the folder exports go to');
+    setText(this.whereForget, t('Forget folder'));
+    this.whereForget.title = t('Stop saving exports to this folder');
+    this.whereText.style.overflowWrap = 'anywhere';
+    this.whereAsk = this.check(this.askWhere, t('Ask every time'));
+    q(this.whereRow, '.fm-ex-ctl').append(this.whereChoose, this.whereForget, this.whereAsk);
+    this.whereChoose.addEventListener('click', () => { void this.chooseFolder(); });
+    this.whereForget.addEventListener('click', () => this.forgetFolder());
+    this.paintWhere();
+    if (inDesktop() || !canPickFolder()) return;
+    void keptExportFolder().then((dir) => {
+      this.dir = dir;
+      this.state.folder = dir ? dir.name : '';
+      this.paintWhere();
+    });
+  }
+
+  /** The sentence says where the next export goes; the buttons show only where the platform can choose. */
+  private paintWhere(): void {
+    const s = this.state, can = canPickFolder(), desk = inDesktop();
+    // iPad hands every export to its own save sheet
+    setHidden(this.whereRow, platform.kind === 'ipad');
+    const folder = desk ? s.folder : this.dir ? this.dir.name : '';
+    const text = !can ? t('Exports go to this browser\'s download folder.')
+      : s.askWhere ? t('You choose where each export goes.')
+      : folder ? t('Exports go to {folder}.').replace('{folder}', folder)
+      : desk ? t('Exports are kept in the Exports folder of your data folder.') : t('Exports go to this browser\'s download folder.');
+    setText(this.whereText, text);
+    setTitle(this.whereText, folder);
+    setHidden(this.whereChoose, !can);
+    setHidden(this.whereForget, !can || !folder);
+    if (this.whereAsk) setHidden(this.whereAsk, !can);
+  }
+
+  private async chooseFolder(): Promise<void> {
+    const dest = await pickDestination();
+    if (dest === 'unavailable') { toast(t('The folder could not be chosen here.'), 'error'); return; }
+    if (!dest) return;
+    if (dest.kind === 'browser') {
+      this.dir = dest.dir;
+      this.state.folder = dest.dir.name;
+      if (!(await keepExportFolder(dest.dir))) toast(t('This browser will not remember the folder after it closes.'));
+    } else this.state.folder = dest.dir;
+    this.state.askWhere = false;
+    this.askWhere.checked = false;
+    save(this.state);
+    this.paintWhere();
+  }
+
+  private forgetFolder(): void {
+    this.dir = null;
+    this.state.folder = '';
+    if (!inDesktop()) void keepExportFolder(null);
+    save(this.state);
+    this.paintWhere();
+  }
+
+  private downloadInstead(): null {
+    this.fallback = t('The folder could not be chosen here, so the file was downloaded instead.');
+    return null;
+  }
+
+  /** Where this export goes, asked before it renders while the click that started it still counts: a target, null for the download, or 'cancel'. */
+  private async whereTo(opts: ExportOptions): Promise<Target | null | 'cancel'> {
+    if (!canPickFolder()) return null;
+    const s = this.state, desk = inDesktop();
+    const unpack = opts.format.endsWith('-frames') && s.framesTo === 'folder';
+    const folder = desk ? s.folder : this.dir;
+    if (s.askWhere || (unpack && !folder)) {
+      // a folder of pictures needs a folder dialog; one file gets a save dialog where there is one
+      if (unpack || !(desk || canAskSaveFile())) {
+        const dest = await pickDestination();
+        if (dest === 'unavailable') return this.downloadInstead();
+        return dest ? { dest, unpack } : 'cancel';
+      }
+      return this.askFile(this.suggestName(opts));
+    }
+    if (!folder) return null;
+    if (typeof folder === 'string') return { dest: { kind: 'engine', dir: folder }, unpack };
+    if (await folderWritable(folder, true)) return { dest: { kind: 'browser', dir: folder }, unpack };
+    this.fallback = t('Saving into {folder} was not allowed, so the file was downloaded instead.').replace('{folder}', folder.name);
+    return null;
+  }
+
+  /** A save dialog for one file: the browser's, or the desktop app's (the engine then writes it, never over another file). */
+  private async askFile(name: string): Promise<Target | null | 'cancel'> {
+    if (!inDesktop()) {
+      const file = await askSaveFile(name);
+      if (file === 'unavailable') return this.downloadInstead();
+      return file ? { file } : 'cancel';
+    }
+    try {
+      const core = await import('@tauri-apps/api/core');
+      const path = await core.invoke<string | null>('plugin:dialog|save', { options: { defaultPath: name, title: t('Save the export') } });
+      if (!path) return 'cancel';
+      const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+      let dir = path.slice(0, cut);
+      if (!dir || /^[A-Za-z]:$/.test(dir)) dir = path.slice(0, cut + 1);
+      return { dest: { kind: 'engine', dir }, unpack: false, name: path.slice(cut + 1) };
+    } catch { return this.downloadInstead(); }
+  }
+
+  /** The name the save dialog offers: the movie's, with the file type the export will have. */
+  private suggestName(opts: ExportOptions): string {
+    const f = opts.format;
+    const ext = f.endsWith('-frames') ? 'zip' : f === 'png-still' ? opts.picture ?? 'png' : FILE_EXT[f] ?? 'mp4';
+    return `${safeFolder(this.deps.engine.movie?.name ?? '')}.${ext}`;
+  }
+
   private buildAdvanced(): void {
     const dims = el<HTMLElement>('<div class="fm-ex-dims"></div>');
     dims.append(this.width, el<HTMLElement>('<span class="fm-ex-x">x</span>'), this.height);
@@ -409,7 +541,6 @@ export class ExportDialog {
         this.row('mode', 'Playback', this.mode),
         this.row('alpha', 'Background', this.check(this.alpha, 'Transparent background'), this.alphaNote),
         this.row('framesto', 'Save frames as', this.framesTo),
-        this.row('askwhere', 'Save to', this.check(this.askWhere, 'Choose a folder to save to')),
         ...ex.slice(5, 8),
       ),
       exportCard('Audio',
@@ -667,7 +798,7 @@ export class ExportDialog {
     for (const id of ['gifhead', 'duration', 'dither', 'colorstep', 'palon', 'loop', 'exact']) show(id, isGif);
     // a folder to save to, where the platform has a folder dialog: frames get a folder of pictures (or a zip), other exports may ask
     show('framesto', frames && canPickFolder());
-    show('askwhere', !frames && canPickFolder());
+    this.paintWhere();
     show('smooth', isGif && s.dither === 'ordered');
     show('intensity', isGif && s.dither === 'ordered');
     show('palette', isGif && s.palOn);
@@ -838,7 +969,7 @@ export class ExportDialog {
     });
   }
 
-  /** Asks for the folder first where the person chose one (frames as a folder of images, or Choose a folder to save to), then runs. */
+  /** Settles where the file goes first (Save to: the chosen folder, a dialog, or the download), then runs. */
   private begin(opts: ExportOptions, committed = false): void {
     if (this.busy || !this.deps.engine.movie) return;
     if (!committed && this.deps.commitOpen) {
@@ -847,17 +978,15 @@ export class ExportDialog {
       void this.deps.commitOpen().catch(() => undefined).then(() => { this.busy = false; this.begin(opts, true); });
       return;
     }
-    const frames = opts.format.endsWith('-frames');
-    const ask = canPickFolder() && (frames ? this.state.framesTo === 'folder' : this.state.askWhere);
-    if (!ask) { this.launch(opts, null); return; }
-    void pickDestination().then((dest) => {
-      if (dest === 'unavailable') { this.fallback = t('The folder could not be chosen here, so the file was downloaded instead.'); this.launch(opts, null); return; }
-      if (!dest) { this.note(['Export cancelled.'], 'warn'); toast(t('Export cancelled.')); return; }
-      this.launch(opts, dest);
+    this.busy = true;
+    void this.whereTo(opts).then((target) => {
+      this.busy = false;
+      if (target === 'cancel') { this.note(['Export cancelled.'], 'warn'); toast(t('Export cancelled.')); return; }
+      this.launch(opts, target);
     });
   }
 
-  private launch(opts: ExportOptions, dest: Dest | null): void {
+  private launch(opts: ExportOptions, where: Target | null): void {
     const movie = this.deps.engine.movie;
     if (!movie || this.busy) return;
     save(this.state);
@@ -891,14 +1020,15 @@ export class ExportDialog {
       if (this.fallback) { lines.push(this.fallback); this.fallback = ''; }
       let kept = true;
       let shown = res.name;
-      let landed = false;
-      if (dest) {
-        // the folder the person chose: a sequence becomes a folder of pictures named after the movie, anything else one file
+      let landed = false, unpacked = false;
+      if (where) {
+        // the folder or file the person chose: a sequence may become a folder of pictures named after the movie, anything else one file
         try {
-          if (opts.format.endsWith('-frames') && res.mime === 'application/zip') {
-            const r = await saveFramesTo(dest, res.blob, safeFolder(movie.name));
+          if ('file' in where) { await writeSavedFile(where.file, res.blob); shown = where.file.name; } else if (where.unpack && res.mime === 'application/zip') {
+            const r = await saveFramesTo(where.dest, res.blob, safeFolder(movie.name));
             shown = t('{n} frames in {where}').replace('{n}', String(r.files)).replace('{where}', r.where);
-          } else shown = await saveFileTo(dest, res.blob, res.name);
+            unpacked = true;
+          } else shown = await saveFileTo(where.dest, res.blob, where.name ?? res.name);
           landed = true;
         } catch (e) {
           lines.push(`${e instanceof Error && e.message ? e.message : t('The file could not be saved there.')} ${t('It was downloaded instead.')}`);
@@ -906,7 +1036,7 @@ export class ExportDialog {
       }
       // a zip that became a folder is not kept again as a zip in Exports
       if (!landed) downloadBlob(res.blob, res.name);
-      if (!res.kept && !(landed && opts.format.endsWith('-frames'))) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
+      if (!res.kept && !unpacked) { try { await this.deps.saveOutput(res.blob, res.name); } catch { kept = false; } }
       if (!kept) lines.push(landed ? 'The file could not be kept in Exports.' : 'The file was downloaded, but it could not be kept in Exports.');
       const took = clock(meter.read().elapsedMs);
       this.finish(off, ej);
@@ -965,6 +1095,7 @@ export class ExportDialog {
     this.cancel.dataset.en = on ? 'Cancel export' : 'Close';
     this.cancel.dataset.shown = this.cancel.textContent ?? '';
     for (const b of this.shareBox.querySelectorAll<HTMLButtonElement>('button')) setDisabled(b, on);
+    for (const b of [this.whereChoose, this.whereForget, this.askWhere]) setDisabled(b, on);
     setClass(this.advBox, 'is-busy', on);
     setClass(this.shareBox, 'is-busy', on);
     if (!on) return;

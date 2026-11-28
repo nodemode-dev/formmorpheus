@@ -1,0 +1,157 @@
+/* The Build panel (ui/build-panel.ts): a column at the inline start of the Stage, beside it only. While it shows, the
+   main grid gets a second column; the split, the Timeline and the drop cover span both. No transition on the column:
+   the Stage refits once. */
+.cv-main.fm-main {
+  --fm-build-w: min(calc(var(--space-8) * 8.75), 32vw);
+}
+.cv-main.fm-main.has-build { grid-template-columns: var(--fm-build-w) minmax(0, 1fr); }
+.cv-main.fm-main.has-build > .fm-build { grid-row: 1; grid-column: 1; }
+.cv-main.fm-main.has-build > .fm-stage-wrap { grid-row: 1; grid-column: 2; }
+.cv-main.fm-main.has-build > .fm-split { grid-column: 1 / -1; }
+.cv-main.fm-main.has-build > .fm-tl-host { grid-column: 1 / -1; }
+.cv-main.fm-main.has-build > .cv-drop { grid-column: 1 / -1; }
+
+.fm-build {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin-block-start: var(--space-2);
+  margin-inline-start: var(--space-2);
+  overflow: hidden;
+  overflow: clip;
+  border-radius: var(--fm-stage-radius, var(--radius-2xl));
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--line-0, var(--border-color));
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  text-align: start;
+}
+.fm-build[hidden], .fm-build [hidden] { display: none; }
+
+/* ---- tabs ---- */
+.fm-build-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  border-block-end: 1px solid var(--border-soft);
+}
+.fm-build-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-1) / 2);
+  min-width: 0;
+  height: var(--ctl-xl);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-10);
+  cursor: pointer;
+}
+.fm-build-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.fm-build-tab.is-on { color: var(--text-primary); background: var(--surface-raised); box-shadow: var(--shadow-sm); }
+.fm-build-tab.is-on .fm-build-tabicon { color: var(--accent-ink); }
+.fm-build-tab:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.fm-build-tabicon { display: inline-flex; line-height: 0; }
+.fm-build-tablabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- panes: each scrolls on its own ---- */
+.fm-build-panes { position: relative; flex: 1 1 auto; min-height: 0; }
+.fm-build-pane {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  box-sizing: border-box;
+}
+.fm-build-pane:focus { outline: none; }
+
+.fm-build-sec {
+  margin-block: var(--space-3) var(--space-1);
+  padding-inline: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fm-build-pane > .fm-build-sec:first-child { margin-block-start: var(--space-1); }
+.fm-build-note { margin: var(--space-1) 0 var(--space-2); padding-inline: var(--space-1); color: var(--text-muted); font-size: var(--fs-12); line-height: 1.4; }
+.fm-build-gap { height: var(--space-2); }
+
+/* ---- rows: a command, an action ---- */
+.fm-build-rows { display: flex; flex-direction: column; gap: calc(var(--space-1) / 2); }
+.fm-build-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--ctl);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-row);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: start;
+  cursor: pointer;
+}
+.fm-build-row:hover:not(:disabled) { background: var(--bg-hover); }
+.fm-build-row:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.fm-build-row:disabled { opacity: 0.45; cursor: default; }
+.fm-build-row.is-on { background: var(--accent-soft); }
+.fm-build-row.is-on .fm-build-rowicon { color: var(--accent-ink); }
+.fm-build-row.is-lead { border: 1px dashed var(--line-3); }
+.fm-build-rowicon { display: inline-flex; flex: 0 0 auto; color: var(--text-secondary); line-height: 0; }
+.fm-build-rowlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-build-tag { flex: 0 0 auto; color: var(--text-muted); font-size: var(--fs-11); }
+.fm-build-tag:empty { display: none; }
+
+/* ---- tiles: a character, a scene; the picture's box is reserved before it arrives ---- */
+.fm-build-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-8) * 2.5), 1fr)); gap: var(--space-1); }
+.fm-build-tiles.is-wide { grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-8) * 3.75), 1fr)); }
+.fm-build-tile {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-1) / 2);
+  min-width: 0;
+  padding: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.fm-build-tile:hover:not(:disabled) { background: var(--surface-raised); border-color: var(--border-soft); }
+.fm-build-tile:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.fm-build-tile:disabled { cursor: default; }
+.fm-build-tile.is-busy { opacity: 0.6; cursor: progress; }
+.fm-build-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.fm-build-tiles.is-wide .fm-build-thumb { aspect-ratio: 16 / 9; }
+.fm-build-thumb img, .fm-build-thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.fm-build-glyph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.fm-build-glyph svg { width: var(--space-6); height: var(--space-6); }
+.fm-build-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); }

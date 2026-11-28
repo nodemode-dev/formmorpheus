@@ -28,6 +28,10 @@ formmorpheus/
 
 The movie model and the paint core are pure code with no DOM, so they could run in a worker or in another shell. Everything that touches the page lives in `ui/`. The `app.ts` file wires the two with one command table that feeds the menus, the buttons, the key bindings and command search.
 
+## The window
+
+The window is a Stage over a Timeline. The Build panel (`ui/build-panel.ts`) is a column docked beside the Stage in the same grid, not over it, with tabs for Characters, Actions, Scenes, Create and Camera. It shows only while a movie is open in the editor, keeps its open state and tab in `localStorage`, and runs commands through the same registry as the menus. Compose, Perform and Keyframe are a segmented switch (`.fm-modes`) in the Timeline's top row, and its Preview button runs the full-screen preview from the first frame.
+
 ## Data
 
 A movie is a plain object: tracks, each holding content blocks, each with a transform, options, keys and for flipbooks and drawings their layers. Pictures, sound and fonts are assets referenced by id and kept as blobs beside the movie. Every edit is a pure function from movie to movie, so history is a list of movies that share structure.

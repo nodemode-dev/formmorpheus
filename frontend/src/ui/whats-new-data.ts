@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.36.0', name: 'Build panel',
+    additions: [
+      { title: 'A Build panel beside the Stage', text: 'Characters, actions, starter scenes, Create and Camera sit in a panel beside the Stage. A click adds a character at the Playhead, applies an action or adds a scene. Open it from View, Build Panel.', command: 'build-panel' },
+      { title: 'Modes and Preview', text: 'Compose, Perform and Keyframe are a compact switch in the Timeline\'s top row, and the Preview button plays the movie from the first frame, full screen.', command: 'stage-fullscreen' },
+      { title: 'Choose where exports go', text: 'A Save to row in Export sends files to the download folder, to a folder you choose, or asks every time. Every export is still kept in the Exports folder too.', command: 'export' },
+    ],
+  },
+  {
     version: '0.34.0', name: 'First-session fixes',
     additions: [
       { title: 'Starter scenes in your movie', text: 'Add a starter scene\'s backdrop and props behind everything in the movie that is open, from Content, Add, Add Starter Scene to This Movie.', command: 'add-starter-scene' },

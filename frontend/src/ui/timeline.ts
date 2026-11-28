@@ -144,11 +144,17 @@ export class TimelineView {
         <button class="fm-round-btn" type="button" data-act="settings" title="Movie settings" aria-label="Movie settings">${icon('movieSettings', 18)}</button>
         <button class="fm-round-btn" type="button" data-act="multi" title="Multi-select" aria-label="Multi-select" aria-pressed="false">${icon('multiSelect', 18)}</button>
         <button class="fm-round-btn" type="button" data-act="camera" title="Camera mode" aria-label="Camera mode" aria-pressed="false">${kindSpec('camera').icon}</button>
+        <div class="fm-modes" role="tablist" aria-label="Mode">
+          <button class="fm-mode" type="button" role="tab" data-mode="compose" title="Compose" aria-label="Compose">${icon('compose', 18)}<span>Compose</span></button>
+          <button class="fm-mode" type="button" role="tab" data-mode="perform" title="Perform" aria-label="Perform">${icon('perform', 18)}<span>Perform</span></button>
+          <button class="fm-mode" type="button" role="tab" data-mode="keyframe" title="Keyframe" aria-label="Keyframe">${icon('keyframe', 18)}<span>Keyframe</span></button>
+        </div>
       </div>
       <div class="fm-transport-mid">
         <button class="fm-ghost-btn" type="button" data-act="back" title="Previous frame" aria-label="Previous frame">${icon('stepBack', 16)}</button>
         <button class="fm-play-btn" type="button" data-act="play" title="Play" aria-label="Play"><span class="fm-play-on">${icon('play', 22)}</span><span class="fm-play-off" hidden>${icon('pause', 22)}</span></button>
         <button class="fm-ghost-btn" type="button" data-act="fwd" title="Next frame" aria-label="Next frame">${icon('stepForward', 16)}</button>
+        <button class="fm-round-btn fm-preview-btn" type="button" data-act="movie-preview" title="Preview the movie from the start, full screen" aria-label="Preview"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M10 9.2v5.6a.6.6 0 0 0 .9.5l4.6-2.8a.6.6 0 0 0 0-1l-4.6-2.8a.6.6 0 0 0-.9.5z" fill="currentColor"/></svg></button>
       </div>
       <div class="fm-transport-right">
         <canvas class="fm-master-meter" aria-label="Master level"></canvas>
@@ -165,16 +171,12 @@ export class TimelineView {
         <span class="fm-zoom-grp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></svg><button type="button" data-act="zv-out" title="Shorter tracks" aria-label="Shorter tracks">${icon('minus', 14)}</button><button type="button" data-act="zv-in" title="Taller tracks" aria-label="Taller tracks">${icon('plus', 14)}</button></span>
         <span class="fm-zoom-grp"><button class="fm-heads-btn" type="button" data-act="heads" title="Track headers: show, narrow, hide" aria-label="Track headers"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M5.5 9h.01M5.5 13h.01"/></svg></button></span>
       </div>
-      <div class="fm-modes" role="tablist" aria-label="Mode">
-        <button class="fm-mode" type="button" role="tab" data-mode="compose">${icon('compose', 18)}<span>Compose</span></button>
-        <button class="fm-mode" type="button" role="tab" data-mode="perform">${icon('perform', 18)}<span>Perform</span></button>
-        <button class="fm-mode" type="button" role="tab" data-mode="keyframe">${icon('keyframe', 18)}<span>Keyframe</span></button>
-      </div>
     </div>
   </section>`);
 
   private readonly ruler = q<HTMLCanvasElement>(this.root, '.fm-tl-ruler');
-  private readonly modesEl = q(this.root, '.fm-modes');
+  /** The zoom buttons float over the lanes' foot; the mode switch sits in the head row now. */
+  private readonly zoomEl = q(this.root, '.fm-tl-zoom');
   private readonly tracksCanvas = q<HTMLCanvasElement>(this.root, '.fm-tl-tracks');
   private readonly lanes = q(this.root, '.fm-tl-lanes');
   private readonly editPill = q<HTMLButtonElement>(this.root, '.fm-edit-pill');
@@ -376,12 +378,12 @@ export class TimelineView {
     this.syncPlay(false);
   }
 
-  /** A picked block never sits under the mode switch and the zoom buttons: the lanes scroll until its row clears them. */
+  /** A picked block never sits under the zoom buttons: the lanes scroll until its row clears them. */
   private revealSelected(): void {
     const m = this.engine.movie, id = this.engine.selection.content[0];
     const at = m && id ? locate(m, id) : null;
     if (!m || !at || this.height <= 0 || this.drag?.kind === 'move') return;
-    const clear = this.height - (this.modesEl.offsetHeight || 56) - 20;
+    const clear = this.height - (this.zoomEl.offsetHeight || 28) - 20;
     const bottom = this.laneTop(at.trackIndex) + BLOCK_H;
     if (bottom > clear) { this.scrollY = this.clampScroll(this.scrollY + (bottom - clear), m); }
   }
@@ -578,6 +580,8 @@ export class TimelineView {
     else if (act === 'fwd') this.engine.step(1);
     else if (act === 'create') this.hooks.create(btn);
     else if (act === 'camera') cameraMode.toggle();
+    // from the first frame: the full-screen preview plays on from where the Playhead stands
+    else if (act === 'movie-preview') { if (this.engine.movie) { this.engine.stop(); this.engine.seek(0); document.dispatchEvent(new CustomEvent('fm:command', { detail: 'stage-fullscreen' })); } }
     else if (act === 'zh-in') this.zoomBy(1.4);
     else if (act === 'zh-out') this.zoomBy(1 / 1.4);
     else if (act === 'zv-in') this.zoomRows(1.25);
@@ -2242,9 +2246,9 @@ export class TimelineView {
 
   private clampScroll(y: number, m: Movie): number {
     this.layout(m);
-    // room for the floating mode switch: its height and the gap under it, so the last lane scrolls clear
-    const sw = this.modesEl.offsetHeight;
-    const content = TOP_PAD + this.totalH + (sw > 0 ? sw + 12 + 12 : 100);
+    // room for the floating zoom buttons: their height and the gap under them, so the last lane scrolls clear
+    const sw = this.zoomEl.offsetHeight;
+    const content = TOP_PAD + this.totalH + (sw > 0 ? sw + 12 + 12 : 64);
     return Math.max(0, Math.min(Math.max(0, content - this.height), y));
   }
 

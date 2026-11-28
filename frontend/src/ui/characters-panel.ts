@@ -195,6 +195,8 @@ export class CharactersPanel {
   /** Build a character: opens the Character Builder. */
   onBuild: (() => void) | null = null;
   onOpenPreset: ((id: string) => void) | null = null;
+  /** Called after the library is read again: at startup, on opening, after a save, rename or delete. */
+  onLibrary: (() => void) | null = null;
   private shown = false;
 
   constructor(private readonly engine: Engine, private readonly deps: CharactersDeps) {
@@ -287,7 +289,14 @@ export class CharactersPanel {
     }
     this.mineRead = true;
     this.paint();
+    this.onLibrary?.();
   }
+
+  /** The starter characters the manifest lists (read at startup). */
+  async starterEntries(): Promise<StarterEntry[]> { await this.manifest; return this.starters ?? []; }
+
+  /** Adds a character at the Playhead, as its Add to Movie button does: `starter:<id>`, `cast:<id>` or `mine:<name>`. */
+  addToMovie(key: string): Promise<void> { return this.add(key, 'playhead'); }
 
   private paint(): void {
     const starters = this.starters ?? [];

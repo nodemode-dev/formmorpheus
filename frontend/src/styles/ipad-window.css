@@ -28,8 +28,11 @@ html.fm-kb-open .cv-dialog { max-height: calc(100vh - 64px - var(--fm-kb-inset, 
   html.is-ipad .fm-master-meter { display: none; }
   html.is-ipad .fm-frame-readout { min-width: 0; }
 
-  /* the mode switch moves to the right so it clears the zoom buttons on the left */
-  html.is-ipad .fm-modes { left: auto; right: var(--space-3); transform: none; }
+  /* the mode switch sits in the head row (glyphs only at this width): it keeps its size while the row's left group gives way */
+  html.is-ipad .fm-transport-left { gap: var(--space-1); }
+  html.is-ipad .fm-modes { margin-inline-start: 0; }
+  /* no room for the two step buttons beside Play and Preview: the arrow keys and the ruler step frames */
+  html.is-ipad .fm-transport-mid .fm-ghost-btn { display: none; }
 
   /* the timecode sits over the picture, which fills a narrow window: it gets a ground so a white picture cannot hide it */
   html.is-ipad .fm-timecode { min-width: 0; padding: 0 var(--space-2); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--bg-primary) 72%, transparent); text-shadow: none; }
@@ -38,8 +41,8 @@ html.fm-kb-open .cv-dialog { max-height: calc(100vh - 64px - var(--fm-kb-inset, 
 @media (max-width: 559px) {
   html.is-ipad .fm-transport-left, html.is-ipad .fm-transport-right { gap: var(--space-1); }
   html.is-ipad .fm-pill-btn { padding: 0 var(--space-3); }
-  html.is-ipad .fm-frame-readout { font-size: var(--fs-10); }
-  /* no room for the two step buttons beside Play: the arrow keys and the ruler step frames */
-  html.is-ipad .fm-transport-mid .fm-ghost-btn { display: none; }
-  html.is-ipad .fm-mode { min-width: 60px; }
+  /* the frame readout gives way to Play and Preview: the timecode over the picture still tells the time */
+  html.is-ipad .fm-frame-readout { display: none; }
+  /* the Theater word goes before the modes do: the arrow and its name in aria-label and title remain */
+  html.is-ipad .fm-home-btn { font-size: 0; gap: 0; padding: 0 var(--space-2); }
 }

@@ -2,6 +2,22 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.36.0 · 2026-11-27
+
+A Build panel beside the Stage puts characters, actions, scenes, Create and Camera in reach, the three modes move into the Timeline's top row, and you choose where exports go.
+
+### New
+- View, Build Panel opens a panel beside the Stage with five tabs: Characters, Actions, Scenes, Create and Camera. It remembers whether it is open and which tab you were on, starts closed on a window narrower than 1100 px, and shows only while a movie is open in the editor.
+- Characters lists New Character..., your saved characters under Mine and the Starters. A click adds that character to the movie at the Playhead.
+- Actions lists the actions for the selected character, and a click applies one, which plays once. Scenes lists the starter scenes, and a click adds one behind everything in the movie, with Background Color... under them.
+- Create has the rows of the Create card, and Camera has Camera mode and the transitions.
+- A Preview button in the Timeline's top row plays the movie from the first frame, full screen. Escape leaves.
+- In Export, a Save to row under the tabs shows where exports go. Choose... picks a folder, Ask every time shows a save dialog for each export, and Forget folder goes back to this browser's download folder. A file in a chosen folder is never overwritten: a taken name becomes "name 2". Every export is still also kept in the Exports folder of the data folder.
+
+### Changed
+- Compose, Perform and Keyframe are a compact switch in the Timeline's top row, after the Theater and Camera mode buttons, instead of a large pill over the tracks. On a narrow window only the icons show.
+- The Advanced checkbox Choose a folder to save to is now the Save to row.
+
 ## 0.35.0 · 2026-11-27
 
 The new cards speak your language, and the manual answers the questions of a first session.

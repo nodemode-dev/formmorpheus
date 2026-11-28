@@ -84,17 +84,26 @@
 .fm-tl-empty { position: absolute; inset: 28px 0 0; display: grid; place-items: center; color: var(--text-muted); font-size: var(--fs-12); pointer-events: none; }
 .fm-tl-empty[hidden] { display: none; }
 
-/* the mode switch: a fully round capsule, about 21 percent of the window wide and 62 px high (FV-043, FV-207) */
-.fm-modes { position: absolute; left: 50%; bottom: var(--space-3); transform: translateX(-50%); display: flex; gap: 0; padding: 5px var(--space-2); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--bg-primary) 88%, transparent); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); box-shadow: var(--shadow-md), inset 0 0 0 1px var(--line-1, var(--border-color)); z-index: var(--z-chrome); }
+/* the mode switch: a segmented switch in the head row, after the Theater group, at the row's control height; nothing floats over the lanes */
+.fm-modes { display: inline-flex; flex: none; align-items: stretch; gap: 2px; box-sizing: border-box; height: var(--ctl); padding: 2px; margin-inline-start: var(--space-1); border-radius: var(--radius-pill); border: 1px solid var(--line-2, var(--border-light)); background: var(--surface-1, var(--bg-tertiary)); }
 .fm-tl-zoom { position: absolute; left: var(--space-3); bottom: var(--space-3); display: flex; gap: var(--space-2); z-index: var(--z-chrome); }
 .fm-zoom-grp { display: flex; align-items: center; gap: 2px; padding: 3px var(--space-2); border-radius: var(--radius-pill); background: var(--fm-glass); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); box-shadow: inset 0 0 0 1px var(--line-1, var(--border-color)); color: var(--text-muted); }
 .fm-zoom-grp button { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); cursor: pointer; }
 .fm-zoom-grp button:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 10%, transparent); }
-.fm-mode { display: grid; justify-items: center; gap: 3px; min-width: clamp(76px, 7.4vw, 100px); padding: 6px var(--space-2) 5px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); font-size: var(--fs-11); font-weight: 500; cursor: pointer; transition: color var(--dur-fast) var(--ease-glass); }
-.fm-mode .icon { width: 24px !important; height: 24px !important; transition: color var(--dur-fast) var(--ease-glass); }
+.fm-mode { display: inline-flex; align-items: center; gap: var(--space-1); padding-block: 0; padding-inline: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-muted); font-size: var(--fs-12); font-weight: 500; white-space: nowrap; cursor: pointer; transition: color var(--dur-fast) var(--ease-glass), background-color var(--dur-fast) var(--ease-glass); }
+.fm-mode .icon { flex: none; width: 16px !important; height: 16px !important; transition: color var(--dur-fast) var(--ease-glass); }
 .fm-mode:hover { color: var(--text-primary); }
-/* no box behind the active item: its glyph turns accent and filled, its label white */
-.fm-mode.is-active { color: var(--text-primary); }
+/* the current segment is raised; its glyph turns accent and filled, its label full strength */
+.fm-mode.is-active { color: var(--text-primary); background: var(--surface-raised, var(--bg-hover)); box-shadow: inset 0 0 0 1px var(--line-2, var(--border-light)); }
+/* a head row too narrow for the words keeps the glyphs; the name stays in aria-label and title */
+.fm-transport { container: fm-head / inline-size; }
+/* 1189: the left group with words is about 502 px, the transport 152, the row's padding 24, and the left column is half of the rest */
+@container fm-head (max-width: 1189px) {
+  .fm-mode { justify-content: center; width: calc(var(--ctl) - 6px); padding: 0; }
+  .fm-mode > span:not(.icon) { display: none; }
+}
+/* touch: each segment takes the touch target (gestures.css), so the switch hugs them and still fits the head row */
+@media (pointer: coarse) { .fm-modes { height: auto; padding: 0; gap: 0; } }
 .fm-mode.is-active .icon { color: var(--accent-color); }
 .fm-mode.is-active .icon svg { fill: currentColor; }
 .fm-timeline.is-perform .fm-tl-ruler { box-shadow: inset 0 -2px 0 var(--accent-color); }
