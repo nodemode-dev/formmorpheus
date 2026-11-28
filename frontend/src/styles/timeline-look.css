@@ -27,5 +27,12 @@
 .fm-th-row.is-muted::after { content: ""; position: absolute; left: 16px; right: 4px; top: 50%; height: 1px; background: color-mix(in srgb, var(--text-primary) 45%, transparent); pointer-events: none; }
 .fm-th-row.is-solo .fm-th-name { color: var(--accent-color); }
 
+/* The Theater button leaves the movie: a back chevron leads it; the padding gives back what the glyph takes, so the row barely shifts. */
+.fm-pill-btn.fm-home-btn { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-3) 0 var(--space-2); }
+.fm-pill-btn.fm-home-btn svg { flex: none; }
+
+/* Block names sit on a plate in the panel's own ground, so they read on any picture, light or dark, in every theme. */
+.fm-timeline { --fm-tl-plate: color-mix(in srgb, var(--bg-secondary) 88%, transparent); }
+
 /* Space held over the Timeline: the drag pans. */
 .fm-timeline.is-space .fm-tl-tracks, .fm-timeline.is-space .fm-tl-ruler { cursor: grab !important; }

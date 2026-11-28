@@ -561,6 +561,67 @@ export function swapAction(movie: Movie, charId: string, spanIndex: number, acti
   return applyAction(clearAction(movie, charId, spanIndex), charId, actionId, s.from, reps, s.to);
 }
 
+/** The frame of the character's tracks shown at block-local frame `local`: `blockFrame` turned round. */
+export function innerFrame(g: Content, local: number): number {
+  return g.offset + (g.reverse ? g.duration - 1 - local : local) * (g.speed ?? 1);
+}
+
+/** How far a placed span may reach: from the end of the span before it to the start of the span after it (spans never overlap). */
+export function actRoom(g: Content, spanIndex: number): { lo: number; hi: number } {
+  const acts = g.character?.acts ?? [], s = acts[spanIndex];
+  let lo = 0, hi = Infinity;
+  if (!s) return { lo, hi };
+  for (let i = 0; i < acts.length; i++) {
+    if (i === spanIndex) continue;
+    if (acts[i].to <= s.from) lo = Math.max(lo, acts[i].to);
+    else if (acts[i].from >= s.to) hi = Math.min(hi, acts[i].from);
+  }
+  return { lo: Math.min(lo, s.from), hi: Math.max(hi, s.to) };
+}
+
+/**
+ * Gives a placed action new frames (an edge dragged on the Timeline), kept between its neighbours and at least one frame
+ * long. It is cleared and placed again as Apply places it, so Clear removes exactly what it set: a loop plays as many
+ * passes as fit, the last one cut, with its eases at both new ends; a one-shot is cut at a shorter end, and past its own
+ * length holds its last pose (and mouth shape) to the end, the way a span longer than its action already reads in `seal`.
+ * The span loses `start`: it now begins its first pass at its new first frame. `index` is the span's place afterwards.
+ */
+export function resizeAction(movie: Movie, charId: string, spanIndex: number, from: number, to: number): ActResult & { index: number } {
+  const g = characterOf(movie, charId);
+  const s = (g.character.acts ?? [])[spanIndex];
+  if (!s) throw new OpError('That action is no longer on the Timeline.');
+  const def = findAction(g.character, s.action);
+  if (!def) throw new OpError('That action no longer exists.');
+  const room = actRoom(g, spanIndex);
+  const lo0 = Math.max(room.lo, Math.min(room.hi - 1, Math.round(from)));
+  const hi = Math.max(lo0 + 1, Math.min(room.hi, Math.round(to)));
+  const lo = Math.min(lo0, hi - 1);
+  if (lo === s.from && hi === s.to) return { movie, skipped: [], index: spanIndex };
+  const a = atRate(def, movie.fps);
+  const cleared = clearAction(movie, charId, spanIndex);
+  const at = (mv: Movie): number => (characterOf(mv, charId).character.acts ?? []).findIndex((x) => x.from === lo);
+  if (a.loop || hi - lo <= a.length) {
+    const r = applyAction(cleared, charId, s.action, lo, a.loop ? loopPasses(a.length, hi - lo) : 1, hi);
+    return { ...r, index: at(r.movie) };
+  }
+  // a one-shot held past its end: one pass, then nothing of the action's own channels but its last pose, sealed at `hi`
+  const r = applyAction(cleared, charId, s.action, lo, 1);
+  const g2 = characterOf(r.movie, charId), ch2 = g2.character, acts2 = ch2.acts ?? [];
+  const i = acts2.findIndex((x) => x.from === lo);
+  const placed = acts2[i], natural = placed.to;
+  const pd = spanAction(ch2, placed) ?? def;
+  const held: ActSpan = { ...placed, to: hi };
+  const kept = acts2.map((x, j) => (j === i ? held : x));
+  let out = clearRange(g2, owned(pd, ch2), natural + 1, hi, acts2.filter((_, j) => j !== i));
+  out = seal(out, kept, [hi], movie.height, movie.fps);
+  if (pd.mouth) {
+    const sp = speak(movie, out, atRate(pd, movie.fps), lo, natural, hi, true);
+    out = sp.g;
+    if (placed.said || sp.said.length) held.said = [...(placed.said ?? []), ...sp.said];
+  }
+  return { movie: put(r.movie, withChar(out, { acts: kept })), skipped: r.skipped, index: i };
+}
+
 function easeBefore(list: Key[], f: number): Ease {
   let e: Ease = 'linear';
   for (const k of list) { if (k.frame < f) e = k.ease; else break; }
