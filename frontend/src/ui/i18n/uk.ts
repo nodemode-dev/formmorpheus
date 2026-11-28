@@ -915,4 +915,9 @@ export const uk: Record<string, string> = {
   'This character draws nothing to walk.': 'Цей персонаж не має що малювати для ходьби.', 'This character cannot walk from here.': 'Цей персонаж не може йти звідси.', 'The character already stands there.': 'Персонаж уже стоїть там.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Ходьба виходить за кінець персонажа на часовій шкалі: подовжте його блок або фільм, або почніть раніше.',
   'Rear': 'Ззаду', 'Lighting': 'Освітлення', 'Historical': 'Історичні',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Вбудованому голосу потрібен комп\'ютер. На iPad використовуйте сервер мовлення в тій самій мережі або онлайн-голос.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Вкажіть адресу сервера мовлення на комп\'ютері в тій самій мережі. Там працює будь-який застосунок, що відповідає на поширений API мовлення, зокрема з клонованим голосом. Спершу запустіть його.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Ваш власний ключ ElevenLabs. Він зберігається в в\'язці ключів цього iPad і надсилається лише цій службі.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Слухання використовує власне розпізнавання мовлення цього iPad просто на пристрої. Уперше воно запитує дозвіл.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Для слухання потрібен дозвіл на розпізнавання мовлення. Дозвольте його для FormMorpheus у застосунку Налаштування.',
 };

@@ -1114,4 +1114,9 @@ export const es: Record<string, string> = {
   'This character cannot walk from here.': 'Este personaje no puede caminar desde aquí.', 'The character already stands there.': 'El personaje ya está ahí.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'La caminata pasa del final del personaje en la línea de tiempo: alarga su bloque o la película, o empieza antes.',
   'Rear': 'Atrás', 'Lighting': 'Iluminación', 'Historical': 'Históricos',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'La voz integrada necesita un ordenador. En el iPad, usa un servidor de voz en la misma red o una voz en línea.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Indica la dirección de un servidor de voz en un ordenador de la misma red. Allí funciona cualquier aplicación que responda a la API de voz habitual, incluida una voz clonada. Inícialo primero.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Tu propia clave de ElevenLabs. Se guarda en el llavero de este iPad y solo se envía a ese servicio.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'La escucha usa el reconocimiento de voz propio de este iPad, en el dispositivo. Pide permiso la primera vez.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'La escucha necesita permiso para usar el reconocimiento de voz. Permítelo para FormMorpheus en la app Ajustes.',
 };

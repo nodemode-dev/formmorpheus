@@ -1058,4 +1058,9 @@ export const de: Record<string, string> = {
   'This character draws nothing to walk.': 'Diese Figur hat nichts, was gehen könnte.', 'This character cannot walk from here.': 'Diese Figur kann von hier aus nicht gehen.', 'The character already stands there.': 'Die Figur steht schon dort.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Der Gang reicht über das Ende der Figur auf der Zeitleiste hinaus: Verlängere ihren Block oder den Film, oder beginne früher.',
   'Rear': 'Hinten', 'Lighting': 'Beleuchtung', 'Historical': 'Historisch',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Die integrierte Stimme braucht einen Computer. Nutze auf dem iPad einen Sprachserver im selben Netzwerk oder eine Online-Stimme.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Gib die Adresse eines Sprachservers auf einem Computer im selben Netzwerk an. Jede App dort, die die gängige Sprach-API beantwortet, funktioniert, auch eine geklonte Stimme. Starte ihn zuerst.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Dein eigener ElevenLabs-Schlüssel. Er wird im Schlüsselbund dieses iPad aufbewahrt und nur an diesen Dienst gesendet.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Zuhören nutzt die eigene Spracherkennung dieses iPad, direkt auf dem Gerät. Beim ersten Mal wird um Erlaubnis gefragt.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Zuhören braucht die Erlaubnis, die Spracherkennung zu nutzen. Erlaube sie für FormMorpheus in der App Einstellungen.',
 };

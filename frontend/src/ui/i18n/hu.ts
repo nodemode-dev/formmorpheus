@@ -895,4 +895,9 @@ export const hu: Record<string, string> = {
   'This character draws nothing to walk.': "Ennek a karakternek nincs mit sétáltatni.", 'This character cannot walk from here.': "Ez a karakter innen nem tud sétálni.", 'The character already stands there.': "A karakter már ott áll.",
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': "A séta túlnyúlik a karakter végén az Idővonalon: nyújtsa meg a blokkját vagy a filmet, vagy kezdje korábban.",
   'Rear': "Hátulnézet", 'Lighting': "Világítás", 'Historical': "Történelmi",
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': "A beépített hanghoz számítógép kell. iPaden használj beszédszervert ugyanazon a hálózaton, vagy online hangot.",
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': "Add meg egy ugyanazon a hálózaton lévő számítógép beszédszerverének címét. Ott bármely alkalmazás működik, amely válaszol az általános beszéd-API-ra, klónozott hanggal együtt. Először indítsd el.",
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': "Saját ElevenLabs-kulcsod. Az iPad kulcstartójában tárolódik, és csak arra a szolgáltatásra kerül elküldésre.",
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': "A hallgatás az iPad saját beszédfelismerését használja, magán az eszközön. Első alkalommal engedélyt kér.",
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': "A hallgatáshoz engedély kell a beszédfelismerés használatához. Engedélyezd a FormMorpheus számára a Beállítások alkalmazásban.",
 };

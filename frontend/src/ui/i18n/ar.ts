@@ -1080,4 +1080,9 @@ export const ar: Record<string, string> = {
   'This character draws nothing to walk.': 'لا تحتوي هذه الشخصية على رسم يمكنه المشي.', 'This character cannot walk from here.': 'لا تستطيع هذه الشخصية المشي من هنا.', 'The character already stands there.': 'الشخصية تقف هناك بالفعل.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'يمتد المشي إلى ما بعد نهاية الشخصية على الخط الزمني: مدّد كتلتها أو الفيلم، أو ابدأ أبكر.',
   'Rear': 'خلفي', 'Lighting': 'الإضاءة', 'Historical': 'تاريخية',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'يحتاج الصوت المضمّن إلى كمبيوتر. على iPad، استخدم خادم كلام على الشبكة نفسها، أو صوتًا عبر الإنترنت.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'أدخل عنوان خادم كلام على كمبيوتر في الشبكة نفسها. يعمل هناك أي تطبيق يستجيب لواجهة الكلام الشائعة، بما في ذلك الصوت المستنسخ. شغّله أولًا.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'مفتاح ElevenLabs الخاص بك. يُحفظ في سلسلة مفاتيح هذا الـ iPad ويُرسل إلى تلك الخدمة فقط.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'يستخدم الاستماع ميزة التعرف على الكلام الخاصة بهذا الـ iPad، على الجهاز نفسه. يطلب الإذن في المرة الأولى.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'يحتاج الاستماع إلى إذن لاستخدام التعرف على الكلام. اسمح به لـ FormMorpheus في تطبيق الإعدادات.',
 };

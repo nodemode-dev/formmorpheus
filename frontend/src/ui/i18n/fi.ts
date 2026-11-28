@@ -1029,4 +1029,9 @@ export const fi: Record<string, string> = {
   'This character cannot walk from here.': 'Tämä hahmo ei voi kävellä täältä.', 'The character already stands there.': 'Hahmo seisoo jo siinä.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Kävely jatkuu hahmon loppua pidemmälle aikajanalla: pidennä sen lohkoa tai elokuvaa tai aloita aiemmin.',
   'Rear': 'Takaa', 'Lighting': 'Valaistus', 'Historical': 'Historialliset',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Sisäänrakennettu ääni tarvitsee tietokoneen. iPadilla käytä puhepalvelinta samassa verkossa tai verkkoääntä.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Anna samassa verkossa olevan tietokoneen puhepalvelimen osoite. Siellä toimii mikä tahansa sovellus, joka vastaa yleiseen puhe-rajapintaan, myös kloonattu ääni. Käynnistä se ensin.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Oma ElevenLabs-avaimesi. Se säilytetään tämän iPadin avainnipussa ja lähetetään vain kyseiselle palvelulle.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Kuuntelu käyttää tämän iPadin omaa puheentunnistusta laitteella. Se pyytää luvan ensimmäisellä kerralla.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Kuuntelu tarvitsee luvan puheentunnistuksen käyttöön. Salli se FormMorpheusille Asetukset-sovelluksessa.',
 };
