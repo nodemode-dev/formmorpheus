@@ -6,6 +6,12 @@
 .fm-cb-roster { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-1) var(--space-3) var(--space-4); border-inline-end: 1px solid var(--border-color); background: var(--surface-1); }
 .fm-cb-h { margin: var(--space-3) 2px var(--space-2); color: var(--text-muted); font-size: var(--fs-10); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
 .fm-cb-rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+/* Mine while empty: a dashed tile and the note as two cells of one row as tall as a real tile (the note adds no height) */
+.fm-cb-mine-note { display: contents; }
+.fm-cb-mine-note[hidden] { display: none; }
+.fm-cb-mine-note p { contain: size; display: flex; align-items: center; margin: 0; overflow: hidden; color: var(--text-muted); font-size: var(--fs-11); line-height: 1.4; }
+.fm-cb-mine .fm-cb-tc.fm-cb-mine-ghost:disabled { opacity: 1; background: transparent; cursor: default; }
+.fm-cb-mine-ghost i { display: block; width: 100%; aspect-ratio: 1; border-radius: var(--radius); outline: 1px dashed var(--line-3); outline-offset: -1px; }
 .fm-cb-tgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .fm-cb-tc { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 3px 3px 4px; border: 1.5px solid transparent; border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text-primary); cursor: pointer; }
 .fm-cb-tc:hover { background: var(--surface-raised); }
