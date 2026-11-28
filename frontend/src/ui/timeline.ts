@@ -1282,9 +1282,10 @@ export class TimelineView {
       drawFlipCells(c, item, x0, y, BLOCK_H, this.ppf, this.width, tileW, (local) => this.flipTile(m, item, local, tileW), m.transparent ? undefined : m.background);
       return;
     }
-    // a Drawing, Text, Shape or group (a character) sits on the paper it will be seen on, as its own picture:
-    // a group used to show grey bars for its inner blocks, which read as an empty block with lines
-    if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape' || item.kind === 'group') {
+    // a group (a character) shows its own picture on the lane's ground, like a picture block: it has no paper of its own.
+    // It used to show grey bars for its inner blocks, which read as an empty block with lines.
+    // a Drawing, Text or Shape sits on the paper it will be seen on
+    if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape') {
       c.fillStyle = m.transparent ? '#d9d9de' : m.background;
       // pale letters on pale paper read as an empty block: a text block takes the dark lane ground instead
       if (item.kind === 'text' && item.text && lightInk(item.text.color) && lightInk(m.transparent ? '#d9d9de' : m.background)) c.fillStyle = '#26262c';
