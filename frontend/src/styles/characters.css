@@ -1,6 +1,8 @@
 /* Characters panel: the media bin's panel and rows, placed on the left so both can be open, with two sections. */
 .fm-chars { right: auto; left: var(--space-3); }
 .fm-chars .fm-chars-build { width: auto; padding: 0 var(--space-2); font-size: var(--fs-12); white-space: nowrap; }
+.fm-chars .fm-bin-acts { max-inline-size: 55%; }
+.fm-chars .fm-bin-acts .fm-bin-btn { max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-chars-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .fm-chars-sec[hidden] { display: none; }
 .fm-chars .fm-chars-list { overflow: visible; }

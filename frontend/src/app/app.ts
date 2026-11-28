@@ -221,7 +221,7 @@ export function startApp(): void {
     // over content, the right-click is about that content: select it and open its menu; over empty Stage, the Stage's own
     const hit = stage?.contentAt(x, y) ?? null;
     if (hit) { if (!engine.selection.content.includes(hit)) engine.select([hit]); contentMenu.open(x, y); return; }
-    stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
+    stageMenu.setItems(['character.walk-here', '-', 'stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
   // like New: the movie opens unnamed and the library adopts it under a free "Untitled Movie" name
   const starterScenes = new StarterSceneDialog(async (entry) => {
@@ -252,6 +252,7 @@ export function startApp(): void {
   const builder = (): CharacterBuilder => (characterBuilder ??= new CharacterBuilder(engine, { renderer, characters: charactersPanel }));
   charactersPanel.onBuild = () => builder().open();
   charactersPanel.onOpenPreset = (id) => builder().openPreset(id);
+  charactersPanel.onOpenMine = (name, spec) => builder().openSpec(spec, name);
   new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);

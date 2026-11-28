@@ -2,6 +2,7 @@
 // or, for the built cast, from their recipe) and the person's own, saved in the Characters library on the engine. Add to Movie, or a drag onto the Stage or
 // the Timeline, places a copy with fresh ids at the Playhead. Built once; rows are patched in place.
 import { build, castToCharacterGroup, CAST_PRESETS, mkSpec, rigToSvg, type CastInput } from '../engine/cast';
+import type { CastSpec } from '../engine/cast/spec';
 import { attachMouthChart } from '../engine/character-ops';
 import type { Engine } from '../engine/engine';
 import { usedAssetIds } from '../engine/asset-gc';
@@ -52,7 +53,7 @@ const TEMPLATE = `<section class="fm-bin fm-chars" role="dialog" hidden>
 
 const ROW = `<div class="fm-bin-row" role="listitem">
   <button class="fm-bin-main" type="button" draggable="true"><span class="fm-bin-thumb"><img class="fm-chars-img" alt="" hidden><span class="fm-bin-glyph">${PERSON_SVG}</span></span><span class="fm-bin-info"><span class="fm-bin-name" data-no-i18n></span><span class="fm-bin-meta"></span></span></button>
-  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="open" hidden></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
+  <span class="fm-bin-acts"><button class="fm-bin-btn" type="button" data-act="add"></button><button class="fm-bin-btn" type="button" data-act="open" hidden></button><button class="fm-bin-btn" type="button" data-act="edit" hidden></button><button class="fm-bin-btn" type="button" data-act="rename"></button><button class="fm-bin-btn" type="button" data-act="delete"></button></span>
 </div>`;
 
 type Where = 'playhead' | 'stage' | { frame: number; index: number };
@@ -174,7 +175,7 @@ export async function placeCharacter(engine: Engine, renderer: Renderer, src: Ch
   return ok ? copy.id : null;
 }
 
-interface RowItem { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean; cast?: boolean }
+interface RowItem { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean; cast?: boolean; editable?: boolean }
 
 export class CharactersPanel {
   readonly root: HTMLElement;
@@ -195,6 +196,10 @@ export class CharactersPanel {
   /** Build a character: opens the Character Builder. */
   onBuild: (() => void) | null = null;
   onOpenPreset: ((id: string) => void) | null = null;
+  /** Edit in Character Builder: a saved character's name and its recipe. */
+  onOpenMine: ((name: string, spec: CastSpec) => void) | null = null;
+  /** The recipe of each saved character read so far (null: drawn or imported), by name, for the modified time it was read at. */
+  private readonly recipes = new Map<string, { v: number; spec: CastSpec | null }>();
   /** Called after the library is read again: at startup, on opening, after a save, rename or delete. */
   onLibrary: (() => void) | null = null;
   private shown = false;
@@ -283,6 +288,7 @@ export class CharactersPanel {
     try {
       this.mine = (await charactersApi.list()).items;
       this.mineNote = '';
+      await this.readRecipes();
     } catch (e) {
       this.mine = [];
       this.mineNote = e instanceof ApiError && e.status === 0 ? t(e.message) : t('The Characters library could not be read.');
@@ -290,6 +296,18 @@ export class CharactersPanel {
     this.mineRead = true;
     this.paint();
     this.onLibrary?.();
+  }
+
+  /** Reads the recipe of each saved character that is new or changed, so the rows show their buttons the first time they are painted. */
+  private async readRecipes(): Promise<void> {
+    const names = new Set(this.mine.map((c) => c.name));
+    for (const k of this.recipes.keys()) if (!names.has(k)) this.recipes.delete(k);
+    await Promise.all(this.mine.map(async (c) => {
+      if (this.recipes.get(c.name)?.v === c.modified) return;
+      let spec: CastSpec | null = null;
+      try { spec = (await unpackCharacter(await charactersApi.read(c.name))).group.character?.build ?? null; } catch { spec = null; }
+      this.recipes.set(c.name, { v: c.modified, spec });
+    }));
   }
 
   /** The starter characters the manifest lists (read at startup). */
@@ -310,7 +328,7 @@ export class CharactersPanel {
       ...starters.map((s): RowItem => ({ key: `starter:${s.id}`, name: s.name, meta: t('Starter character'), poster: s.poster ? `${STARTERS}${s.poster}` : '', mine: false })),
       ...CAST_PRESETS.map((p): RowItem => ({ key: `cast:${p.id}`, name: p.name, meta: t(p.tag), poster: this.shown ? castPoster(p) : '', mine: false, cast: true })),
     ]);
-    rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: `${c.name}\n${c.modified}`, v: c.modified, mine: true })));
+    rows(this.mineList, this.mine.map((c) => ({ key: `mine:${c.name}`, name: c.name, meta: new Date(c.modified * (c.modified < 1e12 ? 1000 : 1)).toLocaleDateString(), poster: `${c.name}\n${c.modified}`, v: c.modified, mine: true, editable: !!this.recipes.get(c.name)?.spec })));
     const keys = new Set(this.mine.map((c) => `mine:${c.name}`));
     for (const [k, p] of this.posters) if (!keys.has(k)) { if (p.url) URL.revokeObjectURL(p.url); this.posters.delete(k); }
     setText(this.empty, this.mineNote || t('No characters saved yet. Choose Save to Characters on a character to keep it here.'));
@@ -322,6 +340,8 @@ export class CharactersPanel {
     row.dataset.key = r.key;
     setText(q(row, '[data-act="add"]'), t('Add to Movie'));
     setText(q(row, '[data-act="open"]'), t('Open in Character Builder'));
+    setText(q(row, '[data-act="edit"]'), t('Edit in Character Builder'));
+    q(row, '[data-act="edit"]').title = t('Edit in Character Builder');
     setText(q(row, '[data-act="rename"]'), t('Rename'));
     setText(q(row, '[data-act="delete"]'), t('Delete'));
     const img = q<HTMLImageElement>(row, '.fm-chars-img');
@@ -340,6 +360,7 @@ export class CharactersPanel {
       img.setAttribute('src', r.poster);
     }
     setHidden(q(row, '[data-act="open"]'), !r.cast);
+    setHidden(q(row, '[data-act="edit"]'), !r.editable);
     setHidden(q(row, '[data-act="rename"]'), !r.mine);
     setHidden(q(row, '[data-act="delete"]'), !r.mine);
     const busy = this.busy.has(r.key);
@@ -374,7 +395,10 @@ export class CharactersPanel {
     if (act === 'open') { if (key.startsWith('cast:')) this.onOpenPreset?.(key.slice(5)); return; }
     const name = key.startsWith('mine:') ? key.slice(5) : '';
     if (!name) return;
-    if (act === 'rename') {
+    if (act === 'edit') {
+      const spec = this.recipes.get(name)?.spec;
+      if (spec) this.onOpenMine?.(name, structuredClone(spec));
+    } else if (act === 'rename') {
       const to = await promptName(t('Rename Character'), name, t('Rename'));
       if (!to || to === name) return;
       try { await charactersApi.rename(name, to); } catch (e) { toast(e instanceof Error ? e.message : t('The character could not be renamed.'), 'error'); }
