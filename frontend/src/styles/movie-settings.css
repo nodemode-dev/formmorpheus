@@ -3,14 +3,15 @@
 .fm-pop.fm-ms[hidden] { display: none; }
 .fm-ms-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-3) var(--space-2) var(--space-2); }
 .fm-ms-title { padding: var(--space-1) var(--space-3) var(--space-3); color: var(--text-primary); font-size: var(--fs-18); font-weight: 700; }
-.fm-ms-pane { gap: 2px; }
-.fm-ms-pair { gap: var(--space-1); }
+/* one column that can shrink: an auto column grew to the widest row's minimum and pushed every row and toggle past the panel edge, cropping the Timeline tab */
+.fm-ms-pane { gap: 2px; grid-template-columns: minmax(0, 1fr); }.fm-ms-pair { gap: var(--space-1); }
 .fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { flex: none; width: 30px; padding-inline: 0; }
 /* FV-211: four-digit sizes fit (no spinner eating the field) and the h/m/s row stays inside the panel */
 .fm-ms-pair .fm-ms-input[type="number"] { flex: none; width: 76px; padding-inline: var(--space-2); -moz-appearance: textfield; appearance: textfield; }
 .fm-ms-pair .fm-ms-input.fm-ms-hms[type="number"] { width: 30px; padding-inline: 0; }
 .fm-ms-pair .fm-ms-input[type="number"]::-webkit-inner-spin-button, .fm-ms-pair .fm-ms-input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.fm-ms-row > .fm-ms-label { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a long label wraps onto a second line (the row grows) instead of being cut with an ellipsis */
+.fm-ms-row > .fm-ms-label { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
 .fm-ms-pair { flex: none; }
 .fm-ms-row > .fm-ms-input.fm-ms-wide { width: 200px; }
 .fm-ms-sub { display: grid; gap: 2px; }
