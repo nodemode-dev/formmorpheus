@@ -1115,4 +1115,9 @@ export const zhCN: Record<string, string> = {
   'The character already stands there.': '角色已经站在那里了。',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': '行走超出了角色在时间轴上的结尾：请加长它的整块或影片，或提前开始。',
   'Rear': '背面', 'Lighting': '灯光', 'Historical': '历史',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': '内置语音需要电脑。在 iPad 上，请使用同一网络中的语音服务器，或在线语音。',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': '请填写同一网络中某台电脑上语音服务器的地址。那里任何能响应通用语音 API 的应用都可使用，包括克隆的声音。请先启动它。',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': '你自己的 ElevenLabs 密钥。它保存在这台 iPad 的钥匙串中，只会发送给该服务。',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': '聆听使用这台 iPad 自带的语音识别，在设备上完成。第一次会请求权限。',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': '聆听需要使用语音识别的权限。请在“设置”应用中为 FormMorpheus 允许。',
 };

@@ -15,6 +15,36 @@ html.is-ipad body {
 html.fm-kb-open .cv-scrim { padding-bottom: var(--fm-kb-inset, 0px); box-sizing: border-box; }
 html.fm-kb-open .cv-dialog { max-height: calc(100vh - 64px - var(--fm-kb-inset, 0px)); }
 
+/* The Build panel, the scene strip and the cards of 0.32.0 to 0.37.0 size their controls from the --ctl tokens: on
+   iPad those read as a finger's target inside them, as gestures.css does for the older controls. */
+html.is-ipad :is(.fm-build, .fm-scenes, .fm-aiv, .fm-sub, .fm-ms-trks, .fm-ms-bg) {
+  --ctl-sm: var(--touch-target);
+  --ctl-md: var(--touch-target);
+  --ctl: var(--touch-target);
+}
+html.is-ipad .fm-props-chip { min-inline-size: var(--touch-target); }
+/* the Character Builder's view switch and Flip above its preview */
+html.is-ipad .fm-cb-viewbar { block-size: auto; min-block-size: var(--touch-target); }
+html.is-ipad :is(.fm-cb-views button, .fm-cb-flip) { justify-content: center; min-inline-size: var(--touch-target); min-block-size: var(--touch-target); }
+html.is-ipad :is(.fm-aiv-x, .fm-sub-x) { display: inline-flex; align-items: center; justify-content: center; min-inline-size: var(--touch-target); min-block-size: var(--touch-target); }
+html.is-ipad .fm-aiv-link { min-block-size: var(--touch-target); }
+/* with 44 px rows the AI Voice card outgrows a landscape iPad's room above its bottom edge: it scrolls inside that room,
+   as the Subtitles card does */
+html.is-ipad .fm-aiv { max-block-size: calc(100vh - var(--space-4) * 2 - var(--cv-row-h) * 5.5); }
+/* the AI Voice and Subtitles cards stand above the on-screen keyboard while it is up */
+html.fm-kb-open.is-ipad :is(.fm-aiv, .fm-sub) { inset-block-end: calc(var(--fm-kb-inset, 0px) + var(--space-2)); max-block-size: calc(100vh - var(--fm-kb-inset, 0px) - var(--space-6)); }
+
+/* The Timeline's head row with 44 px buttons runs out of room before the window is compact (an upright iPad): the
+   side columns take what they need and the level meter goes, as under 720 px. The Timeline is measured, not the
+   window, so an open Build panel counts. */
+html.is-ipad .fm-timeline { container: fm-tl / inline-size; }
+@container fm-tl (max-width: 979px) {
+  html.is-ipad .fm-transport { grid-template-columns: auto minmax(0, 1fr) auto; }
+  html.is-ipad .fm-transport-mid { justify-content: center; }
+  html.is-ipad .fm-master-meter { display: none; }
+  html.is-ipad .fm-frame-readout { min-inline-size: 0; }
+}
+
 /* The compact windows: under 720 px the layout in shell.css already turns the panels into sheets; this keeps the
    Timeline's bars and the status bar from running into each other. */
 @media (max-width: 719px) {

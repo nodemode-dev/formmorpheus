@@ -2,6 +2,24 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.38.0 · 2026-11-28
+
+The iPad app gets AI Voice, listening for subtitles and My scenes, and its touch targets and Timeline top row are fixed. The iPad additions are new and wait for their check on the device; the list is in `docs/ios/BUILD.md`.
+
+### New
+- iPad: AI Voice is on. The Online tab speaks with your own key, kept in the iPad's Keychain. The Offline tab says the built-in voice needs a computer, and Voice app speaks through a speech server on a computer on the same network, by address or by a `.local` name. Only an address on your own network is accepted, and the iPad asks once for local network access.
+- iPad: Subtitles from this sound uses the iPad's own speech recognition, on the iPad only, with no model to download. A language the iPad cannot recognize on the device is refused. The iPad asks for permission the first time.
+- iPad: My scenes are kept in the Scenes folder of the FormMorpheus folder in Files, with Save as Scene, rename and delete. A deleted scene is listed by name in Recently Deleted and Restore puts it back.
+- iPad: Walk To Here is a touch and hold on the spot on the Stage; the character that was selected when your finger went down walks.
+
+### Improved
+- iPad: the Build panel, the scene strip, the AI Voice and Subtitles cards, Save as Scene and the Character Builder's view switch have 44 px touch targets.
+- iPad: held upright, the Timeline's top row no longer overlaps, and the AI Voice card scrolls inside the window, stands above the on-screen keyboard and does not open it by itself.
+- A track with no name shows the name of its first content in the Camera tab's Depth list.
+
+### Known issues
+- iPad: still not there are the built-in voice, Save to a chosen folder in Export, outside agents and the terminal panel, and Pen Link.
+
 ## 0.37.0 · 2026-11-27
 
 The Build panel grows to seven tabs, with Props and Effects added, and a character can turn, walk, stand in more scenes, and sit in a scene of your own.

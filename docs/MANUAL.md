@@ -463,6 +463,8 @@ The walk writes move keys for exactly that stretch, plus the walk action over th
 - **Where to right-click.** A block under the pointer takes the right-click as its own, and opens that block's menu. A picture that covers the whole frame, such as the background of a starter scene, is such a block, so inside the frame the Stage's own menu opens only where nothing is drawn. Right-click in the dimmed backstage around the frame, or hide that track while you place the walk, or use the four Walk In and Walk Off commands, which need no spot.
 - **Refused.** A walk that would run past the end of the character's block on the Timeline, or of the movie, is refused with a sentence that tells you to lengthen the block or the movie or start earlier. Putting the Playhead off the character's block, or asking it to walk to where it already stands, is refused too.
 
+**On iPad.** Select the character, then touch and hold the spot on the Stage: the character that was selected when your finger went down is the one that walks. The four Walk In and Walk Off commands work as they do elsewhere.
+
 ### Your own actions
 
 - **Save Action...** makes an action from the character's own keys across the loop range, or across the whole block when none is set. Type a name. It takes the Move and Bones keys inside the range, adds a key at each end where the picture is, and is marked Loop when every channel ends where it starts. The keys it came from stay plain keys.
@@ -517,6 +519,8 @@ In the Scenes tab, **My scenes** lists them, newest first, above the starter sce
 - **Rename and delete.** The three dots on a tile, or a right-click on it, open **Rename...** and **Delete...**. Delete moves the scene to **Recently Deleted** on Home, where it can be restored for 30 days; a restore puts it back in My scenes.
 - **Where they are kept.** Each scene is a `.fmo` file in the **Scenes** folder of your data folder (see The data folder), one file for each, and stays there after a restart. The engine serves them under `/api/scenes`. A scene is a copy: later changes in the movie it came from do not change it, and the scene is never changed when you lay it behind a movie.
 - **The engine keeps them.** My scenes are read from and written through the engine, so when the engine is not running the tab says so instead of listing them.
+
+**On iPad.** My scenes are kept in the **Scenes** folder of the FormMorpheus folder in the Files app, beside Characters. A deleted scene waits in Recently Deleted on Home by its name, and Restore puts it back in My scenes.
 
 ## Props
 
@@ -660,6 +664,8 @@ On the **Offline** tab, **Voice from** · **Voice app on this computer** speaks 
 
 On the **Online** tab, an online voice (ElevenLabs) speaks with your own key. The key is kept in the system keychain, never in the settings file, and can be cleared again. The text can be up to 2000 characters. Your text is sent to that service only when you press **Speak** on this tab; nothing is sent on the Offline tab.
 
+**On iPad.** AI Voice is there too. The **Online** tab works as above, with your own key kept in the iPad's Keychain. The built-in voice needs a computer, so the Offline tab says so; use **Voice app** with the address of a speech server on a computer on the same network, such as `http://192.168.1.20:8080` or `http://my-computer.local:8080`. Only an address on your own network is accepted, and the iPad asks once to allow access to the local network.
+
 ### Where the voice files are
 
 The built-in voice lives in the **voice** folder of your data folder: its runtime in `voice/runtime` and its model in `voice/models`. The data folder is the one that holds the settings file: Preferences · General shows the settings and library folders, and `FORMMORPHEUS_DATA_DIR` moves it. A sound you have just spoken waits in `voice/out` until the window has placed it, and is removed within the hour if it never was. The sound you placed is part of the movie and is saved in the `.fmo` like any other sound.
@@ -704,6 +710,8 @@ An AI voice adds its subtitles by itself when it speaks, one line for each sente
 Listening runs on this computer. It uses the built-in voice's runtime, and its own model, Whisper base, which is a one-time download of about 80 MB that you start from the card with **Download the listening model**. The card shows the progress and can cancel it. Nothing you record or import is sent anywhere. Because it uses the built-in voice's runtime, set the built-in voice up first, in the AI Voice card; until then the card says so.
 
 The model is kept in the **voice** folder of your data folder, in `voice/listen`, beside the built-in voice's own model. A sound of up to about two hours can be listened to in one go: split a longer block and listen to each part.
+
+**On iPad.** Listening uses the iPad's own speech recognition, on the iPad only, so there is no model to download and nothing is sent to a network. The iPad asks for permission to use speech recognition the first time; if you refused it, the card says to allow it in the Settings app. A language the iPad cannot recognize on the device is refused. Cancelling from the card does not stop a listen that is already running; it ends by itself.
 
 ### Editing lines
 
@@ -880,6 +888,22 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.38.0
+
+**On iPad, AI Voice.** The Online tab works with your own key, kept in the iPad's Keychain. The built-in voice needs a computer; use Voice app with the address of a speech server on a computer on the same network, by number or by a `.local` name. Only an address on your own network is accepted, and the iPad asks once for local network access. See AI Voice.
+
+**On iPad, listening for subtitles.** Subtitles from this sound uses the iPad's own speech recognition, on the iPad only, with no model to download. The iPad asks for permission the first time. See Subtitles.
+
+**On iPad, My scenes.** Save as Scene, rename and delete work, scenes are kept in the Scenes folder of the FormMorpheus folder in Files, and a deleted scene waits in Recently Deleted. See My scenes.
+
+**On iPad, Walk To Here.** Touch and hold the spot on the Stage with a character selected. See Walk.
+
+**On iPad, easier to touch.** The Build panel, the scene strip, the AI Voice and Subtitles cards and Save as Scene have larger touch targets. Held upright, the Timeline's top row no longer overlaps, the AI Voice card scrolls and stands above the on-screen keyboard, and the Character Builder's view switch is larger.
+
+**Not on iPad.** The built-in voice, Save to a chosen folder in Export, outside agents and the terminal panel, and Pen Link.
+
+**In the Camera tab,** a track with no name shows the name of its first content in the Depth list.
 
 ## New in 0.37.0
 

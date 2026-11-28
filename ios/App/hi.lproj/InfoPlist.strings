@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus माइक्रोफ़ोन का उपयोग केवल तब करता है जब आप किसी फ़िल्म में नैरेशन या ध्वनि रिकॉर्ड करते हैं।";
 "NSPhotoLibraryAddUsageDescription" = "जब आप चुनते हैं, तब FormMorpheus आपकी एक्सपोर्ट की हुई फ़िल्में और छवियाँ आपकी फ़ोटो लाइब्रेरी में सहेजता है।";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus इस iPad पर वाक् पहचान का उपयोग केवल तब करता है जब आप उससे किसी ध्वनि से सबटाइटल लिखने को कहते हैं। ध्वनि इसी iPad पर रहती है।";
+"NSLocalNetworkUsageDescription" = "FormMorpheus आपके लोकल नेटवर्क का उपयोग केवल उस स्पीच सर्वर तक पहुँचने के लिए करता है जिसे आप AI आवाज़ के लिए बताते हैं।";

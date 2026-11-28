@@ -895,4 +895,9 @@ export const cs: Record<string, string> = {
   'This character draws nothing to walk.': 'Tato postava nemá co nechat chodit.', 'This character cannot walk from here.': 'Tato postava odsud nemůže jít.', 'The character already stands there.': 'Postava už tam stojí.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Chůze přesahuje konec postavy na časové ose: prodlužte její blok nebo film, nebo začněte dřív.',
   'Rear': 'Zezadu', 'Lighting': 'Osvětlení', 'Historical': 'Historické',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Vestavěný hlas potřebuje počítač. Na iPadu použijte řečový server ve stejné síti nebo online hlas.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Zadejte adresu řečového serveru na počítači ve stejné síti. Funguje tam jakákoli aplikace, která odpovídá na běžné rozhraní pro řeč, včetně naklonovaného hlasu. Nejprve ji spusťte.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Váš vlastní klíč ElevenLabs. Je uložen v klíčence tohoto iPadu a odesílá se jen této službě.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Poslech používá vlastní rozpoznávání řeči tohoto iPadu, přímo v zařízení. Poprvé požádá o oprávnění.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Poslech potřebuje oprávnění k rozpoznávání řeči. Povolte je pro FormMorpheus v aplikaci Nastavení.',
 };

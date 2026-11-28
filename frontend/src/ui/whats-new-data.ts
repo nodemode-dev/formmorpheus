@@ -5,6 +5,15 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.38.0', name: 'More on the iPad',
+    additions: [
+      { title: 'AI Voice on iPad', text: 'Speak with your own online key, or through a speech server on a computer on the same network. The built-in voice needs a computer.', command: 'ai-voice' },
+      { title: 'Subtitles from a sound on iPad', text: 'Select a recording or a sound file and listen for its lines with the iPad\'s own speech recognition. Nothing is downloaded or sent anywhere.', command: 'subtitles' },
+      { title: 'My scenes on iPad', text: 'Save as Scene keeps scenery of your own in the Scenes folder in Files, to lay behind any movie. A deleted one waits in Recently Deleted.', command: 'scene.save-as' },
+      { title: 'Easier to touch', text: 'The Build panel, the scene strip and the AI Voice and Subtitles cards have larger touch targets, and Walk To Here is a touch and hold on the Stage.', command: 'character.walk-here' },
+    ],
+  },
+  {
     version: '0.37.0', name: 'Props, effects and scenes',
     additions: [
       { title: 'Props and scene effects', text: 'The Build panel has two new tabs. Props holds 49 objects to add at the Playhead, and Effects lays rain, snow, fog, light and more over the whole movie.', command: 'props.library' },

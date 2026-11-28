@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus używa mikrofonu tylko wtedy, gdy nagrywasz narrację lub dźwięk do filmu.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus zapisuje w Twojej fototece filmy i obrazy, które eksportujesz, gdy tak zdecydujesz.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus używa rozpoznawania mowy na tym iPadzie tylko wtedy, gdy poprosisz o napisanie napisów z dźwięku. Dźwięk pozostaje na tym iPadzie.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus używa Twojej sieci lokalnej tylko do połączenia z serwerem mowy, który podasz dla funkcji Głos AI.";

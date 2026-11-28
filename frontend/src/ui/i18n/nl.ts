@@ -1056,4 +1056,9 @@ export const nl: Record<string, string> = {
   'This character draws nothing to walk.': 'Dit personage heeft niets getekend om mee te lopen.', 'This character cannot walk from here.': 'Dit personage kan vanaf hier niet lopen.', 'The character already stands there.': 'Het personage staat daar al.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'De wandeling loopt voorbij het einde van het personage op de Tijdlijn: maak het blok of de film langer, of begin eerder.',
   'Rear': 'Achterkant', 'Lighting': 'Verlichting', 'Historical': 'Historisch',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'De ingebouwde stem heeft een computer nodig. Gebruik op de iPad een spraakserver op hetzelfde netwerk, of een online stem.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Geef het adres van een spraakserver op een computer op hetzelfde netwerk. Elke app daar die de gangbare spraak-API beantwoordt, werkt, ook met een gekloonde stem. Start hem eerst.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Je eigen ElevenLabs-sleutel. Hij wordt bewaard in de sleutelhanger van deze iPad en alleen naar die dienst gestuurd.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Luisteren gebruikt de eigen spraakherkenning van deze iPad, op het apparaat zelf. De eerste keer vraagt het om toestemming.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Luisteren heeft toestemming nodig om spraakherkenning te gebruiken. Sta het toe voor FormMorpheus in de app Instellingen.',
 };

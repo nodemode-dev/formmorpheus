@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "只有在你於影片中錄製旁白或聲音時，FormMorpheus 才會使用麥克風。";
 "NSPhotoLibraryAddUsageDescription" = "當你選擇時，FormMorpheus 會將你匯出的影片和影像儲存到你的照片圖庫。";
+"NSSpeechRecognitionUsageDescription" = "只有在你要求根據聲音產生字幕時，FormMorpheus 才會在此 iPad 上使用語音辨識。聲音會保留在此 iPad 上。";
+"NSLocalNetworkUsageDescription" = "FormMorpheus 只會使用區域網路連線到你為 AI 語音指定的語音伺服器。";

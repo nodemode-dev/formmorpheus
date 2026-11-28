@@ -1078,4 +1078,9 @@ export const id: Record<string, string> = {
   'This character draws nothing to walk.': "Karakter ini tidak punya gambar untuk dijalankan.", 'This character cannot walk from here.': "Karakter ini tidak dapat berjalan dari sini.", 'The character already stands there.': "Karakter sudah berdiri di sana.",
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': "Langkah berjalan melewati akhir karakter di Timeline: perpanjang bloknya atau filmnya, atau mulai lebih awal.",
   'Rear': "Belakang", 'Lighting': "Pencahayaan", 'Historical': "Bersejarah",
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': "Suara bawaan memerlukan komputer. Di iPad, gunakan server ucapan di jaringan yang sama, atau suara online.",
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': "Masukkan alamat server ucapan di komputer pada jaringan yang sama. Aplikasi apa pun di sana yang menjawab API ucapan umum dapat dipakai, termasuk suara hasil kloning. Jalankan terlebih dahulu.",
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': "Kunci ElevenLabs milik Anda sendiri. Kunci ini disimpan di keychain iPad ini dan hanya dikirim ke layanan tersebut.",
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': "Mendengarkan memakai pengenalan ucapan bawaan iPad ini, langsung di perangkat. Izin akan diminta saat pertama kali.",
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': "Mendengarkan memerlukan izin untuk memakai pengenalan ucapan. Izinkan untuk FormMorpheus di app Pengaturan.",
 };

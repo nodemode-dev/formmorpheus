@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus mikrofonu yalnızca bir filme anlatım veya ses kaydettiğinizde kullanır.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus, siz seçtiğinizde dışa aktardığınız filmleri ve görüntüleri fotoğraf kitaplığınıza kaydeder.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus, bu iPad'deki konuşma tanımayı yalnızca bir sesten altyazı yazmasını istediğinizde kullanır. Ses bu iPad'de kalır.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus, yerel ağınızı yalnızca Yapay zekâ sesi için belirttiğiniz konuşma sunucusuna ulaşmak için kullanır.";

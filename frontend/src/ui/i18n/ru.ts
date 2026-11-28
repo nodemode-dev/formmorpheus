@@ -899,4 +899,9 @@ export const ru: Record<string, string> = {
   'This character draws nothing to walk.': 'У этого персонажа нечего двигать при ходьбе.', 'This character cannot walk from here.': 'Этот персонаж не может идти отсюда.', 'The character already stands there.': 'Персонаж уже стоит там.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Ходьба выходит за конец персонажа на Шкале времени: удлините его блок или фильм либо начните раньше.',
   'Rear': 'Сзади', 'Lighting': 'Освещение', 'Historical': 'Исторические',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Встроенному голосу нужен компьютер. На iPad используйте речевой сервер в той же сети или онлайн-голос.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Укажите адрес речевого сервера на компьютере в той же сети. Там работает любое приложение, которое отвечает на распространённый речевой API, в том числе с клонированным голосом. Сначала запустите его.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Ваш личный ключ ElevenLabs. Он хранится в связке ключей этого iPad и отправляется только этому сервису.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Прослушивание использует собственное распознавание речи этого iPad прямо на устройстве. При первом запуске запрашивается разрешение.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Для прослушивания нужно разрешение на распознавание речи. Разрешите его для FormMorpheus в приложении Настройки.',
 };

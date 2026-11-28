@@ -1096,4 +1096,9 @@ export const th: Record<string, string> = {
   'This character draws nothing to walk.': 'ตัวละครนี้ไม่มีส่วนที่วาดไว้ให้เดิน', 'This character cannot walk from here.': 'ตัวละครนี้เดินจากตรงนี้ไม่ได้', 'The character already stands there.': 'ตัวละครยืนอยู่ตรงนั้นแล้ว',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'การเดินยาวเกินจุดสิ้นสุดของตัวละครบนไทม์ไลน์: ขยายบล็อกของตัวละครหรือภาพยนตร์ หรือเริ่มให้เร็วขึ้น',
   'Rear': 'ด้านหลัง', 'Lighting': 'การจัดแสง', 'Historical': 'ประวัติศาสตร์',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'เสียงในตัวต้องใช้คอมพิวเตอร์ บน iPad ให้ใช้เซิร์ฟเวอร์เสียงพูดในเครือข่ายเดียวกัน หรือเสียงออนไลน์',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'ใส่ที่อยู่ของเซิร์ฟเวอร์เสียงพูดบนคอมพิวเตอร์ในเครือข่ายเดียวกัน แอปใดก็ได้ที่นั่นที่ตอบ API เสียงพูดทั่วไปใช้งานได้ รวมถึงเสียงโคลน เริ่มเซิร์ฟเวอร์ก่อน',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'คีย์ ElevenLabs ของคุณเอง เก็บไว้ในพวงกุญแจของ iPad เครื่องนี้และส่งไปยังบริการนั้นเท่านั้น',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'การฟังใช้การรู้จำเสียงพูดของ iPad เครื่องนี้เอง บนอุปกรณ์ โดยจะขออนุญาตในครั้งแรก',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'การฟังต้องได้รับอนุญาตให้ใช้การรู้จำเสียงพูด อนุญาตให้ FormMorpheus ในแอปการตั้งค่า',
 };

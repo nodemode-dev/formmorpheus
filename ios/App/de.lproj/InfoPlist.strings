@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus verwendet das Mikrofon nur, wenn du eine Sprecherspur oder einen Ton in einen Film aufnimmst.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus sichert die Filme und Bilder, die du exportierst, in deiner Fotomediathek, wenn du das auswählst.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus verwendet die Spracherkennung auf diesem iPad nur, wenn du Untertitel aus einem Ton schreiben lässt. Der Ton bleibt auf diesem iPad.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus verwendet dein lokales Netzwerk nur, um den Sprachserver zu erreichen, den du für KI-Stimme angibst.";

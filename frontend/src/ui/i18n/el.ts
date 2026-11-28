@@ -971,4 +971,9 @@ export const el: Record<string, string> = {
   'This character cannot walk from here.': "Αυτός ο χαρακτήρας δεν μπορεί να περπατήσει από εδώ.", 'The character already stands there.': "Ο χαρακτήρας στέκεται ήδη εκεί.",
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': "Το περπάτημα ξεπερνά το τέλος του χαρακτήρα στο Χρονολόγιο: μεγαλώστε το μπλοκ του ή την ταινία, ή ξεκινήστε νωρίτερα.",
   'Rear': "Πίσω", 'Lighting': "Φωτισμός", 'Historical': "Ιστορικά",
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': "Η ενσωματωμένη φωνή χρειάζεται υπολογιστή. Στο iPad χρησιμοποιήστε έναν διακομιστή ομιλίας στο ίδιο δίκτυο ή μια διαδικτυακή φωνή.",
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': "Δώστε τη διεύθυνση ενός διακομιστή ομιλίας σε υπολογιστή στο ίδιο δίκτυο. Λειτουργεί οποιαδήποτε εφαρμογή εκεί που απαντά στο κοινό API ομιλίας, ακόμη και με κλωνοποιημένη φωνή. Ξεκινήστε τον πρώτα.",
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': "Το δικό σας κλειδί ElevenLabs. Φυλάσσεται στην κλειδοθήκη αυτού του iPad και αποστέλλεται μόνο σε αυτή την υπηρεσία.",
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': "Η ακρόαση χρησιμοποιεί τη δική του αναγνώριση ομιλίας του iPad, πάνω στη συσκευή. Ζητά άδεια την πρώτη φορά.",
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': "Η ακρόαση χρειάζεται άδεια για χρήση της αναγνώρισης ομιλίας. Επιτρέψτε την για το FormMorpheus στην εφαρμογή Ρυθμίσεις.",
 };

@@ -1077,4 +1077,9 @@ export const hi: Record<string, string> = {
   'This character draws nothing to walk.': "इस कैरेक्टर में चलाने के लिए कुछ बना नहीं है।", 'This character cannot walk from here.': "यह कैरेक्टर यहाँ से चल नहीं सकता।", 'The character already stands there.': "कैरेक्टर पहले से वहीं खड़ा है।",
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': "चाल टाइमलाइन पर कैरेक्टर के अंत से आगे निकल जाती है: उसका ब्लॉक या मूवी लंबी करें, या पहले शुरू करें।",
   'Rear': "पीछे", 'Lighting': "प्रकाश व्यवस्था", 'Historical': "ऐतिहासिक",
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': "अंतर्निहित आवाज़ के लिए कंप्यूटर चाहिए। iPad पर उसी नेटवर्क के किसी स्पीच सर्वर या ऑनलाइन आवाज़ का उपयोग करें।",
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': "उसी नेटवर्क के किसी कंप्यूटर पर चल रहे स्पीच सर्वर का पता दें। वहाँ कोई भी ऐप जो आम स्पीच API का जवाब देता है, चलता है, क्लोन की हुई आवाज़ भी। उसे पहले शुरू करें।",
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': "आपकी अपनी ElevenLabs कुंजी। यह इस iPad के कीचेन में रखी जाती है और केवल उसी सेवा को भेजी जाती है।",
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': "सुनना इस iPad की अपनी स्पीच रिकग्निशन का उपयोग करता है, डिवाइस पर ही। यह पहली बार अनुमति माँगता है।",
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': "सुनने के लिए स्पीच रिकग्निशन का उपयोग करने की अनुमति चाहिए। सेटिंग ऐप में FormMorpheus के लिए इसे अनुमति दें।",
 };

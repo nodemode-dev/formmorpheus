@@ -2,6 +2,30 @@
 
 Decisions and removed code for the iPad app (MorpheusMobile). Plan: `MOBILE_PLAN.md` in the planning sidecar. Newest entries first.
 
+## v0.38.0 · the iPad brought up to 0.37.0: scenes, AI Voice, listening
+
+- refers-to: Engine/ScenesRoutes.swift; Engine/TrashRoutes.swift (`meta`, `restore`); Engine/VoiceRoutes.swift; Engine/VoiceRemote.swift; Engine/VoiceKeychain.swift; Engine/VoiceListen.swift; Engine/EngineRouter.swift; App/Info.plist; App/*.lproj/InfoPlist.strings; setup/api_contract_check; docs/ios/BUILD.md (`## Check on the iPad (0.38.0)`)
+- kind: decision
+- logged: v0.38.0 · 2026-11-28
+
+- **Nothing here was compiled or run** (no Swift toolchain in the workspace). The interface side was looked at in Chrome made to behave as the iPad, with the native side and the voice routes stubbed. The first real build is the owner's, in Xcode; the lines under "Could not be confirmed" are where to look first if it stops.
+- **Read for 0.32.0 to 0.37.0.** Two things have engine routes the iPad lacked: My scenes (`/api/scenes`, and the `scene` kind in Recently Deleted) and AI Voice with listening (`/api/voice`). Everything else of those versions is interface only and needed no Swift: the Build panel, props, starter scenes, scene effects, camera moves, scenes on the timeline, depth, character views, the walk, Save to (hidden on iPad). `sceneFx`, `scenes` and a character's `view` ride inside the movie JSON, which the iPad stores and never reads.
+- **Scenes.** `ScenesRoutes` is `CharactersRoutes` route for route with the sentences of `services/scenes.py`; the folder is `Documents/Scenes` through `EngineConfig.folder("Scenes")`, made on first use (it is not in `ensureTree`, so the Files app shows it after the first scene is saved or listed). The store is `ScenesStore`, not `SceneStore`, to stay clear of the UIScene types.
+- **Voice, what the iPad can do.** The built-in voice is a Python runtime and cannot exist here: status reports it as not ready with `available: false` and a reason, and its routes answer 409 "The built-in voice is not available on iPad." Online is the desktop's requests through URLSession with the key in the Keychain (service `FormMorpheus`, this device only, no environment fallback). The voice app is a speech server on another computer: allowed addresses are loopback, 10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10 and names ending in `.local`; everything else is refused, and redirects are refused. The default address is empty (loopback on iPad is the iPad). A `.local` name is resolved by the system and the resolved address is not checked again.
+- **Listening is the Speech framework, on the device only** (`requiresOnDeviceRecognition = true` on every request). A language with no on-device support answers 409 and is never sent to the network. `POST /transcribe/setup` asks for the permission and answers a job the page polls, the desktop's pattern; denied answers 409 with a sentence that points to Settings. Word times are grouped into lines by the desktop's rules (7 words, 42 characters, 3.5 s, a 0.7 s gap or a sentence end). `DELETE /transcribe/job` does not stop a running recognition; it ends by itself or at the timeout.
+- **Routes that wait** (probe, online voices, speak, transcribe) are `addAsync` entries handled in `VoiceRoutes.handle`; the rest go through the `RouteTable`. `setup/api_contract_check` reads `addAsync(` lines too and no longer lists `/api/voice/*` as desktop only.
+- **Info.plist.** `NSSpeechRecognitionUsageDescription`, `NSLocalNetworkUsageDescription`, and `NSAppTransportSecurity` with `NSAllowsLocalNetworking` for plain http to the speech server; both sentences in all 30 `InfoPlist.strings`.
+- **Interface** (`frontend/src/styles/ipad-window.css`, `app/app.ts`, `ui/ai-voice-panel.ts`, `ui/subtitles-panel.ts`; reasons in `frontend/HASHOUT_LOG.md`): the `ai-voice` command is on for iPad; 44 px targets in the surfaces of 0.32.0 to 0.37.0 by mapping their control tokens to `--touch-target`; the Timeline's top row has an upright layout; Walk To Here by touch and hold.
+- **Could not be confirmed without a compiler:**
+  - `VoiceRemote` · the no-redirect delegate method's completion handler is written without `@Sendable`; if a newer SDK does not accept it as the delegate method, redirects would be followed.
+  - `VoiceRemote` · `connectionProxyDictionary = [:]` is assumed to turn the system proxy off, and `dataTask(with:completionHandler:)` to still call the session delegate for a redirect.
+  - `VoiceRemote` · `URLComponents.host` for an IPv6 literal with or without brackets (both handled).
+  - `VoiceListen` · `request.addsPunctuation`, `Locale.current.region` and `SFSpeechRecognitionTask.error` are assumed to exist with these spellings on the deployment target; error code 1110 of `kAFAssistantErrorDomain` is read as "no speech"; `didFinishRecognition` is assumed to come once per final utterance with times from the start of the file, and `didFinishSuccessfully` last.
+  - `VoiceListen` · a recognizer made on the engine's queue for status is assumed safe; recognition itself starts on the main thread.
+  - `VoiceRoutes`, `VoiceListen` · `NSLock.withLock` inside async functions warns in Swift 5, as noted before for `ExportCapabilities.runProbe`.
+  - Plain http to a `.local` name or a private address is assumed to be covered by `NSAllowsLocalNetworking`.
+- Left open: the 200 MB cap on a spoken sound is checked when the whole reply has arrived, not while it streams; rows of the content's menu stay 38 px like every menu on iPad; the Help pictures have no tap to enlarge.
+
 ## v0.31.0 · the device check, and no Swift change
 
 - refers-to: docs/ios/BUILD.md (`## Check on the iPad (0.31.0)`)

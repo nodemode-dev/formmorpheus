@@ -1058,4 +1058,9 @@ export const da: Record<string, string> = {
   'This character draws nothing to walk.': 'Denne karakter har intet at lade gå.', 'This character cannot walk from here.': 'Denne karakter kan ikke gå herfra.', 'The character already stands there.': 'Karakteren står allerede der.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Gangen løber forbi karakterens slutning på tidslinjen: gør dens blok eller filmen længere, eller start tidligere.',
   'Rear': 'Bagfra', 'Lighting': 'Belysning', 'Historical': 'Historisk',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Den indbyggede stemme kræver en computer. På iPad kan du bruge en taleserver på samme netværk eller en onlinestemme.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Angiv adressen på en taleserver på en computer på samme netværk. Alle apps dér, der svarer på den almindelige tale-API, virker, også en klonet stemme. Start den først.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Din egen ElevenLabs-nøgle. Den gemmes i denne iPads nøglering og sendes kun til den tjeneste.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Lytning bruger denne iPads egen talegenkendelse, direkte på enheden. Den beder om tilladelse første gang.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Lytning kræver tilladelse til at bruge talegenkendelse. Tillad det for FormMorpheus i appen Indstillinger.',
 };

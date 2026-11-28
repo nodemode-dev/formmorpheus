@@ -1148,4 +1148,9 @@ export const ptBR: Record<string, string> = {
   'This character draws nothing to walk.': 'Este personagem não desenha nada para andar.', 'This character cannot walk from here.': 'Este personagem não pode andar a partir daqui.', 'The character already stands there.': 'O personagem já está ali.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'A caminhada passa do fim do personagem na Linha do tempo: aumente o bloco dele ou o filme, ou comece antes.',
   'Rear': 'Costas', 'Lighting': 'Iluminação', 'Historical': 'Históricos',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'A voz integrada precisa de um computador. No iPad, use um servidor de fala na mesma rede ou uma voz online.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Informe o endereço de um servidor de fala em um computador na mesma rede. Qualquer app lá que responda à API de fala comum funciona, inclusive com uma voz clonada. Inicie-o primeiro.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Sua própria chave do ElevenLabs. Ela fica guardada no chaveiro deste iPad e é enviada somente a esse serviço.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'A escuta usa o reconhecimento de fala do próprio iPad, no dispositivo. Ela pede permissão na primeira vez.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'A escuta precisa de permissão para usar o reconhecimento de fala. Permita para o FormMorpheus no app Ajustes.',
 };

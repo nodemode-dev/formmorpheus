@@ -1075,4 +1075,9 @@ export const ja: Record<string, string> = {
   'This character draws nothing to walk.': "このキャラクターには歩かせる描画がありません。", 'This character cannot walk from here.': "このキャラクターはここからは歩けません。", 'The character already stands there.': "キャラクターはすでにそこに立っています。",
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': "歩きがタイムライン上のキャラクターの終わりを超えてしまいます。ブロックかムービーを長くするか、もっと早く始めてください。",
   'Rear': "背面", 'Lighting': "ライティング", 'Historical': "歴史",
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': "内蔵ボイスにはコンピューターが必要です。iPad では、同じネットワーク上の音声サーバーかオンラインボイスを使ってください。",
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': "同じネットワーク上のコンピューターにある音声サーバーのアドレスを入力してください。一般的な音声 API に応答するアプリなら、クローンした声も含めて使えます。先に起動しておいてください。",
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': "ご自身の ElevenLabs キーです。この iPad のキーチェーンに保管され、そのサービスにのみ送信されます。",
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': "聞き取りは、この iPad 自身の音声認識をデバイス上で使います。初回に許可を求められます。",
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': "聞き取りには音声認識を使う許可が必要です。設定アプリで FormMorpheus に許可してください。",
 };

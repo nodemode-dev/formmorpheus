@@ -2,10 +2,24 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.37.0
-Last updated: 2026-11-27 · the twelve requests left from discussion 16
+Current build version: v0.38.0
+Last updated: 2026-11-28 · the interface on iPad for 0.32.0 to 0.37.0
 
 ---
+
+## v0.38.0 · the interface on iPad for 0.32.0 to 0.37.0
+
+- refers-to: styles/ipad-window.css; app/app.ts (the `ai-voice` command, `stage.nav.onContext`); ui/ai-voice-panel.ts; ui/subtitles-panel.ts :: allowListening; app/features/depth.ts
+- kind: decision
+- logged: v0.38.0 · 2026-11-28
+
+- Everything here sits behind `platform.kind === 'ipad'` or `html.is-ipad`; the desktop is unchanged. Looked at in Chrome made to behave as the iPad (touch, 1366 by 1024, 1024 by 768, 834 by 1194, the native side and `/api/voice` stubbed), not on an iPad.
+- **Touch targets.** One rule maps `--ctl`, `--ctl-sm` and `--ctl-md` to `--touch-target` inside the surfaces added since 0.32.0 (the Build panel, the scene strip, the AI Voice and Subtitles cards, Save as Scene). The global tokens are left alone: changing them would resize older dense parts such as the Timeline's track heads.
+- **The Timeline's top row upright.** On iPad `.fm-timeline` is a container (`fm-tl`), because a container query cannot style its own container and `.fm-transport` is already `fm-head`. Under 980 px the row uses three columns, hides the master meter and lets the frame readout shrink.
+- **Walk To Here by touch and hold.** A long press sends `contextmenu` after 550 ms, but the touch has already changed the selection when it went down: on the empty Stage it deselects the character, on scenery it selects the scenery. A capture listener on the Stage remembers the selected character when a pointer that is not a mouse goes down, and `onContext` uses it if the menu opens within 2 s. The desktop's right-click path is untouched.
+- **AI Voice on iPad.** The command is on. The Offline tab hides the choice of voice source and says in one sentence that the built-in voice needs a computer; the engine is always `local`, the address placeholder is a network address. The card takes the Subtitles card's max height and scrolls inside it, stands above the on-screen keyboard, and does not focus its text box on open.
+- **Listening on iPad.** No runtime note and no model step. The first listen calls `POST /transcribe/setup` (the permission), polls the job, reads the status again and goes on when it is ready; any end that is not `running` counts as finished, so it works whether the iPad answers at once or after the prompt.
+- A track with no name shows its first content's name in the Camera tab's Depth list.
 
 ## v0.37.0 · the twelve requests left from discussion 16
 

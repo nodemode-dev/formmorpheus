@@ -1020,4 +1020,9 @@ export const tr: Record<string, string> = {
   'This character draws nothing to walk.': 'Bu karakterin yürütülecek bir çizimi yok.', 'This character cannot walk from here.': 'Bu karakter buradan yürüyemez.', 'The character already stands there.': 'Karakter zaten orada duruyor.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Yürüyüş, karakterin Zaman Çizelgesi\'ndeki sonunu aşıyor: bloğunu veya filmi uzatın ya da daha erken başlayın.',
   'Rear': 'Arka', 'Lighting': 'Aydınlatma', 'Historical': 'Tarihi',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Yerleşik ses bir bilgisayar gerektirir. iPad\'de aynı ağdaki bir konuşma sunucusunu ya da çevrimiçi bir sesi kullanın.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Aynı ağdaki bir bilgisayarda çalışan konuşma sunucusunun adresini girin. Orada yaygın konuşma API\'sine yanıt veren her uygulama çalışır, klonlanmış bir ses de dahil. Önce onu başlatın.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Kendi ElevenLabs anahtarınız. Bu iPad\'in anahtar zincirinde saklanır ve yalnızca o hizmete gönderilir.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Dinleme, bu iPad\'in kendi konuşma tanımasını cihaz üzerinde kullanır. İlk seferde izin ister.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Dinleme, konuşma tanımayı kullanmak için izin gerektirir. Ayarlar uygulamasında FormMorpheus için izin verin.',
 };

@@ -90,7 +90,7 @@ export function installDepth(kit: FeatureKit): void {
     const pick = q<HTMLSelectElement>(row, '.fm-depth-pick');
     const step = depthStepOf(tr.depth);
     const d = tr.depth ?? 1;
-    setText(q(row, '.fm-depth-name'), tr.name);
+    setText(q(row, '.fm-depth-name'), tr.name || tr.content[0]?.name || '');
     const custom = pick.options[DEPTH_STEPS.length];
     if (step < 0) setText(custom, `${Math.round(d * 100) / 100}x`);
     const want = step >= 0 ? String(step) : 'custom';

@@ -155,6 +155,15 @@
 	<string>FormMorpheus uses the microphone only when you record narration or sound into a movie.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>FormMorpheus saves the movies and images you export to your photo library when you choose to.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>FormMorpheus uses speech recognition on this iPad only when you ask it to write subtitles from a sound. The sound stays on this iPad.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>FormMorpheus uses your local network only to reach the speech server you name for AI Voice.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

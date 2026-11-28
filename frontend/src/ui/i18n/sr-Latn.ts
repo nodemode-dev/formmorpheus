@@ -898,4 +898,9 @@ export const srLatn: Record<string, string> = {
   'This character draws nothing to walk.': 'Ovaj lik nema ništa za hodanje.', 'This character cannot walk from here.': 'Ovaj lik ne može da hoda odavde.', 'The character already stands there.': 'Lik već stoji tamo.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Hodanje prelazi kraj lika na Vremenskoj liniji: produžite njegov blok ili film, ili počnite ranije.',
   'Rear': 'Otpozadi', 'Lighting': 'Osvetljenje', 'Historical': 'Istorijski',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Ugrađeni glas zahteva računar. Na iPad-u koristite server za govor na istoj mreži ili onlajn glas.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Unesite adresu servera za govor na računaru na istoj mreži. Tamo radi svaka aplikacija koja odgovara na uobičajeni API za govor, uključujući i kloniran glas. Prvo ga pokrenite.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Vaš sopstveni ElevenLabs ključ. Čuva se u privesku za ključeve ovog iPad-a i šalje samo toj usluzi.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Slušanje koristi sopstveno prepoznavanje govora ovog iPad-a, na samom uređaju. Prvi put traži dozvolu.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Slušanje zahteva dozvolu za korišćenje prepoznavanja govora. Dozvolite ga za FormMorpheus u aplikaciji Podešavanja.',
 };

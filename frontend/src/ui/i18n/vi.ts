@@ -1115,4 +1115,9 @@ export const vi: Record<string, string> = {
   'The character already stands there.': 'Nhân vật đã đứng ở đó rồi.',
   'The walk runs past the end of the character on the Timeline: lengthen its block or the movie, or start earlier.': 'Lượt đi bộ vượt quá phần cuối của nhân vật trên Dòng thời gian: hãy kéo dài khối của nó hoặc phim, hoặc bắt đầu sớm hơn.',
   'Rear': 'Phía sau', 'Lighting': 'Chiếu sáng', 'Historical': 'Lịch sử',
+  'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.': 'Giọng tích hợp cần có máy tính. Trên iPad, hãy dùng máy chủ giọng nói trong cùng mạng, hoặc giọng trực tuyến.',
+  'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.': 'Nhập địa chỉ máy chủ giọng nói trên máy tính cùng mạng. Mọi ứng dụng ở đó có phản hồi API giọng nói phổ biến đều dùng được, kể cả giọng nhân bản. Hãy khởi động máy chủ trước.',
+  'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.': 'Khóa ElevenLabs của riêng bạn. Khóa được giữ trong chuỗi khóa của iPad này và chỉ gửi tới dịch vụ đó.',
+  'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.': 'Nghe dùng tính năng nhận dạng giọng nói riêng của iPad này, ngay trên thiết bị. Lần đầu sẽ xin quyền.',
+  'Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.': 'Nghe cần quyền dùng nhận dạng giọng nói. Hãy cho phép FormMorpheus trong ứng dụng Cài đặt.',
 };

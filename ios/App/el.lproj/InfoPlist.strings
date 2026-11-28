@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "Το FormMorpheus χρησιμοποιεί το μικρόφωνο μόνο όταν ηχογραφείτε αφήγηση ή ήχο σε μια ταινία.";
 "NSPhotoLibraryAddUsageDescription" = "Το FormMorpheus αποθηκεύει στη βιβλιοθήκη φωτογραφιών σας τις ταινίες και τις εικόνες που εξάγετε, όταν το επιλέξετε.";
+"NSSpeechRecognitionUsageDescription" = "Το FormMorpheus χρησιμοποιεί την αναγνώριση ομιλίας σε αυτό το iPad μόνο όταν του ζητάτε να γράψει υπότιτλους από έναν ήχο. Ο ήχος παραμένει σε αυτό το iPad.";
+"NSLocalNetworkUsageDescription" = "Το FormMorpheus χρησιμοποιεί το τοπικό σας δίκτυο μόνο για να φτάσει στον διακομιστή ομιλίας που ορίζετε για τη Φωνή AI.";
