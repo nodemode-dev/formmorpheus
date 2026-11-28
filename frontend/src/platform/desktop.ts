@@ -26,7 +26,7 @@ export function createDesktop(info: PlatformInfo): Platform {
     haptic: { fire() { /* a desktop has nothing to tap */ } },
     penExtras: { available: false, on() { return () => undefined; } },
     capabilities,
-    features: { penLink: true, liveRecoverySocket: true, folderPicker: true, mp3Export: true, desktopMenus: true, soundConvert: true, pictureConvert: true, speech: true },
+    features: { penLink: true, liveRecoverySocket: true, folderPicker: true, mp3Export: true, desktopMenus: true, soundConvert: true, pictureConvert: true },
     ready() { /* no shell to tell */ },
   };
 }

@@ -36,7 +36,7 @@ describe('createDesktop', () => {
     expect(p.kind).toBe('desktop');
     expect(p.info).toBe(info);
     expect(Object.values(p.features).every((v) => v === true)).toBe(true);
-    expect(Object.keys(p.features).sort()).toEqual(['desktopMenus', 'folderPicker', 'liveRecoverySocket', 'mp3Export', 'penLink', 'pictureConvert', 'soundConvert', 'speech']);
+    expect(Object.keys(p.features).sort()).toEqual(['desktopMenus', 'folderPicker', 'liveRecoverySocket', 'mp3Export', 'penLink', 'pictureConvert', 'soundConvert']);
   });
 
   it('has no native share sheet, no pen extras and no reachable bridge', () => {

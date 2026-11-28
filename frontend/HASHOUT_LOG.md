@@ -2,90 +2,10 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.32.0
-Last updated: 2026-11-27 · generated voice, subtitles and speech to text (issue 31)
+Current build version: v0.31.0
+Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
-
-## v0.32.0 · the speech cards after review (issue 31)
-
-- refers-to: ui/speech-panel.ts :: generate, land, elsewhere; ui/subtitles-panel.ts :: fromSound, retime, reword, refill, addLine, importFile; ui/speech-logic.ts :: lineAt, addEmptyLine, placeVoice, sameSound, unheardReason; ui/speech-set-row.ts :: act, fetchSet; media/speech/voice.ts :: endVoice, voiced, VOICE_IDLE_MS; media/speech/numbers.ts :: MAX_CARDINAL; platform/types.ts :: FeatureFlags.speech; app/speech-commands.ts; .npmrc
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **A run belongs to the movie it started in.** Generate and Make subtitles from this sound remember the movie's id. Opening another movie stops the run, and the id is looked at once more right before the movie step, so a result that still comes back is dropped with a sentence in the status line.
-- **Text with nothing to speak adds nothing.** Sentences that come back with no samples (no letters, or a language the voice does not speak) are left out of the sound and of the lines (`voiced`). With none left, the card shows "There are no words to speak in that text."; before, a silent one-frame block was added.
-- **A locked Subtitles track does not cost the voice.** `placeVoice` places the sound without lines and reports `locked`; the status line says so. Before, the lock threw and the finished voice was dropped.
-- **Add a line at the playhead never lands on a line.** Where a line already shows on that frame, nothing is added and that line's words field takes the caret (`lineAt`). Before, the new line replaced a line that started there and cut one it started inside.
-- **Lines heard from a sound are written only if the block still plays the same sound** (`sameSound`: asset, start, length, offset, speed, direction), looked up by id inside the movie step. A frozen block (speed 0) is refused at the start, as a backward one already was. A sound block cannot carry Time Remap keys (`engine/retime.ts :: timeKeys` gives none for sound), so there is nothing to refuse for those.
-- **A line's fields show what the movie holds after every edit** (`refill`), also when the edit was refused, as on a locked track. Before, the typed values stayed.
-- **The download row rides out missed status requests** (five in a row) while the engine downloads, and a 409 from Download means "already downloading", so the row reads the status again.
-- **The voice worker is ended** after five minutes without use and when the voice files are removed, so the model does not stay in memory for the session.
-- **Numbers up to 999 trillion are read in words;** longer runs of digits are still read digit by digit.
-- **iPad.** `platform.features.speech` is false there. Generate voice is not registered, so no menu, card or palette lists it. The Subtitles card stays, since typed lines, styling and subtitle files need no engine route; its From sound part is never put on the card and it asks the engine nothing.
-- **`.npmrc` sets `onnxruntime-node-install=skip`.** That package is a Node-side dependency of the speech to text library, never loaded or bundled; its install script would fetch binaries on Linux x64 outside the lockfile's hashes. npm 11 warns that a project setting it does not know stops being passed on in npm 12; the environment variable `ONNXRUNTIME_NODE_INSTALL=skip` does the same and will outlast that.
-
-## v0.32.0 · Generate voice and Subtitles cards (issue 31)
-
-- refers-to: ui/speech-panel.ts, ui/subtitles-panel.ts, ui/speech-set-row.ts, ui/speech-logic.ts, ui/subtitle-style-store.ts, app/speech-commands.ts, styles/speech.css, styles/subtitles.css, media/speech/listen-worker.ts, app/app.ts
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **Two cards, one pattern.** Both are built once into `#overlay-root` and patched in place, as `ui/voice-panel.ts` is. Everything that can be worked out with no window (sentence timing, typed seconds, a block's sample range, the style from the controls, the one movie step that lands a voice) is in `ui/speech-logic.ts` so it is tested with no model.
-- **A voice makes the movie longer when it has to.** An imported sound may lie past the end; a generated voice with its subtitles would then be cut off with no sign why, so `placeVoice` grows the movie's duration to the end of the block in the same undo step. The line edits of the Subtitles card do the same.
-- **Lines heard from a sound replace the lines under it.** Merged in, the heard lines and the ones already there (a generated voice's own sentences, say) cut each other into one-frame slivers, so `clearSpan` takes away the lines that start under the block first, in the same undo step, and the status line says so.
-- **The first lines of a movie take the style last chosen** (`ui/subtitle-style-store.ts`); a movie that has lines keeps its own, read from the first line.
-- **Line times are kept between the neighbours** (`clampSpan`): a typed time never reorders or overlaps lines, and the field shows what was kept.
-- **Speech server sound is kept as sent.** It is decoded only to learn its length; with no timing from the server, its length is shared between the text's sentences by their letters, with no gap.
-- **Speech to text under the page policy.** The speech to text library, with its runtime cache on, imports the runtime from a `blob:` address, which `script-src 'self' 'wasm-unsafe-eval'` refuses ("no available backend found"). `listen-worker.ts` turns that cache off (`env.useWasmCache = false`), so the runtime comes from the engine's own address. Found by running the built page from the engine; the dev server has no policy and hides it.
-- **Phrase timing, asked for outright.** The pinned listen files carry no cross attention outputs, so they can never time words. The worker first asked for word timing and fell back to phrase timing; on silence or phrases that meant hearing the whole sound twice. It now asks for phrase timing once (removed: the word timing call, its check for word-sized chunks and the console warning). A line's times are a phrase's span shared between its words.
-- **Listening progress.** The library reports nothing inside a 30 second window and ends a streamer once after each window, so the worker counts windows (`media/speech/listen-progress.ts`): a sound of more than one window shows a percentage that moves a window at a time; a sound that fits one window shows "Listening..." and a sweeping bar, where it used to show 30% until it was done.
-- **The Subtitles card stays over the Stage** (`max-height: 56vh`): the Timeline under it is where the sound block for speech to text is picked.
-
-## v0.32.0 · the built-in voice core (issue 31)
-
-- refers-to: media/speech/voice.ts :: speak, join, sentence, drop; media/speech/voice-worker.ts :: read, once, loadCore, speakOne; media/speech/paths.ts :: fileUrl; media/speech/models.ts; media/speech/phonemes.ts :: known, sayWord, weak, camel, compound, suffixed, spell; media/speech/numbers.ts :: normalizeText, yearLike; media/speech/sentences.ts :: splitSentences; media/speech/tokens.ts :: chunkPhonemes, styleFor, MAX_TOKENS
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **The worker sends the window key itself.** The engine answers only to the window's key, and the page's patched fetch (`io/window-key.ts`) does not exist inside a worker. Each job carries the key, and `voice-worker.ts` puts it on every read of a model file.
-- **`fileUrl` lives in `paths.ts`,** a module with no import, so the worker does not bundle the page's engine client (`io/api.ts`, which `models.ts` imports for its error type). `models.ts` hands the same function on to the page.
-- **One `speak()` at a time.** A cancel or a failure ends the worker so nothing half done is left running, and a second call sharing that worker would lose its sentence with it. Calls wait in a line; a call that failed does not hold up the next.
-- **One sentence a message.** Progress is per sentence, a cancel never waits for more than the sentence in hand, and the subtitle lines come from the same pieces. Inside the worker sentences also run one after another, because the model's session is not reentrant.
-- **One thread.** More threads need a cross-origin isolated page, which this one is not.
-- **A failed load is forgotten** (`once`, `loadCore`), so the next sentence tries the file again instead of failing until the app restarts. A 404 from the engine is told apart from other failures and becomes the "not installed yet" sentence.
-- **Beyond plain lookup.** The dictionaries are tried as written and lower case, gold before silver. Rules of our own were added where lookup alone read wrongly:
-  - weak forms: "a", "the" and "to" are in the dictionaries only in their strong form, so they are said weak, with "the" and "to" following whether the next word starts with a vowel sound, and "to" kept strong before a pause;
-  - a hyphenated word is tried joined (`lookup` with the hyphens taken out) before it is read part by part;
-  - capitalised joins (FormMorpheus as Form and Morpheus) and two dictionary words written as one (keyframe as key and frame, the longest first word winning) are read by their parts instead of being spelled.
-  - The code also builds plurals, possessives, -ed and -ing forms from a stem the dictionaries have, with the ending's sound chosen from the stem's last sound; this was not in the list of three and is recorded here because it is in `suffixed`.
-- **Short initialisms are spelled and not reported.** Two to five capitals the dictionaries lack (DNA, TV) are said as letters; that is the right reading, so they are left out of `unknown`. Any other word no dictionary or rule can read is spelled letter by letter and listed, and the card shows the list.
-- **Numbers become words first** (`numbers.ts`): money, percentages, ordinals, clock times, decades and a few symbols and abbreviations. A bare four-digit number from 1100 to 2099 is read as a year; with a comma, a decimal or a percent sign it is a plain number.
-- **A sentence over the model's limit.** Text is cut into sentences of at most 220 characters, at a comma, semicolon or colon before the limit when there is one. If the phonemes of one sentence still exceed 509 characters (`MAX_TOKENS`; the model takes fewer than 510), they are cut at a space and the pieces' audio is joined into that sentence's buffer.
-- **Sentences are joined with 0.3 s of silence** (`SENTENCE_GAP_SECONDS`), the same gap `engine/subtitles.ts` uses, so lines and sound agree.
-
-## v0.32.0 · the subtitles and speech to text core (issue 31)
-
-- refers-to: engine/subtitles.ts :: writeSubtitles, addSubtitles, restyleSubtitles, showSubtitles, readSubtitles, lineContent, restyled, settle, linesFromSentences, linesFromWords, toSrt, fromSrt; engine/types.ts :: Track.subtitles; media/speech/listen.ts :: listen, run, heardWords, resample16k, looped; media/speech/listen-worker.ts
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **Subtitles are ordinary text blocks.** Each line is a text block made from the existing `subtitle` preset, on the one track marked `subtitles`. The track is inserted on top (index 0 is drawn last) and fixed to the screen, so the Stage and the export draw the lines with no change of their own, and a line can be edited like any text.
-- **Show and hide is the track's own `hidden`,** which the renderer and the export already skip.
-- **Seconds become frames by rounding the start and the end,** not the length, so two lines that touch in seconds still touch in frames.
-- **Restyle changes only what the style owns:** font, size, color, the box behind the words and `transform.y`. Runs, keys and anything else set by hand on a line survive.
-- **The card reads the style back from the first line** (the nearest size and position), so a movie carries its own style and nothing extra is saved.
-- **What a person put on the track stays.** `writeSubtitles` and `addSubtitles` replace or merge the text blocks only; a picture dropped on the subtitles track is carried through as it is (`withOthers`). Before, `settle` ran over the whole track, so a line could replace a picture that started on its frame or cut one it started inside. A locked track refuses the change.
-- **No overlaps between lines.** Lines are sorted by start, a later line trims the one before it, and of two that start on the same frame the later given stays. Other content on the track takes no part in this.
-- **Tags in a subtitles file are matched in one pass** (`SRT_TAG`, `<[^<>]*>|\{\\[^{}]*\}`). The first pattern let a tag run over later openers, so a row of 200,000 `<` was read once from each of them. The card refuses a file over 5 MB before reading it (`MAX_SUBTITLE_FILE_BYTES`).
-- **Line shapes.** A spoken sentence over 84 characters is split into lines of at most 42 that share its time by length. Heard words are grouped into lines of at most 42 characters or 7 words, with a new line after a silence over 0.7 s or sentence-ending punctuation.
-- **Speech to text runs in a one-job worker,** ended after each run. Ending it frees the model's memory, and it is the only way to stop a run part way.
-- **Model files come only from the engine.** The library's host is pointed at `/api/speech-models/`, its local models and its browser cache are off, and the worker's fetch adds the window key to requests for the engine's own address. It runs on wasm with the quantized files (`dtype: 'q8'`), the only ones the engine pins.
-- **The runtime cache is off and timing is per phrase:** both are in the cards entry above (Speech to text under the page policy; Word timing). Checked for this entry: the pinned decoder file has no `cross_attentions` outputs. A segment's span is shared between its words by their length, so lines made from a sound are timed per phrase, not per word.
-- **Sound is brought to 16 kHz mono on the page,** averaged over each step going down so highs do not fold back.
-- **Loops are dropped.** A small speech model repeats a phrase or a word over silence and noise; a stretch that repeats is left out, judged a stretch at a time so real speech beside it stays.
-- **The language is given, never guessed.** `listen` takes a two-letter code; the card always sends one (English until the person picks another).
-- **Subtitle files** are SubRip text. Reading is lenient: any line ends, a byte order mark, a dot for the comma, missing indexes; simple tags are dropped and a cue that cannot be read is skipped.
 
 ## v0.31.0 · line comments moved here
 
