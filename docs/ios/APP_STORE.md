@@ -31,16 +31,16 @@ Answer No to every content question (no violence, no mature themes, no gambling,
 
 ## Privacy answers (App Privacy section)
 
-- Data collection: No, we do not collect data from this app. Nothing is sent off the device and there is no analytics or advertising code.
+- Data collection: No, we do not collect data from this app, and there is no analytics or advertising code. Text is sent off the device only when the person chooses to: AI Voice on its Online tab sends the typed text, with the person's own key, to the online voice service they chose, and AI Voice with a voice app sends it to a speech server on their own network. Nothing else is sent. Listening for subtitles uses the iPad's own speech recognition on the device only. Check these answers against the owner's own privacy policy before submitting.
 - Tracking: No.
 - Privacy manifest: included (`ios/App/PrivacyInfo.xcprivacy`) with no collected data types, no tracking domains, and the required-reason entries for file timestamps, user defaults, disk space and system boot time.
 - Encryption: the app uses no non-exempt encryption (`ITSAppUsesNonExemptEncryption` is false).
-- Permissions asked: microphone (only when you record sound into a movie), photo library add-only (only when you save an export there).
+- Permissions asked: microphone (only when you record sound into a movie), photo library add-only (only when you save an export there), speech recognition (only when you press Subtitles from this sound), local network (only when you use a speech server on your network for AI Voice). The app allows plain http to that server, and accepts only an address on the same network.
 - Privacy policy URL: required by App Store Connect; use a page that states the app collects no data.
 
 ## Review notes
 
-The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. Files are stored on the device in the Files app under On My iPad > FormMorpheus. On Home, the person can instead keep the movie library in the app's iCloud Drive folder (iCloud Drive > FormMorpheus), which the system syncs; the app itself makes no network requests. A Diagnostics page under Help > About FormMorpheus > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
+The app needs no sign-in and has no demo account. To try it: open the app, create a new movie, draw on the Stage, press play, then use File > Export to make a video. Apple Pencil is optional; a finger works for drawing. Files are stored on the device in the Files app under On My iPad > FormMorpheus. On Home, the person can instead keep the movie library in the app's iCloud Drive folder (iCloud Drive > FormMorpheus), which the system syncs. The app makes no network request unless the person uses AI Voice: its Online tab (their own key, kept in the Keychain) or a speech server on their local network. A Diagnostics page under Help > About FormMorpheus > Diagnostics writes one local report file the person can share; it is never sent anywhere by the app.
 
 ## Support and marketing
 
