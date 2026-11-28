@@ -14,6 +14,7 @@ import { VISEMES, VISEME_NAMES } from '../../media/lipsync';
 import { build } from './build';
 import type { CastPrim, CastRig, CastSpec, CastSlot } from './spec';
 import { visemes } from './visemes';
+import { viewOf } from './views';
 
 /** The 1080 character space of the SVG starters: feet on y 1012, centred on x 540. */
 export const CAST_SPACE = 1080;
@@ -274,6 +275,7 @@ export async function rigToCharacterGroup(rig: CastRig, spec: CastSpec, mouthSha
     const book = await mouthBook(frames, movie, dur, assets);
     if (!book) return;
     book.pivot = pivotAt(W[mouthBone ?? 'head'] ?? IDENT);
+    if (mouthSlot?.hide) book.hidden = true;
     made.push({ name: 'mouth', c: book });
   };
   for (const s of slots) {
@@ -286,6 +288,7 @@ export async function rigToCharacterGroup(rig: CastRig, spec: CastSpec, mouthSha
     if (!defs.length) continue;
     const c = partOf(name, defs, dur);
     c.pivot = pivotAt(W[s.bone] ?? IDENT);
+    if (s.hide) c.hidden = true;
     made.push({ name, c });
   }
   if (!chartDone && mouthShapes) await placeChart();
@@ -342,17 +345,22 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
   const prev = old?.character?.builtHidden ?? [];
   const r = mergeFromSource(movie, charId, g, table);
   const hidden = r.missing.filter((n) => isCastPart(n) && !onLock(n));
-  const back = prev.filter((n) => n in (g.character?.parts ?? {}) && !onLock(n));
+  const freshParts = g.character?.parts ?? {};
+  const freshHidden = new Set(g.tracks.flatMap((t) => t.content).filter((x) => x.hidden).map((x) => x.id));
+  const unseen = Object.keys(freshParts).filter((n) => freshHidden.has(freshParts[n]) && !onLock(n));
+  const back = prev.filter((n) => n in freshParts && !unseen.includes(n) && !onLock(n));
   const wasHidden = new Set(old ? old.tracks.flatMap((t) => t.content).filter((x) => x.hidden).map((x) => x.id) : []);
   const byPerson = (n: string): boolean => wasHidden.has(old?.character?.parts[n] ?? '') && !prev.includes(n);
-  const builtHidden = [...prev.filter((n) => !back.includes(n) && !hidden.includes(n) && n in (old?.character?.parts ?? {})), ...hidden.filter((n) => !byPerson(n))];
+  const builtHidden = [...prev.filter((n) => !back.includes(n) && !hidden.includes(n) && !unseen.includes(n) && n in (old?.character?.parts ?? {})), ...hidden.filter((n) => !byPerson(n)), ...unseen.filter((n) => !byPerson(n))];
+  const turned = !!old?.character?.build && viewOf(old.character.build) !== viewOf(spec);
   const freshName = new Map(Object.entries(g.character?.parts ?? {}).map(([n, id]) => [id, n]));
   const freshOrder = g.tracks.map((t) => freshName.get(t.content[0]?.id ?? '') ?? '').filter(Boolean).reverse();
+  const freshRank = new Map(g.tracks.map((t, i) => [freshName.get(t.content[0]?.id ?? '') ?? '', i] as const).filter(([nm]) => !!nm));
   const freshMouth = g.character?.parts.mouth ? g.tracks.flatMap((t) => t.content).find((c) => c.id === g.character?.parts.mouth) : undefined;
   const next = updateDeep(r.movie, charId, (c) => {
     const ch0 = c.character;
     if (!ch0) return c;
-    const hideIds = new Set(hidden.map((n) => ch0.parts[n]));
+    const hideIds = new Set([...hidden, ...unseen].map((n) => ch0.parts[n]));
     const showIds = new Set(back.map((n) => ch0.parts[n]));
     const keepIds = new Set(r.missing.filter((n) => !hidden.includes(n)).map((n) => ch0.parts[n]));
     let tracks = c.tracks.map((t) => (t.content.some((x) => hideIds.has(x.id) || showIds.has(x.id) || keepIds.has(x.id)) ? { ...t, content: t.content.map((x) => {
@@ -362,6 +370,7 @@ export function mergeRebuild(movie: Movie, charId: string, prepared: CastPrepare
       return x;
     }) } : t));
     tracks = placeAdded(tracks, freshOrder, r.added, ch0.parts);
+    if (turned) tracks = sortParts(tracks, freshRank, ch0.parts);
     const { missing: _m, missingWas: _w, builtHidden: _b, ...base } = ch0;
     const gone = (n: string): boolean => !isCastPart(n) && !(n in (g.character?.parts ?? {}));
     const missing = (old?.character?.missing ?? []).filter(gone);
@@ -404,6 +413,21 @@ function placeAdded(tracks: Track[], order: string[], added: string[], parts: Re
     for (let j = i - 1; j >= 0; j--) { const k = at(order[j]); if (k >= 0) { to = k; break; } }
     out.splice(to, 0, t);
   });
+  return out;
+}
+
+/** The tracks that hold one cast part each, put in the fresh build's order (top first) in the places they held. */
+function sortParts(tracks: Track[], rank: Map<string, number>, parts: Record<string, string>): Track[] {
+  const nameOf = new Map(Object.entries(parts).map(([nm, id]) => [id, nm]));
+  const at: number[] = [], moving: { t: Track; r: number }[] = [];
+  tracks.forEach((t, i) => {
+    const nm = t.content.length === 1 ? nameOf.get(t.content[0].id) : undefined;
+    const r = nm ? rank.get(nm) : undefined;
+    if (r !== undefined) { at.push(i); moving.push({ t, r }); }
+  });
+  moving.sort((a, b) => a.r - b.r);
+  const out = [...tracks];
+  at.forEach((i, k) => { out[i] = moving[k].t; });
   return out;
 }
 

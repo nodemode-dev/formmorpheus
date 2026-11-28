@@ -1,4 +1,5 @@
-export type { CastSpec, CastPrim, CastBone, CastSlot, CastRig } from './spec';
+export type { CastSpec, CastPrim, CastBone, CastSlot, CastRig, CastView } from './spec';
+export { VIEWS, viewOf } from './views';
 export type { CastInput } from './build';
 export type { Mat, RigSvgOpts } from './svg';
 export type { Outfit } from './outfits';

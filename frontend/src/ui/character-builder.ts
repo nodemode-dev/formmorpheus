@@ -4,8 +4,8 @@
 import '../styles/character-builder.css';
 import {
   build, castToCharacterGroup, mergeRebuild, mkSpec, prepareRebuild, solveRest,
-  CAST_PRESETS, EYECOL, HAIRCOL, HAIRS, OUTFITS, SKINS, SPECIES,
-  type CastInput, type CastPrepared, type CastPrim, type CastRig, type CastSpec, type Mat,
+  CAST_PRESETS, EYECOL, HAIRCOL, HAIRS, OUTFITS, SKINS, SPECIES, VIEWS, viewOf,
+  type CastInput, type CastPrepared, type CastPrim, type CastRig, type CastSpec, type CastView, type Mat,
 } from '../engine/cast';
 import { hex2rgb, rgb2hex } from '../engine/cast/prims';
 import type { Engine } from '../engine/engine';
@@ -58,6 +58,16 @@ const HEAD_PX = 96, TALL_W = 84, TALL_H = 140;
 const RANDOM = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.2" fill="currentColor" stroke="none"/></svg>';
 const RESET = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5M4.5 4.5v4h4"/></svg>';
 
+export const VIEW_LABEL: Record<CastView, string> = { front: 'Front', three: 'Three-Quarter', side: 'Side', back: 'Back' };
+const glyph = (inner: string): string => `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+export const VIEW_ICON: Record<CastView, string> = {
+  front: glyph('<circle cx="8" cy="8" r="5.5"/><circle cx="6" cy="7.5" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7.5" r=".8" fill="currentColor" stroke="none"/><path d="M6.4 10.4q1.6 1 3.2 0"/>'),
+  three: glyph('<circle cx="8" cy="8" r="5.5"/><circle cx="8.2" cy="7.5" r=".8" fill="currentColor" stroke="none"/><circle cx="11.4" cy="7.5" r=".7" fill="currentColor" stroke="none"/><path d="M8.6 10.5q1.3.8 2.6 0"/>'),
+  side: glyph('<path d="M8 2.5a5.5 5.5 0 1 0 4.6 8.5l1.3-1.2-1.2-.9a5.5 5.5 0 0 0-4.7-6.4z"/><circle cx="10.6" cy="7" r=".8" fill="currentColor" stroke="none"/>'),
+  back: glyph('<circle cx="8" cy="8" r="5.5"/><path d="M2.8 9.5q5.2-2.4 10.4 0" /><path d="M8 2.5v4.5"/>'),
+};
+export const FLIP_ICON = glyph('<path d="M8 2v12"/><path d="M5.5 4.5 2 8l3.5 3.5z"/><path d="M10.5 4.5 14 8l-3.5 3.5z"/>');
+
 const clone = (s: CastSpec): CastSpec => structuredClone(s);
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
@@ -75,7 +85,7 @@ function drawnOf(p: CastPrim): Drawn {
 /** A rig's rest pose as ready-made paths, one entry per slot in draw order. */
 function compile(rig: CastRig): DrawnSlot[] {
   const W = solveRest(rig);
-  return rig.slots.map((s) => {
+  return rig.slots.filter((s) => !s.hide).map((s) => {
     const b = W[s.bone];
     const m: Mat = s.oy ? [b[0], b[1], b[2], b[3], b[0] * s.ox + b[2] * s.oy + b[4], b[1] * s.ox + b[3] * s.oy + b[5]] : b;
     return { m, prims: s.prims.map(drawnOf) };
@@ -102,7 +112,8 @@ function paint(ctx: CanvasRenderingContext2D, slots: DrawnSlot[], base: Mat): vo
 function drawThumb(cv: HTMLCanvasElement, spec: CastSpec, mode: 'head' | 'full'): void {
   const ctx = cv.getContext('2d');
   if (!ctx) return;
-  const rig = build(spec);
+  const { view: _v, flip: _f, ...front } = spec;
+  const rig = build(front);
   let vb: [number, number, number, number];
   if (mode === 'head') { const cy = -(rig.height - rig.M.headH * 0.5), s = rig.M.headH * 2.05; vb = [-s / 2, cy - s * 0.56, s, s]; }
   else vb = [-125, -rig.height - 48, 250, rig.height + 62];
@@ -175,6 +186,8 @@ export class CharacterBuilder {
   /** Controls a species' face may not draw, with the species that do. */
   private readonly faceOnly: Array<readonly [HTMLButtonElement | HTMLInputElement, readonly string[]]> = [];
   private readonly hairNote: HTMLElement;
+  private readonly viewBtns = new Map<CastView, HTMLButtonElement>();
+  private readonly flipBtn: HTMLButtonElement;
 
   constructor(private readonly engine: Engine, private readonly deps: BuilderDeps, presets: readonly CastInput[] = CAST_PRESETS) {
     q<HTMLElement>(this.dlg.scrim, '.cv-dialog').classList.add('fm-cb-dlg');
@@ -186,7 +199,7 @@ export class CharacterBuilder {
     }, true);
     const root = el<HTMLElement>(`<div class="fm-cb">
       <nav class="fm-cb-roster"></nav>
-      <div class="fm-cb-stage"><div class="fm-cb-stagename" aria-live="polite" data-no-i18n></div><div class="fm-cb-canvaswrap"><canvas class="fm-cb-canvas" role="img"></canvas></div></div>
+      <div class="fm-cb-stage"><div class="fm-cb-stagename" aria-live="polite" data-no-i18n></div><div class="fm-cb-viewbar"><div class="fm-cb-seg fm-cb-views" role="group"></div><button type="button" class="fm-cb-chip fm-cb-flip" aria-pressed="false"></button></div><div class="fm-cb-canvaswrap"><canvas class="fm-cb-canvas" role="img"></canvas></div></div>
       <section class="fm-cb-panel"><div class="fm-cb-tabs" role="tablist"></div><div class="fm-cb-panes"></div></section>
     </div>`);
     this.dlg.body.appendChild(root);
@@ -196,6 +209,21 @@ export class CharacterBuilder {
     this.canvas = q<HTMLCanvasElement>(root, '.fm-cb-canvas');
     this.lab(this.rosterBox, 'Presets', 'aria-label');
     this.lab(this.canvas, 'Character preview', 'aria-label');
+    const views = q(root, '.fm-cb-views');
+    this.lab(views, 'View', 'aria-label');
+    for (const v of VIEWS) {
+      const b = el<HTMLButtonElement>(`<button type="button" aria-pressed="false">${VIEW_ICON[v]}<span></span></button>`);
+      this.lab(q(b, 'span'), VIEW_LABEL[v]);
+      this.lab(b, VIEW_LABEL[v], 'aria-label');
+      b.addEventListener('click', () => { if (v === 'front') delete this.spec.view; else this.spec.view = v; this.changed(); });
+      views.appendChild(b);
+      this.viewBtns.set(v, b);
+    }
+    this.flipBtn = q<HTMLButtonElement>(root, '.fm-cb-flip');
+    this.flipBtn.insertAdjacentHTML('afterbegin', FLIP_ICON);
+    this.flipBtn.appendChild(this.lab(el('<span></span>'), 'Flip'));
+    this.lab(this.flipBtn, 'Flip: look the other way', 'aria-label');
+    this.flipBtn.addEventListener('click', () => { if (this.spec.flip) delete this.spec.flip; else this.spec.flip = true; this.changed(); });
 
     // the person's own first, so a saved character has a place of its own and is the first thing in the list
     this.mineHead = this.lab(el<HTMLElement>('<h3 class="fm-cb-h"></h3>'), 'Mine');
@@ -425,6 +453,21 @@ export class CharacterBuilder {
     this.base = clone(this.presetSpecs[i]);
     this.spec = clone(this.base);
     this.show();
+  }
+
+  /** Opens on a recipe from elsewhere (a saved character): Add to Movie and Save to Characters work on it, and Reset
+   *  goes back to it. `name` names the recipe and marks its tile under Mine when it has one. */
+  openSpec(spec: CastSpec, name?: string): void {
+    const s = clone(spec);
+    if (name) s.name = name;
+    if (this.dlg.isOpen) { if (this.editing) return; }
+    else if (this.opening) return;
+    else this.editing = null;
+    this.presetAt = -1;
+    this.mineAt = name ?? null;
+    this.base = s;
+    this.spec = clone(s);
+    if (this.dlg.isOpen) this.changed(); else this.show();
   }
 
   /** Opens on a character of the movie whose recipe is known; Apply rebuilds it from the edited recipe. */
@@ -665,6 +708,8 @@ export class CharacterBuilder {
     this.syncName();
     for (const [k, b] of this.species) this.press(b, c.species === k);
     for (const [k, b] of this.frames) this.press(b, c.frame === k);
+    for (const [k, b] of this.viewBtns) this.press(b, viewOf(c) === k);
+    this.press(this.flipBtn, c.flip === true);
     for (const [k] of BODY) this.slide(`body.${k}`, c.body[k]);
     this.slide('face.jaw', f.jaw);
     for (const [k, b] of this.flags) this.press(b, !!f[k]);
@@ -736,7 +781,7 @@ export class CharacterBuilder {
     tiles.forEach((tl, i) => {
       const k = clone(this.spec);
       if (hair) k.hair.style = i - 1; else k.outfit = i;
-      const { id: _id, name: _name, tag: _tag, colors, ...look } = k;
+      const { id: _id, name: _name, tag: _tag, colors, view: _v, flip: _f, ...look } = k;
       const key = JSON.stringify([look, colors[k.outfit] ?? null]);
       if (this.thumbsFor.get(tl.cv) === key) return;
       this.thumbsFor.set(tl.cv, key);
