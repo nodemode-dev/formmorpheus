@@ -20,4 +20,6 @@ export const frCA: Record<string, string> = {
   'Hoodie': 'Kangourou', 'Jacket': 'Manteau', 'Hoodie & Joggers': 'Kangourou et jogging', 'Jeans': 'Jeans', 'Pigtails': 'Lulus', 'Shoes': 'Souliers', 'Slippers': 'Pantoufles',
   'Sneakers': 'Espadrilles', 'Tank': 'Camisole', 'Tee & Jeans': 'T-shirt et jeans', 'The gamer': 'Le gameur', 'Trainers': 'Souliers de course', 'Varsity Jacket': 'Blouson de collège',
   'Vest': 'Veste', 'Winter Puffer': "Manteau d'hiver",
+  'Speech to text is not installed yet. Download it in the Subtitles card first.': "La reconnaissance vocale n'est pas encore installée. Téléchargez-la d'abord sous « Sous-titres ».",
+  'The built-in voice is not installed yet. Download it in the Generate voice card first.': "La voix intégrée n'est pas encore installée. Téléchargez-la d'abord sous « Générer une voix ».",
 };

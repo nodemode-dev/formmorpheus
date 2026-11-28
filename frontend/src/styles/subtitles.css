@@ -1,0 +1,54 @@
+/* Subtitles card (ui/subtitles-panel.ts). It sits on the left so the Generate voice card can be open beside it, and
+   stays over the Stage: the Timeline below is where the sound block for speech to text is picked. */
+.fm-st {
+  position: fixed;
+  left: var(--space-4);
+  top: calc(var(--space-8) + var(--space-5));
+  z-index: var(--z-companion);
+  width: 380px;
+  max-height: calc(56vh - var(--space-8));
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--glass-solid-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pop);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+}
+.fm-st[hidden], .fm-st [hidden] { display: none; }
+.fm-st-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); font-weight: 600; }
+.fm-st-title { flex: 1; }
+.fm-st-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: var(--radius-sm); line-height: 0; }
+.fm-st-x:hover { color: var(--text-primary); background: var(--surface-raised); }
+.fm-st-sec { margin: var(--space-3) 0 var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border-soft); color: var(--text-muted); font-size: var(--fs-11); letter-spacing: 0.04em; text-transform: uppercase; }
+.fm-st-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+.fm-st-row:has(.fm-st-swatch) { grid-template-columns: 72px 40px minmax(0, 1fr); }
+.fm-st-lab { color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-st-row .cv-input { width: 100%; min-width: 0; }
+.fm-st-chk { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-st-chk input { margin: 0; accent-color: var(--accent-color); }
+.fm-st-swatch { position: relative; display: block; width: 40px; height: 24px; padding: 0; border: 1px solid var(--border-light); border-radius: var(--radius-sm); overflow: hidden; background: none; cursor: pointer; }
+.fm-st-chip { position: absolute; inset: 0; background: var(--c, var(--text-primary)); }
+.fm-st-hex { color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
+.fm-st-lines { display: flex; flex-direction: column; gap: var(--space-1); max-height: 220px; margin-bottom: var(--space-2); overflow-y: auto; }
+.fm-st-lines:empty { display: none; }
+.fm-st-line { display: grid; grid-template-columns: 54px 54px minmax(0, 1fr) var(--ctl-sm); gap: var(--space-1); align-items: center; }
+.fm-st-line .cv-input { width: 100%; min-width: 0; height: var(--ctl-md); padding: 0 var(--space-1); font-size: var(--fs-12); }
+.fm-st-time { text-align: right; font-variant-numeric: tabular-nums; }
+.fm-st-del { display: grid; place-items: center; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; }
+.fm-st-del:hover { color: var(--danger-text); background: var(--surface-raised); }
+.fm-st-note { margin: 0 0 var(--space-2); color: var(--text-muted); font-size: var(--fs-12); line-height: 1.4; }
+.fm-st-source { color: var(--text-secondary); }
+.fm-st-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
+.fm-st-actions .cv-btn { flex: 1; justify-content: center; }
+.fm-st-meter { position: relative; height: 8px; margin-bottom: var(--space-2); border-radius: var(--radius-sm); background: var(--bg-input); overflow: hidden; border: 1px solid var(--border-light); }
+.fm-st-bar { position: absolute; inset: 0 auto 0 0; width: var(--pct, 0%); background: var(--accent-color); }
+/* at work with no figure to show: a third of the bar sweeps across */
+.fm-st-meter.is-unknown .fm-st-bar { width: 33%; animation: fm-st-sweep 1.4s ease-in-out infinite; }
+@keyframes fm-st-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .fm-st-meter.is-unknown .fm-st-bar { width: 100%; animation: none; opacity: 0.5; } }
+.fm-st-status { min-height: 1.4em; margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--fs-12); line-height: 1.4; font-variant-numeric: tabular-nums; }
+.fm-st-status.is-bad { color: var(--danger-text); }

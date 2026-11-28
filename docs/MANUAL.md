@@ -411,6 +411,79 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
 
 Add Text from Create. Type the words, and the Text card opens: **font** (the bundled fonts and any you imported), **size**, **weight**, **color** and **alignment**. Double-click the block to edit again. Each change is one undo step.
 
+## Generated voice
+
+**Generate voice** turns typed words into speech on the Timeline. Open it with Create · More · Generate voice... or Content · Add · Generate voice.... The card has two tabs for how the voice is made, **Built-in voice** and **Speech server**. Under them are the box for the words, **Add subtitles** and **Generate**.
+
+Type the words to speak and choose **Generate**. The sound lands as a block named Generated voice at the Playhead, on a new track named Voice, and the block is selected. If the voice runs past the end of the movie, the movie is made longer. All of it is one undo step. With **Add subtitles** on, the words also become subtitle lines under the voice (see Subtitles). **Cancel** or Esc stops a voice while it is being made. The card keeps your words and choices for next time.
+
+A voice belongs to the movie it was asked for in: if you open another movie while it is being made, it is stopped and nothing is added. If the Subtitles track is locked, the voice lands without lines and the card says so. Text with nothing to speak, such as "..." or words in a language the built-in voice does not speak, adds nothing, and the card says "There are no words to speak in that text."
+
+The built-in voice and the speech server use the engine on a computer. The iPad app's engine does not serve them, so Generate voice... is not offered on iPad.
+
+### The built-in voice
+
+The built-in voice makes the speech on this computer, so the words never leave it. It speaks English only, with 28 voices.
+
+- **The one-time download.** The voice's files are not part of the app. Until they are on this computer the tab says what they are: 114 MB to download once, 34 files, and their licence, Apache-2.0. Choose **Download**. A bar shows how far it is, and **Cancel** stops it. Every file is checked against its SHA-256 before it is kept, and the files are stored in the data folder under `speech/`. If a download stops or fails, the tab gives the reason with **Try again**, and the next download fetches only the files that are still missing.
+- **Voice** lists the voices in four groups: US · female, US · male, UK · female and UK · male. **Speed** goes from 0.50x to 2.00x.
+- **How long it takes.** The card shows the sentence it is on, as in Sentence 2 of 5. As a guide, a two-sentence voice 5.7 seconds long took about 10 seconds to make on an Apple silicon Mac.
+- **Words it does not know.** Words are pronounced from pronunciation dictionaries. A word that no dictionary has is spelled out letter by letter, and the card lists those words after "Spelled out, because no dictionary has them:". Write such a word the way it sounds and generate again. Short words in capitals, such as DNA and TV, are said as letters on purpose.
+- **Numbers.** Numbers, money, percentages, ordinals and clock times are read as words: 1,250 is "one thousand two hundred fifty" and 9:30 is "nine thirty". A four-digit number from 1100 to 2099 written without a comma is read as a year, so 1999 is "nineteen ninety nine". Write 1,999 when you mean the number. Whole numbers are read in words up to 999 trillion; a longer run of digits is read digit by digit.
+- **Remove the voice files**, at the foot of the card, deletes the files from this computer after you confirm. They can be downloaded again.
+
+### A speech server on this computer
+
+The **Speech server** tab sends the words to a speech server running on this computer, which is how a voice cloned in another app is used. Start that app's speech server first, then fill in the tab.
+
+- **Address** is where the server listens, `http://127.0.0.1:8080` unless you type another. It must start with `http://` or `https://` and be on this computer: 127.0.0.1, localhost or [::1]. Any other address is refused, so the words are never sent to another machine.
+- **Check** asks the server whether it is there and reads the list of its models. When **Model** is empty, the first one is filled in.
+- **Model** and **Voice** are the names the server uses for them. **Speed** goes from 0.50x to 2.00x.
+- The server must speak the common `/v1/audio/speech` JSON interface: FormMorpheus posts the model, the words, the voice and the speed, and asks for a WAV file back. It waits up to five minutes for the answer.
+- The sound is kept as the server sent it. With **Add subtitles** on, the sound's length is shared between the sentences by their length, because the server gives no timing.
+
+Use only voices you have the right to use.
+
+## Subtitles
+
+Subtitles are timed lines of words over the movie. Open the **Subtitles** card with Create · More · Subtitles... or Content · Add · Subtitles.... It has a switch for all lines and four parts: Style, Lines, From sound and File.
+
+- **Show subtitles in the video** shows or hides every line at once, on the Stage and in the export. It can be used once the movie has lines.
+- **Style** sets every line at once: **Font**, **Size** (Small, Medium or Large), **Position** (Top, Middle or Bottom), **Color** and **Dark band behind the words**. The first lines of a movie take the style you chose last.
+- **Lines** lists the lines in time order. Each row has the start and the end in seconds, the words, and a button to delete the line. Type a time as `12.5` or as `1:02.5`. A line stays between the line before it and the line after it, so the field shows the time that was kept. **Add a line at the playhead** adds an empty line two seconds long and puts the caret in it. Where a line already shows at the Playhead, no line is added: the caret goes into that line's words.
+
+### Subtitles from a generated voice
+
+Turn on **Add subtitles** on the Generate voice card. With the built-in voice each sentence becomes a line that starts and ends with that sentence, and a long sentence is split into shorter lines. With a speech server the lines share the sound's length (see A speech server on this computer).
+
+### Subtitles from a sound
+
+Speech to text writes lines for a sound that is already in the movie, such as a recording. It runs on this computer.
+
+1. Select a sound block on the Timeline. The card names it after "Selected sound:".
+2. The first time, choose **Download** under From sound: 76 MB to download once, 7 files, and their licence, Apache-2.0, as the publisher of the downloaded files states it. The files are checked against their SHA-256 and stored in the data folder under `speech/`, like the built-in voice's.
+3. Choose the **Language** that is spoken. It is not detected for you, and it starts as English.
+4. Choose **Make subtitles from this sound**. **Cancel** or Esc stops it. A sound longer than 30 seconds shows a percentage that moves as each stretch is heard; a shorter one is heard in one step, so the card says "Listening..." and the bar sweeps.
+
+What to expect:
+
+- Lines are timed per phrase, not per word, so a line can come a little early or late against the voice. Adjust its times under Lines.
+- Only the part of the sound that the block plays is heard, and the lines land where the block is on the Timeline.
+- The new lines replace the lines that were under that sound.
+- A sound block that plays backward is refused, and so is one that is frozen (speed 0).
+- If the block is moved, trimmed, retimed or deleted while it is being heard, or another movie is opened, no lines are added and the card says why.
+- **Remove the speech to text files** deletes the files from this computer after you confirm. They can be downloaded again.
+
+Speech to text uses the engine on a computer. The iPad app's engine does not serve it, so on iPad the Subtitles card has no From sound part; Style, Lines and File are there.
+
+### Subtitle files
+
+**Import subtitles file...** reads a `.srt` file of up to 5 MB; a larger file is refused. When the movie already has lines, it asks before it replaces all of them. **Export subtitles file...** saves the lines as a `.srt` file named after the movie.
+
+### Subtitles are text blocks
+
+The lines are ordinary text blocks on a track named Subtitles, which sits on top of the other tracks and is fixed to the screen, so the movie camera does not move it. Nothing else is special about them: move or trim a line on the Timeline, double-click it to change the words, or give one line its own look in the Text card. A later change under Style sets the font, size, color, band and position of every line again and leaves the rest of what you did by hand. Deleting the last line on the card removes the track.
+
 ## Export
 
 Open Export with Ctrl+E (File · Export). The dialog has **Quick share** tiles and **Advanced** options.
@@ -542,6 +615,18 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.32.0
+
+**Generate voice.** Create · More · Generate voice... or Content · Add · Generate voice... turns typed words into a sound block at the Playhead, on a new track named Voice, in one undo step. The built-in voice makes the speech on this computer: English only, 28 voices (US and UK, female and male), speed from 0.50x to 2.00x. Its files are not part of the app: Download fetches 114 MB in 34 files once, each checked against its SHA-256 and kept in the data folder under `speech/`, and Remove the voice files deletes them. A two-sentence voice 5.7 seconds long took about 10 seconds to make on an Apple silicon Mac. A word no dictionary has is spelled out and listed, and a four-digit number from 1100 to 2099 written without a comma is read as a year. See Generated voice.
+
+**A speech server on this computer.** The Speech server tab sends the words to a speech server you run on this computer, which is how a voice cloned in another app is used. The address must be 127.0.0.1, localhost or [::1], and the server must speak the common `/v1/audio/speech` JSON interface. Use only voices you have the right to use.
+
+**Subtitles.** Create · More · Subtitles... or Content · Add · Subtitles... opens the Subtitles card: type timed lines, add a line at the Playhead, set Font, Size, Position, Color and Dark band behind the words for every line at once, and turn them all on or off with Show subtitles in the video. Import subtitles file... and Export subtitles file... read and write `.srt` files. The lines are ordinary text blocks on a track named Subtitles, so the Stage and the export show them and each can be edited like any text. See Subtitles.
+
+**Subtitles from a voice or a sound.** Add subtitles on the Generate voice card writes a line per sentence, timed sentence by sentence with the built-in voice. Make subtitles from this sound writes lines for the selected sound block by speech to text on this computer: its files are 76 MB in 7 files, downloaded once on request and removable. You choose the language, as it is not detected, and the lines are timed per phrase, not per word.
+
+**Where it works.** The built-in voice, the speech server and speech to text use the engine on a computer; the iPad app's engine does not serve them, so on iPad Generate voice... is not offered and the Subtitles card comes without its From sound part. The files of both downloads are under Apache-2.0, as each card shows. The two cards are in English in this version.
 
 ## New in 0.31.0
 

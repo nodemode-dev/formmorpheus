@@ -34,7 +34,8 @@ describe('createIpad', () => {
     const p = await freshIpad();
     expect(p.kind).toBe('ipad');
     expect(Object.values(p.features).every((v) => v === false)).toBe(true);
-    expect(Object.keys(p.features)).toHaveLength(7);
+    expect(Object.keys(p.features)).toHaveLength(8);
+    expect(p.features.speech).toBe(false);
     expect(p.share.native).toBe(true);
     expect(p.penExtras.available).toBe(true);
   });

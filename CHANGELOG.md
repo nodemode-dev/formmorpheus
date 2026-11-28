@@ -2,6 +2,32 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.32.0 · 2026-11-27
+
+A voice made from typed words, and subtitles in the video.
+
+### New
+- Generate voice... turns typed words into a sound block at the Playhead, on a new track named Voice, in one undo step. It is under Create · More and under Content · Add.
+- The built-in voice makes the speech on your own computer, with 28 voices (US and UK, female and male) and a speed from 0.5x to 2x. It speaks English only.
+- The built-in voice's files are not part of the app. Download fetches them once, 114 MB in 34 files, only when you ask. The card shows their licence, Apache-2.0, before you download.
+- Every downloaded file is checked against its SHA-256 before it is kept. The files live in the data folder under `speech/`, and Remove the voice files on the same card deletes them.
+- Making a voice takes a moment: a two-sentence voice 5.7 seconds long took about 10 seconds on an Apple silicon Mac. The card shows which sentence it is on, and Cancel or Esc stops it.
+- A word that no pronunciation dictionary has is spelled out letter by letter, and the card lists those words so you can write them the way they sound.
+- Numbers, money, percentages and clock times are read as words, whole numbers up to 999 trillion. A four-digit number from 1100 to 2099 written without a comma is read as a year.
+- The Speech server tab sends the words to a speech server that you run on this computer, which is how a voice cloned in another app is used. Use only voices you have the right to use.
+- The speech server's address must be on this computer (127.0.0.1, localhost or [::1]), and the server must speak the common `/v1/audio/speech` JSON interface. Check asks the server and lists its models.
+- Subtitles... opens the Subtitles card, where you type timed lines, add a line at the Playhead, and turn all of them on or off with Show subtitles in the video.
+- One style for every subtitle line: Font, Size, Position, Color and Dark band behind the words.
+- Add subtitles on the Generate voice card writes a line for each sentence, timed to the built-in voice sentence by sentence.
+- Make subtitles from this sound writes lines for the selected sound block by speech to text on your own computer. Its files are also downloaded only when you ask, 76 MB in 7 files, checked the same way, and removable from the same card. The card shows their licence too, Apache-2.0, as the publisher of the downloaded files states it.
+- Speech to text does not detect the language: you choose it. Its lines are timed per phrase, not per word.
+- Import subtitles file... and Export subtitles file... read and write `.srt` files. A file larger than 5 MB is not read.
+- Subtitles are ordinary text blocks on a track named Subtitles, on top of the movie and fixed to the screen. They show on the Stage and in the export, and each line can be edited like any text.
+- The Generate voice and Subtitles cards are in English in this version, whatever the interface language.
+- The built-in voice, the speech server and speech to text use the engine on a computer. The iPad app's engine does not serve them, so on iPad Generate voice... is not offered and the Subtitles card comes without its From sound part; typed lines, their style and subtitle files stay.
+- The manual has sections on Generated voice and Subtitles, with a section New in 0.32.0.
+- `NOTICE.md` credits what the built-in voice and the speech to text model are made of, each with its licence, and states that no GPL part is used, bundled or downloaded for it.
+
 ## 0.31.0 · 2026-11-25
 
 The Character Builder in every language, and the finishing touches on characters and actions.

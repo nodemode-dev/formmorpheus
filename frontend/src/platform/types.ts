@@ -81,6 +81,8 @@ export interface FeatureFlags {
   soundConvert: boolean;
   /** The engine converts a HEIC picture the window cannot decode. */
   pictureConvert: boolean;
+  /** The engine keeps speech model files and relays to a speech server: the built-in voice, the Speech server tab and subtitles from sound. */
+  speech: boolean;
 }
 
 export interface Platform {

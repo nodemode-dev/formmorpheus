@@ -15,6 +15,8 @@ have: ffmpeg, a socket server, or a folder dialog onto the file system.
   /api/files/stat                watches a linked SVG by its path; the iPad picks the file again instead
   /api/files/source              reads a linked SVG by its path; the iPad picks the file again instead
   /api/video-tools*              finds, downloads and removes ffmpeg; the iPad encodes with its own video encoders
+  /api/speech-models*            downloads, serves and removes the speech model files in the desktop data folder
+  /api/speech-server/*           relays to a speech server the person runs on the same computer; an iPad runs none
   /api/agents*, /api/agent/*, /api/terminal*, /api/mcp/*, /mcp
                                  outside agents and the terminal panel are desktop only
   /api/window/*                  the window key guards a loopback server other programs can reach; the iPad's scheme
@@ -55,6 +57,9 @@ DESKTOP_ONLY = [
     ("*", "/api/mcp/*"),
     ("*", "/api/video-tools"),
     ("*", "/api/video-tools/*"),
+    ("*", "/api/speech-models"),
+    ("*", "/api/speech-models/*"),
+    ("*", "/api/speech-server/*"),
     ("*", "/api/window/*"),
     ("*", "/mcp"),
 ]

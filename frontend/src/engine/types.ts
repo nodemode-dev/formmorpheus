@@ -394,6 +394,8 @@ export interface Track {
   locked?: true;
   /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
   screen?: true;
+  /** The subtitles track: its text blocks are the movie's subtitle lines (engine/subtitles.ts). At most one track has it. */
+  subtitles?: true;
   /** Parallax depth: how far the camera's pan and zoom move this track (1 or absent: normally, 0: not at all, 2: twice as far). */
   depth?: number;
   /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */
