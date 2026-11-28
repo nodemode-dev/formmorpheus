@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus bruger kun mikrofonen, når du optager fortælling eller lyd til en film.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus gemmer de film og billeder, du eksporterer, i dit fotobibliotek, når du vælger det.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus bruger kun talegenkendelse på denne iPad, når du beder den skrive undertekster ud fra en lyd. Lyden bliver på denne iPad.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus bruger kun dit lokale netværk til at nå den taleserver, du angiver til AI-stemme.";

@@ -15,7 +15,6 @@ have: ffmpeg, a socket server, or a folder dialog onto the file system.
   /api/files/stat                watches a linked SVG by its path; the iPad picks the file again instead
   /api/files/source              reads a linked SVG by its path; the iPad picks the file again instead
   /api/video-tools*              finds, downloads and removes ffmpeg; the iPad encodes with its own video encoders
-  /api/voice/*                   AI voices run a Python runtime, a voice app on this computer or the keychain; off on iPad
   /api/agents*, /api/agent/*, /api/terminal*, /api/mcp/*, /mcp
                                  outside agents and the terminal panel are desktop only
   /api/window/*                  the window key guards a loopback server other programs can reach; the iPad's scheme
@@ -25,6 +24,7 @@ Everything else is required.
 
 How routes are found in Swift:
   table.add("GET", "/library/{name}")      exact: the method and the path are written out
+  addAsync("POST", "/voice/speak")         exact as well: a group's own list of routes that wait (VoiceRoutes)
   a group that parses request.path by hand (prefix "/jobs" and tests such as rest[1] == "audio"): matched by
   heuristic, shown as "~" in the lists: the group's prefix, every literal segment of the route and its method
   must all appear in the group's file.
@@ -54,7 +54,6 @@ DESKTOP_ONLY = [
     ("*", "/api/terminal"),
     ("*", "/api/terminal/*"),
     ("*", "/api/mcp/*"),
-    ("*", "/api/voice/*"),
     ("*", "/api/video-tools"),
     ("*", "/api/video-tools/*"),
     ("*", "/api/window/*"),
@@ -78,7 +77,7 @@ def is_desktop_only(method: str, path: str) -> bool:
     return False
 
 
-ADD = re.compile(r'\.add\(\s*"([A-Za-z]+)"\s*,\s*"([^"]+)"')
+ADD = re.compile(r'(?:\.add|\baddAsync)\(\s*"([A-Za-z]+)"\s*,\s*"([^"]+)"')
 PREFIX = re.compile(r'\bprefix\s*=\s*"(/[^"]*)"')
 FIRST = re.compile(r'parts\.first\s*==\s*"([^"]+)"')
 

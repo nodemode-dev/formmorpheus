@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus использует микрофон только тогда, когда вы записываете закадровый голос или звук в фильм.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus сохраняет в вашей медиатеке экспортируемые фильмы и изображения, когда вы этого хотите.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus использует распознавание речи на этом iPad только тогда, когда вы просите создать субтитры по звуку. Звук остаётся на этом iPad.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus использует локальную сеть только для связи с речевым сервером, который вы указали для ИИ-голоса.";

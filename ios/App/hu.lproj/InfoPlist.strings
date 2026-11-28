@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "A FormMorpheus csak akkor használja a mikrofont, amikor narrációt vagy hangot rögzít egy filmbe.";
 "NSPhotoLibraryAddUsageDescription" = "A FormMorpheus az exportált filmeket és képeket a fotókönyvtárba menti, ha Ön ezt választja.";
+"NSSpeechRecognitionUsageDescription" = "A FormMorpheus csak akkor használja ezen az iPaden a beszédfelismerést, amikor arra kéri, hogy feliratot írjon egy hangból. A hang ezen az iPaden marad.";
+"NSLocalNetworkUsageDescription" = "A FormMorpheus csak arra használja a helyi hálózatot, hogy elérje a MI-hanghoz megadott beszédszervert.";

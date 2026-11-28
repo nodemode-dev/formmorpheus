@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus bruker bare mikrofonen når du tar opp fortellerstemme eller lyd i en film.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus lagrer filmene og bildene du eksporterer i bildebiblioteket ditt når du velger det.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus bruker bare talegjenkjenning på denne iPaden når du ber den skrive undertekster fra en lyd. Lyden blir på denne iPaden.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus bruker bare det lokale nettverket ditt for å nå taleserveren du oppgir for KI-stemme.";

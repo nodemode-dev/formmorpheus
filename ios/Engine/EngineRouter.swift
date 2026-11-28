@@ -10,6 +10,7 @@
 //   SystemRoutes     ""            /health  /capabilities  /system/library
 //   LibraryRoutes    /library      list, open, save, rename, duplicate, copy-to, delete, poster, preview, tags, stacks
 //   CharactersRoutes /characters   saved characters: list, open, save, rename, delete, poster
+//   ScenesRoutes     /scenes       saved scenes: list, open, save, rename, delete, poster
 //   BrushesRoutes    /brushes      libraries as folders, .order.json, import and export files, the migration
 //   FontsRoutes      /fonts        imported fonts with the signature check
 //   TrashRoutes      /trash        Recently Deleted (30 days)
@@ -21,12 +22,13 @@
 //   ExportsRoutes    /exports      (ios/Export) the Exports folder
 //   AudioEncodeRoutes /audio-encode (ios/Export) sound encoders
 //   TranscodeRoutes  /transcode    video the window cannot decode, converted with AVFoundation
+//   VoiceRoutes      /voice        AI Voice: status, the voice app on the network, the online key, speak and sounds, listening (on-device speech recognition)
 // Not ported, on purpose: /proxy (a desktop-only ffmpeg and network helper), /penlink
 // (Pen Link is hidden on iPad), /files/stat and /files/source (the source link's automatic update; the
 // window offers Update from Source... instead). Those requests answer 404, as the desktop does for an unknown route.
 //
 // Storage root: EngineConfig.dataDir, the Documents folder, so the Files app shows
-// Library, Characters, Brushes, Fonts, Ideas, Recently Deleted, Recovery and Exports like the desktop data folder.
+// Library, Characters, Scenes, Brushes, Fonts, Ideas, Recently Deleted, Recovery and Exports like the desktop data folder.
 // Nothing is seeded: the backend seeds no stock brushes or example movies (starter brushes are built into the interface).
 
 import Foundation
@@ -47,6 +49,7 @@ final class EngineRouter {
             SystemRoutes(),
             LibraryRoutes(),
             CharactersRoutes(),
+            ScenesRoutes(),
             BrushesRoutes(),
             FontsRoutes(),
             TrashRoutes(),
@@ -58,6 +61,7 @@ final class EngineRouter {
             ExportsRoutes(),
             AudioEncodeRoutes(),
             TranscodeRoutes(),
+            VoiceRoutes(),
         ]
         EngineMaintenance.start()
     }

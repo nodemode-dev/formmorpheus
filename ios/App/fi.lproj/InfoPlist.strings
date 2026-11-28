@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus käyttää mikrofonia vain, kun äänität selostusta tai ääntä elokuvaan.";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus tallentaa viemäsi elokuvat ja kuvat kuvakirjastoosi, kun valitset sen.";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus käyttää tämän iPadin puheentunnistusta vain, kun pyydät sitä kirjoittamaan tekstitykset äänestä. Ääni pysyy tässä iPadissa.";
+"NSLocalNetworkUsageDescription" = "FormMorpheus käyttää lähiverkkoasi vain tavoittaakseen puhepalvelimen, jonka annat Tekoälyäänelle.";

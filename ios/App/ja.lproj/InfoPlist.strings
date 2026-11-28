@@ -1,2 +1,4 @@
 "NSMicrophoneUsageDescription" = "FormMorpheus は、ムービーにナレーションや音声を録音するときにのみマイクを使用します。";
 "NSPhotoLibraryAddUsageDescription" = "FormMorpheus は、あなたが選択したときに、書き出したムービーと画像を写真ライブラリに保存します。";
+"NSSpeechRecognitionUsageDescription" = "FormMorpheus は、音声から字幕を書くよう指示したときにのみ、この iPad の音声認識を使用します。音声はこの iPad の外に出ません。";
+"NSLocalNetworkUsageDescription" = "FormMorpheus は、AI ボイス用に指定した音声サーバーに接続するためにのみ、ローカルネットワークを使用します。";
