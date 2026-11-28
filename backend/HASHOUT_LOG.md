@@ -2,10 +2,18 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.33.0
-Last updated: 2026-11-27 · listening at /api/voice/transcribe, subtitles for agents
+Current build version: v0.35.0
+Last updated: 2026-11-27 · main's speech routes left out
 
 ---
+
+## v0.35.0 · main's speech routes left out
+
+- refers-to: the first commit of this branch on main, which takes pull request #32's files out
+- kind: decision
+- logged: v0.35.0 · 2026-11-27
+
+- Pull request #32 on main added `routers/speech_models.py`, `routers/speech_server.py`, `services/speech_models.py`, `services/speech_models_record.py`, `services/speech_server.py` and their tests: speech models fetched on request for use in the window, and a relay to a speech server on loopback. This branch already has `/api/voice` for the same jobs (the built-in voice in its own runtime, a voice app on loopback, listening). The owner's call on 2026-11-27: this branch stands, so this branch's first commit on main puts the files back as they were before #32 and those files are not in the tree. They remain in the history at `4de35da`.
 
 ## v0.33.0 · listening at /api/voice/transcribe, subtitles for agents
 

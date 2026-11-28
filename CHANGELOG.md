@@ -2,6 +2,16 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.35.0 · 2026-11-27
+
+The new cards speak your language, and the manual answers the questions of a first session.
+
+### Improved
+- AI Voice, Subtitles and the menus and notices added since 0.31.0 are now in all 27 languages the app has, not in English only.
+- The manual says where the data folder is on Windows, macOS and Linux, and that it is not the folder the app is installed in.
+- The manual has a short walkthrough, Make a character talk: a voice from a recording, a sound file or AI Voice, then Lip-sync, then subtitles, and which of those steps happen by themselves.
+- The manual explains Frame A and Frame B in the Character Builder, how to start a new character from an existing one through an SVG, what Theater is, and how track order decides what is in front.
+
 ## 0.34.0 · 2026-11-27
 
 Fixes from a tester's first session with Movie projects: the selection box, the right-click menu, actions, the Character Builder, the SVG round trip and starter scenes.

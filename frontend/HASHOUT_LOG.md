@@ -2,10 +2,21 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.34.0
-Last updated: 2026-11-27 · the faults of a tester's first session (discussion 16)
+Current build version: v0.35.0
+Last updated: 2026-11-27 · the translations, and main's other voice build left out
 
 ---
+
+## v0.35.0 · the translations, and main's other voice build left out
+
+- refers-to: ui/i18n/*.ts (the 27 full tables); the first commit of this branch on main, which takes pull request #32's files out
+- kind: decision
+- logged: v0.35.0 · 2026-11-27
+
+- **113 new strings in each of the 27 full tables**, one appended block per table. `Position` was there already under a double-quoted key and was left alone. Sentences with a count put the number where the language needs no inflected noun beside the placeholder (for example a colon form in Czech, Polish, Ukrainian and Serbian), because these strings go through `tf`, not the plural forms. The regional tables (es-MX, fr-CA) keep only what differs and were not touched.
+- **Main gained pull request #32 while this branch was in work**: another build of the same two features (a Generate voice card with speech models run in the window, a loopback speech server relay, a Subtitles card, its own `engine/subtitles.ts`, `ui/subtitles-panel.ts` and `styles/subtitles.css` at the same paths as this branch's). The owner's call on 2026-11-27: where the two differ, this branch stands. This branch sits on main as a straight line: its first commit puts the files back as they were before #32, and its own commits follow on the tree they were written on (a merge commit would not have survived the signing rebase). So none of #32's files are in the tree: `ui/speech-*.ts`, `media/speech/*`, `app/speech-commands.ts`, `styles/speech.css`, `ui/subtitle-style-store.ts`, its tests under `tests/unit/` for those, its `package.json` additions and `.npmrc`, its small edits in `platform/`. They remain in the history at `4de35da`. Keeping both would have meant two voice cards, two subtitle models at one path and its tests run against this branch's different functions.
+- **Worth reading in #32 before anything like it is written here**: its three counted sentences use the language's plural forms; a spoken run never lands in a movie other than the one it started in; unspeakable text adds nothing.
+- The panel work (a docked Build panel, the mode switch in the Timeline's head row, where exports go) was under way when this was cut and is not in this version.
 
 ## v0.34.0 · the faults of a tester's first session (discussion 16)
 
