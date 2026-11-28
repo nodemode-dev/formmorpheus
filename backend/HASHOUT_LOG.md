@@ -2,16 +2,16 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.31.0
+Current build version: v0.32.0
 Last updated: 2026-11-27 · speech models on request and the speech server relay
 
 ---
 
-## v0.31.0 · speech models on request and the speech server relay
+## v0.32.0 · speech models on request and the speech server relay
 
 - refers-to: app/services/speech_models_record.py (new); app/services/speech_models.py (new); app/services/speech_server.py (new); app/routers/speech_models.py (new); app/routers/speech_server.py (new); app/main.py (routers at /api/speech-models and /api/speech-server); tests/test_speech_models.py, tests/test_speech_server.py (new); ../setup/api_contract_check :: DESKTOP_ONLY; ../docs/api-contract.json (written by ../setup/api_contract_dump)
 - kind: decision
-- logged: v0.31.0 · 2026-11-27 (issue 31; the version is bumped with the rest of the feature)
+- logged: v0.32.0 · 2026-11-27 (issue 31; written before the version was bumped to 0.32.0 with the rest of the feature)
 
 - **Two sets, never bundled.** `voice` (34 files, Apache-2.0: the speech model, its tokenizer, 28 voices, four pronunciation dictionaries) and `listen` (7 files, MIT: the speech to text model). The record holds the served path, the pinned address (a commit, not a branch), the size and the SHA-256 of every file. The sizes of the `listen` files were read once with a HEAD request on 2026-11-27 and written into the record; the engine never asks the network for a size.
 - **Modelled on the ffmpeg download** and importing its general helpers (`_HttpsOnly`, `_context`, `Cancelled`, `BLOCK`, `inside_app_bundle`): HTTPS only, a redirect that leaves HTTPS is refused, the recorded size is the cap, a part file then `os.replace`. Different on purpose: there is no archive, so each file is hashed while it streams and reaches its real name only after size and hash matched; a part file is named `.<name>.part`, which the hourly part-file sweep already knows.

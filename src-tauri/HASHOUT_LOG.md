@@ -2,7 +2,7 @@
 
 Living log for the desktop shell (Tauri 2). Source stays comment-free; rationale lives here. The splash and reveal reproduce the owner's formvis splash and boot map exactly.
 
-Current build version: v0.23.2
+Current build version: v0.32.0
 Last updated: 2026-11-22 · the release builds for macOS and Linux finish
 
 ---
