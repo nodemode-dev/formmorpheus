@@ -3,9 +3,28 @@
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
 Current build version: v0.31.0
-Last updated: 2026-11-25 · the window's files keep their types on Windows
+Last updated: 2026-11-27 · speech models on request and the speech server relay
 
 ---
+
+## v0.31.0 · speech models on request and the speech server relay
+
+- refers-to: app/services/speech_models_record.py (new); app/services/speech_models.py (new); app/services/speech_server.py (new); app/routers/speech_models.py (new); app/routers/speech_server.py (new); app/main.py (routers at /api/speech-models and /api/speech-server); tests/test_speech_models.py, tests/test_speech_server.py (new); ../setup/api_contract_check :: DESKTOP_ONLY; ../docs/api-contract.json (written by ../setup/api_contract_dump)
+- kind: decision
+- logged: v0.31.0 · 2026-11-27 (issue 31; the version is bumped with the rest of the feature)
+
+- **Two sets, never bundled.** `voice` (34 files, Apache-2.0: the speech model, its tokenizer, 28 voices, four pronunciation dictionaries) and `listen` (7 files, MIT: the speech to text model). The record holds the served path, the pinned address (a commit, not a branch), the size and the SHA-256 of every file. The sizes of the `listen` files were read once with a HEAD request on 2026-11-27 and written into the record; the engine never asks the network for a size.
+- **Modelled on the ffmpeg download** and importing its general helpers (`_HttpsOnly`, `_context`, `Cancelled`, `BLOCK`, `inside_app_bundle`): HTTPS only, a redirect that leaves HTTPS is refused, the recorded size is the cap, a part file then `os.replace`. Different on purpose: there is no archive, so each file is hashed while it streams and reaches its real name only after size and hash matched; a part file is named `.<name>.part`, which the hourly part-file sweep already knows.
+- **Installed means every pinned file is a regular file of the recorded size** (`lstat`, so a link does not count). The hash is checked when a file arrives, not on every read: 120 MB hashed per state request would be felt.
+- **A cancelled or failed download keeps the files that verified**, so the next download takes only what is missing. `done` and `total` are bytes of the whole set, and a retry starts `done` at what is already there.
+- **Task states are the contract's four** (`idle`, `downloading`, `failed`, `cancelled`). A finished download goes back to `idle`; `installed` says it worked. Each start makes a new task with its own stop flag, so a late cancel of an old run cannot stop a new one. The two sets may download at the same time.
+- **Remove** deletes what is inside `speech/<set>` and then that folder. If the folder is a link, the link is unlinked and never followed. It answers 409 while that set downloads.
+- **The file route cannot be walked out of.** The request path is compared, as exact text, with the set's pinned paths; the file path is then built from the record entry, never from the request. Anything else is 404, as is every path while the set is not completely installed. It sends `ETag` (the pinned SHA-256) with `Cache-Control: private, no-cache` and answers 304 on a match, not a long `max-age`: the served names stay the same when a later version pins other files, and a removed set must stop being served.
+- **Speech server relay.** The window's page policy keeps it from calling another port, so the engine does. The address is judged as written, nothing is resolved: scheme `http` or `https`, host exactly `127.0.0.1`, `localhost` or `::1`, no user name or password, no query or hash, no space or backslash; the call uses an address rebuilt from the checked parts. A redirect is followed only to loopback. Proxies from the environment and the system are switched off for these calls. Standard library only.
+- **Answers.** A refused address is 400 with a sentence. `check` answers 200 with `ok: false` and the reason when the server fails or is not there, since that is an answer about the server, and reads model names from `{"data": [...]}`, `{"models": [...]}` or a bare list. `speak` answers 502 with the upstream message trimmed to 300 characters, 504 on a timeout (check 5 s, speak 300 s), and 502 for a reply over 200 MB, an empty reply, or one whose type is neither `audio/*` nor `application/octet-stream` (an error page relayed as sound would only fail later in the decoder).
+- **Guards.** Nothing to add: `WindowKeyGuard` covers every path under `/api/`, reads included, so the window must send its key when it fetches a model file (a plain URL handed to a worker or a library will be refused with 403), and `GuardMiddleware` refuses a foreign origin on writes.
+- **iPad.** Both groups are listed as desktop only in `setup/api_contract_check`. `docs/api-contract.json` was regenerated with `setup/api_contract_dump`, not edited.
+- **Tests** use no network: the model tests swap the record for three small files and the opener for a fake; the relay tests run a small server on 127.0.0.1 inside the test.
 
 ## v0.31.0 · the window's files keep their types on Windows
 
