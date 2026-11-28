@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from app.core import config, window_key
-from app.routers import characters, exports, fonts, jobs, library, trash
-from app.services import agent_access, bridge, claude_code, movies
+from app.routers import characters, exports, fonts, jobs, library, trash, voice
+from app.services import agent_access, bridge, claude_code, movies, voice_remote, voice_runtime
 from app.services import ffmpeg as ff
 
 router = APIRouter()
@@ -27,6 +27,12 @@ CONSENT_WAIT = 120.0
 DECLINE_PAUSE = 120.0
 EXPORT_WAIT = 600.0
 IMPORT_WAIT = 120.0
+VOICE_WAIT = 600.0
+SUBTITLE_WAIT = 120.0
+MAX_SUBTITLE_LINES = 2000
+MAX_SUBTITLE_TEXT = 500
+MAX_SRT = 400_000
+LISTED_SUBTITLES = 500
 MAX_IMPORT = 2 * 1024 * 1024 * 1024
 EXPORT_FORMATS = ["mp4", "webm", "mov", "gif", "apng", "webp-anim", "png-frames", "jpg-frames", "webp-frames", "tiff-frames", "tga-frames", "bmp-frames",
                   "png-still", "psd", "prores-mov", "prores4444-mov", "hevc-mp4", "hevc-mov", "h264-mp4", "h264-mov"]
@@ -35,8 +41,9 @@ IMPORTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".tif", ".
            ".otf", ".ttf", ".ttc", ".woff", ".woff2", ".psd", ".psb", ".ora", ".kra"}
 INSTRUCTIONS = ("FormMorpheus is an animation studio on this computer; its movies are .fmo files in the person's library folder. "
                 "Start with get_context. list_movies, get_movie and get_movie_picture read; manage_movie creates, renames, duplicates, "
-                "deletes (to Recently Deleted) and restores movies; list_characters reads the saved characters; export_movie, import_file and "
-                "add_character are carried out by the open FormMorpheus window after the person agrees there. list_commands lists the other commands and run_command runs one. Changes need the "
+                "deletes (to Recently Deleted) and restores movies; list_characters reads the saved characters; list_voices reads the AI voices and "
+                "whether each is ready; list_subtitles reads a movie's subtitles; export_movie, import_file, add_character, add_voice and set_subtitles are carried out by the open "
+                "FormMorpheus window after the person agrees there. list_commands lists the other commands and run_command runs one. Changes need the "
                 "person's yes: outside agents are off until they allow them in the window.")
 NO_WINDOW = "Open FormMorpheus first: the FormMorpheus window does this ({what}), and none is open. Ask the person to open FormMorpheus, then retry."
 CHOICE_WORDS = {"ask": "off until the person allows them (a change asks in the window when it is open)", "allowed": "allowed", "blocked": "blocked"}
@@ -110,6 +117,41 @@ TOOLS = [
           {"character": _CHARACTER, "movie": {"type": "string", "description": "A movie's name, as list_movies gives it (default the movie open in the window)"},
            "at": {"type": "integer", "minimum": 0}},
           ["character"]),
+    _tool("list_voices", "reads", "Reads the AI voices: for each engine (builtin, the built-in voice; local, a voice app on this computer; online, an online voice "
+          "with the person's own key) whether it is ready, why not when it is not, and its voices when it is. engine narrows to one.",
+          {"engine": {"type": "string", "enum": ["builtin", "local", "online"], "description": "Default all three"}}),
+    _tool("add_voice", "asks", "Asks first: the person approves in the FormMorpheus window, which then speaks text with an AI voice, places the sound on "
+          "the Timeline of the movie open there (or of movie, which it opens) at the playhead, and saves the movie. engine is builtin (default), local or "
+          "online; voice is an id from list_voices; language (the built-in voice, default en-us) and speed (0.5 to 2, not online) shape the speech; model "
+          "picks the local or online model; at is the movie frame to place it at instead of the playhead. text is at most 10000 characters, 2000 online, "
+          "and online sends it to the online service. Waits up to 2 minutes for the answer and 10 minutes for the work.",
+          {"text": {"type": "string", "maxLength": 10000, "description": "The words to speak"}, "engine": {"type": "string", "enum": ["builtin", "local", "online"]},
+           "voice": {"type": "string", "description": "A voice's id, as list_voices gives it (default the engine's own)"},
+           "language": {"type": "string", "description": "The built-in voice's language, as list_voices gives it (default en-us)"},
+           "speed": {"type": "number", "minimum": 0.5, "maximum": 2}, "model": _S,
+           "movie": {"type": "string", "description": "A movie's name, as list_movies gives it (default the movie open in the window)"},
+           "at": {"type": "integer", "minimum": 0}},
+          ["text"]),
+    _tool("list_subtitles", "reads", "Reads a movie's subtitles from its file without the window: whether the video shows them, their look (font, size as a percent "
+          "of the movie's height, position, color, band behind the words) and each line with its id, start and end in seconds and in movie frames "
+          "(end not included), and its text. At most 500 lines, with a count of the rest.", {"movie": _MOVIE}, ["movie"]),
+    _tool("set_subtitles", "asks", "Asks first: the person approves in the FormMorpheus window, which then changes the subtitles of the movie open there "
+          "(or of movie, which it opens) and saves the movie. lines (start and end in seconds) or srt (the text of a .srt or .vtt file) give the lines; mode "
+          "replace (default) puts them in place of every line, add keeps the others. from_voices makes lines from every sound an AI voice spoke. show "
+          "turns them on or off in the video; style sets their look. Give at least one of lines, srt, show, from_voices or style. At most 2000 lines. "
+          "Waits up to 2 minutes for the answer and 2 minutes for the work.",
+          {"movie": {"type": "string", "description": "A movie's name, as list_movies gives it (default the movie open in the window)"},
+           "lines": {"type": "array", "maxItems": MAX_SUBTITLE_LINES, "items": {"type": "object", "properties": {
+               "start": {"type": "number", "minimum": 0, "description": "Seconds"}, "end": {"type": "number", "description": "Seconds, after start"},
+               "text": {"type": "string", "maxLength": 500}}, "required": ["start", "end", "text"]}},
+           "srt": {"type": "string", "maxLength": MAX_SRT, "description": "The text of a .srt or .vtt file, instead of lines"},
+           "mode": {"type": "string", "enum": ["replace", "add"], "description": "Default replace"},
+           "show": {"type": "boolean", "description": "Show the subtitles in the video and in every export"},
+           "from_voices": {"type": "boolean", "description": "Make lines from every sound an AI voice spoke"},
+           "style": {"type": "object", "properties": {"font": {"type": "string", "description": "A font family, as list_fonts or the Text card names it"},
+                     "size": {"type": "number", "minimum": 2, "maximum": 15, "description": "Percent of the movie's height"},
+                     "position": {"type": "string", "enum": ["top", "middle", "bottom"]}, "color": {"type": "string", "description": "#rrggbb"},
+                     "band": {"type": "boolean", "description": "A dark band behind the words"}}}}),
     _tool("list_commands", "reads", "Reads the commands that are not tools: id, class (reads, changes the library) and what each does; id returns one with its parameters.",
           {"id": _S}),
     _tool("run_command", "changes", "Changes the library or reads, as the command's class says: runs one command from list_commands with its params. "
@@ -440,6 +482,246 @@ async def t_add_character(a: Agent, args: dict) -> dict:
     into = str(out.get("movie") or payload.get("movie") or "")
     return _ok(f"Added the character {stem} as {added}" + (f" in {into}" if into else "") + (", and the movie was saved." if out.get("saved") else "; the movie is not saved yet."),
                {"character": stem, "movie": into or None, "content": added, "saved": bool(out.get("saved"))})
+
+
+VOICE_WORDS = {"builtin": "the built-in voice", "local": "the voice app on this computer", "online": "the online voice"}
+ONLINE_TEXT = 2000
+MAX_VOICES = 100
+
+
+def _voice_state(engine: str, listing: bool) -> dict:
+    """Whether one engine can speak now and, when listing, its voices. Blocks: the local probe and the online list go out."""
+    if engine == "builtin":
+        st = voice_runtime.status()
+        if not st.get("ready"):
+            busy = (st.get("job") or {}).get("state") == "running"
+            return {"engine": engine, "ready": False, "reason": "The built-in voice is being set up in FormMorpheus right now. Retry when the setup has finished." if busy
+                    else "The built-in voice is not set up yet. The person sets it up once in FormMorpheus, in the AI Voice card on its Offline tab."}
+        if not listing:
+            return {"engine": engine, "ready": True}
+        try:
+            rows = voice_runtime.voices()
+        except voice_runtime.VoiceError as exc:
+            return {"engine": engine, "ready": False, "reason": str(exc)}
+        return {"engine": engine, "ready": True, "voices": [{"id": v.get("id"), "name": v.get("name"), "language": v.get("language"), "group": v.get("group")} for v in rows]}
+    if engine == "local":
+        base = str(voice_remote.local_settings().get("base") or "")
+        try:
+            probe = voice_remote.probe_local(base)
+        except voice_remote.VoiceError as exc:
+            probe = {"ok": False, "error": str(exc)}
+        if not probe.get("ok"):
+            why = str(probe.get("error") or "").strip().rstrip(".")
+            return {"engine": engine, "ready": False, "base": base, "reason": f"The voice app on this computer at {base or 'no address'} is not ready. {why or 'It did not answer'}. "
+                    "The person starts it, or sets its address in the AI Voice card (Offline tab, Voice app on this computer)."}
+        found = {"engine": engine, "ready": True, "base": base}
+        if not listing:
+            return found
+        return {**found, "models": [str(m) for m in probe.get("models") or []], "voices": [{"id": v.get("id"), "name": v.get("name")} for v in probe.get("voices") or []]}
+    if not voice_remote.online_status().get("hasKey"):
+        return {"engine": engine, "ready": False, "reason": "There is no online voice key in FormMorpheus. The person adds their own key in the AI Voice card, on its Online tab."}
+    if not listing:
+        return {"engine": engine, "ready": True}
+    try:
+        rows = voice_remote.online_voices()
+    except voice_remote.VoiceError as exc:
+        return {"engine": engine, "ready": False, "reason": str(exc)}
+    return {"engine": engine, "ready": True, "voices": [{"id": v.get("id"), "name": v.get("name")} for v in rows[:MAX_VOICES]], "more": max(0, len(rows) - MAX_VOICES)}
+
+
+def _voice_lines(s: dict) -> list[str]:
+    title = {"builtin": "Built-in voice", "local": "Voice app on this computer" + (f" at {s.get('base')}" if s["ready"] else ""), "online": "Online voice"}[s["engine"]]
+    if not s["ready"]:
+        return [f"{title}: not ready. {s['reason']}"]
+    voices = s.get("voices") or []
+    more = f" (the first {MAX_VOICES}; {s['more']} more)" if s.get("more") else ""
+    if not voices:
+        head = f"{title}: ready; it gives no list of voices, so voice is any name it knows." if s["engine"] == "local" else f"{title}: ready, no voices."
+    else:
+        head = f"{title}: ready, {len(voices)} voice{'s' if len(voices) != 1 else ''}{more}:"
+    lines = [head] + ([f"  models: {', '.join(s['models'])}"] if s.get("models") else [])
+    return lines + [f"  {v['id']} · {v['name']}" + (f" · {v['group']}" if v.get("group") else "") for v in voices]
+
+
+async def t_list_voices(a: Agent, args: dict) -> dict:
+    engine = str(args.get("engine") or "").strip()
+    if engine and engine not in voice.ENGINES:
+        raise ToolError("engine is builtin, local or online.")
+    states = [await asyncio.to_thread(_voice_state, e, True) for e in ([engine] if engine else voice.ENGINES)]
+    return _ok("\n".join(line for s in states for line in _voice_lines(s)), {"engines": states})
+
+
+async def t_add_voice(a: Agent, args: dict) -> dict:
+    engine = str(args.get("engine") or "builtin").strip()
+    if engine not in voice.ENGINES:
+        raise ToolError("engine is builtin, local or online.")
+    words = str(args.get("text") or "").strip()
+    if not words:
+        raise ToolError("Give text, the words the voice speaks.")
+    limit = ONLINE_TEXT if engine == "online" else voice.MAX_TEXT
+    if len(words) > limit:
+        raise ToolError(f"text is at most {limit} characters" + (" for the online voice." if engine == "online" else "."))
+    payload = {"text": words, "engine": engine}
+    for key in ("voice", "language", "model"):
+        if args.get(key) is not None:
+            if not isinstance(args[key], str):
+                raise ToolError(f"{key} is a name, as list_voices gives it.")
+            if args[key].strip():
+                payload[key] = args[key].strip()[:120]
+    if args.get("speed") is not None:
+        try:
+            speed = float(args["speed"])
+        except (TypeError, ValueError):
+            speed = 0.0
+        if not 0.5 <= speed <= 2:
+            raise ToolError("speed is a number from 0.5 to 2 (1 is the voice's own pace).")
+        payload["speed"] = speed
+    movie = str(args.get("movie") or "").strip()
+    if movie:
+        payload["movie"] = _movie(movie).stem
+    if args.get("at") is not None:
+        payload["at"] = max(0, int(args["at"]))
+    state = await asyncio.to_thread(_voice_state, engine, False)
+    if not state["ready"]:
+        raise ToolError(f"Nothing was added. {state['reason']}")
+    flat = " ".join(words.split())
+    said = flat if len(flat) <= 60 else flat[:57].rstrip() + "..."
+    where = f"the movie {payload['movie']}" if movie else "the movie open in the window"
+    out = await _window(a, "add_voice", payload, f'speak "{said}" with {VOICE_WORDS[engine]} and add the sound to {where}', VOICE_WAIT)
+    name = str(out.get("content") or "")
+    try:
+        seconds = round(float(out.get("seconds") or 0), 2)
+    except (TypeError, ValueError):
+        seconds = 0.0
+    into = str(out.get("movie") or payload.get("movie") or "")
+    return _ok(f"Added the spoken sound {name} ({seconds:.1f} s)" + (f" to {into}" if into else "") + (", and the movie was saved." if out.get("saved") else "; the movie is not saved yet."),
+               {"sound": name, "seconds": seconds, "movie": into or None, "engine": engine, "saved": bool(out.get("saved"))})
+
+
+def _seconds(v) -> float | None:
+    # abs() < 1e9 also turns away NaN and the infinities json.loads lets through.
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) < 1e9 else None
+
+
+async def t_list_subtitles(a: Agent, args: dict) -> dict:
+    path = _movie(args.get("movie"))
+    try:
+        found = await asyncio.to_thread(movies.read_subtitles, path)
+    except movies.NotAMovie as exc:
+        raise ToolError(str(exc)) from None
+    subs, fps = found["subtitles"], found["fps"]
+    if subs is None:
+        return _ok(f"{path.stem} has no subtitles.", {"movie": path.stem, "subtitles": None})
+    st, cues = subs["style"], subs["cues"]
+    rows = [{**c, "startSeconds": round(c["start"] / fps, 3), "endSeconds": round(c["end"] / fps, 3)} for c in cues[:LISTED_SUBTITLES]]
+    more = max(0, len(cues) - LISTED_SUBTITLES)
+    lines = [f"{path.stem}: {len(cues)} subtitle line{'s' if len(cues) != 1 else ''}; the video {'shows' if subs['show'] else 'does not show'} them.",
+             f"Look: font {st['font']}, size {st['size']:g} percent of the height, {st['position']}, color {st['color']}, band {'on' if st['band'] else 'off'}."]
+    lines += [f"{r['id']} · {r['startSeconds']:.3f} s to {r['endSeconds']:.3f} s (frames {r['start']} to {r['end']}) · {r['text']}" for r in rows]
+    if more:
+        lines.append(f"The first {LISTED_SUBTITLES} lines are shown; {more} more.")
+    return _ok("\n".join(lines), {"movie": path.stem, "fps": fps, "show": subs["show"], "style": st, "count": len(cues), "lines": rows, "more": more})
+
+
+def _subtitle_style(raw) -> dict:
+    if not isinstance(raw, dict):
+        raise ToolError("style is an object with any of font, size, position, color and band.")
+    out = {}
+    if raw.get("font") is not None:
+        if not isinstance(raw["font"], str) or not raw["font"].strip() or len(raw["font"].strip()) > 120:
+            raise ToolError("style.font is a font family's name, as list_fonts or the Text card gives it.")
+        out["font"] = raw["font"].strip()
+    if raw.get("size") is not None:
+        size = _seconds(raw["size"])
+        if size is None or not 2 <= size <= 15:
+            raise ToolError("style.size is a number from 2 to 15, a percent of the movie's height.")
+        out["size"] = size
+    if raw.get("position") is not None:
+        if raw["position"] not in ("top", "middle", "bottom"):
+            raise ToolError("style.position is top, middle or bottom.")
+        out["position"] = raw["position"]
+    if raw.get("color") is not None:
+        color = raw["color"]
+        if not isinstance(color, str) or len(color) != 7 or color[0] != "#" or any(ch not in "0123456789abcdefABCDEF" for ch in color[1:]):
+            raise ToolError("style.color is a color as #rrggbb.")
+        out["color"] = color.lower()
+    if raw.get("band") is not None:
+        if not isinstance(raw["band"], bool):
+            raise ToolError("style.band is true or false.")
+        out["band"] = raw["band"]
+    if not out:
+        raise ToolError("style gives at least one of font, size, position, color or band.")
+    return out
+
+
+def _subtitle_lines(raw) -> list[dict]:
+    if not isinstance(raw, list):
+        raise ToolError("lines is a list of {start, end, text}, start and end in seconds.")
+    if len(raw) > MAX_SUBTITLE_LINES:
+        raise ToolError(f"lines holds at most {MAX_SUBTITLE_LINES} lines.")
+    out = []
+    for i, line in enumerate(raw, 1):
+        if not isinstance(line, dict):
+            raise ToolError(f"Line {i} is not an object with start, end and text.")
+        start, end = _seconds(line.get("start")), _seconds(line.get("end"))
+        if start is None or end is None or not end > start >= 0:
+            raise ToolError(f"Line {i}: start and end are numbers of seconds, start at 0 or later and end after start.")
+        words = line.get("text")
+        if not isinstance(words, str) or not words.strip():
+            raise ToolError(f"Line {i} has no text.")
+        if len(words) > MAX_SUBTITLE_TEXT:
+            raise ToolError(f"Line {i}: text is at most {MAX_SUBTITLE_TEXT} characters.")
+        out.append({"start": round(start, 3), "end": round(end, 3), "text": words.strip()})
+    return out
+
+
+async def t_set_subtitles(a: Agent, args: dict) -> dict:
+    if not any(args.get(k) is not None for k in ("lines", "srt", "show", "from_voices", "style")):
+        raise ToolError("Give at least one of lines, srt, show, from_voices or style.")
+    if args.get("lines") is not None and args.get("srt") is not None:
+        raise ToolError("Give lines or srt, not both.")
+    mode = args.get("mode") if args.get("mode") is not None else "replace"
+    if mode not in ("replace", "add"):
+        raise ToolError("mode is replace or add.")
+    payload: dict = {"mode": mode}
+    doing = []
+    if args.get("lines") is not None:
+        payload["lines"] = _subtitle_lines(args["lines"])
+        n = len(payload["lines"])
+        doing.append(f"{'put' if mode == 'replace' else 'add'} {n} line{'s' if n != 1 else ''}" + (" in place of its lines" if mode == "replace" else ""))
+    if args.get("srt") is not None:
+        if not isinstance(args["srt"], str) or not args["srt"].strip() or len(args["srt"]) > MAX_SRT:
+            raise ToolError(f"srt is the text of a .srt or .vtt file, at most {MAX_SRT} characters.")
+        payload["srt"] = args["srt"]
+        doing.append("put the lines of a subtitle file in place of its lines" if mode == "replace" else "add the lines of a subtitle file")
+    for key in ("show", "from_voices"):
+        if args.get(key) is not None:
+            if not isinstance(args[key], bool):
+                raise ToolError(f"{key} is true or false.")
+            payload[key] = args[key]
+    if payload.get("from_voices"):
+        doing.insert(0, "make lines from its AI voices")
+    if args.get("style") is not None:
+        payload["style"] = _subtitle_style(args["style"])
+        doing.append("set their look")
+    if "show" in payload:
+        doing.append("show them in the video" if payload["show"] else "hide them in the video")
+    if not doing:
+        raise ToolError("Give at least one of lines, srt, show, from_voices or style.")
+    movie = str(args.get("movie") or "").strip()
+    if movie:
+        payload["movie"] = _movie(movie).stem
+    where = f"the movie {payload['movie']}" if movie else "the movie open in the window"
+    out = await _window(a, "set_subtitles", payload, f"change the subtitles of {where}: {', '.join(doing)}", SUBTITLE_WAIT)
+    try:
+        count = max(0, int(out.get("lines") or 0))
+    except (TypeError, ValueError):
+        count = 0
+    shown = bool(out.get("show"))
+    into = str(out.get("movie") or payload.get("movie") or "")
+    return _ok((into or "The movie") + f" now has {count} subtitle line{'s' if count != 1 else ''}, {'shown' if shown else 'not shown'} in the video"
+               + (", and the movie was saved." if out.get("saved") else "; the movie is not saved yet."),
+               {"movie": into or None, "lines": count, "show": shown, "saved": bool(out.get("saved"))})
 
 
 async def t_list_commands(a: Agent, args: dict) -> dict:

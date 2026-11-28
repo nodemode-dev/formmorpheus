@@ -130,6 +130,15 @@ export class TimelineEd {
     return r.delta;
   }
 
+  /** The total move of one edge that sat at movie frame `here` when the drag began (an action strip's), pulled to a target. */
+  snapAt(m: Movie, here: number, tag: string, total: number, e: PointerEvent): number {
+    if (!this.active(e)) { this.setLine(null); return total; }
+    if (!this.cache || this.cache.tag !== tag) this.cache = { tag, targets: snapTargets(m, this.engine.frame, new Set()), edges: [here] };
+    const r = snapDelta(this.cache.edges, this.cache.targets, total, reachFrames(this.geo.ppf()));
+    this.setLine(r.line);
+    return r.delta;
+  }
+
   // ---- markers ----
 
   private markerAt(clientX: number, clientY: number): { id: string; frame: number } | null {

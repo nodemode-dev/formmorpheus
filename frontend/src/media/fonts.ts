@@ -171,7 +171,17 @@ export async function loadTextFonts(movie: Movie): Promise<void> {
     }
   };
   walk(movie.tracks);
+  const sub = subtitleFace(movie);
+  if (sub) jobs.push(ensureTextFont(sub));
   await Promise.all(jobs);
+}
+
+/** The face the subtitles are drawn in with the words they show, or null when the video shows none. */
+export function subtitleFace(movie: Movie): { font: string; weight: number; size: number; text: string } | null {
+  const s = movie.subtitles;
+  if (!s || !s.show || !s.cues.length) return null;
+  // enough of the words to find the scripts they use, without building a huge string
+  return { font: s.style.font, weight: 600, size: 32, text: s.cues.slice(0, 400).map((c) => c.text).join(' ').slice(0, 8000) };
 }
 
 // A face that finishes loading changes the letters' widths: pictures of Text are drawn again.

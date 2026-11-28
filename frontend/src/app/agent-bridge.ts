@@ -6,10 +6,15 @@ import type { ExportFormat, ExportOptions } from '../export/types';
 import { startExportRouted } from '../export/route';
 import { startEngineExport, type EngineTarget } from '../export/engine-jobs';
 import { outsideAgents } from '../dock-adapter';
-import { api } from '../io/api';
+import { api, ApiError } from '../io/api';
 import { charactersApi } from '../io/characters-api';
+import type { SpeakRequest, VoiceEngine } from '../io/voice-api';
+import { parseSubtitles } from '../io/subtitle-files';
+import { addCues, cuesForSound, setCues, setSubtitleShow, setSubtitleStyle, type TimedLine } from '../engine/subtitles';
+import type { Movie, SubtitleStyle, Track } from '../engine/types';
 import { placeCharacter, unpackCharacter } from '../ui/characters-panel';
 import { t } from '../ui/i18n';
+import type { SpokenOnTimeline } from './voice-commands';
 
 export interface BridgeDeps {
   engine: Engine;
@@ -21,6 +26,7 @@ export interface BridgeDeps {
   importFile(file: File, at: number | undefined, row: number | undefined): Promise<void>;
   exportBusy(): boolean;
   listed(): void;
+  speak: (req: SpeakRequest, frame?: number) => Promise<SpokenOnTimeline | null>;
 }
 
 type Args = Record<string, unknown>;
@@ -30,6 +36,7 @@ interface Item { id: string; kind: string; request?: unknown; arguments?: Args; 
 const ENGINE: Partial<Record<ExportFormat, EngineTarget>> = { 'prores-mov': 'prores', 'prores4444-mov': 'prores4444', 'hevc-mp4': 'hevc', 'hevc-mov': 'hevc', 'h264-mov': 'h264', 'h264-mp4': 'h264' };
 const VIDEO: ExportFormat[] = ['mp4', 'webm', 'mov', 'prores-mov', 'prores4444-mov', 'hevc-mp4', 'hevc-mov', 'h264-mov', 'h264-mp4'];
 const QUALITY = ['low', 'medium', 'high', 'very-high'] as const;
+const VOICES: VoiceEngine[] = ['builtin', 'local', 'online'];
 const RETRY_MS = 3000;
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 const whole = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : undefined);
@@ -140,6 +147,79 @@ export function startAgentBridge(d: BridgeDeps): void {
     return { ok: true, content: src.group.character?.name ?? src.group.name, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
   };
 
+  const addVoice = async (a: Args): Promise<Result> => {
+    const name = text(a.movie);
+    if (name) {
+      const blocked = await front(name);
+      if (blocked) return { ok: false, error: blocked };
+    }
+    if (!d.engine.movie) return { ok: false, error: t('FormMorpheus could not open that movie.') };
+    const speed = typeof a.speed === 'number' && Number.isFinite(a.speed) ? a.speed : undefined;
+    const req: SpeakRequest = {
+      engine: VOICES.find((x) => x === a.engine) ?? 'builtin', text: text(a.text),
+      ...(text(a.voice) ? { voice: text(a.voice) } : {}), ...(text(a.language) ? { language: text(a.language) } : {}),
+      ...(speed === undefined ? {} : { speed }), ...(text(a.model) ? { model: text(a.model) } : {}),
+    };
+    const at = whole(a.at);
+    let done: SpokenOnTimeline | null;
+    try {
+      done = await d.speak(req, at === undefined ? undefined : Math.max(0, at));
+    } catch (e) {
+      // The engine's own sentence says why the voice could not speak; anything else goes to take's catch.
+      if (e instanceof ApiError) return { ok: false, error: e.message };
+      throw e;
+    }
+    if (!done) return { ok: false, error: t('The voice could not be added.') };
+    const saved = await d.save();
+    return { ok: true, content: done.name, seconds: done.seconds, movie: d.engine.libraryName ?? d.engine.movie?.name ?? '', saved };
+  };
+
+  const setSubtitles = async (a: Args): Promise<Result> => {
+    const name = text(a.movie);
+    if (name) {
+      const blocked = await front(name);
+      if (blocked) return { ok: false, error: blocked };
+    }
+    const movie = d.engine.movie;
+    if (!movie) return { ok: false, error: t('FormMorpheus could not open that movie.') };
+    let lines: TimedLine[] | null = null;
+    if (typeof a.srt === 'string') {
+      lines = parseSubtitles(a.srt);
+      if (!lines.length) return { ok: false, error: t('No subtitles were found in that text.') };
+    } else if (Array.isArray(a.lines)) {
+      lines = a.lines.filter((l): l is TimedLine => !!l && typeof l === 'object' && typeof (l as TimedLine).start === 'number' && typeof (l as TimedLine).end === 'number' && typeof (l as TimedLine).text === 'string');
+    }
+    const s = (a.style && typeof a.style === 'object' ? a.style : {}) as Record<string, unknown>;
+    const position = (['top', 'middle', 'bottom'] as const).find((x) => x === s.position);
+    const style: Partial<SubtitleStyle> = {
+      ...(text(s.font) ? { font: text(s.font) } : {}), ...(typeof s.size === 'number' && Number.isFinite(s.size) ? { size: s.size } : {}),
+      ...(position ? { position } : {}), ...(text(s.color) ? { color: text(s.color) } : {}), ...(typeof s.band === 'boolean' ? { band: s.band } : {}),
+    };
+    // Every sound block an AI voice spoke, nested groups too: each makes its own lines again in place of the old ones.
+    const spokenIds = (m: Movie, tracks: Track[], out: string[]): string[] => {
+      for (const tr of tracks) for (const c of tr.content) {
+        if (c.asset && m.assets[c.asset]?.spoken) out.push(c.id);
+        if (c.kind === 'group') spokenIds(m, c.tracks, out);
+      }
+      return out;
+    };
+    d.engine.run('Subtitles', (m) => {
+      let next = m;
+      if (a.from_voices === true) for (const id of spokenIds(m, m.tracks, [])) next = addCues(next, cuesForSound(next, id), id);
+      if (lines) {
+        const fps = next.fps;
+        const cues = lines.map((l) => ({ start: Math.round(l.start * fps), end: Math.round(l.end * fps), text: l.text }));
+        next = a.mode === 'add' ? addCues(next, cues) : setCues(next, cues);
+      }
+      if (Object.keys(style).length) next = setSubtitleStyle(next, style);
+      if (typeof a.show === 'boolean') next = setSubtitleShow(next, a.show);
+      return next;
+    });
+    const after = d.engine.movie;
+    const saved = await d.save();
+    return { ok: true, lines: after?.subtitles?.cues.length ?? 0, show: after?.subtitles?.show === true, movie: d.engine.libraryName ?? after?.name ?? '', saved };
+  };
+
   const answer = (id: string, result: Result): Promise<unknown> => fetch('/api/mcp/bridge/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, result }) }).catch(() => undefined);
 
   const take = async (item: Item): Promise<void> => {
@@ -155,7 +235,7 @@ export function startAgentBridge(d: BridgeDeps): void {
     else {
       working = true;
       try {
-        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
+        result = item.kind === 'export_movie' ? await exportMovie(a) : item.kind === 'import_file' ? await importFile(item.id, a) : item.kind === 'add_character' ? await addCharacter(a) : item.kind === 'add_voice' ? await addVoice(a) : item.kind === 'set_subtitles' ? await setSubtitles(a) : { ok: false, error: t('This FormMorpheus window does not know that request.') };
       } catch (e) {
         result = { ok: false, error: said(e, t('FormMorpheus could not do that.')) };
       }

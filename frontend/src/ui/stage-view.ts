@@ -18,7 +18,7 @@ import { applyTake, Recorder, roomFor } from '../engine/perform';
 import { WarpOverlay, warpMode } from './warp-view';
 import { BonesOverlay, bonesMode } from './bones-view';
 import { PathView } from './path-view';
-import { mapPt, screenMat, stageMovie, unmapPt } from './stage-world';
+import { hugBox, inkIndex, mapPt, screenMat, stageMovie, unmapPt } from './stage-world';
 import { CameraOverlay, cameraMode } from './camera-view';
 import { FxStageTools } from './fx-stage-tools';
 import type { Mat } from '../engine/transform';
@@ -94,9 +94,9 @@ interface Rec {
 
 type Grab =
   | { kind: 'move'; x0: number; y0: number; ids: string[]; base: Map<string, Pose>; anchors: Map<string, { s: [number, number]; w: [number, number] }>; tag: string; rec?: Rec; snap?: { box: Box; xs: number[]; ys: number[] } }
-  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string; rec?: Rec; click?: { x: number; y: number; i: number } }
+  | { kind: 'scale'; id: string; base: Pose; d0: number; tag: string; rec?: Rec; click?: { x: number; y: number; i: number }; /** The point scaled about, parent space (screen pixels). */ at: [number, number] }
   | { kind: 'stretch'; id: string; base: Pose; axis: 'x' | 'y'; sign: 1 | -1; tag: string; rec?: undefined }
-  | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string; rec?: Rec };
+  | { kind: 'rotate'; id: string; base: Pose; a0: number; tag: string; rec?: Rec; /** The point turned about, parent space (screen pixels). */ at: [number, number] };
 
 const MOVE_CHANNELS = ['x', 'y', 'scaleX', 'scaleY', 'rotation'];
 
@@ -212,8 +212,7 @@ export class StageView {
       const m = this.engine.movie;
       if (!m) return null;
       const s = this.extent(m, c);
-      const pb = c.kind === 'group' ? this.boxOf(m, c) : null;
-      const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : pb ? { x: pb.cx, y: pb.cy } : canvasCentreOffset(c, m);
+      const dc = this.boxCentre(m, c);
       const out: Array<[number, number]> = [];
       for (const j of [-1, 0, 1]) for (const i of [-1, 0, 1]) out.push([dc.x + (i * s.w) / 2, dc.y + (j * s.h) / 2]);
       return out;
@@ -261,8 +260,7 @@ export class StageView {
       t.addEventListener('pointerup', (e) => this.up(e as PointerEvent));
       t.addEventListener('pointercancel', (e) => this.up(e as PointerEvent));
     }
-    this.readColours();
-  }
+    this.readColours();  }
 
   private readColours(): void {
     const s = getComputedStyle(this.root);
@@ -522,8 +520,7 @@ export class StageView {
     const hw = (size.w / 2) * t.sx * t.kx * v.scale, hh = (size.h / 2) * t.sy * t.ky * v.scale;
     const a = (t.rot * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
     const S = this.sm(m, c);
-    const sb = this.boxOf(m, c);
-    const dc = c.kind === 'text' && c.text ? textCentre(c.text, m) : sb ? { x: sb.cx, y: sb.cy } : canvasCentreOffset(c, m);
+    const dc = this.boxCentre(m, c);
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x0, y0]) => {
       // the box centre is the canvas centre, which sits off the movie centre for a Drawing with its own canvas
       const x = x0 + (dc.x * v.scale - pvx) * t.sx * t.kx * t.fx, y = y0 + (dc.y * v.scale - pvy) * t.sy * t.ky * t.fy;
@@ -531,9 +528,42 @@ export class StageView {
     });
   }
 
-  /** A Shape's box, or a picked group part's box round what it draws (a top-level group keeps the movie's box). */
+  /** Ink bounds of the decoded layer pictures (a small share is asked for, so no sharper decode is started). */
+  private readonly ink = inkIndex((id) => this.renderer.bitmap(id, 0.01));
+
+  /** A Shape's box; a Group's, Drawing's or Flipbook's box round what it draws now (ui/stage-world.ts hugBox; nothing drawn: the full canvas). */
   private boxOf(m: Movie, c: Content): { w: number; h: number; cx: number; cy: number } | null {
-    return stageBox(c, this.engine.frame, m) ?? (c.kind === 'group' && c.id === pickedPart(this.engine)?.part.id ? partBox(m, c, this.engine.frame) : null);
+    const f = this.engine.frame;
+    return stageBox(c, f, m) ?? hugBox(m, c, f, this.ink, fontEpoch()) ?? (c.kind === 'group' && c.id === pickedPart(this.engine)?.part.id ? partBox(m, c, f) : null);
+  }
+
+  /** The box centre's offset from the movie centre, in the content's picture space. */
+  private boxCentre(m: Movie, c: Content): { x: number; y: number } {
+    const sb = this.boxOf(m, c);
+    return c.kind === 'text' && c.text ? textCentre(c.text, m) : sb ? { x: sb.cx, y: sb.cy } : canvasCentreOffset(c, m);
+  }
+
+  /** Compose: the hugged box centre in the content's parent space (screen pixels), the point a handle scales and turns about. */
+  private composeCentre(m: Movie, c: Content): [number, number] {
+    const p = this.corners(m, c);
+    return this.parentPt(m, c.id, (p[0][0] + p[2][0]) / 2, (p[0][1] + p[2][1]) / 2);
+  }
+
+  /** Where a corner or the turn handle scales and turns about: the hugged box centre in Compose, the pivot in Keyframe and Perform. */
+  private turnCentre(m: Movie, v: View, c: Content, p: Pose): [number, number] {
+    if (!this.keyedFor(c)) return this.composeCentre(m, c);
+    return [v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale];
+  }
+
+  /** Compose: the move that keeps the box centre where it is when the content's scale or turn changes from the pose `b` to (rot, sx, sy). */
+  private keepCentre(m: Movie, c: Content, b: Pose, rot: number, sx: number, sy: number): [number, number] {
+    const d = this.boxCentre(m, c);
+    const at = (r: number, kx: number, ky: number): [number, number] => {
+      const a = (r * Math.PI) / 180, ox = d.x * kx * b.kx * b.fx, oy = d.y * ky * b.ky * b.fy;
+      return [ox * Math.cos(a) - oy * Math.sin(a), ox * Math.sin(a) + oy * Math.cos(a)];
+    };
+    const o0 = at(b.rot, b.sx, b.sy), o1 = at(rot, sx, sy);
+    return [b.x + o0[0] - o1[0], b.y + o0[1] - o1[1]];
   }
 
   private extent(m: Movie, c: Content): { w: number; h: number } {
@@ -625,15 +655,19 @@ export class StageView {
       const side = SIDES[Number((target as SVGElement).dataset.s)] ?? SIDES[0];
       this.grab = { kind: 'stretch', id: sel[0].id, base: this.pose(sel[0]), axis: side.axis, sign: side.sign, tag };
     } else if (sel.length === 1 && (target.classList.contains('fm-box-rot') || target.classList.contains('fm-box-ring'))) {
-      const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, cy = v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale;
+      const c = sel[0], p = this.pose(c), [cx, cy] = this.turnCentre(m, v, c, p);
       const [qx, qy] = this.parentPt(m, c.id, x, y);
-      this.grab = { kind: 'rotate', id: c.id, base: p, a0: Math.atan2(qy - cy, qx - cx), tag };
+      this.grab = { kind: 'rotate', id: c.id, base: p, a0: Math.atan2(qy - cy, qx - cx), tag, at: [cx, cy] };
     } else if (sel.length === 1 && target.classList.contains('fm-box-h')) {
-      const c = sel[0], p = this.pose(c), cx = v.ox + (m.width / 2 + (p.px ?? 0) + p.x) * v.scale, cy = v.oy + (m.height / 2 + (p.py ?? 0) + p.y) * v.scale;
+      const c = sel[0], p = this.pose(c), [cx, cy] = this.turnCentre(m, v, c, p);
       const [qx, qy] = this.parentPt(m, c.id, x, y);
-      this.grab = { kind: 'scale', id: c.id, base: p, d0: Math.hypot(qx - cx, qy - cy) || 1, tag, click: { x: e.clientX, y: e.clientY, i: Number((target as SVGElement).dataset.h) } };
+      this.grab = { kind: 'scale', id: c.id, base: p, d0: Math.hypot(qx - cx, qy - cy) || 1, tag, click: { x: e.clientX, y: e.clientY, i: Number((target as SVGElement).dataset.h) }, at: [cx, cy] };
     } else {
-      const hitId = this.pick(m, x, y);
+      const top = this.pick(m, x, y);
+      // a press on the selected content's box drags it, even where another content lies over it; a click there with no drag picks the one on top (see up)
+      const held = e.shiftKey ? null : this.onSelected(m, sel, x, y);
+      const hitId = held ?? top;
+      this.clickTo = held && top && top !== held && this.engine.mode !== 'perform' ? { id: top, x: e.clientX, y: e.clientY } : null;
       if (hitId && !this.engine.selection.content.includes(hitId)) this.engine.select(e.shiftKey ? [...this.engine.selection.content, hitId] : [hitId]);
       // inside a group, a press on it away from every part leaves the part for the whole group
       else if (hitId && pickedPart(this.engine)?.group.id === hitId) this.engine.pick(null);
@@ -664,6 +698,8 @@ export class StageView {
 
   /** A press on empty Stage with one content selected, waiting to become a hold-outside move. */
   private pend: { x: number; y: number; pointer: number; timer: number } | null = null;
+  /** A press on the selected content where another lies on top: released without a drag, that one is selected. */
+  private clickTo: { id: string; x: number; y: number } | null = null;
   private modsHeld = { r: false, s: false };
 
   private moveGrab(m: Movie, v: View, ids: string[], x: number, y: number, tag: string): Grab {
@@ -853,9 +889,16 @@ export class StageView {
     for (const t of m.tracks) {
       if (t.hidden) continue;
       const c = t.content.find((it) => this.engine.frame >= it.start && this.engine.frame < end(it));
-      if (!c || !boxed(c)) continue;
+      if (!c || !boxed(c) || c.hidden) continue;
+      // the box hugs what the content draws (a character's parts, a drawing's ink), so what lies beside it can be reached
       if (inside(this.corners(m, c), x, y)) return c.id;
     }
+    return null;
+  }
+
+  /** The selected top-level content under the pointer (its box), if any: a press there drags it and never selects another. */
+  private onSelected(m: Movie, sel: Content[], x: number, y: number): string | null {
+    for (const c of sel) if (this.engine.selection.content.includes(c.id) && inside(this.corners(m, c), x, y)) return c.id;
     return null;
   }
 
@@ -920,10 +963,10 @@ export class StageView {
         return out;
       }, g.tag);
     } else if (g.kind === 'stretch') {
-      this.stretchTo(g, m, v, x, y);
+      this.stretchTo(g, m, v, x, y, e.altKey);
     } else if (g.kind === 'scale') {
       const b = g.base;
-      const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
+      const [cx, cy] = g.at;
       const ratio = Math.hypot(x - cx, y - cy) / g.d0;
       this.hud.snapping(false);
       if (this.keyedIds([g.id])) {
@@ -934,12 +977,15 @@ export class StageView {
         return;
       }
       const k = Math.round(Math.max(0.01, ratio * b.sx) * 1000) / 1000;
-      this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: k, sy: k, rot: b.rot });
+      // about the hugged box centre: the content keeps its proportions and its box stays centred under the handles
+      const sc = this.find(m, g.id)?.content;
+      const [nx, ny] = sc ? this.keepCentre(m, sc, b, b.rot, k, k) : [b.x, b.y];
+      this.hud.show(e.clientX, e.clientY, { x: nx, y: ny, sx: k, sy: k, rot: b.rot });
       this.composeNote([g.id]);
-      this.engine.run('Scale', (mv) => this.patchT(mv, g.id, { ...this.store(b, b.x, b.y, b.rot, k * b.kx * b.fx, k * b.ky * b.fy), scale: k }), g.tag);
+      this.engine.run('Scale', (mv) => this.patchT(mv, g.id, { ...this.store(b, nx, ny, b.rot, k * b.kx * b.fx, k * b.ky * b.fy), scale: k }), g.tag);
     } else {
       const b = g.base;
-      const cx = v.ox + (m.width / 2 + (b.px ?? 0) + b.x) * v.scale, cy = v.oy + (m.height / 2 + (b.py ?? 0) + b.y) * v.scale;
+      const [cx, cy] = g.at;
       let deg = b.rot + ((Math.atan2(y - cy, x - cx) - g.a0) * 180) / Math.PI;
       const snapping = snapMod(e);
       if (snapping) deg = snapAngle(deg, this.keyedIds([g.id]) ? 30 : 15);
@@ -952,9 +998,12 @@ export class StageView {
       }
       deg = ((deg % 360) + 540) % 360 - 180;
       const rr = Math.round(deg * 10) / 10;
-      this.hud.show(e.clientX, e.clientY, { x: b.x, y: b.y, sx: b.sx, sy: b.sy, rot: rr });
+      // about the hugged box centre, as the scale handles
+      const rc = this.find(m, g.id)?.content;
+      const [nx, ny] = rc ? this.keepCentre(m, rc, b, rr, b.sx, b.sy) : [b.x, b.y];
+      this.hud.show(e.clientX, e.clientY, { x: nx, y: ny, sx: b.sx, sy: b.sy, rot: rr });
       this.composeNote([g.id]);
-      this.engine.run('Rotate', (mv) => this.patchT(mv, g.id, { ...this.store(b, b.x, b.y, rr, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy), rotation: rr }), g.tag);
+      this.engine.run('Rotate', (mv) => this.patchT(mv, g.id, { ...this.store(b, nx, ny, rr, b.sx * b.kx * b.fx, b.sy * b.ky * b.fy), rotation: rr }), g.tag);
     }
   }
 
@@ -987,8 +1036,8 @@ export class StageView {
     return { box: toMovie(this.corners(m, first)), xs, ys };
   }
 
-  /** Drag a side node: that axis stretches while the opposite side stays put; past it the content flips. */
-  private stretchTo(g: Extract<Grab, { kind: 'stretch' }>, m: Movie, v: View, x: number, y: number): void {
+  /** Drag a side node: that axis stretches while the opposite side stays put; past it the content flips. A group (a character) scales whole, keeping its proportions, unless Alt is held. */
+  private stretchTo(g: Extract<Grab, { kind: 'stretch' }>, m: Movie, v: View, x: number, y: number, free = false): void {
     const c = this.find(m, g.id)?.content;
     if (!c) return;
     const b = g.base, ext = this.extent(m, c);
@@ -997,7 +1046,9 @@ export class StageView {
     const dx = (x - cx) / v.scale, dy = (y - cy) / v.scale;
     const u = g.axis === 'x' ? dx * cs + dy * sn : -dx * sn + dy * cs;
     const half = (g.axis === 'x' ? ext.w : ext.h) / 2;
-    const pv = (g.axis === 'x' ? b.px : b.py) ?? 0;
+    // the box's sides sit about its own centre, which is off the content's centre for a hugged box
+    const dcAll = this.boxCentre(m, c), dc = g.axis === 'x' ? dcAll.x : dcAll.y;
+    const pv = ((g.axis === 'x' ? b.px : b.py) ?? 0) - dc;
     const base = g.axis === 'x' ? b.sx : b.sy, k = g.axis === 'x' ? b.kx : b.ky, f = g.axis === 'x' ? b.fx : b.fy;
     const grabbed = g.sign * half, opposite = -g.sign * half;
     // the handles are drawn from the signed key scale, so keyed stretching reads it without the base flip
@@ -1005,6 +1056,7 @@ export class StageView {
     const aOpp = base * k * (keyedNow ? 1 : f) * (opposite - pv);
     let s = (u - aOpp) / (grabbed - opposite);
     const floor = 0.02 * Math.abs(base);
+    if (c.kind === 'group' && !free) { this.scaleFromSide(g, m, c, b, Math.max(0.02, s / (base * k * (keyedNow ? 1 : f) || 1)), dcAll, opposite, keyedNow); return; }
     // the side may cross the opposite one: the content flips (a negative scale in Keyframe and Perform, a flip in Compose); only a sliver is held back
     if (Math.abs(s) < floor) s = (s < 0 ? -1 : 1) * floor;
     const shift = aOpp - s * (opposite - pv);
@@ -1030,6 +1082,25 @@ export class StageView {
     }), g.tag);
   }
 
+  /** A side node on a group: the whole content scales by `r` about the middle of the opposite side, so a character is never squeezed. */
+  private scaleFromSide(g: Extract<Grab, { kind: 'stretch' }>, m: Movie, c: Content, b: Pose, r: number, dc: { x: number; y: number }, opposite: number, keyedNow: boolean): void {
+    // the opposite side's middle in picture space, from the pivot (Keyframe and Perform) or the centre (Compose)
+    const qx = (g.axis === 'x' ? dc.x + opposite : dc.x) - (keyedNow ? b.px ?? 0 : 0), qy = (g.axis === 'y' ? dc.y + opposite : dc.y) - (keyedNow ? b.py ?? 0 : 0);
+    const fx = keyedNow ? 1 : b.fx, fy = keyedNow ? 1 : b.fy;
+    const sx = Math.round(b.sx * r * 1000) / 1000, sy = Math.round(b.sy * r * 1000) / 1000;
+    const ox = qx * (b.sx - sx) * b.kx * fx, oy = qy * (b.sy - sy) * b.ky * fy;
+    const a = (b.rot * Math.PI) / 180;
+    const nx = Math.round(b.x + ox * Math.cos(a) - oy * Math.sin(a)), ny = Math.round(b.y + ox * Math.sin(a) + oy * Math.cos(a));
+    this.hud.snapping(false);
+    this.hud.show(this.lastClient[0], this.lastClient[1], { x: nx, y: ny, sx, sy, rot: b.rot });
+    if (keyedNow) {
+      this.writeKeys('Scale Keyframe', [g.id], () => ({ x: nx, y: ny, scaleX: sx, scaleY: sy, rotation: b.rot }), g.tag);
+      return;
+    }
+    this.composeNote([g.id]);
+    this.engine.run('Scale', (mv) => this.patchT(mv, g.id, { ...this.store(b, nx, ny, b.rot, sx * b.kx * b.fx, sx * b.ky * b.fy), scale: sx }), g.tag);
+  }
+
   /** Arrow keys on the focused Stage move the selected content: 1 px, Shift 10 px, Ctrl or Cmd with Shift 100 px. */
   private arrowKey(e: KeyboardEvent): void {
     if (e.target !== this.root || e.altKey || this.nav.preview) return;
@@ -1043,6 +1114,14 @@ export class StageView {
   }
 
   /** Move the selection by movie pixels; a burst of nudges is one undo step. */
+  /** The top content under a client point: what the Stage's right-click is about. */
+  contentAt(clientX: number, clientY: number): string | null {
+    const m = this.engine.movie;
+    if (!m || !this.view || this.nav.preview) return null;
+    const [x, y] = this.nav.local({ clientX, clientY });
+    return this.pick(m, x, y);
+  }
+
   nudge(dx: number, dy: number): void {
     const m = this.engine.movie;
     const sel = m ? stageTargets(this.engine).filter((c) => boxed(c) && this.engine.isOver(c) && !this.find(m, c.id)?.locked) : [];
@@ -1073,6 +1152,9 @@ export class StageView {
     if (!this.grab || e.pointerId !== this.grabPointer) return;
     this.root.style.removeProperty('cursor');
     const g = this.grab;
+    const to = this.clickTo;
+    this.clickTo = null;
+    if (to && g.kind === 'move' && e.type === 'pointerup' && Math.hypot(e.clientX - to.x, e.clientY - to.y) < 4) queueMicrotask(() => this.engine.select([to.id]));
     // a click on a corner node (no drag) in Keyframe and Perform shows or hides its rotation ring
     if (g.kind === 'scale' && g.click && this.keyed() && Math.hypot(e.clientX - g.click.x, e.clientY - g.click.y) < 4) {
       this.ringAt = this.ringAt === g.click.i ? null : g.click.i;

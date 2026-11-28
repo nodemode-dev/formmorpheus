@@ -1,287 +1,443 @@
-// Subtitles: timed lines kept as ordinary Text blocks on the one track marked `subtitles`, so the Stage and the
-// export draw them with no renderer of their own. Seconds in, frames stored. Pure, no DOM; nothing given is changed.
-import { content as makeContent, defaultText, end, track as makeTrack } from './model';
-import { OpError } from './ops';
-import { TITLE_PRESETS } from './text-presets';
-import type { TextBoxFx } from './text-rich';
-import type { Content, Movie, TextStyle, Track } from './types';
+// Subtitles: the movie's lines (in movie frames), their one look, the ops that edit them, the timing of spoken sound,
+// and the draw over a finished frame. Pure, no DOM; text is measured with the context it is drawn on.
+import { uid, locate } from './model';
+import { findDeep } from './character-ops';
+import { timeKeys } from './retime';
+import { fontCss, fontEpoch } from './text-layout';
+import type { Content, Movie, SubtitleCue, SubtitleStyle, Subtitles, TextStyle } from './types';
 
-/** Seconds on the movie's timeline. */
-export interface SubtitleLine { start: number; end: number; text: string }
+type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+type NewCue = Omit<SubtitleCue, 'id'>;
 
-export interface SubtitleStyle {
-  font: string;
-  size: 'small' | 'medium' | 'large';
-  position: 'top' | 'middle' | 'bottom';
-  color: string;
-  band: boolean;
+/** A line in seconds (a voice, a listening or a subtitle file). */
+export interface TimedLine { start: number; end: number; text: string }
+
+export const SUBTITLE_DEFAULTS: SubtitleStyle = { font: 'Inter', size: 5, position: 'bottom', color: '#ffffff', band: true };
+
+const SIZE_MIN = 2;
+const SIZE_MAX = 15;
+const POSITIONS: ReadonlyArray<SubtitleStyle['position']> = ['top', 'middle', 'bottom'];
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+export function subtitlesOf(m: Movie): Subtitles {
+  return m.subtitles ?? { show: true, style: { ...SUBTITLE_DEFAULTS }, cues: [] };
 }
 
-export const SUBTITLE_DEFAULTS: SubtitleStyle = { font: defaultText().font, size: 'medium', position: 'bottom', color: '#ffffff', band: true };
+// ---- cleaning ----
 
-export const SUBTITLE_TRACK_NAME = 'Subtitles';
-/** Pause between two spoken sentences; the voice code joins sentences with the same gap, so lines and sound agree. */
-export const SENTENCE_GAP_SECONDS = 0.3;
-/** A sentence longer than this is split into lines of at most LINE_CHARS. */
-export const SENTENCE_CHARS = 84;
-export const LINE_CHARS = 42;
-export const LINE_WORDS = 7;
-/** A silence longer than this between two heard words starts a new line. */
-export const WORD_GAP_SECONDS = 0.7;
+const byTime = (a: SubtitleCue, b: SubtitleCue): number => a.start - b.start || a.end - b.end;
 
-/** Text size as a share of the movie's height. */
-const SIZE_SHARE: Record<SubtitleStyle['size'], number> = { small: 0.035, medium: 0.045, large: 0.06 };
-/** Top and bottom: how far in from the edge the block's centre sits, as a share of the height. */
-const EDGE_SHARE = 0.08;
-/** Lines wrap inside this share of the movie's width, so a long one never runs off the picture. */
-const WRAP_SHARE = 0.8;
-const PRESET_ID = 'subtitle';
-const SIZES = Object.keys(SIZE_SHARE) as SubtitleStyle['size'][];
-const POSITIONS: SubtitleStyle['position'][] = ['top', 'middle', 'bottom'];
-
-const ms = (seconds: number): number => Math.round(seconds * 1000) / 1000;
-const clean = (text: string): string => text.replace(/[ \t]+/g, ' ').trim();
-
-function presetLook(s: TextStyle, movie: Movie): TextStyle {
-  const p = TITLE_PRESETS.find((x) => x.id === PRESET_ID);
-  if (!p) throw new Error('The subtitle preset is missing.');
-  return p.apply(s, movie.width, movie.height);
-}
-
-function sizePx(movie: Movie, size: SubtitleStyle['size']): number {
-  return Math.max(1, Math.round(movie.height * SIZE_SHARE[size]));
-}
-
-/** A text block is laid out around the movie's centre, so `transform.y` is the offset of its centre from there. */
-function yFor(movie: Movie, position: SubtitleStyle['position']): number {
-  const reach = Math.round(movie.height * (0.5 - EDGE_SHARE));
-  return position === 'top' ? -reach : position === 'bottom' ? reach : 0;
-}
-
-function nearest<K extends string>(keys: readonly K[], value: number, of: (k: K) => number): K {
-  return keys.reduce((best, k) => (Math.abs(of(k) - value) < Math.abs(of(best) - value) ? k : best), keys[0]);
-}
-
-function textStyle(movie: Movie, text: string, style: SubtitleStyle): TextStyle {
-  const { box, ...plain } = presetLook({ ...defaultText(), text, font: style.font }, movie);
-  return {
-    ...plain, ...(style.band && box ? { box } : {}),
-    preset: PRESET_ID, size: sizePx(movie, style.size), color: style.color, boxW: Math.round(movie.width * WRAP_SHARE),
-  };
-}
-
-function lineContent(movie: Movie, line: SubtitleLine, style: SubtitleStyle): Content | null {
-  const text = clean(line.text);
-  if (!text || !Number.isFinite(line.start) || !Number.isFinite(line.end)) return null;
-  const start = Math.max(0, Math.round(line.start * movie.fps));
-  // the end is rounded, not the length, so lines that touch in seconds still touch in frames
-  const duration = Math.max(1, Math.round(line.end * movie.fps) - start);
-  const base = makeContent('text', start, duration, { name: text.slice(0, 80), text: textStyle(movie, text, style) });
-  return { ...base, transform: { ...base.transform, y: yFor(movie, style.position) } };
-}
-
-function restyled(movie: Movie, c: Content, style: SubtitleStyle): Content {
-  if (c.kind !== 'text' || !c.text) return c;
-  // only the fields the style owns change, so runs, keys and anything else set by hand stay
-  const { box: old, ...rest } = c.text;
-  const box: TextBoxFx | undefined = style.band ? old ?? presetLook(c.text, movie).box : undefined;
-  return {
-    ...c,
-    text: { ...rest, font: style.font, size: sizePx(movie, style.size), color: style.color, ...(box ? { box } : {}) },
-    transform: { ...c.transform, y: yFor(movie, style.position) },
-  };
-}
-
-/** Sorted by start with no overlap: a later block trims the one before it, and of two that start together the later given stays. */
-function settle(items: Content[]): Content[] {
-  const out: Content[] = [];
-  for (const c of [...items].sort((a, b) => a.start - b.start)) {
-    const last = out[out.length - 1];
-    if (last && last.start === c.start) out[out.length - 1] = c;
-    else {
-      if (last && end(last) > c.start) out[out.length - 1] = { ...last, duration: c.start - last.start };
-      out.push(c);
-    }
-  }
+/** A cue in whole frames with start >= 0 and at least one frame long, or null when its text is empty or a time is not a number. */
+function cleanCue(c: NewCue, id: string): SubtitleCue | null {
+  const text = typeof c.text === 'string' ? c.text.trim() : '';
+  if (!text || !Number.isFinite(c.start) || !Number.isFinite(c.end)) return null;
+  const start = Math.max(0, Math.round(c.start));
+  const end = Math.max(start + 1, Math.round(c.end));
+  const out: SubtitleCue = { id, start, end, text };
+  if (typeof c.from === 'string' && c.from) out.from = c.from;
   return out;
 }
 
-const isLine = (c: Content): boolean => c.kind === 'text' && !!c.text;
+const sizeOf = (v: unknown, old: number): number =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round(v * 10) / 10)) : old;
+const fontOf = (v: unknown, old: string): string => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : old);
+const positionOf = (v: unknown, old: SubtitleStyle['position']): SubtitleStyle['position'] =>
+  POSITIONS.includes(v as SubtitleStyle['position']) ? (v as SubtitleStyle['position']) : old;
+const colorOf = (v: unknown, old: string): string => (typeof v === 'string' && HEX.test(v.trim()) ? v.trim().toLowerCase() : old);
+const bandOf = (v: unknown, old: boolean): boolean => (typeof v === 'boolean' ? v : old);
 
-function withContent(movie: Movie, tr: Track | null, items: Content[]): Movie {
-  if (!items.length) return tr ? { ...movie, tracks: movie.tracks.filter((t) => t.id !== tr.id) } : movie;
-  if (tr) return { ...movie, tracks: movie.tracks.map((t) => (t.id === tr.id ? { ...t, content: items } : t)) };
-  // index 0 is drawn last, so the new track is on top of every other
-  const made: Track = { ...makeTrack(SUBTITLE_TRACK_NAME, items), screen: true, subtitles: true };
-  return { ...movie, tracks: [made, ...movie.tracks] };
+function mergeStyle(old: SubtitleStyle, p: Partial<Record<keyof SubtitleStyle, unknown>>): SubtitleStyle {
+  return {
+    font: fontOf(p.font, old.font),
+    size: sizeOf(p.size, old.size),
+    position: positionOf(p.position, old.position),
+    color: colorOf(p.color, old.color),
+    band: bandOf(p.band, old.band),
+  };
 }
 
-function open(movie: Movie): Track | null {
-  const tr = subtitleTrack(movie);
-  if (tr?.locked) throw new OpError('Track is locked');
-  return tr;
+const sameStyle = (a: SubtitleStyle, b: SubtitleStyle): boolean =>
+  a.font === b.font && a.size === b.size && a.position === b.position && a.color === b.color && a.band === b.band;
+
+const sameCue = (a: NewCue, b: NewCue): boolean => a.start === b.start && a.end === b.end && a.text === b.text && a.from === b.from;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-export function subtitleTrack(movie: Movie): Track | null {
-  return movie.tracks.find((t) => t.subtitles === true) ?? null;
+/** For normalize.ts: a clean copy of what a file holds, or null when it holds nothing a fresh movie would not have. */
+export function tidySubtitles(raw: unknown): Subtitles | null {
+  if (!isRecord(raw)) return null;
+  const style = mergeStyle(SUBTITLE_DEFAULTS, isRecord(raw.style) ? raw.style : {});
+  const show = typeof raw.show === 'boolean' ? raw.show : true;
+  const seen = new Set<string>();
+  const cues: SubtitleCue[] = [];
+  for (const r of Array.isArray(raw.cues) ? raw.cues : []) {
+    if (!isRecord(r)) continue;
+    const id = typeof r.id === 'string' && r.id && !seen.has(r.id) ? r.id : uid('sb');
+    const c = cleanCue({
+      start: typeof r.start === 'number' ? r.start : NaN,
+      end: typeof r.end === 'number' ? r.end : NaN,
+      text: typeof r.text === 'string' ? r.text : '',
+      ...(typeof r.from === 'string' ? { from: r.from } : {}),
+    }, id);
+    if (!c) continue;
+    seen.add(id);
+    cues.push(c);
+  }
+  if (!cues.length && show && sameStyle(style, SUBTITLE_DEFAULTS)) return null;
+  return { show, style, cues: cues.sort(byTime) };
 }
 
-/** Whatever text blocks the track holds now, made here or edited by hand; the style is read from the first one. */
-export function readSubtitles(movie: Movie): { lines: SubtitleLine[]; style: SubtitleStyle; shown: boolean } {
-  const tr = subtitleTrack(movie);
-  const blocks = tr ? tr.content.filter(isLine).sort((a, b) => a.start - b.start) : [];
-  const lines = blocks.map((c) => ({ start: ms(c.start / movie.fps), end: ms(end(c) / movie.fps), text: (c.text as TextStyle).text }));
-  const first = blocks[0];
-  const s = first?.text;
-  const style: SubtitleStyle = first && s ? {
-    font: s.font,
-    size: nearest(SIZES, s.size, (k) => movie.height * SIZE_SHARE[k]),
-    position: nearest(POSITIONS, first.transform.y, (k) => yFor(movie, k)),
-    color: s.color,
-    band: !!s.box,
-  } : { ...SUBTITLE_DEFAULTS };
-  return { lines, style, shown: tr ? !tr.hidden : true };
+// ---- ops ----
+
+function withSubs(m: Movie, s: Subtitles): Movie {
+  return { ...m, subtitles: s };
 }
 
-/** Replaces every line. Makes the track (on top, fixed to the screen) when absent; removes it when nothing is left on it. */
-export function writeSubtitles(movie: Movie, lines: SubtitleLine[], style: SubtitleStyle): Movie {
-  const tr = open(movie);
-  const made = lines.map((l) => lineContent(movie, l, style)).filter((c): c is Content => c !== null);
-  return withContent(movie, tr, withOthers(tr, settle(made)));
+export function setSubtitleShow(m: Movie, on: boolean): Movie {
+  const s = subtitlesOf(m);
+  if (m.subtitles && s.show === on) return m;
+  return withSubs(m, { ...s, show: on });
 }
 
-/** The settled lines beside whatever else the track holds: a picture a person dropped there is theirs, so it is never trimmed or replaced. */
-function withOthers(tr: Track | null, lines: Content[]): Content[] {
-  const others = tr ? tr.content.filter((c) => !isLine(c)) : [];
-  return others.length ? [...others, ...lines].sort((a, b) => a.start - b.start) : lines;
+export function setSubtitleStyle(m: Movie, patch: Partial<SubtitleStyle>): Movie {
+  const s = subtitlesOf(m);
+  const style = mergeStyle(s.style, patch);
+  if (sameStyle(style, s.style)) return m;
+  return withSubs(m, { ...s, style });
 }
 
-/** Merges lines into what is there, in the style of what is there. A later line trims the one before it. */
-export function addSubtitles(movie: Movie, lines: SubtitleLine[]): Movie {
-  const tr = open(movie);
-  const { style } = readSubtitles(movie);
-  const made = lines.map((l) => lineContent(movie, l, style)).filter((c): c is Content => c !== null);
-  if (!made.length && tr?.content.length) return movie;
-  return withContent(movie, tr, withOthers(tr, settle([...(tr?.content.filter(isLine) ?? []), ...made])));
+function cleanAll(cues: NewCue[]): SubtitleCue[] {
+  const out: SubtitleCue[] = [];
+  for (const c of cues) { const k = cleanCue(c, uid('sb')); if (k) out.push(k); }
+  return out;
 }
 
-export function restyleSubtitles(movie: Movie, style: SubtitleStyle): Movie {
-  const tr = open(movie);
-  if (!tr) return movie;
-  return withContent(movie, tr, tr.content.map((c) => restyled(movie, c, style)));
+/** Adds lines, sorted by start; `replaceFrom` first drops the lines made from that sound block. */
+export function addCues(m: Movie, cues: NewCue[], replaceFrom?: string): Movie {
+  const s = subtitlesOf(m);
+  const kept = replaceFrom ? s.cues.filter((c) => c.from !== replaceFrom) : s.cues;
+  const added = cleanAll(cues);
+  if (!added.length && kept.length === s.cues.length) return m;
+  return withSubs(m, { ...s, cues: [...kept, ...added].sort(byTime) });
 }
 
-export function showSubtitles(movie: Movie, shown: boolean): Movie {
-  const tr = subtitleTrack(movie);
-  if (!tr || tr.hidden === !shown) return movie;
-  return { ...movie, tracks: movie.tracks.map((t) => (t.id === tr.id ? { ...t, hidden: !shown } : t)) };
+/** Replaces every line. */
+export function setCues(m: Movie, cues: NewCue[]): Movie {
+  const s = subtitlesOf(m);
+  const next = cleanAll(cues).sort(byTime);
+  if (next.length === s.cues.length && next.every((c, i) => sameCue(c, s.cues[i]))) return m;
+  return withSubs(m, { ...s, cues: next });
 }
 
-/** Words packed into lines of at most `max` characters; a single longer word keeps a line to itself. */
-function wrapWords(text: string, max: number): string[] {
-  const out: string[] = [];
+/** Edits one line; one edited to empty text is removed. */
+export function updateCue(m: Movie, id: string, patch: Partial<NewCue>): Movie {
+  const s = subtitlesOf(m);
+  const i = s.cues.findIndex((c) => c.id === id);
+  if (i < 0) return m;
+  const old = s.cues[i];
+  const merged: NewCue = {
+    start: patch.start ?? old.start,
+    end: patch.end ?? old.end,
+    text: patch.text ?? old.text,
+    ...(patch.from !== undefined ? { from: patch.from } : old.from !== undefined ? { from: old.from } : {}),
+  };
+  // a start moved past the old end carries the line along rather than collapsing it to one frame
+  if (patch.start !== undefined && patch.end === undefined && merged.start >= old.end) merged.end = merged.start + (old.end - old.start);
+  const c = cleanCue(merged, id);
+  if (c && sameCue(c, old)) return m;
+  const rest = s.cues.filter((x) => x.id !== id);
+  return withSubs(m, { ...s, cues: c ? [...rest, c].sort(byTime) : rest });
+}
+
+export function deleteCues(m: Movie, ids: string[]): Movie {
+  const s = subtitlesOf(m);
+  const drop = new Set(ids);
+  const cues = s.cues.filter((c) => !drop.has(c.id));
+  if (cues.length === s.cues.length) return m;
+  return withSubs(m, { ...s, cues });
+}
+
+// ---- sentences and estimated timing ----
+
+const CJK_END = new Set(['。', '！', '？', '｡', '．']);
+const ASCII_END = new Set(['.', '!', '?', '…']);
+const CLOSERS = new Set(['"', '\'', ')', ']', '}', '”', '’', '」', '』', '）', '》', '〉']);
+const MIN_FRAGMENT = 3;
+
+export function splitSentences(text: string): string[] {
+  const chars = Array.from(text ?? '');
+  const raw: string[] = [];
   let cur = '';
-  for (const w of text.split(/\s+/).filter(Boolean)) {
-    if (cur && cur.length + 1 + w.length > max) { out.push(cur); cur = w; }
-    else cur = cur ? `${cur} ${w}` : w;
+  const flush = (): void => { const t = cur.trim(); if (t) raw.push(t); cur = ''; };
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === '\n' || ch === '\r') { flush(); continue; }
+    cur += ch;
+    const cjk = CJK_END.has(ch);
+    if (!cjk && !ASCII_END.has(ch)) continue;
+    // take the whole run of marks and closing quotes with the sentence
+    while (i + 1 < chars.length && (CJK_END.has(chars[i + 1]) || ASCII_END.has(chars[i + 1]) || CLOSERS.has(chars[i + 1]))) cur += chars[++i];
+    // a Latin mark ends a sentence only before a space or the end, so 3.14 and e.g. stay whole
+    const next = chars[i + 1];
+    if (cjk || next === undefined || /\s/.test(next)) flush();
   }
-  if (cur) out.push(cur);
-  return out;
-}
-
-/** One line per spoken sentence, each starting where the one before ended plus the gap; a long sentence is split and shares its time by length. */
-export function linesFromSentences(sentences: { text: string; seconds: number }[], startSeconds: number, gapSeconds: number = SENTENCE_GAP_SECONDS): SubtitleLine[] {
-  const out: SubtitleLine[] = [];
-  let at = startSeconds;
-  for (const s of sentences) {
-    const text = clean(s.text.replace(/\s+/g, ' '));
-    const seconds = Math.max(0, s.seconds);
-    const parts = text.length > SENTENCE_CHARS ? wrapWords(text, LINE_CHARS) : text ? [text] : [];
-    const total = parts.reduce((sum, p) => sum + p.length, 0) || 1;
-    let used = 0;
-    for (const p of parts) {
-      const from = at + (seconds * used) / total;
-      used += p.length;
-      out.push({ start: ms(from), end: ms(at + (seconds * used) / total), text: p });
-    }
-    // a sentence with no words still takes its time, so the lines after it stay under their sound
-    at += seconds + gapSeconds;
+  flush();
+  const out: string[] = [];
+  for (const s of raw) {
+    const joint = (a: string, b: string): string => (/[\x21-\x7e]$/.test(a) || /^[\x21-\x7e]/.test(b) ? `${a} ${b}` : `${a}${b}`);
+    if (Array.from(s).length < MIN_FRAGMENT && out.length) out[out.length - 1] = joint(out[out.length - 1], s);
+    else if (out.length && Array.from(out[out.length - 1]).length < MIN_FRAGMENT) out[out.length - 1] = joint(out[out.length - 1], s);
+    else out.push(s);
   }
   return out;
 }
 
-const SENTENCE_END = /[.!?…]["'’”)\]]*$/;
+const PIECE_MAX = 84;
 
-/** Heard words grouped into lines: at most 42 characters or 7 words, and a new line after a gap over 0.7 s or sentence-ending punctuation. */
-export function linesFromWords(words: { text: string; start: number; end: number }[], offsetSeconds = 0): SubtitleLine[] {
-  const out: SubtitleLine[] = [];
-  let cur: { start: number; end: number; parts: string[]; chars: number } | null = null;
-  const close = (): void => {
-    if (cur) out.push({ start: ms(cur.start + offsetSeconds), end: ms(Math.max(cur.end, cur.start) + offsetSeconds), text: cur.parts.join(' ') });
-    cur = null;
-  };
-  for (const w of words) {
-    const text = w.text.trim();
-    if (!text) continue;
-    if (cur) {
-      const full = cur.parts.length >= LINE_WORDS || cur.chars + 1 + text.length > LINE_CHARS;
-      // rounded: times come in hundredths, and 1.1 - 0.4 must not count as over 0.7
-      if (full || ms(w.start - cur.end) > WORD_GAP_SECONDS ||SENTENCE_END.test(cur.parts[cur.parts.length - 1])) close();
-    }
-    if (cur) { cur.parts.push(text); cur.chars += 1 + text.length; cur.end = Math.max(cur.end, w.end); }
-    else cur = { start: w.start, end: w.end, parts: [text], chars: text.length };
+/** A sentence over PIECE_MAX characters broken at commas (preferred) or spaces into pieces of about that size. */
+function pieces(sentence: string): string[] {
+  const out: string[] = [];
+  let rest = Array.from(sentence);
+  while (rest.length > PIECE_MAX) {
+    let cut = -1;
+    for (let i = PIECE_MAX - 1; i >= Math.floor(PIECE_MAX * 0.4); i--) if (/[,，、;；]/.test(rest[i])) { cut = i + 1; break; }
+    if (cut < 0) for (let i = PIECE_MAX; i > 0; i--) if (/\s/.test(rest[i])) { cut = i; break; }
+    if (cut <= 0) cut = PIECE_MAX;
+    const head = rest.slice(0, cut).join('').trim();
+    if (head) out.push(head);
+    rest = Array.from(rest.slice(cut).join('').trimStart());
   }
-  close();
+  const tail = rest.join('').trim();
+  if (tail) out.push(tail);
   return out;
 }
 
-const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
-
-function srtTime(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds * 1000));
-  const s = Math.floor(total / 1000);
-  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)},${pad(total % 1000, 3)}`;
+/** No timing known: each sentence (or piece of a long one) gets a share of `seconds` by its length, in order, with no gaps. */
+export function estimateLines(text: string, seconds: number): TimedLine[] {
+  if (!(seconds > 0) || !Number.isFinite(seconds)) return [];
+  const parts = splitSentences(text).flatMap(pieces);
+  const lens = parts.map((p) => Math.max(1, Array.from(p).length));
+  const total = lens.reduce((a, b) => a + b, 0);
+  const out: TimedLine[] = [];
+  let at = 0, sum = 0;
+  for (let i = 0; i < parts.length; i++) {
+    sum += lens[i];
+    const end = i === parts.length - 1 ? seconds : (seconds * sum) / total;
+    out.push({ start: at, end, text: parts[i] });
+    at = end;
+  }
+  return out;
 }
 
-/** SubRip text: an index, the two times, the words and a blank line for each line. */
-export function toSrt(lines: SubtitleLine[]): string {
-  return lines
-    .map((l) => ({ ...l, text: l.text.split(/\r?\n/).map(clean).filter(Boolean).join('\n') }))
-    .filter((l) => l.text)
-    .map((l, i) => `${i + 1}\n${srtTime(l.start)} --> ${srtTime(l.end)}\n${l.text}\n`)
-    .join('\n');
+// ---- sound blocks ----
+
+/** The block and the groups around it (outermost first), wherever it sits. */
+function findBlock(m: Movie, contentId: string): { c: Content; groups: Content[] } | null {
+  const top = locate(m, contentId);
+  if (top) return { c: top.content, groups: [] };
+  const deep = findDeep(m, contentId);
+  return deep ? { c: deep.content, groups: deep.groups } : null;
 }
 
-const SRT_TIME = /^\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})/;
-
-/** A tag is closed before another opens, so a row of nothing but openers is read once, not once from each opener. */
-const SRT_TAG = /<[^<>]*>|\{\\[^{}]*\}/g;
-
-const stamp = (h: string | undefined, m: string, s: string, frac: string): number =>
-  Number(h ?? 0) * 3600 + Number(m) * 60 + Number(s) + Number(frac.padEnd(3, '0')) / 1000;
+function isSound(m: Movie, c: Content): boolean {
+  const a = c.asset ? m.assets[c.asset] : undefined;
+  if (!a) return false;
+  if (c.kind === 'audio') return a.kind === 'audio' || a.kind === 'video';
+  return c.kind === 'video' && a.hasAudio === true;
+}
 
 /**
- * Reads SubRip text. Line ends of any kind, a byte order mark, a dot for the comma and missing indexes are all read;
- * the rows of a cue are joined with a space, simple tags are dropped, and a cue that cannot be read is skipped.
+ * Seconds inside the sound to movie frames, the way media/audio.ts schedules the block: a group shifts by
+ * start - offset, the block plays source frame offset + local * speed (reversed: offset + (duration - local) * speed),
+ * and only what lies inside the block and its groups on the Timeline is heard.
  */
-export function fromSrt(text: string): SubtitleLine[] {
-  const out: SubtitleLine[] = [];
-  let cur: { start: number; end: number; rows: string[] } | null = null;
-  const close = (): void => {
-    const words = cur ? clean(cur.rows.join(' ').replace(SRT_TAG, '')) : '';
-    if (cur && words && cur.end > cur.start) out.push({ start: cur.start, end: cur.end, text: words });
-    cur = null;
-  };
-  for (const row of text.replace(/^﻿/, '').split(/\r\n|\r|\n/)) {
-    const m = SRT_TIME.exec(row);
-    if (m) {
-      // with no blank line between two cues, the next cue's index is the last row gathered: it is not words
-      if (cur && cur.rows.length && /^\d+$/.test(cur.rows[cur.rows.length - 1])) cur.rows.pop();
-      close();
-      cur = { start: stamp(m[1], m[2], m[3], m[4]), end: stamp(m[5], m[6], m[7], m[8]), rows: [] };
-    } else if (!row.trim()) close();
-    else if (cur) cur.rows.push(row.trim());
+export function linesToCues(m: Movie, contentId: string, lines: TimedLine[]): NewCue[] {
+  const f = findBlock(m, contentId);
+  if (!f || !isSound(m, f.c)) return [];
+  const c = f.c, fps = m.fps;
+  let shift = 0, lo = 0, hi = Number.POSITIVE_INFINITY;
+  for (const g of f.groups) {
+    // playback leaves out sound in a retimed group, and so do we
+    if (g.speed !== undefined && g.speed !== 1 || g.reverse) return [];
+    const gs = g.start + shift;
+    lo = Math.max(lo, gs);
+    hi = Math.min(hi, gs + g.duration);
+    shift += g.start - g.offset;
   }
-  close();
+  if (c.speed === 0 || timeKeys(c)) return [];
+  const cs = c.start + shift, s = c.speed ?? 1, rev = c.reverse === true;
+  lo = Math.max(lo, cs);
+  hi = Math.min(hi, cs + c.duration);
+  if (!(hi > lo)) return [];
+  const local = (sec: number): number => (sec * fps - c.offset) / s;
+  const out: NewCue[] = [];
+  for (const l of lines) {
+    const text = (l.text ?? '').trim();
+    if (!text || !Number.isFinite(l.start) || !Number.isFinite(l.end) || l.end <= l.start) continue;
+    let a = rev ? cs + c.duration - local(l.end) : cs + local(l.start);
+    let b = rev ? cs + c.duration - local(l.start) : cs + local(l.end);
+    a = Math.max(a, lo);
+    b = Math.min(b, hi);
+    if (b <= a) continue;
+    const start = Math.round(a);
+    if (start >= hi) continue;
+    const end = Math.min(hi, Math.max(start + 1, Math.round(b)));
+    out.push({ start, end, text, from: contentId });
+  }
   return out;
+}
+
+/** Lines for a sound an AI voice spoke: its own timing, or an estimate over the sound's length; [] for any other sound. */
+export function cuesForSound(m: Movie, contentId: string): NewCue[] {
+  const f = findBlock(m, contentId);
+  const a = f?.c.asset ? m.assets[f.c.asset] : undefined;
+  const spoken = a?.spoken;
+  if (!f || !a || !spoken) return [];
+  const seconds = a.seconds ?? (f.c.offset + f.c.duration * (f.c.speed || 1)) / m.fps;
+  const lines = spoken.cues.length ? spoken.cues : estimateLines(spoken.text, seconds);
+  return linesToCues(m, contentId, lines);
+}
+
+// ---- reading ----
+
+/** The line covering `frame`; of two that overlap, the one that started last. */
+export function cueAt(m: Movie, frame: number): SubtitleCue | null {
+  const cues = m.subtitles?.cues;
+  if (!cues || !cues.length) return null;
+  // the last cue starting at or before the frame, then back to the first that still covers it
+  let lo = 0, hi = cues.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (cues[mid].start <= frame) lo = mid + 1; else hi = mid; }
+  for (let i = lo - 1; i >= 0; i--) if (frame < cues[i].end) return cues[i];
+  return null;
+}
+
+/** Families an export must have loaded before it draws. */
+export function subtitleFonts(m: Movie): string[] {
+  const s = m.subtitles;
+  return s && s.show && s.cues.length ? [s.style.font] : [];
+}
+
+// ---- drawing ----
+
+const MAX_LINES = 3;
+const WIDTH_SHARE = 0.88;
+const EDGE_SHARE = 0.06;
+const LINE_EM = 1.3;
+const PAD_EM = 0.35;
+const OUTLINE_EM = 0.08;
+const BAND = 'rgba(0,0,0,0.6)';
+const OUTLINE = 'rgba(0,0,0,0.85)';
+const ELLIPSIS = '…';
+
+interface Wrap { id: string; text: string; font: string; px: number; width: number; epoch: number; lines: string[]; widths: number[]; asc: number; desc: number }
+let wrapCache: Wrap | null = null;
+
+/** Breaks a word too wide for a line into pieces that fit (scripts written without spaces). */
+function breakWord(ctx: Ctx, word: string, max: number, into: string[]): void {
+  let cur = '';
+  for (const ch of Array.from(word)) {
+    if (cur && ctx.measureText(cur + ch).width > max) { into.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) into.push(cur);
+}
+
+function wrap(ctx: Ctx, text: string, max: number): string[] {
+  const lines: string[] = [];
+  for (const para of text.split(/\r?\n/)) {
+    let cur = '';
+    for (const word of para.split(/\s+/)) {
+      if (!word) continue;
+      const tryLine = cur ? `${cur} ${word}` : word;
+      if (ctx.measureText(tryLine).width <= max) { cur = tryLine; continue; }
+      if (cur) lines.push(cur);
+      cur = '';
+      if (ctx.measureText(word).width <= max) { cur = word; continue; }
+      const bits: string[] = [];
+      breakWord(ctx, word, max, bits);
+      cur = bits.pop() ?? '';
+      lines.push(...bits);
+    }
+    if (cur) lines.push(cur);
+  }
+  if (lines.length <= MAX_LINES) return lines;
+  const kept = lines.slice(0, MAX_LINES);
+  let last = Array.from(kept[MAX_LINES - 1]);
+  while (last.length && ctx.measureText(last.join('').trimEnd() + ELLIPSIS).width > max) last.pop();
+  kept[MAX_LINES - 1] = last.join('').trimEnd() + ELLIPSIS;
+  return kept;
+}
+
+function wrapFor(ctx: Ctx, cue: SubtitleCue, font: string, px: number, width: number): Wrap {
+  const ep = fontEpoch();
+  const w = wrapCache;
+  if (w && w.id === cue.id && w.text === cue.text && w.font === font && w.px === px && w.width === width && w.epoch === ep) return w;
+  const lines = wrap(ctx, cue.text, width);
+  const widths = lines.map((l) => ctx.measureText(l).width);
+  const mt = ctx.measureText('Hg');
+  const asc = Number.isFinite(mt.fontBoundingBoxAscent) && mt.fontBoundingBoxAscent > 0 ? mt.fontBoundingBoxAscent : px * 0.8;
+  const desc = Number.isFinite(mt.fontBoundingBoxDescent) && mt.fontBoundingBoxDescent >= 0 ? mt.fontBoundingBoxDescent : px * 0.2;
+  wrapCache = { id: cue.id, text: cue.text, font, px, width, epoch: ep, lines, widths, asc, desc };
+  return wrapCache;
+}
+
+/** Draws the line covering `frame` over a finished frame, in device pixels; nothing when hidden or between lines. */
+export function drawSubtitles(ctx: Ctx, m: Movie, frame: number, view: { scale: number; ox: number; oy: number; width: number; height: number }): void {
+  const s = m.subtitles;
+  if (!s || !s.show) return;
+  const cue = cueAt(m, frame);
+  if (!cue) return;
+  const mw = m.width * view.scale, mh = m.height * view.scale;
+  const px = (s.style.size / 100) * m.height * view.scale;
+  if (!(px > 0.5) || !(mw > 0) || !(mh > 0)) return;
+  const look: TextStyle = { text: '', font: s.style.font, size: px, weight: 600, color: s.style.color, align: 'center' };
+  const font = fontCss(look, px);
+  ctx.save();
+  try {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath();
+    ctx.rect(view.ox, view.oy, mw, mh);
+    ctx.clip();
+    ctx.font = font;
+    if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = '0px';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const w = wrapFor(ctx, cue, font, px, WIDTH_SHARE * mw);
+    const n = w.lines.length;
+    if (!n) return;
+    const lh = px * LINE_EM;
+    const blockH = n * lh;
+    const pos = s.style.position;
+    const top = pos === 'top' ? view.oy + EDGE_SHARE * mh
+      : pos === 'middle' ? view.oy + (mh - blockH) / 2
+        : view.oy + mh - EDGE_SHARE * mh - blockH;
+    const cx = view.ox + mw / 2;
+    // the baseline sits so the font's own height is centred in each line box
+    const baseIn = (lh - (w.asc + w.desc)) / 2 + w.asc;
+    if (s.style.band) {
+      const pad = PAD_EM * px, r = 0.25 * px;
+      ctx.fillStyle = BAND;
+      ctx.beginPath();
+      // one path: where padded bands of neighbouring lines overlap they fill once, not twice as dark
+      for (let i = 0; i < n; i++) {
+        const lw = w.widths[i];
+        const y = top + i * lh + (lh - px) / 2 - pad;
+        ctx.roundRect(cx - lw / 2 - pad, y, lw + 2 * pad, px + 2 * pad, r);
+      }
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2 * OUTLINE_EM * px;
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      for (let i = 0; i < n; i++) ctx.strokeText(w.lines[i], cx - w.widths[i] / 2, top + i * lh + baseIn);
+    }
+    ctx.fillStyle = s.style.color;
+    for (let i = 0; i < n; i++) ctx.fillText(w.lines[i], cx - w.widths[i] / 2, top + i * lh + baseIn);
+  } finally {
+    ctx.restore();
+  }
 }

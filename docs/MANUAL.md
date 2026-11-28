@@ -44,7 +44,7 @@ A movie is saved as a single `.fmo` file. It holds every track, drawing, picture
 - **Open Recent** in the File menu lists your latest movies.
 - **Share Movie File** downloads a `.fmo`; with history, it keeps the undo steps too.
 - **Autosave** can write the open movie every 10 seconds to 5 minutes (Preferences · General).
-- **Movie settings** (Ctrl+J): size up to 3840 pixels a side, frame rate presets from 12 to 120 and custom, duration by timecode, transparent background, and playback as loop, ping pong or one shot.
+- **Movie settings** (Ctrl+J): size up to 3840 pixels a side, frame rate presets from 12 to 120 and custom, duration by timecode, transparent background, and playback as loop, ping pong or one shot. Nothing in it is cut off at the right edge, and long labels wrap. Menus are never taller than the window: a long menu scrolls inside itself and uses compact rows.
 
 Where the library lives is shown in Preferences · General. The `FORMMORPHEUS_LIBRARY_DIR` variable moves it.
 
@@ -61,9 +61,11 @@ In Compose you build the structure of the movie.
 - **Copy, Cut, Paste** with Ctrl+C, Ctrl+X, Ctrl+V.
 - **Delete** with Delete or Backspace. A Preferences option asks first.
 - **Right-click** a block for its options: opacity, volume, rename, highlight color, blend mode, mask, invert, reverse keyframes, convert to Flipbook, group, and track options.
+- **Foreground and background.** Each block is drawn on its track, and the order of the tracks is the stacking order: the track at the top of the Timeline is in front, and the track at the bottom is at the back. To put something in front of another, move its track above the other's with Move up or down in the track options, or right-click the content and choose **Arrange**: Bring to Front, Bring Forward, Send Backward or Send to Back moves it forward or back, by moving its track in the stack.
 - **Right-click** a track name for track options: rename, show all, hide all, add track above, move up or down, remove an empty section, delete.
+- **Right-click** content on the Stage for the same menu as its block. A right-click on empty Stage opens the Stage's own menu. The menu has Duplicate and Delete, and an **Arrange** group: **Bring to Front**, **Bring Forward**, **Send Backward** and **Send to Back**. They move the content's track in the stack, since the track higher up is drawn in front, and each is one undo step. On a character the menu also has **Apply Action...** (see Actions).
 
-On the Stage, drag a selected block to move it, drag a corner handle to scale, and drag the rotate handle to turn it. Shift snaps rotation to 15 degrees. Moves snap to the centre and quarter lines.
+On the Stage, the selection box hugs what is drawn: a character's box is the character, and a drawing's box is its ink, not the whole movie frame. A click picks the content under the pointer, and a click on empty Stage selects nothing, even inside where an old big box was. A drag that starts on the selected content moves it and never selects something else; a plain click there picks what is on top. Drag a selected block to move it, drag a corner handle to scale, and drag the rotate handle to turn it. In Compose the corner and rotate handles work about the box's centre. Side nodes on a character or a group scale it whole and keep its proportions; hold Alt to stretch one way. Shift snaps rotation to 15 degrees. Moves snap to the centre and quarter lines.
 
 **Content options**: opacity, 26 blend modes (and passthrough for groups), clipping, alpha and luminance masks with invert, and highlight colors for finding blocks.
 
@@ -196,14 +198,15 @@ There are three ways to get one: build it in the **Character Builder** by choosi
 
 Choose **Build a character** at the top of the Characters panel, Content · **Character Builder...**, or Character Builder in command search. A large window opens in three columns.
 
-- **Presets** on the left: the built starter characters, grouped as Women, Men and Specials. Press one to start from it. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
+- **Presets** on the left: the built starter characters, grouped as Women, Men and Specials, under a first group, **Mine**, that lists the characters you saved. With none saved it reads "Characters you save appear here." Press one to start from it; a saved one opens again with its recipe. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
 - **The preview** in the middle shows the character as it will be added, redrawn as you change it.
 - **Look**: the name; the kind (Human, Robot, Alien, Monster, Fox, Dino or Sprout); skin; the body sliders Height, Build, Shoulders and Head size, and Frame A or B; and the face: eye color, Jaw, Lashes, Blush, Freckles, Earrings, Glasses, facial hair (None, Stubble, Mustache, Goatee, Full) and lip color. A kind dims the face options it does not draw: a robot has no jaw or lip color, for example. Each row of swatches ends in a custom color.
+- **Frame A and Frame B** are two body frames to build on, not two appearances for one character. Choose one and the character has that frame: **A** is the lighter one, with narrower shoulders, waist and neck, slimmer arms and legs and smaller hands and feet; **B** is the broader one, with wider shoulders and waist, thicker arms and legs, a thicker neck and larger hands and feet. The body sliders then work on top of the frame. It changes the shape of the body and nothing else: skin, face, hair and outfit stay. The Women presets start on A and the Men presets on B (a special has its own), and you can set either frame on any preset or kind. Use it to pick the basic body first, then fine-tune with Height, Build and Shoulders. To keep two looks of one character, save them as two characters under two names. Nothing compares or switches between A and B once the character is built.
 - **Hair**: 16 styles and None, and the hair color. A fox shows a tuft between its ears for any style but None; for a dino the hair color paints its crest and the spikes on its tail, and for a sprout its leaves and petals, so their styles are dimmed. A note beside the last style says so.
 - **Outfit**: 16 outfits (Tee & Jeans, Hoodie & Joggers, Business Suit, Sundress, Athletic, Lab Coat, Chef, Hi-Vis Crew, Tuxedo, Winter Puffer, Hero Suit, Pajamas, Overalls, Varsity Jacket, Cardigan and Scrubs), each with a color for each of its three pieces. **Reset colors** puts back the outfit's own.
 - **Randomize** makes a new look of the same kind, and **Reset** goes back to the preset you started from.
 
-At the foot, **Add to Movie** puts the character in the open movie at the Playhead on a track of its own, in one undo step, at its own spot across the frame (on a starter scene's floor, standing on it). **Save to Characters** keeps it in Mine with its recipe, asking before it replaces a saved name. The window stays open, so you can add the same look again or change it and add another.
+At the foot, **Add to Movie** puts the character in the open movie at the Playhead on a track of its own, in one undo step, at its own spot across the frame (on a starter scene's floor, standing on it), and the builder closes. **Save to Characters** keeps it in Mine with its recipe, asking before it replaces a saved name; the new character shows in the Mine group at once, marked as the one you are working on. The window stays open after a save, so you can change the look and save or add it.
 
 ### A built character's parts
 
@@ -233,7 +236,8 @@ Draw the character in a vector app with **one group per part**, and open the SVG
 - **Names.** A part is named by its label in the editor, then its `data-name`, then its `id`, then Part 1, Part 2 and so on. A name used twice gets a number.
 - **Parts inside parts.** A group inside a group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A layer group of an editor, and a lone wrapper group that holds only groups, are opened and not made parts.
 - **Loose shapes.** An SVG with no groups does not become a track for every shape. Shapes outside any group that sit side by side (paths, rectangles, circles, ellipses, lines, polygons and polylines) are read as one part; a group, text or a picture between them ends the run and starts another. A single run is named after the file, several are Part 1, Part 2 and so on, and a run of one shape is a part named by its label.
-- **Hidden groups.** A group hidden in the file, whether hidden (`visibility="hidden"` or `collapse`) or not displayed (`display="none"`, or `display:none` in its style, as many vector apps hide a layer), arrives as a part that is hidden, with its art inside, so showing it brings the drawing back instead of an empty block. The parts of an editor layer that is not displayed arrive hidden the same way. A single shape that is not displayed is still left out, and so is a mouth drawing that is not displayed in a mouth chart.
+- **Hidden groups.** A group hidden in the file, whether hidden (`visibility="hidden"` or `collapse`) or not displayed (`display="none"`, or `display:none` in its style, as many vector apps hide a layer), arrives as a part that is hidden, with its art inside, so showing it brings the drawing back instead of an empty block. A group or shape with an opacity of 0, as some vector apps hide a layer, is kept hidden the same way. The parts of an editor layer that is not displayed arrive hidden the same way. A single shape hidden in the file (display none, visibility hidden, or opacity 0) arrives as a hidden shape in its part, not dropped. A mouth drawing that is not displayed in a mouth chart is still left out.
+- **Paint order.** The order of the file is the order of the Stage: what the file paints behind stays behind, and a part keeps its place in front or behind even when it sits in another part's group. A part the export wrote outside its parent's group names that parent in `data-fm-parent`, and it is parented to it again.
 - **Pivots.** A part turns about its pivot, so put it where the joint is: the shoulder for an arm, the hip for a leg, the neck for a head, the wrist for a hand. Draw a small mark inside the part's own art and give it the id `pivot`, an id that starts with `pivot-`, or `data-role="pivot"`; its centre becomes the pivot and the mark is left out of the art. A part with no mark turns about the middle of its box.
 - **Shapes and pictures.** Paths, rectangles, circles, ellipses, lines, polygons and polylines with solid, linear or radial paint open as Shapes you can still edit. A part that holds text, pictures, reused elements, filters, masks, clipping, patterns or markers, or a filled shape that cuts a hole in another, opens as a picture (a Drawing you can touch up in Draw and Paint). The notice after the import names each such part and says why.
 - **Size.** The art keeps its pixel size. It is shrunk only when it is larger than the movie, and is centered. When the file's `viewBox` and its width and height are not the same shape, its `preserveAspectRatio` decides where the drawing sits: aligned to a side of the size (`xMin`, `xMid`, `xMax` with `YMin`, `YMid`, `YMax`), or filling the size with `slice`. `none` stretches it, and a file that says nothing is centered.
@@ -242,6 +246,24 @@ Draw the character in a vector app with **one group per part**, and open the SVG
 - **A mouth rests.** A character's mouth, a starter character's included, shows its Rest drawing for the whole block and stays there until Lip-sync from Sound writes shapes. It does not run through the eight drawings by itself.
 
 An SVG that holds nothing FormMorpheus can read is refused with its name.
+
+### Start from an existing character
+
+The quickest template for your own character is one that already exists. To see its layout, change it and keep the original:
+
+1. Put the starter or built character in a movie (Add to Movie in the Characters panel), select it and choose File · Round Trips · **Character as SVG for Vector App...** (see Working with a vector app). It is written with one group for each part, named for the part.
+2. Open the file in your vector app and change the art. Keep one group for each part and keep the group names. Move a part's pivot mark if a joint should turn somewhere else.
+3. Save the edited file under a **new name**. Saving it over the exported file would change the original character too, because the desktop app links the character to the file it wrote (see The source link).
+4. Choose Import (Ctrl+I) and pick the new file, or drop it on the window. It arrives as a new character, named after the new file, on its own track. The character you sent out is not touched.
+
+The importer asks for no fixed list of part names: any name works, and the file's own group names become the part names. A few names matter because the app looks for them:
+
+- `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r` are what the starter actions move. A part with another name is left still when you apply an action, and a name the character lacks is skipped with a note. A built character adds `hip`, `neck`, `forearm-l`, `forearm-r`, `hand-l`, `hand-r`, `shin-l`, `shin-r`, `foot-l`, `foot-r`, `eyes`, `brows`, `hair-front`, `hair-back`, `hair-sway`, `shadow` and others (see "A built character's parts"); the builder's own action versions use them.
+- `mouth` is the part Lip-sync from Sound writes into. It works when the part is a mouth chart: inside it, one group for each mouth shape, named Rest, MBP, AI, E, O, U, FV and L / th (at least six, and no more than ten groups).
+
+How the parts are parented follows the groups. A group inside another group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A part written outside its parent's group names that parent in `data-fm-parent`, and it is parented to it again. A part with no group above it has no parent. The order of the file is the order on the Stage, back to front. The notes under "A character from an SVG" cover pivots, hidden groups, shapes and pictures.
+
+A drawn starter's exported file has only the nine parts named in the Characters panel, which makes it the simplest template to start from.
 
 ### Make Character
 
@@ -269,9 +291,26 @@ View · **Characters** opens a panel beside the Stage with two lists. It sits on
 
 ### Save to Characters
 
-Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. The name is cleaned first, as a file name is (a slash becomes a space, so `A/B` is saved as `A B`), and it is that cleaned name that is compared with the saved ones. When it is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". Closing the question (Escape, the close button or a click outside) saves nothing. The saved character is a copy: later changes in the movie do not change it. Its actions go with it. A part's link to something outside the character, such as a hand parented to a prop on another track, is not kept in the copy; the links between the character's own parts are.
+Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. The data folder is not the folder you installed the app in: it is a folder of your user account, so an update that replaces the app leaves it alone. Where it is, and how to open it, is under "The data folder" in Preferences. The name is cleaned first, as a file name is (a slash becomes a space, so `A/B` is saved as `A B`), and it is that cleaned name that is compared with the saved ones. When it is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". Closing the question (Escape, the close button or a click outside) saves nothing. The saved character is a copy: later changes in the movie do not change it. Its actions go with it. A part's link to something outside the character, such as a hand parented to a prop on another track, is not kept in the copy; the links between the character's own parts are.
 
 Deleted characters stay in Recently Deleted on Home for 30 days. Restoring one puts it back in Characters.
+
+### Make a character talk
+
+A **mouth chart** is the character's mouth drawn eight ways, one drawing for each sound shape: Rest, MBP, AI, E, O, U, FV and L / th. Lip-sync picks the drawing that fits each moment of a sound. Every starter character and every character from the Character Builder already has one as its `mouth`, so you do not need to make or import a chart; **Use as Mouth Chart** is only for giving a character of your own another mouth. A character from an SVG of your own has a mouth chart only when the file has one.
+
+FormMorpheus does not speak by itself: the voice comes from a sound you make, record or import, and Lip-sync then moves the mouth to match it.
+
+1. Put a character in the movie: Add to Movie in the Characters panel, or a starter or built one. Its mouth rests on its Rest drawing.
+2. Get a voice onto the Timeline, in one of three ways. Each lands as a sound block at the Playhead.
+   - **Record sound...** (Content · Add, or More in the Create card): you speak into your microphone while the movie plays.
+   - **Import** (Ctrl+I) or a drop: a sound file you already have.
+   - **AI Voice...** (Content · Add, or More in the Create card): you type the words, choose a voice and press Speak, and the app makes the speech (see AI Voice).
+3. Select the sound block and choose **Lip-sync from Sound...** on its menu. The dialog starts with the sound you selected and with the mouth of the selected character, or, when none is selected, of the first character in the movie. Change either in its lists if needed, and check the **Frames** range.
+4. Press **Lip-sync**. The app listens to the sound and writes the mouth shapes frame by frame in one undo step. Press Space to play: the voice and the mouth move together.
+5. If you want the words on screen, open Content · Add · **Subtitles...** (see Subtitles). An AI voice adds its subtitle lines by itself. For a recording or an imported sound, select its block and press **Subtitles from this sound**, which needs the built-in voice set up and the listening model downloaded once.
+
+What is automatic: the speech of an AI voice, its subtitle lines, and the listening and mouth shapes once you press Lip-sync. What you do yourself: choosing the voice, pressing Lip-sync and, for a recording or a file, asking for subtitles. Lip-sync is not run when a sound is added, and it does not follow a sound that you move or change afterwards: run it again.
 
 ### Lip-sync onto a character's mouth
 
@@ -281,7 +320,7 @@ Until you lip-sync, the mouth rests on its Rest drawing for the whole block; it 
 
 ### Use as Mouth Chart
 
-A character with no mouth chart, or one you want to give another, can take one from an SVG. Select the character and choose Content · **Use as Mouth Chart...** (also on the block's menu). Pick an SVG of the eight mouth shapes (one top-level group for each shape, named as in "A mouth chart" above). The shapes become a Flipbook that replaces the character's `mouth` part, or, when it has none, a new inner track on top following `head`, and it is the character's mouth. It is one undo step, and Lip-sync from Sound then writes into it. A file that cannot be read says so and changes nothing; closing the file dialog does nothing. This works for any character, one that came from an SVG included.
+A character with no mouth chart, or one you want to give another, can take one from an SVG. You do not need this for a starter or a built character, which have a mouth chart already (see "Make a character talk"). Select the character and choose Content · **Use as Mouth Chart...** (also on the block's menu). Pick an SVG of the eight mouth shapes (one top-level group for each shape, named as in "A mouth chart" above). The shapes become a Flipbook that replaces the character's `mouth` part, or, when it has none, a new inner track on top following `head`, and it is the character's mouth. It is one undo step, and Lip-sync from Sound then writes into it. A file that cannot be read says so and changes nothing; closing the file dialog does nothing. This works for any character, one that came from an SVG included.
 
 ## Actions
 
@@ -289,7 +328,7 @@ An action is a named piece of motion for a character: Move and Bones keys for so
 
 ### Apply an action
 
-Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the twelve **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
+Select a character and choose Content · Actions · **Apply Action...**, or right-click the character on the Stage and choose **Apply Action...**, which opens the card where you clicked. A card lists the character's own actions, then the twelve **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
 
 - With no loop range set, the action goes in once, from the Playhead.
 - With a loop range (Alt+I sets its start and Alt+O its end), the action starts at the range's start, and a looping action repeats as many times as fit.
@@ -299,11 +338,13 @@ Select a character and choose Content · Actions · **Apply Action...**. A card 
 - Keys outside the span the action takes are never touched. With a loop range the span ends at Out at the latest: a looping action repeats as many whole passes as fit and then one more cut at Out. Where a span is cut short, it gets a key at that frame with the action's own value there, so the motion stops cleanly instead of sliding toward the next key.
 - Where two actions touch, they share one frame and each keeps its own keys: the frame belongs to the later action on the parts it moves. Clearing one keeps the other's keys and removes its own.
 
-Each apply is one undo step.
+Each apply is one undo step. After an action is applied, or swapped, it plays once from its start and the Playhead goes back to where it was; a notice and the status line say "{action} applied to {character}". Playing it does not add an undo step, and pressing Stop ends it where you stopped.
 
 ### The strips
 
 An applied action shows as a labelled **strip** along the lower edge of the character's block, counted in the character's own frames, so moving or trimming the block keeps the strip and its keys together. Press a strip: the block is selected, the strip is marked, and the same card opens. Choose another action to **swap** it over the same frames, or **Clear Action** to remove it. A swap stays inside the strip: a longer action is cut at the strip's end, so an action that follows keeps every key it had. **Swap Action...** and **Clear Action** in Content · Actions work on the strip you pressed last. A swap is one undo step, and undo brings the first action back with its exact keys.
+
+To make a strip longer or shorter, select the character's block and drag either edge of the strip. A looping action plays for the new length, with its eases at both ends. A one-shot action is cut when you shorten it and holds its last pose when you make it longer. A strip stops at a neighbouring action. It is one undo step, **Action Length**.
 
 ### Your own actions
 
@@ -320,7 +361,9 @@ An action is a small text file you can keep, share and open in another movie.
 
 ## Starter scenes
 
-File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Choose one and a new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Click a card to pick it and press **Create** to take it, or double-click a card to take it at once. A new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+
+To add a scene to the movie that is open, choose Content · Add · **Add Starter Scene to This Movie...**. The same chooser opens, and its button reads **Add to Movie**. The scene's backdrop and props go behind everything already in the movie, each picture on its own track, fitted to the movie's size, in one undo step. The floor guide is taken only when the movie has none, and the scene's camera is left out so nothing already there moves.
 
 - Each layer is a picture on **its own track**, the background at the bottom and every prop above it, each as long as the movie, so you can move, hide or replace any of them.
 - The scene's **camera** is set at frame 0 and shows on the camera lane like any key.
@@ -342,9 +385,9 @@ Select a character and choose File · Round Trips · **Character as SVG for Vect
 - In the desktop app a folder dialog opens first. The file is written there, named after the character, and never replaces another file ("Name 2" when the name is taken). The character is then **linked** to the file, and the notice says so. Cancel in the dialog exports nothing.
 - Elsewhere (in a browser, and on iPad) the file is downloaded or shared and the character is not linked; use Update from Source... when you bring it back.
 
-The SVG has one `<g id="part name">` for each part, nested the way the parts are parented, at the movie's size, with the art at rest. Shapes are written as paths, pictures as embedded PNG, and each part has a small magenta circle that marks its pivot (`pivot-` and the part's name); FormMorpheus removes it again when the file comes back. Text, video and sound parts are written as empty groups with their pivot, so their names survive, and the notice names them. Moves and keys are not written: they stay in FormMorpheus. Stroke alignment inside or outside, and trim path, have no form in SVG, so the stroke is centered and the outline whole.
+The SVG has one `<g id="part name">` for each part, at the movie's size, with the art at rest. The parts are listed back to front exactly as the Stage draws them, so what is behind stays behind when the file is opened in a vector app. A part nests inside the group of the part it hangs from where that keeps the order; a part drawn far below its parent, hair behind the head for example, is written where it is drawn and names its parent in `data-fm-parent`. A part hidden in the movie is written hidden (`display:none`) and holds no other part. Shapes are written as paths, pictures as embedded PNG, and each part has a small magenta circle that marks its pivot (`pivot-` and the part's name); FormMorpheus removes it again when the file comes back. Text, video and sound parts are written as empty groups with their pivot, so their names survive, and the notice names them. Moves and keys are not written: they stay in FormMorpheus. Stroke alignment inside or outside, and trim path, have no form in SVG, so the stroke is centered and the outline whole.
 
-In the vector app, change the art, keep **one group per part** and keep each part's name, then save the file where it is.
+In the vector app, change the art, keep **one group per part** and keep each part's name, then save the file where it is. You can hide a part or a shape there; it comes back hidden, and the file's paint order is kept.
 
 ### The source link and Update from Source...
 
@@ -407,82 +450,89 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
 
 **From a scene-based animation app.** These apps keep a scene, its characters and its scenery inside their own project, which cannot be opened here. Export the movie from that app instead, as an **MP4 or WebM video** (a WebM in VP9 keeps its transparency), as an **animated GIF** (it becomes a Flipbook with its holds) or as **numbered PNG frames** (drop the folder and it becomes one Flipbook). Art you drew yourself opens directly: a **PNG** opens as a picture, a **PSD** opens as a Drawing with its layers, and an **SVG** opens as a character with a part for each group (see Characters). The characters and scenery that belong to the other app cannot be brought over: only what you drew yourself and the movie it exports.
 
-## Text
+## AI Voice
 
-Add Text from Create. Type the words, and the Text card opens: **font** (the bundled fonts and any you imported), **size**, **weight**, **color** and **alignment**. Double-click the block to edit again. Each change is one undo step.
-
-## Generated voice
-
-**Generate voice** turns typed words into speech on the Timeline. Open it with Create · More · Generate voice... or Content · Add · Generate voice.... The card has two tabs for how the voice is made, **Built-in voice** and **Speech server**. Under them are the box for the words, **Add subtitles** and **Generate**.
-
-Type the words to speak and choose **Generate**. The sound lands as a block named Generated voice at the Playhead, on a new track named Voice, and the block is selected. If the voice runs past the end of the movie, the movie is made longer. All of it is one undo step. With **Add subtitles** on, the words also become subtitle lines under the voice (see Subtitles). **Cancel** or Esc stops a voice while it is being made. The card keeps your words and choices for next time.
-
-A voice belongs to the movie it was asked for in: if you open another movie while it is being made, it is stopped and nothing is added. If the Subtitles track is locked, the voice lands without lines and the card says so. Text with nothing to speak, such as "..." or words in a language the built-in voice does not speak, adds nothing, and the card says "There are no words to speak in that text."
-
-The built-in voice and the speech server use the engine on a computer. The iPad app's engine does not serve them, so Generate voice... is not offered on iPad.
+Type what to say, choose a voice and press **Speak**: the spoken sound lands on the Timeline at the Playhead, on a sound track, like any sound. Fades, pan, Lip-sync and export all work on it. Open the card from Content · Add · **AI Voice...**, or from More in the Create card, next to **Record sound...**. It has two tabs, **Offline** and **Online**.
 
 ### The built-in voice
 
-The built-in voice makes the speech on this computer, so the words never leave it. It speaks English only, with 28 voices.
+On the **Offline** tab, **Voice from** · **Built-in voice** is Kokoro. It runs on this computer, with no account and no internet once it is set up.
 
-- **The one-time download.** The voice's files are not part of the app. Until they are on this computer the tab says what they are: 114 MB to download once, 34 files, and their licence, Apache-2.0. Choose **Download**. A bar shows how far it is, and **Cancel** stops it. Every file is checked against its SHA-256 before it is kept, and the files are stored in the data folder under `speech/`. If a download stops or fails, the tab gives the reason with **Try again**, and the next download fetches only the files that are still missing.
-- **Voice** lists the voices in four groups: US · female, US · male, UK · female and UK · male. **Speed** goes from 0.50x to 2.00x.
-- **How long it takes.** The card shows the sentence it is on, as in Sentence 2 of 5. As a guide, a two-sentence voice 5.7 seconds long took about 10 seconds to make on an Apple silicon Mac.
-- **Words it does not know.** Words are pronounced from pronunciation dictionaries. A word that no dictionary has is spelled out letter by letter, and the card lists those words after "Spelled out, because no dictionary has them:". Write such a word the way it sounds and generate again. Short words in capitals, such as DNA and TV, are said as letters on purpose.
-- **Numbers.** Numbers, money, percentages, ordinals and clock times are read as words: 1,250 is "one thousand two hundred fifty" and 9:30 is "nine thirty". A four-digit number from 1100 to 2099 written without a comma is read as a year, so 1999 is "nineteen ninety nine". Write 1,999 when you mean the number. Whole numbers are read in words up to 999 trillion; a longer run of digits is read digit by digit.
-- **Remove the voice files**, at the foot of the card, deletes the files from this computer after you confirm. They can be downloaded again.
+- **Set up once.** Press the setup button in the card. FormMorpheus makes the voice its own runtime in the data folder, which needs Python 3.10 to 3.13 on your computer, and downloads the voice model, about 340 MB, checking the download before it is used. The card shows the step it is on and can cancel it. When no suitable Python is found, the card says so and nothing is installed.
+- **Voices and speed.** There are 54 voices. American and British English are listed first. **Speed** goes from 0.5 to 2.
+- **Remove.** The card can take the built-in voice away again, runtime and model together.
 
-### A speech server on this computer
+### A voice app on this computer (your own cloned voice)
 
-The **Speech server** tab sends the words to a speech server running on this computer, which is how a voice cloned in another app is used. Start that app's speech server first, then fill in the tab.
+On the **Offline** tab, **Voice from** · **Voice app on this computer** speaks through any voice app on this computer that answers the common speech API. This is how a cloned voice is used.
 
-- **Address** is where the server listens, `http://127.0.0.1:8080` unless you type another. It must start with `http://` or `https://` and be on this computer: 127.0.0.1, localhost or [::1]. Any other address is refused, so the words are never sent to another machine.
-- **Check** asks the server whether it is there and reads the list of its models. When **Model** is empty, the first one is filled in.
-- **Model** and **Voice** are the names the server uses for them. **Speed** goes from 0.50x to 2.00x.
-- The server must speak the common `/v1/audio/speech` JSON interface: FormMorpheus posts the model, the words, the voice and the speed, and asks for a WAV file back. It waits up to five minutes for the answer.
-- The sound is kept as the server sent it. With **Add subtitles** on, the sound's length is shared between the sentences by their length, because the server gives no timing.
+1. Clone the voice in that app, and start the app.
+2. In the card, set its address. The default is `http://127.0.0.1:8080`. Only an address on this computer is accepted (`127.0.0.1`, `localhost` or `[::1]`).
+3. Press **Check**. The card asks the app which models and voices it has.
+4. Pick its model and voice, then **Speak**.
 
-Use only voices you have the right to use.
+### An online voice
+
+On the **Online** tab, an online voice (ElevenLabs) speaks with your own key. The key is kept in the system keychain, never in the settings file, and can be cleared again. The text can be up to 2000 characters. Your text is sent to that service only when you press **Speak** on this tab; nothing is sent on the Offline tab.
+
+### Where the voice files are
+
+The built-in voice lives in the **voice** folder of your data folder: its runtime in `voice/runtime` and its model in `voice/models`. The data folder is the one that holds the settings file: Preferences · General shows the settings and library folders, and `FORMMORPHEUS_DATA_DIR` moves it. A sound you have just spoken waits in `voice/out` until the window has placed it, and is removed within the hour if it never was. The sound you placed is part of the movie and is saved in the `.fmo` like any other sound.
+
+### Subtitles and lip-sync
+
+- **Lip-sync works today.** Choose **Lip-sync from Sound...** on the spoken sound's block and the mouth of a character takes its shape (see Lip-sync onto a character's mouth under Characters).
+- **Subtitles come with the voice.** Each spoken sound remembers its words and the timing of each sentence inside the movie file, and an AI voice adds its subtitles by itself when it speaks. See Subtitles.
 
 ## Subtitles
 
-Subtitles are timed lines of words over the movie. Open the **Subtitles** card with Create · More · Subtitles... or Content · Add · Subtitles.... It has a switch for all lines and four parts: Style, Lines, From sound and File.
+Subtitles are words drawn over the picture, on the Stage and in every export. Open the card from Content · Add · **Subtitles...**, or from More in the Create card. All the lines share one look. Every change you make in the card is one undo step.
 
-- **Show subtitles in the video** shows or hides every line at once, on the Stage and in the export. It can be used once the movie has lines.
-- **Style** sets every line at once: **Font**, **Size** (Small, Medium or Large), **Position** (Top, Middle or Bottom), **Color** and **Dark band behind the words**. The first lines of a movie take the style you chose last.
-- **Lines** lists the lines in time order. Each row has the start and the end in seconds, the words, and a button to delete the line. Type a time as `12.5` or as `1:02.5`. A line stays between the line before it and the line after it, so the field shows the time that was kept. **Add a line at the playhead** adds an empty line two seconds long and puts the caret in it. Where a line already shows at the Playhead, no line is added: the caret goes into that line's words.
+### Show them in the video
 
-### Subtitles from a generated voice
+Tick **Show subtitles in the video**. The line that covers the Playhead is drawn on the Stage, and every export carries the lines too, over the finished picture and after the camera, so a camera move never shifts them. Untick it and nothing is drawn, but the lines stay in the movie. They are saved in the `.fmo`.
 
-Turn on **Add subtitles** on the Generate voice card. With the built-in voice each sentence becomes a line that starts and ends with that sentence, and a long sentence is split into shorter lines. With a speech server the lines share the sound's length (see A speech server on this computer).
+### The look
 
-### Subtitles from a sound
+One look serves all the lines:
 
-Speech to text writes lines for a sound that is already in the movie, such as a recording. It runs on this computer.
+- **Font**: the bundled fonts, the fonts you added and the fonts of the system.
+- **Size**: from 2 to 15 percent of the movie's height. The default is 5.
+- **Position**: **Top**, **Middle** or **Bottom**. Top and Bottom keep the words a little way in from the edge.
+- **Text color**.
+- **Dark band behind the words**: a dark rounded band behind each line. Without it the words get a dark outline, so they read on any picture.
 
-1. Select a sound block on the Timeline. The card names it after "Selected sound:".
-2. The first time, choose **Download** under From sound: 76 MB to download once, 7 files, and their licence, Apache-2.0, as the publisher of the downloaded files states it. The files are checked against their SHA-256 and stored in the data folder under `speech/`, like the built-in voice's.
-3. Choose the **Language** that is spoken. It is not detected for you, and it starts as English.
-4. Choose **Make subtitles from this sound**. **Cancel** or Esc stops it. A sound longer than 30 seconds shows a percentage that moves as each stretch is heard; a shorter one is heard in one step, so the card says "Listening..." and the bar sweeps.
+Long lines wrap to fit inside the movie, to at most three lines.
 
-What to expect:
+### Lines from an AI voice
 
-- Lines are timed per phrase, not per word, so a line can come a little early or late against the voice. Adjust its times under Lines.
-- Only the part of the sound that the block plays is heard, and the lines land where the block is on the Timeline.
-- The new lines replace the lines that were under that sound.
-- A sound block that plays backward is refused, and so is one that is frozen (speed 0).
-- If the block is moved, trimmed, retimed or deleted while it is being heard, or another movie is opened, no lines are added and the card says why.
-- **Remove the speech to text files** deletes the files from this computer after you confirm. They can be downloaded again.
+An AI voice adds its subtitles by itself when it speaks, one line for each sentence, timed to the sound's block on the Timeline. If you trim, move or change the speed of the block afterwards, press **From AI voices** to make the lines again for every sound an AI voice spoke earlier. Lines made again for a sound take the place of the lines it made before. Lines you typed or imported stay.
 
-Speech to text uses the engine on a computer. The iPad app's engine does not serve it, so on iPad the Subtitles card has no From sound part; Style, Lines and File are there.
+### Lines from a recording or a sound file
 
-### Subtitle files
+1. Select the block of the recording or the sound file on the Timeline. A video with sound works too.
+2. Open the card and press **Subtitles from this sound**. Pick the **Language** first, or leave it on Detect.
+3. The lines land in the card, timed to the block.
 
-**Import subtitles file...** reads a `.srt` file of up to 5 MB; a larger file is refused. When the movie already has lines, it asks before it replaces all of them. **Export subtitles file...** saves the lines as a `.srt` file named after the movie.
+Listening runs on this computer. It uses the built-in voice's runtime, and its own model, Whisper base, which is a one-time download of about 80 MB that you start from the card with **Download the listening model**. The card shows the progress and can cancel it. Nothing you record or import is sent anywhere. Because it uses the built-in voice's runtime, set the built-in voice up first, in the AI Voice card; until then the card says so.
 
-### Subtitles are text blocks
+The model is kept in the **voice** folder of your data folder, in `voice/listen`, beside the built-in voice's own model. A sound of up to about two hours can be listened to in one go: split a longer block and listen to each part.
 
-The lines are ordinary text blocks on a track named Subtitles, which sits on top of the other tracks and is fixed to the screen, so the movie camera does not move it. Nothing else is special about them: move or trim a line on the Timeline, double-click it to change the words, or give one line its own look in the Text card. A later change under Style sets the font, size, color, band and position of every line again and leaves the rest of what you did by hand. Deleting the last line on the card removes the track.
+### Editing lines
+
+Each line is a row with its **start** and **end** in seconds (type `12.5` or `1:02.5`) and its words. Change a field and press Enter, or leave it, to keep the change. The start stays before the end. The play button on a row moves the Playhead to the line, and the line under the Playhead is marked while you play.
+
+- **Add line at the playhead** adds a two-second line there with its words ready to type over.
+- The bin button on a row deletes that line.
+
+### Subtitle files (.srt and .vtt)
+
+- **Import .srt or .vtt...** reads a subtitle file of either kind. When the movie already has lines, the card asks whether to replace them or add the file's lines to them.
+- **Export .srt** and **Export .vtt** write the lines, with their times in seconds, to a file named after the movie.
+
+## Text
+
+Add Text from Create. Type the words, and the Text card opens: **font** (the bundled fonts and any you imported), **size**, **weight**, **color** and **alignment**. Double-click the block to edit again. Each change is one undo step.
 
 ## Export
 
@@ -514,7 +564,7 @@ Every export downloads and is also kept in the engine's **Exports**, never overw
 
 ## Home
 
-Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Theater (Theater is the menu's name for Home). The left list has:
+Theater is the name of the Home screen, where your movies are kept. The Theater button in the Timeline bar (a back chevron, named "Theater: back to your movies") takes you back to it from the movie you are working on, after saving it to the library. You can also open it with Shift+Ctrl+H or View · Theater. The left list has:
 
 - **Start**: New movie, New flipbook, Open, and a short guide.
 - **Recent**: the movies you opened lately.
@@ -534,6 +584,20 @@ Open with Ctrl+, (File or Edit menu). The pages:
 - **Video Tools** (desktop only): which ffmpeg FormMorpheus uses and what it can encode, and Download ffmpeg and Remove for the family's build (see Engine formats).
 - **Agents** (desktop only): whether outside agents may work on your movies, the address and command that connect a client, and a button that opens the terminal panel (see Agents).
 - **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
+
+### The data folder
+
+FormMorpheus keeps what is yours in one **data folder**: the settings file, **Characters** (what you saved with Save to Characters), **Exports**, **Recently Deleted**, **Brushes**, the **voice** folder and the movie library (in its **Library** folder, unless you chose another). It is not the folder you installed the app in. An update replaces the install folder, so your work is kept apart in a folder of your user account, where an update and a reinstall leave it alone.
+
+Unless you move it, the data folder is named `formmorpheus` and sits here, for the installed app and for a source run (`./formmorpheus`) alike:
+
+- **Windows**: `C:\Users\your name\AppData\Roaming\formmorpheus` (the `%APPDATA%` folder; AppData is hidden in Explorer, so paste the path into its address bar).
+- **macOS**: `~/Library/Application Support/formmorpheus`. In Finder, choose Go · Go to Folder and paste it.
+- **Linux**: `~/.local/share/formmorpheus`, or `formmorpheus` inside the folder `XDG_DATA_HOME` names when that is set.
+
+Three things move it. The `FORMMORPHEUS_DATA_DIR` variable names another folder. A portable copy, started with `FORMMORPHEUS_PORTABLE=1` (or `--portable` on the desktop app), or an installed app with a file named `portable` or `portable.txt` beside it, keeps it in a `FormmorpheusData` folder beside the program. And the desktop app takes `--user-data-dir` and a folder.
+
+To see where yours is, open Preferences · General: **Settings folder** shows the data folder, and **Library folder** shows where the movies are. Both are read-only text boxes with no open button, so select the path, copy it and paste it into your file manager. No command opens the data folder itself.
 
 ## Languages
 
@@ -561,9 +625,9 @@ An outside agent is a program on your computer, such as Claude Code, Codex, Curs
 
 ### What an agent can do
 
-- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
+- **Reads** run at once: the version, the library folder and what your ffmpeg can encode (`get_context`), the movie list (`list_movies`), one movie's size, frame rate, length, tracks and content (`get_movie`), a movie's poster and preview (`get_movie_picture`), the saved characters in your Characters library (`list_characters`), which voices are ready on this computer and what each can speak with (`list_voices`), a movie's subtitles with their look and each line's start and end in seconds and frames (`list_subtitles`), and the other commands (`list_commands`). `run_command` also reads Recently Deleted, the Exports folder, stacks, fonts and the encoders your ffmpeg has.
 - **Changes to the library** are made by `manage_movie`: create an empty movie, rename, duplicate, delete and restore. Delete moves a movie to Recently Deleted and never erases it. `run_command` also sets a movie's tags and its stack.
-- **Three always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, and `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie. All three need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character` uses the movie already open when the agent names none).
+- **Five always ask first**: `export_movie` makes a file in the Exports folder, `import_file` brings a picture, video, sound or font file into a movie and saves it, `add_character` puts a copy of a saved character into a movie at the Playhead (or a frame the agent names), as Add to Movie in the Characters panel does, and saves the movie, and `add_voice` speaks a line with the built-in voice, a voice app on this computer or an online voice and puts the sound on the movie's Timeline at the Playhead (or a frame the agent names), as AI Voice does, and saves the movie, and `set_subtitles` changes a movie's subtitles (lines in seconds or the text of a .srt or .vtt file, replacing or adding to the lines, making lines from AI voices, showing or hiding them and their look), as the Subtitles card does, and saves the movie. All five need the FormMorpheus window open. You approve each one in it, and the window opens that movie to carry it out (`add_character`, `add_voice` and `set_subtitles` use the movie already open when the agent names none).
 
 Agents work only on FormMorpheus's own data: your movie library, your Characters library (the Characters folder in the data folder), Recently Deleted, the Exports folder and the added fonts. None of these tools reads another file or folder on your computer, and an import takes only a file that is already inside the library folder. A program you run in the terminal panel can still do whatever it can do on its own, as in any terminal.
 
@@ -616,17 +680,47 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 
 Closing FormMorpheus ends every tab.
 
+## New in 0.34.0
+
+**The selection box.** On the Stage the box hugs what is drawn: a character's box is the character, and a drawing's box is its ink. A click picks what is under the pointer, and a drag that starts on the selected content moves it without selecting something else. Side nodes on a character or group scale it whole and keep its proportions. See Compose.
+
+**Right-click on content.** The Stage opens that content's menu, with Apply Action... for a character and an Arrange group (Bring to Front, Bring Forward, Send Backward, Send to Back).
+
+**Actions.** An applied or swapped action plays once from its start and the Playhead goes back, with a notice "{action} applied to {character}". Drag either edge of an action's strip on a selected character block to make it longer or shorter. See Actions.
+
+**The Character Builder.** Mine lists the characters you saved, a saved one shows there at once, and Add to Movie closes the builder.
+
+**Starter scenes.** Content · Add · Add Starter Scene to This Movie... adds a scene's backdrop and props behind everything in the open movie. In the chooser a click picks a card and the button takes it; a double click takes it at once. See Starter scenes.
+
+**Character as SVG for Vector App.** The file lists the parts back to front as the Stage draws them, hidden parts are written hidden, and importing keeps that order and keeps parts and shapes hidden in the vector app hidden. See Working with a vector app.
+
+**Looks.** Block names on the Timeline are readable in the light themes, the Theater button says where it goes, Movie settings is not cut off, and menus never run taller than the window.
+
+## New in 0.33.0
+
+**Subtitles.** Content · Add · Subtitles..., or More in the Create card, opens a card. Tick Show subtitles in the video and the lines are drawn on the Stage and in every export. One look serves all the lines: font, size, position (top, middle or bottom), text color and a dark band behind the words. See Subtitles.
+
+**From AI voices.** AI voices add their subtitles by themselves when they speak, and From AI voices makes them again for sounds spoken earlier.
+
+**From a recording or a sound file.** Select its block on the Timeline and press Subtitles from this sound. Listening runs on this computer in the built-in voice's runtime with a model of its own, a one-time download from the card, and nothing is sent anywhere.
+
+**Editing and files.** Lines can be edited in the card (text, start, end), added at the Playhead and deleted, each one an undo step. Import a .srt or .vtt file, and export the lines as either.
+
+**Agents.** `list_subtitles` reads a movie's subtitles, and `set_subtitles` changes them after you say yes in the window.
+
+**Not yet.** The card's labels in languages other than English.
+
 ## New in 0.32.0
 
-**Generate voice.** Create · More · Generate voice... or Content · Add · Generate voice... turns typed words into a sound block at the Playhead, on a new track named Voice, in one undo step. The built-in voice makes the speech on this computer: English only, 28 voices (US and UK, female and male), speed from 0.50x to 2.00x. Its files are not part of the app: Download fetches 114 MB in 34 files once, each checked against its SHA-256 and kept in the data folder under `speech/`, and Remove the voice files deletes them. A two-sentence voice 5.7 seconds long took about 10 seconds to make on an Apple silicon Mac. A word no dictionary has is spelled out and listed, and a four-digit number from 1100 to 2099 written without a comma is read as a year. See Generated voice.
+**AI Voice.** Content · Add · AI Voice..., or More in the Create card, opens a card where you type what to say, choose a voice and press Speak. The spoken sound lands on the Timeline at the Playhead on a sound track, so fades, pan, Lip-sync onto a character's mouth and export work on it. See AI Voice.
 
-**A speech server on this computer.** The Speech server tab sends the words to a speech server you run on this computer, which is how a voice cloned in another app is used. The address must be 127.0.0.1, localhost or [::1], and the server must speak the common `/v1/audio/speech` JSON interface. Use only voices you have the right to use.
+**Three voices.** The Offline tab's **Built-in voice** is Kokoro, which runs on this computer with no account and no internet after a one-time setup (Python 3.10 to 3.13 and a model of about 340 MB), with 54 voices and a speed from 0.5 to 2. **Voice app on this computer** speaks through a voice app that answers the common speech API on this computer, which is how a cloned voice is used. The Online tab speaks with your own key, kept in the system keychain, and sends your text only when you press Speak.
 
-**Subtitles.** Create · More · Subtitles... or Content · Add · Subtitles... opens the Subtitles card: type timed lines, add a line at the Playhead, set Font, Size, Position, Color and Dark band behind the words for every line at once, and turn them all on or off with Show subtitles in the video. Import subtitles file... and Export subtitles file... read and write `.srt` files. The lines are ordinary text blocks on a track named Subtitles, so the Stage and the export show them and each can be edited like any text. See Subtitles.
+**Words kept with the sound.** Each spoken sound remembers its words and the timing of each sentence inside the movie file, for the subtitles coming in the next version.
 
-**Subtitles from a voice or a sound.** Add subtitles on the Generate voice card writes a line per sentence, timed sentence by sentence with the built-in voice. Make subtitles from this sound writes lines for the selected sound block by speech to text on this computer: its files are 76 MB in 7 files, downloaded once on request and removable. You choose the language, as it is not detected, and the lines are timed per phrase, not per word.
+**Agents.** `list_voices` reads which voices are ready, and `add_voice` speaks a line onto a movie's Timeline after you say yes in the window.
 
-**Where it works.** The built-in voice, the speech server and speech to text use the engine on a computer; the iPad app's engine does not serve them, so on iPad Generate voice... is not offered and the Subtitles card comes without its From sound part. The files of both downloads are under Apache-2.0, as each card shows. The two cards are in English in this version.
+**Not yet.** Subtitles in the video, and the card's labels in languages other than English.
 
 ## New in 0.31.0
 
@@ -810,7 +904,7 @@ Closing FormMorpheus ends every tab.
 
 **The Stage.** Ctrl or Cmd with the wheel (or a trackpad pinch) zooms toward the pointer; the wheel pans, Space-drag or the middle button pans too; Ctrl or Cmd+0 or a double-click on the empty Stage fits; Alt+Ctrl with Left or Right turns the view in 15 degree steps; Shift+Ctrl+F shows the Stage alone and plays it (Esc leaves). The zoom cluster sits at the bottom right. Stage Options (View menu, Shift+Ctrl+J, or right-click the Stage) holds the background colour, transparency, Backstage visibility, the timecode and the movie's onion skins; Movie settings · Stage shows the same.
 
-**The Compose box.** Side nodes stretch one way; drag a side past the other to flip; the box's ··· menu and the content menu have Flip horizontal, Flip vertical and Reset. Alt with the arrow keys nudges 1 px (Shift 10 px). Hold Shift while moving or turning to snap to the movie's edges, centre and other contents (15 degree steps in Compose, 30 in Keyframe and Perform); Alt turns snapping off. Undo and Redo buttons sit beside the timecode; the undo depth is 250 steps.
+**The Compose box.** Side nodes stretch one way (on a character or a group they scale it whole and keep its proportions, and Alt stretches one way); drag a side past the other to flip; the box's ··· menu and the content menu have Flip horizontal, Flip vertical and Reset. Alt with the arrow keys nudges 1 px (Shift 10 px). Hold Shift while moving or turning to snap to the movie's edges, centre and other contents (15 degree steps in Compose, 30 in Keyframe and Perform); Alt turns snapping off. Undo and Redo buttons sit beside the timecode; the undo depth is 250 steps.
 
 **Keyboard Shortcuts.** Edit · Keyboard Shortcuts... (also in Preferences) lists every command: search, add or remove keys, and set them back. A key taken from another command says so.
 

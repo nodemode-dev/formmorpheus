@@ -16,6 +16,7 @@
 | `gpu/` | the WebGL2 compositor: shaders, textures and a probe that decides whether it is used |
 | `warp-draw.ts` | draws Warp and Distort as textured triangles |
 | `flip-draw.ts` | draws Flipbook rows, including row masks |
+| `subtitles.ts` | the subtitle cues and their one look (`Movie.subtitles`): edits that return a new movie, cues from a sound's `spoken` words or from timed lines, and `drawSubtitles`, which `render.ts` calls over the finished frame |
 | `time.ts` | frame rates and timecode |
 | `events.ts` | a small typed emitter |
 
@@ -37,3 +38,22 @@ The processor path is the reference and the fallback. The GPU path walks the tra
 ## Keys
 
 Each key lane has a kind (Move, Scale, Warp, Distort, Opacity, Blur, Sharpen, Noise, HSB, Lens blur, Volume). Easing of the span after a key is Linear, Ease in, Ease out, Ease in and out, or Hold, evaluated as a temporal Bezier. Perform mode records one key per frame, smooths the path with a zero-phase filter and thins it with Ramer-Douglas-Peucker.
+
+## The voice routes (`/api/voice`)
+
+`backend/app/routers/voice.py` is the router; the work is in two services. `services/voice_runtime.py` is the built-in voice: it finds a Python 3.10 to 3.13, makes the voice's own runtime in `voice/runtime` of the data folder, downloads the Kokoro model to `voice/models` with a SHA-256 check, and speaks through that runtime. `services/voice_remote.py` is a voice app on this computer (loopback addresses only) and the online voice, with the keys in the system keyring. Both use only the standard library.
+
+| Route | Does |
+|---|---|
+| `GET /status` | the three engines' state in one answer |
+| `POST /builtin/setup`, `GET` and `DELETE /builtin/job`, `DELETE /builtin` | start, watch, cancel the one-time setup; remove the built-in voice |
+| `GET /builtin/voices` | the built-in voice's voices |
+| `PUT /local`, `POST /local/probe` | save the voice app's address, model and voice; ask it what it has |
+| `PUT` and `DELETE /online/key`, `GET /online/voices` | keep or clear the online key; list its voices |
+| `POST /speak` | speak `{engine, text, voice, language, speed, model}`; answers the sound's id, voice, seconds and cues |
+| `GET` and `DELETE /audio/{id}` | the window fetches the spoken sound, then drops it |
+| `GET /transcribe/status` | whether listening is ready: the runtime, the model (Whisper base) and any download |
+| `POST /transcribe/setup`, `GET` and `DELETE /transcribe/job`, `DELETE /transcribe` | start, watch, cancel the one-time model download; remove the model |
+| `POST /transcribe?language=` | the body is a 16 kHz mono 16-bit WAV; answers the language, the seconds and phrases `{start, end, text}` in seconds (up to 256 MB of body) |
+
+The rule: the engine process never imports the Kokoro packages (`kokoro_onnx`, `numpy`, `onnxruntime`). They run in the voice's own runtime as a separate program, because the loader they use brings eSpeak NG under GPL terms, and importing them would put that into the frozen engine. The same rule holds for listening: `services/voice_transcribe.py` runs Whisper base in the voice's own runtime (`voice_runtime.runtime_python()`), with the model in `voice/listen/whisper-base`, so the engine process never imports `numpy` or `onnxruntime` for it either, and listening needs the built-in voice set up first.

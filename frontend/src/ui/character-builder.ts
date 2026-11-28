@@ -13,7 +13,9 @@ import { floorOf } from '../engine/guides';
 import { newMovie } from '../engine/model';
 import type { Renderer } from '../engine/render';
 import type { Movie } from '../engine/types';
-import { placeCharacter, type CharacterSource, type CharactersPanel } from './characters-panel';
+import { charactersApi } from '../io/characters-api';
+import { reducedMotion } from './a11y';
+import { placeCharacter, unpackCharacter, type CharacterSource, type CharactersPanel } from './characters-panel';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setDisabled, setHidden, setText, setTitle, setValue } from './dom';
 import { onLanguage, t } from './i18n';
@@ -132,8 +134,18 @@ export class CharacterBuilder {
   private readonly thumbsFor = new Map<HTMLCanvasElement, string>();
   private busy = false;
   private floor = '';
+  /** The person's saved characters that carry a recipe, oldest first, so a new save lands at the end of the group. */
+  private readonly mine = new Map<string, { spec: CastSpec; tile: Tile }>();
+  /** Recipes read from the library, by name and modified time; null for a saved character without one. */
+  private readonly recipes = new Map<string, CastSpec | null>();
+  private mineAt: string | null = null;
+  private mineGen = 0;
+  private opening = false;
 
   private readonly rosterBox: HTMLElement;
+  private readonly mineHead: HTMLElement;
+  private readonly mineGrid: HTMLElement;
+  private readonly mineNote: HTMLElement;
   private readonly rosterGrids = new Map<Group, HTMLElement>();
   private readonly rosterTiles = new Map<string, Tile>();
   private readonly stageName: HTMLElement;
@@ -185,6 +197,13 @@ export class CharacterBuilder {
     this.lab(this.rosterBox, 'Presets', 'aria-label');
     this.lab(this.canvas, 'Character preview', 'aria-label');
 
+    // the person's own first, so a saved character has a place of its own and is the first thing in the list
+    this.mineHead = this.lab(el<HTMLElement>('<h3 class="fm-cb-h"></h3>'), 'Mine');
+    // while empty: a placeholder tile and the note fill one tile row, so the first saved tile takes its place unmoved
+    this.mineGrid = el<HTMLElement>('<div class="fm-cb-rgrid fm-cb-mine"><div class="fm-cb-mine-note"><button type="button" class="fm-cb-tc fm-cb-rc fm-cb-mine-ghost" tabindex="-1" aria-hidden="true" disabled><i></i><span>&nbsp;</span></button><p></p></div></div>');
+    this.mineNote = q(this.mineGrid, '.fm-cb-mine-note');
+    this.lab(q(this.mineNote, 'p'), 'Characters you save appear here.');
+    this.rosterBox.append(this.mineHead, this.mineGrid);
     for (const [g, name] of GROUPS) {
       const h = el<HTMLElement>('<h3 class="fm-cb-h"></h3>');
       this.lab(h, name);
@@ -389,9 +408,9 @@ export class CharacterBuilder {
 
   /** Opens on a fresh recipe: the first preset, or the one last picked. */
   open(): void {
-    if (this.dlg.isOpen) return;
+    if (this.dlg.isOpen || this.opening) return;
     this.editing = null;
-    if (this.presetAt < 0 && this.presetSpecs.length) { this.presetAt = 0; this.base = clone(this.presetSpecs[0]); this.spec = clone(this.base); }
+    if (this.presetAt < 0 && !this.mineAt && this.presetSpecs.length) { this.presetAt = 0; this.base = clone(this.presetSpecs[0]); this.spec = clone(this.base); }
     this.show();
   }
 
@@ -399,8 +418,10 @@ export class CharacterBuilder {
     const i = this.presets.findIndex((p) => p.id === id);
     if (i < 0) { this.open(); return; }
     if (this.dlg.isOpen) { if (!this.editing) this.pick(id); return; }
+    if (this.opening) return;
     this.editing = null;
     this.presetAt = i;
+    this.mineAt = null;
     this.base = clone(this.presetSpecs[i]);
     this.spec = clone(this.base);
     this.show();
@@ -408,18 +429,29 @@ export class CharacterBuilder {
 
   /** Opens on a character of the movie whose recipe is known; Apply rebuilds it from the edited recipe. */
   edit(charId: string): void {
-    if (this.dlg.isOpen) return;
+    if (this.dlg.isOpen || this.opening) return;
     const g = this.engine.selected.find((c) => c.id === charId) ?? null;
     const spec = g?.character?.build;
     if (!g || !spec) return;
     this.editing = charId;
     this.presetAt = -1;
+    this.mineAt = null;
     this.base = clone(spec);
     this.spec = clone(spec);
     this.show();
   }
 
+  /** Opens once the saved characters are listed (or after a short wait), so the Mine group does not grow above the
+   *  presets while the person looks. */
   private show(): void {
+    if (this.opening) return;
+    this.opening = true;
+    const wait = new Promise<void>((ok) => window.setTimeout(ok, 600));
+    void Promise.race([this.loadMine(), wait]).then(() => { this.opening = false; this.reveal(); });
+  }
+
+  private reveal(): void {
+    if (this.dlg.isOpen) return;
     for (const [n, en] of this.labels) this.relabel(n, en);
     setHidden(this.applyBtn, !this.editing);
     setClass(this.addBtn, 'cv-btn-primary', !this.editing);
@@ -505,9 +537,90 @@ export class CharacterBuilder {
     const i = this.presets.findIndex((p) => p.id === id);
     if (i < 0) return;
     this.presetAt = i;
+    this.mineAt = null;
     this.base = clone(this.presetSpecs[i]);
     this.spec = clone(this.base);
     this.changed();
+  }
+
+  /** A saved character opened again: its recipe as saved, which Reset goes back to. */
+  private pickMine(name: string): void {
+    const m = this.mine.get(name);
+    if (!m) return;
+    this.presetAt = -1;
+    this.mineAt = name;
+    this.base = clone(m.spec);
+    this.spec = clone(this.base);
+    this.changed();
+  }
+
+  /** Reads the library's list and the recipe of each saved character not read before, then patches the Mine tiles in
+   *  place: oldest first, a tile moved only when its place changed. */
+  private async loadMine(): Promise<void> {
+    const gen = this.mineGen;
+    let items: Array<{ name: string; modified: number }>;
+    try { items = (await charactersApi.list()).items.slice().reverse(); } catch { this.syncMine(); return; }
+    const list: Array<{ name: string; spec: CastSpec }> = [];
+    for (const c of items) {
+      const key = `${c.name}\n${c.modified}`;
+      if (!this.recipes.has(key)) {
+        let spec: CastSpec | null = null;
+        try { spec = (await unpackCharacter(await charactersApi.read(c.name))).group.character?.build ?? null; } catch { spec = null; }
+        this.recipes.set(key, spec);
+      }
+      const spec = this.recipes.get(key);
+      if (spec) list.push({ name: c.name, spec });
+    }
+    // a save while this read ran is newer than the list read here
+    if (gen !== this.mineGen) return;
+    const keep = new Set(list.map((x) => x.name));
+    for (const [name, m] of this.mine) if (!keep.has(name)) { m.tile.btn.remove(); this.mine.delete(name); }
+    if (this.mineAt && !keep.has(this.mineAt)) this.mineAt = null;
+    list.forEach((x, i) => this.mineTile(x.name, x.spec, i));
+    this.syncMine();
+  }
+
+  /** One Mine tile, made on first use and placed at `at` (the end when omitted); its head redrawn from the recipe. */
+  private mineTile(name: string, spec: CastSpec, at = -1): Tile {
+    let m = this.mine.get(name);
+    if (!m) {
+      const tile = this.tile(HEAD_PX, HEAD_PX, name, true);
+      tile.btn.classList.add('fm-cb-rc');
+      tile.btn.dataset.mine = name;
+      tile.btn.addEventListener('click', () => this.pickMine(tile.btn.dataset.mine ?? ''));
+      m = { spec, tile };
+      this.mine.set(name, m);
+    }
+    const drawn = JSON.stringify(m.spec) === JSON.stringify(spec) && m.tile.btn.isConnected;
+    m.spec = clone(spec);
+    setTitle(m.tile.btn, spec.tag ? `${name} · ${t(spec.tag)}` : name);
+    // tiles stay ahead of the empty note, the grid's last child
+    const ref = at < 0 ? null : this.mineGrid.children[at] ?? null;
+    if (at < 0 ? m.tile.btn.parentElement !== this.mineGrid : ref !== m.tile.btn) this.mineGrid.insertBefore(m.tile.btn, ref ?? this.mineNote);
+    if (!drawn) drawThumb(m.tile.cv, spec, 'head');
+    return m.tile;
+  }
+
+  private syncMine(): void {
+    setHidden(this.mineNote, this.mine.size > 0);
+    for (const [name, m] of this.mine) this.press(m.tile.btn, this.mineAt === name);
+  }
+
+  /** After Save to Characters: the saved character listed in Mine at once, marked as the one being worked on and
+   *  scrolled into view in the roster. */
+  private savedMine(item: { name: string; modified: number }, spec: CastSpec): void {
+    this.mineGen++;
+    this.recipes.set(`${item.name}\n${item.modified}`, spec);
+    const tile = this.mineTile(item.name, spec);
+    this.presetAt = -1;
+    this.mineAt = item.name;
+    this.base = clone(spec);
+    this.sync();
+    const box = this.rosterBox.getBoundingClientRect(), r = tile.btn.getBoundingClientRect();
+    if (r.top >= box.top && r.bottom <= box.bottom) return;
+    const head = this.mineHead.getBoundingClientRect().height;
+    const top = Math.max(0, this.rosterBox.scrollTop + (r.top - box.top) - head - 16);
+    this.rosterBox.scrollTo({ top, behavior: reducedMotion() ? 'auto' : 'smooth' });
   }
 
   /** The studio's Randomize: hair, its colour and the outfit at random, a human's skin from the human tones, and the
@@ -566,6 +679,7 @@ export class CharacterBuilder {
     setHidden(this.hairNote, !note);
     this.outfitTiles.forEach((tl, i) => this.press(tl.btn, c.outfit === i));
     for (const [id, tl] of this.rosterTiles) this.press(tl.btn, this.presetAt >= 0 && this.presets[this.presetAt]?.id === id);
+    this.syncMine();
     const of = OUTFITS[c.outfit], col = c.colors[c.outfit] ?? of.def;
     setText(this.colHead, tf('{outfit} colors', { outfit: t(of.name) }));
     this.cols.forEach((x, i) => { setValue(x.input, col[i]); const s = tw(of.labels[i]); setText(x.label, s); if (x.input.getAttribute('aria-label') !== s) x.input.setAttribute('aria-label', s); });
@@ -660,17 +774,20 @@ export class CharacterBuilder {
       const name = this.spec.name;
       const src = await this.made(m);
       const id = await placeCharacter(this.engine, this.deps.renderer, src, 'playhead', floorOf(this.engine.movie?.guides));
-      if (id) toast(tf('{name} added to the movie.', { name }));
+      // placed: the builder's work is done, so it closes onto the Stage where the character now stands
+      if (id) { toast(tf('{name} added to the movie.', { name })); this.dlg.close(); }
     });
   }
 
-  /** Save to Characters: into Mine, the recipe kept with it so it opens here again. */
+  /** Save to Characters: into Mine, the recipe kept with it so it opens here again; listed in the roster at once. */
   private save(): Promise<void> {
     return this.run(async () => {
       const m = this.engine.movie ?? newMovie({ width: 1920, height: 1080 });
+      const spec = clone(this.spec);
       const src = await this.made(m);
       await this.preload(src.assets);
-      await this.deps.characters.save(src.group, src);
+      const item = await this.deps.characters.save(src.group, src);
+      if (item && this.dlg.isOpen) this.savedMine(item, spec);
     });
   }
 

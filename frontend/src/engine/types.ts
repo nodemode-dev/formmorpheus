@@ -394,8 +394,6 @@ export interface Track {
   locked?: true;
   /** Fixed to the screen: the movie camera does not move this track (titles, overlays). */
   screen?: true;
-  /** The subtitles track: its text blocks are the movie's subtitle lines (engine/subtitles.ts). At most one track has it. */
-  subtitles?: true;
   /** Parallax depth: how far the camera's pan and zoom move this track (1 or absent: normally, 0: not at all, 2: twice as far). */
   depth?: number;
   /** Sound only: the track's sound is silenced (mute) or alone heard (solo, when any track has it). Absent: off. */
@@ -422,9 +420,17 @@ export interface Asset {
   hasAudio?: boolean;
   /** Sound recorded in the app (a voice-over take): stored as 16-bit PCM WAV; `take` groups the takes made from one start frame. */
   recorded?: { take: number; start: number };
+  /** Sound an AI voice spoke: the words, which voice said them, and the seconds each sentence takes inside the sound (empty when the voice gave no timing). */
+  spoken?: { text: string; engine: 'builtin' | 'local' | 'online'; voice: string; cues: Array<{ start: number; end: number; text: string }> };
   /** Fonts: the family name registered for Text content. */
   family?: string;
 }
+
+/** One subtitle line: shown from movie frame `start` up to, not including, `end`. `from` is the sound block it was made from, so making them again replaces only those. */
+export interface SubtitleCue { id: string; start: number; end: number; text: string; from?: string }
+/** The one look of every subtitle. `size` is a percent of the movie's height; `font` is a family as the Text card names it. */
+export interface SubtitleStyle { font: string; size: number; position: 'top' | 'middle' | 'bottom'; color: string; band: boolean }
+export interface Subtitles { show: boolean; style: SubtitleStyle; cues: SubtitleCue[] }
 
 export interface OnionSettings {
   enabled: boolean;
@@ -478,6 +484,8 @@ export interface Movie {
   guides?: import('./guides').Guides;
   /** Movie-wide motion blur (engine/fx/motion-blur.ts); a content's own Motion Blur lane overrides it. Absent: off. */
   motionBlur?: { on: boolean; shutter: number; samples: number };
+  /** Subtitles (engine/subtitles.ts): the lines, their one look, and whether the video shows them. Absent: none. */
+  subtitles?: Subtitles;
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;

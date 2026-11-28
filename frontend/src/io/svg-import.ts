@@ -21,7 +21,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const IDENT: Mat = [1, 0, 0, 1, 0, 0];
 
 /** One path of a part in the SVG's own pixels (viewBox applied): anchors absolute, handles relative. */
-export interface SvgShape { name: string; nodes: BezNode[]; closed: boolean; fill: ShapePaint | null; stroke: ShapeStroke | null }
+export interface SvgShape { name: string; nodes: BezNode[]; closed: boolean; fill: ShapePaint | null; stroke: ShapeStroke | null; hidden?: boolean }
 
 export interface SvgPart {
   name: string;
@@ -41,6 +41,8 @@ export interface SvgPart {
   markup: string;
   /** When the part's groups are a mouth chart: one drawing per group, and the part becomes their Flipbook. */
   frames?: SvgPart[];
+  /** Where it is painted: the document position of its first own element (its group's when it has none). */
+  z?: number;
 }
 
 export interface SvgDoc { width: number; height: number; parts: SvgPart[] }
@@ -372,7 +374,7 @@ interface Ctx {
   height: number;
 }
 
-interface PartWork { part: SvgPart; el: Element; outer: Mat; outerStyle: Style; cut: Element[] }
+interface PartWork { part: SvgPart; el: Element; outer: Mat; outerStyle: Style; cut: Element[]; first?: Element }
 
 function styleOf(cx: Ctx, el: Element, parent: Style): Style {
   const s: Style = {};
@@ -548,7 +550,8 @@ function own(cx: Ctx, w: PartWork, container: Element, m0: Mat, st0: Style, nest
   for (const el of kids(container)) {
     if (!isSvg(el) || DEFS.has(el.localName) || QUIET.has(el.localName)) continue;
     const st = styleOf(cx, el, st0);
-    if (st.display === 'none' && (el.localName !== 'g' || isPivot(el))) continue;
+    const drawn = DRAWN.has(el.localName);
+    if (st.display === 'none' && ((el.localName !== 'g' && !drawn) || isPivot(el))) continue;
     const m = mul(m0, transformOf(el.getAttribute('transform')));
     if (isPivot(el)) {
       w.part.pivot = geometryCentre(cx, el, m);
@@ -556,31 +559,41 @@ function own(cx: Ctx, w: PartWork, container: Element, m0: Mat, st0: Style, nest
       continue;
     }
     if (el.localName === 'g') { nested.push([el, m0, st0, st]); w.cut.push(el); continue; }
-    if (cx.styled.has(el)) w.part.raster ??= 'a complex style rule';
-    if (el.localName === 'a') { own(cx, w, el, m, st, nested); continue; }
-    if (st.visibility === 'hidden' || st.visibility === 'collapse') continue;
-    if (DRAWN.has(el.localName)) {
-      const r = drawElement(cx, el, m, st);
+    const unseen = st.visibility === 'hidden' || st.visibility === 'collapse';
+    if (drawn) {
+      // a shape hidden in the file (display, visibility, or no opacity, as vector apps hide one) is kept as a hidden shape
+      const zero = opacity(st.opacity) === 0;
+      const off = unseen || zero || st.display === 'none';
+      const r = drawElement(cx, el, m, zero ? { ...st, opacity: '1' } : st);
+      w.first ??= el;
+      if (off) { if (!('why' in r)) w.part.shapes.push(...r.shapes.map((s) => ({ ...s, hidden: true }))); continue; }
+      if (cx.styled.has(el)) w.part.raster ??= 'a complex style rule';
       if ('why' in r) w.part.raster ??= r.why;
       else w.part.shapes.push(...r.shapes);
       continue;
     }
+    if (cx.styled.has(el)) w.part.raster ??= 'a complex style rule';
+    if (el.localName === 'a') { own(cx, w, el, m, st, nested); continue; }
+    if (unseen) continue;
+    w.first ??= el;
     w.part.raster ??= WHY[el.localName] ?? 'an element that is not a shape';
   }
 }
 
 function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style, parent: number, above: number, out: PartWork[]): void {
   const m = mul(outer, transformOf(el.getAttribute('transform')));
+  // no opacity at all is how some vector apps hide a layer: a hidden part, drawn whole when shown again
+  const zero = opacity(st.opacity) === 0;
   const part: SvgPart = {
     name: uniqueName(cx, labelOf(el) ?? `Part ${cx.parts.length + 1}`),
     parent, shapes: [], raster: null, pivot: null,
-    opacity: opacity(st.opacity) * above,
-    hidden: st.visibility === 'hidden' || st.visibility === 'collapse' || st.display === 'none',
+    opacity: (zero ? 1 : opacity(st.opacity)) * above,
+    hidden: zero || st.visibility === 'hidden' || st.visibility === 'collapse' || st.display === 'none',
     markup: '',
   };
   if (st.display === 'none') part.undisplayed = true;
   // a hidden part keeps its art: the flag hides it, and only what is hidden inside it stays out
-  if (part.hidden) { st = { ...st }; delete st.visibility; delete st.display; }
+  if (part.hidden) { st = { ...st }; delete st.visibility; delete st.display; if (zero) delete st.opacity; }
   if (has(st.filter)) part.raster = 'a filter';
   else if (has(st.mask)) part.raster = 'a mask';
   else if (has(st['clip-path'])) part.raster = 'a clipping path';
@@ -592,6 +605,7 @@ function makePart(cx: Ctx, el: Element, outer: Mat, outerStyle: Style, st: Style
   if (el.localName === 'g' || el.localName === 'a') own(cx, w, el, m, st, nested);
   else {
     // a loose element at the top is a part of its own
+    w.first = el;
     const r = DRAWN.has(el.localName) ? drawElement(cx, el, m, st) : { why: WHY[el.localName] ?? 'an element that is not a shape' };
     if ('why' in r) part.raster = r.why; else part.shapes.push(...r.shapes);
   }
@@ -616,7 +630,8 @@ function top(cx: Ctx, container: Element, m0: Mat, st0: Style, above: number, ou
   for (const el of kids(container)) {
     if (!isSvg(el) || DEFS.has(el.localName) || QUIET.has(el.localName)) continue;
     const st = styleOf(cx, el, st0);
-    if (st.display === 'none' && el.localName !== 'g') continue;
+    // a loose shape not displayed stays in its run, read as a hidden shape
+    if (st.display === 'none' && el.localName !== 'g' && !DRAWN.has(el.localName)) continue;
     if (!DRAWN.has(el.localName)) { run = null; runs.push([[el, st]]); continue; }
     if (!run) { run = []; runs.push(run); }
     run.push([el, st]);
@@ -714,6 +729,21 @@ export function parseSvgParts(text: string, name?: string): SvgDoc {
   } else top(cx, root, m0, rootStyle, 1, work);
   const loose = work.filter((w) => w.el.hasAttribute('data-fm-loose'));
   if (name && loose.length === 1) { cx.names.delete(loose[0].part.name); loose[0].part.name = uniqueName(cx, name); }
+  // document order is paint order: each part stacks where its own art is painted, not after the part it sits in
+  const pos = new Map<Element, number>();
+  Array.from(root.querySelectorAll('*')).forEach((el, i) => pos.set(el, i));
+  for (const w of work) w.part.z = pos.get(w.first ?? w.el) ?? pos.get(w.el);
+  // a part written outside its parent's group to keep that order names its parent (the export's data-fm-parent)
+  const index = new Map<string, number>();
+  cx.parts.forEach((p, i) => { if (!index.has(p.name)) index.set(p.name, i); });
+  for (const w of work) {
+    const up = w.el.getAttribute('data-fm-parent')?.trim();
+    const i = cx.parts.indexOf(w.part), to = up ? index.get(up) : undefined;
+    if (i < 0 || to === undefined || to === i) continue;
+    let loop = false;
+    for (let p = to, k = 0; p >= 0 && k <= cx.parts.length; p = cx.parts[p].parent, k++) if (p === i) { loop = true; break; }
+    if (!loop) w.part.parent = to;
+  }
   for (const w of work) w.part.markup = markupOf(cx, w, xml);
   return { width, height, parts: cx.parts };
 }
@@ -767,7 +797,7 @@ function shapeContent(s: SvgShape, f: Fit, dur: number): Content {
   const nodes = s.nodes.map((n) => ({ x: mx(n.x), y: my(n.y), ix: n.ix * f.k, iy: n.iy * f.k, ox: n.ox * f.k, oy: n.oy * f.k }));
   const stroke = s.stroke ? { ...s.stroke, width: s.stroke.width * f.k, ...(s.stroke.dash ? { dash: s.stroke.dash * f.k, gap: (s.stroke.gap ?? 0) * f.k } : {}), ...(s.stroke.dashOffset ? { dashOffset: s.stroke.dashOffset * f.k } : {}) } : null;
   const def: ShapeDef = refitPath({ type: 'path', w: 0, h: 0, fill: s.fill, stroke, nodes, closed: s.closed });
-  return makeContent('shape', 0, dur, { name: s.name, shape: def });
+  return makeContent('shape', 0, dur, { name: s.name, shape: def, ...(s.hidden ? { hidden: true as const } : {}) });
 }
 
 /** Bounding box of contents in movie pixels from the top-left (shapes by outline, pictures by canvas). */
@@ -824,7 +854,10 @@ export async function svgToCharacterGroup(src: string | SvgDoc, fileName: string
   const made: Content[] = [];
   for (const p of doc.parts) made.push(await partContent(p, doc, f, dur, assets));
   const name = baseOf(fileName);
-  const tracks = made.map((c) => makeTrack(c.name, [c])).reverse();
+  // stacked as the file paints them (a part inside another's group can be painted under that part's own art)
+  const zs = doc.parts.map((p, i) => p.z ?? i);
+  const stack = made.map((_, i) => i).sort((a, b) => zs[a] - zs[b] || a - b);
+  const tracks = stack.map((i) => makeTrack(made[i].name, [made[i]])).reverse();
   let group = makeContent('group', at, dur, { name, tracks });
   const all = boxOfContents(made, f);
   if (all) group.pivot = { x: +((all[0] + all[2]) / 2 - f.W / 2).toFixed(2), y: +((all[1] + all[3]) / 2 - f.H / 2).toFixed(2) };

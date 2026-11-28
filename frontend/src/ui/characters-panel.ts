@@ -405,26 +405,30 @@ export class CharactersPanel {
     }
   }
 
-  /** Save to Characters: the selected character into the library, under a free name unless the person replaces one. */
-  async save(g: Content, made?: Omit<CharacterSource, 'group'>): Promise<void> {
-    if (!g.character) return;
+  /** Save to Characters: the selected character into the library, under a free name unless the person replaces one.
+   *  Resolves to the saved entry (null when cancelled or failed), so the Character Builder can list it at once. */
+  async save(g: Content, made?: Omit<CharacterSource, 'group'>): Promise<CharacterItem | null> {
+    if (!g.character) return null;
     const base = freeName(g.character.name || g.name, []);
     let taken: CharacterItem[];
-    try { taken = (await charactersApi.list()).items; } catch (e) { toast(e instanceof Error ? e.message : t('The Characters library could not be read.'), 'error'); return; }
+    try { taken = (await charactersApi.list()).items; } catch (e) { toast(e instanceof Error ? e.message : t('The Characters library could not be read.'), 'error'); return null; }
     let name = base;
     if (taken.some((c) => c.name.toLowerCase() === base.toLowerCase())) {
       const replace = await chooseOrCancel(t('Save to Characters'), tf('A character named {name} is already saved. Replace it, or keep both?', { name: base }), t('Replace'), t('Keep Both'), true);
-      if (replace === null) return;
+      if (replace === null) return null;
       if (!replace) name = freeName(base, taken.map((c) => c.name));
     }
+    let item: CharacterItem | null = null;
     try {
       const data = await packCharacter(this.engine, this.deps.renderer, g, made);
-      await charactersApi.write(name, data);
+      item = await charactersApi.write(name, data);
       toast(tf('{name} saved to Characters.', { name }));
     } catch (e) {
       toast(e instanceof Error ? e.message : t('The character could not be saved.'), 'error');
     }
-    if (this.isOpen) await this.refresh();
+    // read even while closed, so the panel opens with the new row instead of growing it a moment later
+    await this.refresh();
+    return item;
   }
 
   /** Use as Mouth Chart: a mouth chart SVG the person picks becomes the character's mouth, in one undo step. */

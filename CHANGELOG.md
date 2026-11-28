@@ -2,31 +2,73 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
-## 0.32.0 · 2026-11-27
+## 0.35.0 · 2026-11-27
 
-A voice made from typed words, and subtitles in the video.
+The new cards speak your language, and the manual answers the questions of a first session.
+
+### Improved
+- AI Voice, Subtitles and the menus and notices added since 0.31.0 are now in all 27 languages the app has, not in English only.
+- The manual says where the data folder is on Windows, macOS and Linux, and that it is not the folder the app is installed in.
+- The manual has a short walkthrough, Make a character talk: a voice from a recording, a sound file or AI Voice, then Lip-sync, then subtitles, and which of those steps happen by themselves.
+- The manual explains Frame A and Frame B in the Character Builder, how to start a new character from an existing one through an SVG, what Theater is, and how track order decides what is in front.
+
+## 0.34.0 · 2026-11-27
+
+Fixes from a tester's first session with Movie projects: the selection box, the right-click menu, actions, the Character Builder, the SVG round trip and starter scenes.
 
 ### New
-- Generate voice... turns typed words into a sound block at the Playhead, on a new track named Voice, in one undo step. It is under Create · More and under Content · Add.
-- The built-in voice makes the speech on your own computer, with 28 voices (US and UK, female and male) and a speed from 0.5x to 2x. It speaks English only.
-- The built-in voice's files are not part of the app. Download fetches them once, 114 MB in 34 files, only when you ask. The card shows their licence, Apache-2.0, before you download.
-- Every downloaded file is checked against its SHA-256 before it is kept. The files live in the data folder under `speech/`, and Remove the voice files on the same card deletes them.
-- Making a voice takes a moment: a two-sentence voice 5.7 seconds long took about 10 seconds on an Apple silicon Mac. The card shows which sentence it is on, and Cancel or Esc stops it.
-- A word that no pronunciation dictionary has is spelled out letter by letter, and the card lists those words so you can write them the way they sound.
-- Numbers, money, percentages and clock times are read as words, whole numbers up to 999 trillion. A four-digit number from 1100 to 2099 written without a comma is read as a year.
-- The Speech server tab sends the words to a speech server that you run on this computer, which is how a voice cloned in another app is used. Use only voices you have the right to use.
-- The speech server's address must be on this computer (127.0.0.1, localhost or [::1]), and the server must speak the common `/v1/audio/speech` JSON interface. Check asks the server and lists its models.
-- Subtitles... opens the Subtitles card, where you type timed lines, add a line at the Playhead, and turn all of them on or off with Show subtitles in the video.
-- One style for every subtitle line: Font, Size, Position, Color and Dark band behind the words.
-- Add subtitles on the Generate voice card writes a line for each sentence, timed to the built-in voice sentence by sentence.
-- Make subtitles from this sound writes lines for the selected sound block by speech to text on your own computer. Its files are also downloaded only when you ask, 76 MB in 7 files, checked the same way, and removable from the same card. The card shows their licence too, Apache-2.0, as the publisher of the downloaded files states it.
-- Speech to text does not detect the language: you choose it. Its lines are timed per phrase, not per word.
-- Import subtitles file... and Export subtitles file... read and write `.srt` files. A file larger than 5 MB is not read.
-- Subtitles are ordinary text blocks on a track named Subtitles, on top of the movie and fixed to the screen. They show on the Stage and in the export, and each line can be edited like any text.
-- The Generate voice and Subtitles cards are in English in this version, whatever the interface language.
-- The built-in voice, the speech server and speech to text use the engine on a computer. The iPad app's engine does not serve them, so on iPad Generate voice... is not offered and the Subtitles card comes without its From sound part; typed lines, their style and subtitle files stay.
-- The manual has sections on Generated voice and Subtitles, with a section New in 0.32.0.
-- `NOTICE.md` credits what the built-in voice and the speech to text model are made of, each with its licence, and states that no GPL part is used, bundled or downloaded for it.
+- Right-click on content on the Stage opens that content's menu. Before, only the Stage's own menu opened.
+- The content menu has Apply Action... for a character, which opens the action list where you clicked, and an Arrange group: Bring to Front, Bring Forward, Send Backward and Send to Back. Each moves the content's track and is one undo step.
+- After an action is applied or swapped it plays once from its start and the Playhead goes back. A notice and the status line say "{action} applied to {character}".
+- An action's strip on the Timeline can be made longer or shorter by dragging either edge, on a selected character block. A loop plays for the new length, a one-shot is cut when shortened and holds its last pose when made longer, and a strip stops at a neighbouring action. One undo step, Action Length.
+- Content, Add, Add Starter Scene to This Movie... puts a starter scene's backdrop and props behind everything in the movie that is open, fitted to its size, in one undo step. The floor guide is taken only when the movie has none.
+
+### Improved
+- The Character Builder's roster starts with a group, Mine, that lists the characters you saved. Save to Characters shows the new one there at once, marked, and picking one opens it again. Add to Movie now closes the builder.
+- In the starter scene chooser a click picks a card and the button (Create, or Add to Movie) takes it. A double click takes it at once.
+- The Theater button has a back chevron and says "Theater: back to your movies" with its shortcut.
+- A menu is never taller than the window and scrolls inside itself, and long menus use compact rows.
+
+### Fixed
+- The selection box of a character, a drawing and other content was nearly as big as the movie frame. It now hugs what is drawn: the character, or the drawing's ink.
+- A click on empty Stage inside an old big box selected that content, and a drag on the selected content could select something else instead. A click now picks what is under the pointer, and a drag that starts on the selected content moves it.
+- Side nodes on a character or group squeezed it. They now scale it whole and keep its proportions (Alt still stretches one way).
+- A character's block on the Timeline showed grey lines instead of the character. It now shows the character's picture along the block, like a drawing or a picture does.
+- Block names on the Timeline were hard to read in the light themes. They now sit on a plate in the panel's own colour.
+- Choosing a command in the command search with Enter also pressed whatever the command gave focus to, so a card such as Characters opened and closed at once. The Enter now ends at the search.
+- Movie settings was cut off at the right edge. Nothing is cut off now, and long labels wrap.
+- Character as SVG for Vector App wrote parts in the wrong order, so back hair could land in front of the face, and importing the file back dropped parts and shapes hidden in the vector app. The file now lists the parts back to front as the Stage draws them, and the import keeps that order and keeps hidden parts and shapes hidden.
+
+## 0.33.0 · 2026-11-27
+
+Subtitles: tick one box and the words of your movie are drawn on the Stage and in every export.
+
+### New
+- A new Subtitles card (Content, Add, Subtitles..., and under More in the Create card). Tick Show subtitles in the video and the lines are drawn on the Stage and in every export.
+- One look for all lines: font, size, position (top, middle or bottom), text color, and a dark band behind the words. Each change is one undo step.
+- AI voices add their subtitles by themselves when they speak, from the words and sentence timing each spoken sound already keeps. From AI voices makes them again for sounds spoken earlier.
+- Subtitles from a recording or a sound file: select its block on the Timeline and press Subtitles from this sound. Listening runs on this computer in the built-in voice's runtime with a model of its own, a one-time download from the card, and your sound is sent nowhere.
+- Lines can be edited in the card (text, start and end), added at the Playhead and deleted, each one an undo step.
+- Import a .srt or .vtt file, and export the lines as .srt or .vtt.
+- Agents can read a movie's subtitles (`list_subtitles`) and ask you to change them (`set_subtitles`, which asks first in the window).
+
+### Known issues
+- The Subtitles card's labels are in English only for now.
+
+## 0.32.0 · 2026-11-27
+
+AI Voice: type what to say, choose a voice and press Speak, and the spoken sound lands on the Timeline.
+
+### New
+- A new AI Voice card (Content, Add, AI Voice..., and under More in the Create card, next to Record sound...). Type the words, choose a voice and press Speak: the sound lands on the Timeline at the Playhead on a sound track, like any sound, so fades, pan, Lip-sync onto a character's mouth and export all work on it.
+- A built-in voice that works offline. Kokoro runs on this computer with no account and no internet after a one-time setup from the card, which needs Python 3.10 to 3.13 on the computer and downloads the voice model, about 340 MB, checking the download. It has 54 voices with American and British English first, a speed from 0.5 to 2, and the card can remove it again.
+- Any voice app on this computer that answers the common speech API can speak, which is how a cloned voice is used: clone the voice in that app, start it, press Check in the card and pick its model and voice. The default address is http://127.0.0.1:8080, and only an address on this computer is accepted.
+- An online voice (ElevenLabs) on the card's Online tab, with your own key kept in the system keychain and text of up to 2000 characters. Your text is sent to that service only when you press Speak on this tab.
+- Each spoken sound remembers its words and the timing of each sentence inside the movie file, for the subtitles coming in the next version.
+- Agents can list the voices that are ready (`list_voices`) and ask you to speak a line onto a movie's Timeline (`add_voice`, which asks first in the window).
+
+### Known issues
+- Subtitles in the video are not in this version (they come in 0.33.0), and the new card's labels are in English only for now.
 
 ## 0.31.0 · 2026-11-25
 

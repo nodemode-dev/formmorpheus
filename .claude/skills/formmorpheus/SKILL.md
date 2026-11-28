@@ -1,6 +1,6 @@
 ---
 name: formmorpheus
-description: "Works with FormMorpheus, the Form family's animation studio (vanilla TypeScript and Vite interface in frontend/, Python 3.12 FastAPI engine in backend/, Tauri 2 shell in src-tauri/, an iPad build in ios/). Use when driving FormMorpheus through its MCP server (list, read, create, rename, duplicate, delete, restore, export or import movies), when reading or writing .fmo movie files or calling the engine's routes, when a question is about which exports the browser encodes and which need the person's ffmpeg, when building the iPad app, or when cutting a FormMorpheus release (version sites, changelog, release commit). Trigger on FormMorpheus, formmorpheus, .fmo, ./formmorpheus, port 9494 or 5194, the formmorpheus MCP tools (get_context, list_movies, get_movie, get_movie_picture, manage_movie, export_movie, import_file, list_characters, add_character, list_commands, run_command), the window key, the dock, or ios/project.yml. Routes to one sub-skill per area."
+description: "Works with FormMorpheus, the Form family's animation studio (Vite interface in frontend/, FastAPI engine in backend/, Tauri 2 shell in src-tauri/, iPad build in ios/). Use when driving FormMorpheus through its MCP server (list, read, create, rename, duplicate, delete, restore, export, import), when reading or writing .fmo movie files or calling the engine's routes, when a question is about which exports the browser encodes or need the person's ffmpeg, when adding an AI voice (voice-over, text to speech, narration), when adding subtitles or captions, when building the iPad app, or when cutting a release (version sites, changelog, release commit). Trigger on FormMorpheus, formmorpheus, .fmo, ./formmorpheus, port 9494 or 5194, the formmorpheus MCP tools (get_context, list_movies, get_movie, get_movie_picture, manage_movie, export_movie, import_file, list_characters, add_character, list_voices, add_voice, list_subtitles, set_subtitles, list_commands, run_command), the window key, the dock, or ios/project.yml."
 license: Apache-2.0
 metadata:
   author: nodemode-ai
@@ -22,6 +22,8 @@ Load the one sub-skill that matches the task. Each folder holds a `SUB-SKILL.md`
 | The `.fmo` file, the engine's routes, the window key and the library on disk | `sub-skills/fmo-and-engine` |
 | Driving the app as an agent through the MCP tools, consent and the window bridge | `sub-skills/mcp-tools` |
 | Export: what the browser encodes, what needs ffmpeg, where files land | `sub-skills/export` |
+| Giving a movie a spoken voice: list_voices, add_voice, the three engines, `/api/voice` | `sub-skills/ai-voice` |
+| Subtitles on a movie: list_subtitles, set_subtitles, lines from AI voices, .srt and .vtt, the style | `sub-skills/subtitles` |
 | Building and running the iPad app | `sub-skills/ipad-build` |
 | Cutting a release: version sites, changelog, commits | `sub-skills/releasing` |
 

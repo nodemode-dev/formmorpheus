@@ -6,9 +6,10 @@ import { fmactBlob, fmactName, readFmact } from '../io/fmact';
 import { groupCtx } from '../engine/group-ctx';
 import { srcFrame } from '../engine/retime';
 import { findContent } from '../engine/transform';
-import type { Content, Movie } from '../engine/types';
-import type { ActionPicker } from '../ui/action-picker';
-import { actPick } from '../ui/act-strips';
+import type { ActSpan, Content, Movie } from '../engine/types';
+import { locate } from '../engine/model';
+import { pickAt, type ActionPicker } from '../ui/action-picker';
+import { actLabel, actPick } from '../ui/act-strips';
 import type { Command } from '../ui/commands';
 import { promptName } from '../ui/dialogs';
 import { tf } from '../ui/i18n-fill';
@@ -66,8 +67,57 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
     if (!g || actPick.id !== g.id || !g.character?.acts?.[actPick.index]) return null;
     return { g, index: actPick.index };
   };
+  const skippedText = (skipped: string[]): string => (skipped.length ? tf('This character has no {parts}, so that part of the action was skipped.', { parts: skipped.join(', ') }) : '');
   const skippedNote = (skipped: string[]): void => {
-    if (skipped.length) d.note(tf('This character has no {parts}, so that part of the action was skipped.', { parts: skipped.join(', ') }));
+    if (skipped.length) d.note(skippedText(skipped));
+  };
+
+  // Play once: a placed action plays its span from its first frame, then the Playhead goes back and playback stops.
+  // Only seek and play: no undo step. A stop by the person ends it where they stopped.
+  let endOnce: (() => void) | null = null;
+  const playOnce = (m: Movie, g: Content, s: ActSpan, from: number): void => {
+    endOnce?.();
+    if (engine.playing) return;
+    const last = Math.max(0, m.duration - 1);
+    // a reversed or remapped block can run its frames backwards: never play longer than the span at the block's speed
+    const most = from + Math.ceil((s.to - s.from) / Math.max(0.01, Math.abs(g.speed ?? 1))) + 1;
+    let to = from;
+    while (to < last && to < most && charFrame(m, g, to) < s.to) to++;
+    if (to <= from) return;
+    const back = engine.frame;
+    let prev = from;
+    const offs: Array<() => void> = [];
+    const finish = (restore: boolean): void => {
+      for (const off of offs) off();
+      offs.length = 0;
+      endOnce = null;
+      if (restore) { engine.stop(); engine.seek(back); }
+    };
+    endOnce = () => finish(false);
+    engine.seek(from);
+    offs.push(engine.on('time', (f) => { if (f >= to || f < prev) { finish(true); return; } prev = f; }));
+    offs.push(engine.on('playing', (on) => { if (!on) finish(false); }));
+    engine.play();
+  };
+
+  /** After an apply or a swap: the notice names the action and the character, then the span plays once. */
+  const applied = (gid: string, index: number, from: number | null, skipped: string[]): void => {
+    const m = engine.movie;
+    const g = m ? findContent(m, gid) : null;
+    const s = g?.character?.acts?.[index];
+    if (!m || !g || !s) { skippedNote(skipped); return; }
+    const text = '{action} applied to {character}', vars = { action: actLabel(g, s.action), character: g.name };
+    engine.notice(text, 'info', vars);
+    const more = skippedText(skipped);
+    d.note(more ? `${tf(text, vars)} · ${more}` : tf(text, vars));
+    let at = from;
+    if (at === null) {
+      // a swap keeps the span's frames: find the movie frame its first frame shows at, inside the block when it is top level
+      const top = locate(m, g.id);
+      const lo = top ? g.start : 0, hi = top ? Math.min(m.duration, g.start + g.duration) : m.duration;
+      for (let f = lo; f < hi; f++) if (charFrame(m, g, f) >= s.from) { at = f; break; }
+    }
+    if (at !== null) playOnce(m, g, s, at);
   };
 
   const apply = (g: Content, actionId: string): void => {
@@ -79,18 +129,19 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
     const at = range ? range[0] : charFrame(m, g, engine.frame);
     const len = Math.max(1, Math.round(def.length * (def.fps ? m.fps / def.fps : 1)));
     const reps = range && def.loop ? loopPasses(len, range[1] - range[0]) : 1;
+    const startsAt = range && m.loopFrom !== undefined ? Math.round(m.loopFrom) : engine.frame;
     let skipped: string[] = [];
     if (engine.run('Apply Action', (mv) => { const r = applyAction(mv, g.id, actionId, at, reps, range ? range[1] : undefined); skipped = r.skipped; return r.movie; })) {
       const acts = selectedCharacter(engine)?.character?.acts ?? [];
       actPick.id = g.id;
       actPick.index = acts.findIndex((s) => s.from === at && s.action === actionId);
-      skippedNote(skipped);
+      applied(g.id, actPick.index, startsAt, skipped);
     }
   };
 
   const swap = (g: Content, index: number, actionId: string): void => {
     let skipped: string[] = [];
-    if (engine.run('Swap Action', (mv) => { const r = swapAction(mv, g.id, index, actionId); skipped = r.skipped; return r.movie; })) skippedNote(skipped);
+    if (engine.run('Swap Action', (mv) => { const r = swapAction(mv, g.id, index, actionId); skipped = r.skipped; return r.movie; })) applied(g.id, index, null, skipped);
   };
 
   const clear = (g: Content, index: number): void => {
@@ -108,7 +159,13 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
     picker.open(x, y, g.character, 'swap', s.action, (aid) => swap(g, index, aid), () => clear(g, index));
   };
 
-  const at = (): { x: number; y: number } => d.anchor();
+  // the content menu's row leaves the pointer in pickAt, so the card opens where the person right-clicked
+  const at = (): { x: number; y: number } => {
+    if (!Number.isFinite(pickAt.x) || !Number.isFinite(pickAt.y)) return d.anchor();
+    const p = { x: pickAt.x, y: pickAt.y };
+    pickAt.x = pickAt.y = Number.NaN;
+    return p;
+  };
 
   const commands: Command[] = [
     {

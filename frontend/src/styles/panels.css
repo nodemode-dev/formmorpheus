@@ -503,6 +503,11 @@
 .cv-menu-item:hover:not(:disabled), .cv-menu-item.is-focus:not(:disabled), .cv-menu-item:focus:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 10%, transparent); color: var(--text-primary); outline: none; }
 .cv-menu-item:hover:not(:disabled) .cv-menu-keys, .cv-menu-keys { color: color-mix(in srgb, var(--text-primary) 45%, transparent); font-size: 13px; letter-spacing: 0.04em; }
 .cv-menu-sep { height: 1px; margin: 6px 10px; background: color-mix(in srgb, var(--text-primary) 12%, transparent); }
+/* A menu never runs past the window: it hangs from under the menu bar, scrolls inside itself (arrow keys focus a row, which scrolls into view),
+   and one of sixteen or more rows takes the compact row height. */
+.cv-menu { max-height: calc(100vh - var(--ctl-xl) - var(--space-2)); scroll-padding-block: var(--space-1); }
+.cv-menu:has(> .cv-menu-item:nth-child(n + 16)) .cv-menu-item { height: var(--ctl-sm); font-size: var(--fs-13); }
+.cv-menu:has(> .cv-menu-item:nth-child(n + 16)) .cv-menu-sep { margin-block: var(--space-1); }
 .cv-brush-tip { cursor: grab; touch-action: none; }
 .cv-brush-tip:active { cursor: grabbing; }
 

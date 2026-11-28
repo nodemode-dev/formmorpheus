@@ -1,539 +1,676 @@
-// The Subtitles card: show or hide the movie's subtitles, restyle every line at once, edit the lines one by one,
-// make lines from the selected sound block by speech to text, and read or write a subtitles file. The lines are the
-// text blocks of the movie's subtitles track, so the list follows the movie (undo, a generated voice). Built once,
-// then patched in place.
+// The Subtitles card: whether the video shows its lines, their one look, the lines themselves, lines from AI voices or
+// from listening to a sound, and .srt and .vtt files. Built once, then patched in place; the lines are always read
+// from engine.movie, never kept here.
 import type { Engine } from '../engine/engine';
-import { end } from '../engine/model';
-import * as ops from '../engine/ops';
-import { findContent } from '../engine/transform';
-import { fromSrt, linesFromWords, readSubtitles, restyleSubtitles, showSubtitles, subtitleTrack, toSrt, writeSubtitles, type SubtitleStyle } from '../engine/subtitles';
-import type { Content, Movie } from '../engine/types';
-import { downloadBlob } from '../io/api';
-import { embedLibraryFamily, inLibrary } from '../io/fonts-library';
-import type { AudioEngine } from '../media/audio';
-import { ensureTextFont, fontCatalog, previewFont } from '../media/fonts';
-import { listen } from '../media/speech/listen';
-import { platform } from '../platform';
-import { ColourPanel } from './colour-panel';
-import { confirmAction } from './dialogs';
+import type { Content, Movie, SubtitleCue, SubtitleStyle } from '../engine/types';
+import { addCues, cueAt, cuesForSound, deleteCues, linesToCues, setCues, setSubtitleShow, setSubtitleStyle, subtitlesOf, updateCue, type TimedLine } from '../engine/subtitles';
+import { ApiError, downloadBlob } from '../io/api';
+import { parseSubtitles, writeSubtitles } from '../io/subtitle-files';
+import { voiceApi, type ListenStatus, type VoiceJob } from '../io/voice-api';
+import { soundForSpeech } from '../media/speech-pcm';
+import { chooseOrCancel } from './dialogs';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
-import { t, tn } from './i18n';
-import { tf } from './i18n-fill';
-import { icon } from './icons';
-import { MAX_SUBTITLE_FILE_BYTES, addEmptyLine, addLines, clampSpan, clearSpan, formatSeconds, lineBlocks, listenLanguages, monoSamples, parseSeconds, removeLine, sameSound, sampleRange, styleFromControls, unheardReason, type StyleControls } from './speech-logic';
-import { SpeechSetRow } from './speech-set-row';
-import { loadSubtitleStyle, saveSubtitleStyle } from './subtitle-style-store';
+import { t } from './i18n';
 import '../styles/subtitles.css';
 
-interface Row { id: string; start: number; end: number; text: string }
+type Position = SubtitleStyle['position'];
 
 const STORE = 'formmorpheus.subtitles';
-const X = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-const SIZES: ReadonlyArray<readonly [SubtitleStyle['size'], string]> = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']];
-const POSITIONS: ReadonlyArray<readonly [SubtitleStyle['position'], string]> = [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
-const FONT_GROUPS: ReadonlyArray<readonly ['bundled' | 'library' | 'movie' | 'system', string]> = [['bundled', 'Built in'], ['library', 'Fonts library'], ['movie', 'In this movie'], ['system', 'On this computer']];
-const NAME_CHARS = 80;
-const MOVED = 'Another movie was opened, so no lines were added.';
+const POLL_MS = 700;
+const NEW_SECONDS = 2;
+const LANGS: ReadonlyArray<readonly [string, string]> = [
+  ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'],
+  ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['uk', 'Ukrainian'], ['tr', 'Turkish'], ['ar', 'Arabic'],
+  ['hi', 'Hindi'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'],
+];
 
-const isAbort = (e: unknown): boolean => (e as { name?: unknown } | null)?.name === 'AbortError';
-const sentence = (e: unknown): string => (e instanceof Error && e.message ? e.message : t('Speech to text failed.'));
-const hexOf = (rgb: { r: number; g: number; b: number }): string => `#${[rgb.r, rgb.g, rgb.b].map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+const X = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const GO = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/><path d="M10 6l8 6-8 6z"/></svg>';
+const BIN = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>';
+
+const isAbort = (e: unknown): boolean => e instanceof DOMException && e.name === 'AbortError';
+const message = (e: unknown): string => (e instanceof ApiError || e instanceof Error ? e.message : String(e));
+const mb = (bytes: number): string => (bytes / 1048576).toFixed(0);
+const secs = (frame: number, fps: number): string => (frame / fps).toFixed(1);
+
+/** Seconds as typed: "12.5", "12,5" or "1:02.5". NaN when it is none of those. */
+function parseSeconds(raw: string): number {
+  const parts = raw.trim().replace(',', '.').split(':');
+  if (!parts.length || parts.length > 3 || parts.some((p) => !/^\d*\.?\d*$/.test(p) || p === '' || p === '.')) return NaN;
+  return parts.reduce((acc, p) => acc * 60 + Number(p), 0);
+}
+
+const isSound = (m: Movie, c: Content): boolean => {
+  const a = c.asset ? m.assets[c.asset] : undefined;
+  return !!a && (c.kind === 'audio' || (c.kind === 'video' && !!a.hasAudio));
+};
+
+/** Every block in the movie, groups included, each once. */
+function allContent(m: Movie): Content[] {
+  const out: Content[] = [];
+  const seen = new Set<string>();
+  const walk = (list: Content[]): void => {
+    for (const c of list) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+      for (const tr of c.tracks ?? []) walk(tr.content);
+    }
+  };
+  for (const tr of m.tracks) walk(tr.content);
+  return out;
+}
 
 function loadLanguage(): string {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE) ?? '{}') as { language?: unknown };
-    return typeof raw.language === 'string' && /^[a-z]{2}$/.test(raw.language) ? raw.language : 'en';
-  } catch { return 'en'; }
-}
-
-/** The movie made long enough to show its last line. */
-function covered(m: Movie): Movie {
-  const last = lineBlocks(m).reduce((n, c) => Math.max(n, end(c)), 0);
-  return last > m.duration ? { ...m, duration: last } : m;
+    return typeof raw.language === 'string' && (raw.language === 'auto' || LANGS.some(([c]) => c === raw.language)) ? raw.language : 'auto';
+  } catch { return 'auto'; }
 }
 
 export class SubtitlesPanel {
   private readonly root: HTMLElement;
-  private readonly shown: HTMLInputElement;
+  private readonly err: HTMLElement;
+  private readonly showBox: HTMLInputElement;
   private readonly font: HTMLSelectElement;
-  private readonly size: HTMLSelectElement;
-  private readonly position: HTMLSelectElement;
-  private readonly color: HTMLButtonElement;
-  private readonly hex: HTMLElement;
+  private readonly size: HTMLInputElement;
+  private readonly sizeVal: HTMLElement;
+  private readonly posBtns: Record<Position, HTMLButtonElement>;
+  private readonly color: HTMLInputElement;
   private readonly band: HTMLInputElement;
   private readonly list: HTMLElement;
   private readonly empty: HTMLElement;
-  private readonly add: HTMLButtonElement;
-  private readonly source: HTMLElement;
-  private readonly setRow: SpeechSetRow;
-  private readonly heardOn: HTMLElement;
-  private readonly lang: HTMLSelectElement;
-  private readonly hear: HTMLButtonElement;
-  private readonly hearStop: HTMLButtonElement;
-  private readonly meter: HTMLElement;
+  private readonly addBtn: HTMLButtonElement;
+  private readonly voicesBtn: HTMLButtonElement;
+  private readonly listenBtn: HTMLButtonElement;
+  private readonly listenCancel: HTMLButtonElement;
+  private readonly runtimeNote: HTMLElement;
+  private readonly setupBox: HTMLElement;
+  private readonly setupBtn: HTMLButtonElement;
+  private readonly setupCancel: HTMLButtonElement;
+  private readonly prog: HTMLElement;
+  private readonly stepLine: HTMLElement;
+  private readonly readyBox: HTMLElement;
+  private readonly language: HTMLSelectElement;
+  private readonly fileInput: HTMLInputElement;
+  private readonly importBtn: HTMLButtonElement;
+  private readonly srtBtn: HTMLButtonElement;
+  private readonly vttBtn: HTMLButtonElement;
   private readonly status: HTMLElement;
-  private readonly file: HTMLInputElement;
-  private readonly exportBtn: HTMLButtonElement;
-  private colorPanel: ColourPanel | null = null;
-  private style = loadSubtitleStyle();
-  private language = loadLanguage();
-  private fontKey = '';
+  private fonts: string[] = [];
+  private st: ListenStatus | null = null;
+  private job: VoiceJob | null = null;
+  private ctrl: AbortController | null = null;
+  private pollTimer = 0;
   private open = false;
-  private busy: AbortController | null = null;
-  /** The id of the movie the run in hand was started in. */
-  private runMovie = '';
-  /** Speech to text needs the engine's speech model files, which an iPad's engine does not keep. */
-  private readonly canHear = platform.features.speech;
+  private nowId: string | null = null;
+  private returnFocus: HTMLElement | null = null;
 
-  constructor(private readonly engine: Engine, private readonly audio: () => AudioEngine) {
-    const mk = (label: string, ...controls: HTMLElement[]): HTMLElement => {
-      const row = el<HTMLElement>('<div class="fm-st-row"><span class="fm-st-lab"></span></div>');
-      setText(q(row, '.fm-st-lab'), t(label));
-      row.append(...controls);
-      return row;
+  constructor(private readonly engine: Engine, private readonly deps: { fonts: () => string[] }) {
+    const row = (label: string, control: HTMLElement): HTMLElement => {
+      const r = el<HTMLElement>('<div class="fm-sub-row"><span class="fm-sub-lab"></span></div>');
+      setText(q(r, '.fm-sub-lab'), t(label));
+      r.appendChild(control);
+      return r;
     };
-    const chk = (label: string): { row: HTMLElement; box: HTMLInputElement } => {
-      const row = el<HTMLElement>('<label class="fm-st-chk"><input type="checkbox"><span></span></label>');
-      setText(q(row, 'span'), t(label));
-      return { row, box: q<HTMLInputElement>(row, 'input') };
+    const named = <T extends HTMLElement>(html: string, label: string): T => { const n = el<T>(html); n.setAttribute('aria-label', t(label)); return n; };
+    const button = (cls: string, label: string): HTMLButtonElement => { const b = el<HTMLButtonElement>(`<button class="${cls}" type="button"></button>`); setText(b, t(label)); return b; };
+    const para = (cls: string, label: string): HTMLElement => { const p = el<HTMLElement>(`<p class="${cls}"></p>`); setText(p, t(label)); return p; };
+    const check = (label: string): { wrap: HTMLElement; box: HTMLInputElement } => {
+      const wrap = el<HTMLElement>('<label class="fm-sub-check"><input type="checkbox"><span></span></label>');
+      setText(q(wrap, 'span'), t(label));
+      return { wrap, box: q<HTMLInputElement>(wrap, 'input') };
     };
-    const select = (label: string, options: ReadonlyArray<readonly [string, string]>, translate = true): HTMLSelectElement => {
-      const s = el<HTMLSelectElement>('<select class="cv-input"></select>');
-      s.setAttribute('aria-label', t(label));
-      for (const [value, text] of options) s.appendChild(new Option(translate ? t(text) : text, value));
-      return s;
-    };
-    const head = (label: string): HTMLElement => {
-      const h = el<HTMLElement>('<div class="fm-st-sec"></div>');
-      setText(h, t(label));
-      return h;
-    };
-    const button = (label: string, cls = 'cv-btn'): HTMLButtonElement => {
-      const b = el<HTMLButtonElement>(`<button class="${cls}" type="button"></button>`);
-      setText(b, t(label));
-      return b;
-    };
+    const head = (label: string): HTMLElement => { const h = el<HTMLElement>('<div class="fm-sub-sec"></div>'); setText(h, t(label)); return h; };
 
     this.root = el<HTMLElement>(
-      '<section class="fm-st" role="dialog" hidden>' +
-      '<div class="fm-st-head"><span class="fm-st-title"></span><button class="fm-st-x" type="button"></button></div>' +
-      '<div class="fm-st-body"></div></section>');
+      '<section class="fm-sub" role="dialog" hidden>' +
+      '<div class="fm-sub-head"><span class="fm-sub-title"></span><button class="fm-sub-x" type="button"></button></div>' +
+      '<div class="fm-sub-err" role="alert" hidden></div>' +
+      '<div class="fm-sub-body"></div></section>');
     this.root.setAttribute('aria-label', t('Subtitles'));
-    setText(q(this.root, '.fm-st-title'), t('Subtitles'));
-    const closeBtn = q<HTMLButtonElement>(this.root, '.fm-st-x');
+    setText(q(this.root, '.fm-sub-title'), t('Subtitles'));
+    const closeBtn = q<HTMLButtonElement>(this.root, '.fm-sub-x');
     closeBtn.innerHTML = X;
     closeBtn.setAttribute('aria-label', t('Close'));
     closeBtn.addEventListener('click', () => this.close());
+    this.err = q(this.root, '.fm-sub-err');
 
-    const show = chk('Show subtitles in the video');
-    this.shown = show.box;
+    // ---- shown, and the look ----
+    const shown = check('Show subtitles in the video');
+    this.showBox = shown.box;
+    this.font = named<HTMLSelectElement>('<select class="cv-input"></select>', 'Font');
+    this.size = named<HTMLInputElement>('<input type="range" min="2" max="15" step="0.5">', 'Size');
+    this.sizeVal = el<HTMLElement>('<span class="fm-sub-val"></span>');
+    const sizeRow = el<HTMLElement>('<div class="fm-sub-range"></div>');
+    sizeRow.append(this.size, this.sizeVal);
+    const posGroup = el<HTMLElement>('<div class="fm-sub-seg" role="radiogroup"></div>');
+    posGroup.setAttribute('aria-label', t('Position'));
+    const mkPos = (id: Position, label: string): HTMLButtonElement => {
+      const b = el<HTMLButtonElement>('<button class="fm-sub-segbtn" type="button" role="radio"></button>');
+      setText(b, t(label));
+      b.addEventListener('click', () => this.look({ position: id }));
+      posGroup.appendChild(b);
+      return b;
+    };
+    this.posBtns = { top: mkPos('top', 'Top'), middle: mkPos('middle', 'Middle'), bottom: mkPos('bottom', 'Bottom') };
+    posGroup.addEventListener('keydown', (e) => {
+      const order: Position[] = ['top', 'middle', 'bottom'];
+      const cur = order.indexOf(this.style()?.position ?? 'bottom');
+      const rtl = getComputedStyle(posGroup).direction === 'rtl';
+      let next = -1;
+      if (e.key === 'ArrowDown' || e.key === (rtl ? 'ArrowLeft' : 'ArrowRight')) next = (cur + 1) % 3;
+      else if (e.key === 'ArrowUp' || e.key === (rtl ? 'ArrowRight' : 'ArrowLeft')) next = (cur + 2) % 3;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = 2;
+      if (next < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.look({ position: order[next] });
+      this.posBtns[order[next]].focus();
+    });
+    this.color = named<HTMLInputElement>('<input class="fm-sub-color" type="color">', 'Text color');
+    const banded = check('Dark band behind the words');
+    this.band = banded.box;
 
-    // Style
-    this.font = select('Font', []);
-    this.size = select('Size', SIZES);
-    this.position = select('Position', POSITIONS);
-    this.color = el<HTMLButtonElement>('<button class="fm-st-swatch" type="button"><i class="fm-st-chip"></i></button>');
-    this.color.setAttribute('aria-label', t('Color'));
-    this.hex = el<HTMLElement>('<span class="fm-st-hex"></span>');
-    const band = chk('Dark band behind the words');
-    this.band = band.box;
+    // ---- the lines ----
+    this.list = el<HTMLElement>('<div class="fm-sub-list" role="list"></div>');
+    this.list.setAttribute('aria-label', t('Lines'));
+    this.empty = el<HTMLElement>('<p class="fm-sub-empty"></p>');
+    this.addBtn = button('cv-btn', 'Add line at the playhead');
+    this.voicesBtn = button('cv-btn', 'From AI voices');
+    const lineActs = el<HTMLElement>('<div class="fm-sub-acts"></div>');
+    lineActs.append(this.addBtn, this.voicesBtn);
 
-    // Lines
-    this.list = el<HTMLElement>('<div class="fm-st-lines" role="list"></div>');
-    this.list.setAttribute('aria-label', t('Subtitle lines'));
-    this.empty = el<HTMLElement>('<p class="fm-st-note"></p>');
-    setText(this.empty, t('No subtitle lines yet.'));
-    this.add = button('Add a line at the playhead');
+    // ---- listening to a sound ----
+    this.listenBtn = button('cv-btn fm-sub-go', 'Subtitles from this sound');
+    this.listenCancel = button('cv-btn', 'Cancel');
+    setHidden(this.listenCancel, true);
+    const listenActs = el<HTMLElement>('<div class="fm-sub-acts"></div>');
+    listenActs.append(this.listenBtn, this.listenCancel);
+    this.runtimeNote = para('fm-sub-note', 'Listening uses the built-in voice\'s runtime. Set up the built-in voice first, in the AI Voice card.');
+    setHidden(this.runtimeNote, true);
+    this.setupBox = el<HTMLElement>('<div class="fm-sub-setup" hidden></div>');
+    this.setupBtn = button('cv-btn', 'Download the listening model');
+    this.setupCancel = button('cv-btn', 'Cancel');
+    this.prog = el<HTMLElement>('<div class="fm-sub-prog is-idle" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="fm-sub-fill"></div></div>');
+    this.prog.setAttribute('aria-label', t('Download progress'));
+    this.stepLine = el<HTMLElement>('<div class="fm-sub-step" aria-live="polite"></div>');
+    const setupActs = el<HTMLElement>('<div class="fm-sub-acts"></div>');
+    setupActs.append(this.setupBtn, this.setupCancel);
+    this.setupBox.append(para('fm-sub-note', 'Listening needs its own model, a one-time download of about 80 MB.'), this.prog, this.stepLine, setupActs);
+    this.readyBox = el<HTMLElement>('<div class="fm-sub-ready" hidden></div>');
+    this.language = named<HTMLSelectElement>('<select class="cv-input"></select>', 'Language');
+    this.language.append(new Option(t('Detect'), 'auto'), ...LANGS.map(([code, name]) => new Option(t(name), code)));
+    this.language.value = loadLanguage();
+    this.readyBox.append(row('Language', this.language));
 
-    // From sound
-    this.source = el<HTMLElement>('<p class="fm-st-note fm-st-source" aria-live="polite"></p>');
-    this.setRow = new SpeechSetRow('listen', {
-      about: 'Speech to text runs on this computer. Its files are downloaded once and can be removed.',
-      remove: 'Remove the speech to text files',
-      confirmTitle: 'Remove the speech to text files',
-      confirmText: 'Remove the speech to text files from this computer? They can be downloaded again.',
-    }, () => this.patch());
-    this.lang = select('Language', listenLanguages().map(([code, name]) => [code, `${name} (${code})`] as const), false);
-    this.hear = button('Make subtitles from this sound');
-    this.hearStop = button('Cancel');
-    this.meter = el<HTMLElement>('<div class="fm-st-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden><div class="fm-st-bar"></div></div>');
-    this.meter.setAttribute('aria-label', t('Speech to text progress'));
-    this.status = el<HTMLElement>('<div class="fm-st-status" aria-live="polite"></div>');
-    const hearRow = el<HTMLElement>('<div class="fm-st-actions"></div>');
-    hearRow.append(this.hear, this.hearStop);
-    this.heardOn = el<HTMLElement>('<div class="fm-st-on" hidden></div>');
-    this.heardOn.append(mk('Language', this.lang), hearRow, this.meter);
+    // ---- files ----
+    this.fileInput = el<HTMLInputElement>('<input type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>');
+    this.importBtn = button('cv-btn', 'Import .srt or .vtt...');
+    this.srtBtn = button('cv-btn', 'Export .srt');
+    this.vttBtn = button('cv-btn', 'Export .vtt');
+    const fileActs = el<HTMLElement>('<div class="fm-sub-acts is-wrap"></div>');
+    fileActs.append(this.importBtn, this.srtBtn, this.vttBtn, this.fileInput);
 
-    // File
-    const importBtn = button('Import subtitles file...');
-    this.exportBtn = button('Export subtitles file...');
-    this.file = el<HTMLInputElement>('<input class="fm-st-file" type="file" accept=".srt,text/plain,application/x-subrip" hidden>');
-    const fileRow = el<HTMLElement>('<div class="fm-st-actions"></div>');
-    fileRow.append(importBtn, this.exportBtn, this.file);
-
-    q(this.root, '.fm-st-body').append(
-      show.row,
-      head('Style'), mk('Font', this.font), mk('Size', this.size), mk('Position', this.position), mk('Color', this.color, this.hex), band.row,
-      head('Lines'), this.list, this.empty, this.add,
-      // without speech to text the From sound part is never put on the card; the status line also serves File
-      ...(this.canHear ? [head('From sound'), this.source, this.setRow.root, this.heardOn] : []), this.status, ...(this.canHear ? [this.setRow.remove] : []),
-      head('File'), fileRow,
+    this.status = el<HTMLElement>('<div class="fm-sub-status" aria-live="polite"></div>');
+    q(this.root, '.fm-sub-body').append(
+      shown.wrap,
+      head('Look'), row('Font', this.font), row('Size', sizeRow), row('Position', posGroup), row('Text color', this.color), banded.wrap,
+      head('Lines'), this.list, this.empty, lineActs,
+      listenActs, this.runtimeNote, this.setupBox, this.readyBox,
+      head('Files'), fileActs,
+      this.status,
     );
-    (document.getElementById('overlay-root') ?? document.body).appendChild(this.root);
-    for (const s of [this.font, this.size, this.position, this.lang]) enhanceSelect(s);
 
-    this.shown.addEventListener('change', () => {
-      const on = this.shown.checked;
-      this.engine.run(on ? 'Show Subtitles' : 'Hide Subtitles', (m) => showSubtitles(m, on));
-      this.sync();
+    (document.getElementById('overlay-root') ?? document.body).appendChild(this.root);
+    enhanceSelect(this.font);
+    enhanceSelect(this.language);
+
+    // ---- wiring ----
+    this.showBox.addEventListener('change', () => { const on = this.showBox.checked; this.engine.run('Subtitles', (m) => setSubtitleShow(m, on)); });
+    this.font.addEventListener('change', () => { if (this.font.value) this.look({ font: this.font.value }); });
+    // a drag is one undo step: the merge tag holds while the pointer moves, change ends it
+    this.size.addEventListener('input', () => {
+      const v = Number(this.size.value);
+      if (Number.isFinite(v)) this.look({ size: v }, 'subtitle-size');
+      this.patchSize(v);
     });
-    this.font.addEventListener('change', () => { void this.pickFont(this.font.value); });
-    this.size.addEventListener('change', () => this.restyle({ size: this.size.value }));
-    this.position.addEventListener('change', () => this.restyle({ position: this.position.value }));
-    this.band.addEventListener('change', () => this.restyle({ band: this.band.checked }));
-    this.color.addEventListener('click', () => this.toggleColor());
-    this.add.addEventListener('click', () => this.addLine());
-    this.lang.addEventListener('change', () => {
-      this.language = this.lang.value;
-      try { localStorage.setItem(STORE, JSON.stringify({ language: this.language })); } catch { /* kept for this session only */ }
+    this.color.addEventListener('input', () => this.look({ color: this.color.value }, 'subtitle-color'));
+    for (const n of [this.size, this.color]) n.addEventListener('change', () => this.engine.endGesture());
+    this.band.addEventListener('change', () => this.look({ band: this.band.checked }));
+    this.addBtn.addEventListener('click', () => this.addLine());
+    this.voicesBtn.addEventListener('click', () => this.fromVoices());
+    this.listenBtn.addEventListener('click', () => { void this.listen(); });
+    this.listenCancel.addEventListener('click', () => this.ctrl?.abort());
+    this.setupBtn.addEventListener('click', () => { void this.startSetup(); });
+    this.setupCancel.addEventListener('click', () => { void this.cancelSetup(); });
+    this.language.addEventListener('change', () => {
+      try { localStorage.setItem(STORE, JSON.stringify({ language: this.language.value })); } catch { /* kept for this session only */ }
     });
-    this.hear.addEventListener('click', () => { void this.fromSound(); });
-    this.hearStop.addEventListener('click', () => this.busy?.abort());
-    importBtn.addEventListener('click', () => { this.file.value = ''; this.file.click(); });
-    this.file.addEventListener('change', () => { const f = this.file.files?.[0]; if (f) void this.importFile(f); });
-    this.exportBtn.addEventListener('click', () => this.exportFile());
-    window.addEventListener('keydown', (ev) => {
-      if (!this.open || ev.key !== 'Escape' || !this.busy) return;
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      this.busy.abort();
-    }, true);
-    this.engine.on('movie', () => { if (this.open) this.sync(); });
-    this.engine.on('selection', () => { if (this.open) this.patch(); });
-    this.engine.on('projects', () => {
-      if (!this.engine.movie) this.close();
-      // lines heard in one movie's sound never land in the next movie opened
-      else if (this.busy && this.elsewhere()) this.busy.abort();
+    this.importBtn.addEventListener('click', () => this.fileInput.click());
+    this.fileInput.addEventListener('change', () => { void this.importFile(); });
+    this.srtBtn.addEventListener('click', () => this.exportFile('srt'));
+    this.vttBtn.addEventListener('click', () => this.exportFile('vtt'));
+    this.root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || this.running()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
     });
-    window.addEventListener('fm:fonts', () => { if (this.open) this.sync(); });
-    this.lang.value = this.language;
+    // run, undo and redo emit 'movie'; closing a movie emits only 'projects'
+    this.engine.on('movie', () => { if (this.open) this.patch(); });
+    this.engine.on('projects', () => { if (this.open) this.patch(); });
+    this.engine.on('selection', () => { if (this.open) this.patchListen(); });
+    this.engine.on('time', () => { if (this.open) this.patchNow(!this.engine.playing); });
+    this.engine.on('playing', (on) => { if (this.open && !on) this.patchNow(true); });
+    this.patch();
   }
 
   show(): void {
-    if (!this.engine.movie) return;
+    const was = this.open;
     this.open = true;
+    if (!was) this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.fonts = this.deps.fonts();
     setHidden(this.root, false);
-    if (this.canHear) this.setRow.start();
-    this.sync();
-  }
-
-  close(): void {
-    this.busy?.abort();
-    this.colorPanel?.close();
-    this.open = false;
-    this.setRow.halt();
-    setHidden(this.root, true);
-  }
-
-  // ---- what the card shows ----
-
-  /** The style of the lines the movie has, else the one last chosen here. */
-  private current(): SubtitleStyle {
-    const m = this.engine.movie;
-    const read = m ? readSubtitles(m) : null;
-    return read && read.lines.length ? read.style : this.style;
-  }
-
-  private sync(): void {
-    const m = this.engine.movie;
-    if (!m) return;
-    const read = readSubtitles(m);
-    const style = this.current();
-    setChecked(this.shown, read.shown);
-    setDisabled(this.shown, !subtitleTrack(m));
-    this.syncFonts(m, style.font);
-    setValue(this.size, style.size);
-    setValue(this.position, style.position);
-    setStyleVar(this.color, '--c', style.color);
-    setText(this.hex, style.color.toUpperCase());
-    setChecked(this.band, style.band);
-    const rows: Row[] = lineBlocks(m).map((c) => ({ id: c.id, start: c.start / m.fps, end: end(c) / m.fps, text: c.text?.text ?? '' }));
-    patchList(this.list, rows, {
-      key: (r) => r.id,
-      create: (r) => this.makeRow(r),
-      update: (node, r) => this.fillRow(node, r),
-    });
-    setHidden(this.empty, rows.length > 0);
-    setDisabled(this.exportBtn, !rows.some((r) => r.text.trim()));
     this.patch();
+    this.patchNow(true);
+    if (!was) this.showBox.focus();
+    void this.refresh();
   }
 
-  /** The font chooser's options, rebuilt only when the families on offer change. */
-  private syncFonts(m: Movie, font: string): void {
-    const cat = fontCatalog(m);
-    const known = FONT_GROUPS.some(([g]) => cat[g].includes(font));
-    const key = `${FONT_GROUPS.map(([g]) => cat[g].join('|')).join('||')}||${known ? '' : font}`;
-    if (key !== this.fontKey) {
-      this.fontKey = key;
-      this.font.textContent = '';
-      for (const [g, label] of FONT_GROUPS) {
-        const fams = g === 'movie' && !known ? [...cat.movie, font] : cat[g];
-        if (!fams.length) continue;
-        const group = document.createElement('optgroup');
-        group.label = t(label);
-        for (const fam of fams) { group.appendChild(new Option(fam, fam)); previewFont(fam); }
-        this.font.appendChild(group);
-      }
-    }
-    setValue(this.font, font);
+  // Closing aborts nothing: a listening that runs finishes and its lines land in the movie.
+  close(): void {
+    if (!this.open) return;
+    this.open = false;
+    window.clearTimeout(this.pollTimer);
+    this.pollTimer = 0;
+    const inside = this.root.contains(document.activeElement);
+    setHidden(this.root, true);
+    if (inside && this.returnFocus?.isConnected) this.returnFocus.focus();
+    this.returnFocus = null;
   }
 
-  private patch(): void {
+  private running(): boolean { return !!this.ctrl || this.job?.state === 'running'; }
+  private showErr(text: string): void { setText(this.err, text); setHidden(this.err, false); }
+  private clearErr(): void { setHidden(this.err, true); }
+  private say(text: string): void { setText(this.status, text); }
+  private style(): SubtitleStyle | null { const m = this.engine.movie; return m ? subtitlesOf(m).style : null; }
+
+  private look(patch: Partial<SubtitleStyle>, merge: string | null = null): void {
+    this.engine.run('Subtitle Look', (m) => setSubtitleStyle(m, patch), merge);
+  }
+
+  // ---- the lines ----
+
+  private cue(id: string): SubtitleCue | null {
     const m = this.engine.movie;
-    const working = !!this.busy;
-    const block = this.soundBlock();
-    setText(this.source, block ? tf('Selected sound: {name}', { name: block.name }) : t('Select a sound block on the Timeline first.'));
-    setHidden(this.heardOn, !this.setRow.installed);
-    setHidden(this.hear, working);
-    setHidden(this.hearStop, !working);
-    setHidden(this.meter, !working);
-    setDisabled(this.hear, !m || !block);
-    setDisabled(this.lang, working);
-    setDisabled(this.setRow.remove, working);
-  }
-
-  private soundBlock(): Content | null {
-    return this.engine.selected.find((c) => c.kind === 'audio' && !!c.asset) ?? null;
-  }
-
-  // ---- style ----
-
-  private restyle(patch: Partial<StyleControls>, merge: string | null = null): void {
-    const cur = this.current();
-    const next = styleFromControls({ ...cur, ...patch }, cur);
-    this.style = next;
-    saveSubtitleStyle(next);
-    this.engine.run('Subtitle Style', (m) => restyleSubtitles(m, next), merge);
-    this.sync();
-  }
-
-  private async pickFont(family: string): Promise<void> {
-    try {
-      await ensureTextFont({ font: family, weight: 500, size: 40, text: 'Aa' });
-      // a Fonts library font travels with the movie that uses it
-      if (inLibrary(family)) await embedLibraryFamily(this.engine, family);
-    } catch (e) {
-      console.error('Subtitle font could not be loaded:', e);
-    }
-    this.restyle({ font: family });
-  }
-
-  private toggleColor(): void {
-    if (!this.colorPanel) {
-      // the shared Color disc, as on the Text card
-      this.colorPanel = new ColourPanel({
-        keepColours: true,
-        onPick: (rgb, final) => {
-          this.restyle({ color: hexOf(rgb) }, 'subtitle-color');
-          if (final) { this.engine.endGesture(); this.colorPanel?.commit(rgb); }
-        },
-      });
-      (document.getElementById('overlay-root') ?? document.body).appendChild(this.colorPanel.root);
-    }
-    if (this.colorPanel.isOpen()) { this.colorPanel.close(); return; }
-    const n = parseInt(this.current().color.replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
-    this.colorPanel.set({ r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 });
-    this.colorPanel.open(this.color);
-  }
-
-  // ---- lines ----
-
-  private makeRow(r: Row): HTMLElement {
-    const row = el<HTMLElement>(
-      '<div class="fm-st-line" role="listitem"><input class="cv-input fm-st-time" data-f="start" type="text" inputmode="decimal" autocomplete="off">' +
-      '<input class="cv-input fm-st-time" data-f="end" type="text" inputmode="decimal" autocomplete="off">' +
-      `<input class="cv-input fm-st-text" data-f="text" type="text" autocomplete="off"><button class="fm-st-del" type="button">${icon('delete', 14)}</button></div>`);
-    const start = q<HTMLInputElement>(row, '[data-f="start"]'), stop = q<HTMLInputElement>(row, '[data-f="end"]'), text = q<HTMLInputElement>(row, '[data-f="text"]');
-    start.setAttribute('aria-label', t('Start, in seconds'));
-    stop.setAttribute('aria-label', t('End, in seconds'));
-    text.setAttribute('aria-label', t('Words'));
-    const del = q<HTMLButtonElement>(row, '.fm-st-del');
-    del.setAttribute('aria-label', t('Delete this line'));
-    del.title = t('Delete this line');
-    const id = r.id;
-    const retime = (): void => this.retime(id, start, stop);
-    start.addEventListener('change', retime);
-    stop.addEventListener('change', retime);
-    text.addEventListener('change', () => this.reword(id, text.value));
-    del.addEventListener('click', () => { this.engine.run('Delete Subtitle', (m) => removeLine(m, id)); });
-    this.fillRow(row, r);
-    return row;
-  }
-
-  private fillRow(node: HTMLElement, r: Row): void {
-    setValue(q<HTMLInputElement>(node, '[data-f="start"]'), formatSeconds(r.start));
-    setValue(q<HTMLInputElement>(node, '[data-f="end"]'), formatSeconds(r.end));
-    setValue(q<HTMLInputElement>(node, '[data-f="text"]'), r.text);
-  }
-
-  /** Typed times onto the block, kept between the lines before and after it. */
-  private retime(id: string, start: HTMLInputElement, stop: HTMLInputElement): void {
-    const m = this.engine.movie;
-    if (!m) return;
-    const blocks = lineBlocks(m);
-    const i = blocks.findIndex((c) => c.id === id);
-    if (i < 0) return;
-    const c = blocks[i];
-    const lo = i > 0 ? end(blocks[i - 1]) : 0;
-    const hi = i < blocks.length - 1 ? blocks[i + 1].start : Number.POSITIVE_INFINITY;
-    const span = clampSpan(parseSeconds(start.value) ?? c.start / m.fps, parseSeconds(stop.value) ?? end(c) / m.fps, m.fps, lo, hi);
-    if (span.start !== c.start || span.duration !== c.duration) this.engine.run('Subtitle Time', (mv) => covered(ops.updateContent(mv, id, (x) => ({ ...x, start: span.start, duration: span.duration }))));
-    this.refill(id);
-  }
-
-  private reword(id: string, value: string): void {
-    const text = value.replace(/\s+/g, ' ').trim();
-    this.engine.run('Subtitle Words', (m) => ops.updateContent(m, id, (c) => (c.text && c.text.text !== text ? { ...c, name: text.slice(0, NAME_CHARS), text: { ...c.text, text } } : c)));
-    this.refill(id);
-  }
-
-  /**
-   * A row's fields set from the movie after an edit, the field in hand included: they show what the movie kept,
-   * which is not what was typed when a time was held between its neighbours or the edit was refused (a locked track).
-   */
-  private refill(id: string): void {
-    const m = this.engine.movie;
-    const c = m ? lineBlocks(m).find((x) => x.id === id) : undefined;
-    const row = Array.from(this.list.children).find((n) => (n as HTMLElement).dataset.key === id);
-    if (!m || !c || !row) return;
-    const set = (name: string, value: string): void => { q<HTMLInputElement>(row, `[data-f="${name}"]`).value = value; };
-    set('start', formatSeconds(c.start / m.fps));
-    set('end', formatSeconds(end(c) / m.fps));
-    set('text', c.text?.text ?? '');
+    return m ? subtitlesOf(m).cues.find((c) => c.id === id) ?? null : null;
   }
 
   private addLine(): void {
-    let made: string | null = null;
-    const style = this.current();
-    // where a line already shows at the playhead nothing is added, and `made` is that line
-    this.engine.run('Add Subtitle', (m) => {
-      const r = addEmptyLine(m, this.engine.frame / m.fps, style);
-      made = r.id;
-      return r.added ? covered(r.movie) : m;
+    const m = this.engine.movie;
+    if (!m) return;
+    const start = Math.max(0, Math.min(this.engine.frame, m.duration - 1));
+    const end = Math.max(start + 1, Math.min(m.duration, start + Math.round(NEW_SECONDS * m.fps)));
+    const before = new Set(subtitlesOf(m).cues.map((c) => c.id));
+    if (!this.engine.run('Add Subtitle', (mv) => addCues(mv, [{ start, end, text: t('New line') }]))) return;
+    const now = this.engine.movie;
+    const made = now ? subtitlesOf(now).cues.find((c) => !before.has(c.id)) : undefined;
+    const rowEl = made ? this.rowOf(made.id) : null;
+    const text = rowEl?.querySelector<HTMLInputElement>('.fm-sub-text');
+    if (text) { text.focus(); text.select(); }
+  }
+
+  private fromVoices(): void {
+    const m = this.engine.movie;
+    if (!m) return;
+    const ids = allContent(m).filter((c) => isSound(m, c) && !!m.assets[c.asset as string]?.spoken).map((c) => c.id);
+    this.clearErr();
+    if (!ids.length) { this.say(t('No sound in this movie was spoken by an AI voice.')); return; }
+    let count = 0;
+    this.engine.run('Subtitles', (mv) => {
+      let next = mv;
+      count = 0;
+      for (const id of ids) {
+        const cues = cuesForSound(next, id);
+        count += cues.length;
+        next = addCues(next, cues, id);
+      }
+      return next;
     });
-    if (!made) return;
-    const row = Array.from(this.list.children).find((n) => (n as HTMLElement).dataset.key === made);
-    const field = row?.querySelector<HTMLInputElement>('[data-f="text"]');
-    row?.scrollIntoView({ block: 'nearest' });
-    field?.focus();
+    this.say(t('{count} lines made from AI voices').replace('{count}', String(count)));
   }
 
-  // ---- from sound ----
-
-  private async fromSound(): Promise<void> {
+  private commitTime(id: string, which: 'start' | 'end', input: HTMLInputElement): void {
     const m = this.engine.movie;
-    const block = this.soundBlock();
-    if (!m || !block || !block.asset || this.busy) return;
-    const unheard = unheardReason(block);
-    if (unheard === 'backward') { this.say(t('This sound block plays backward, so its words cannot be heard.'), true); return; }
-    if (unheard === 'frozen') { this.say(t('This sound block is frozen, so it plays no words to hear.'), true); return; }
-    const ctl = new AbortController();
-    this.busy = ctl;
-    this.runMovie = m.id;
-    this.progress(0);
-    this.say(t('Reading the sound...'));
-    this.patch();
-    try {
-      const buf = await this.audio().decode(block.asset);
-      if (!buf) throw new Error(t('This sound could not be decoded.'));
-      const speed = block.speed && block.speed > 0 ? block.speed : 1;
-      const range = sampleRange(block.offset, block.duration, m.fps, buf.sampleRate, buf.length, speed);
-      const channels = Array.from({ length: buf.numberOfChannels }, (_, ch) => buf.getChannelData(ch));
-      const samples = monoSamples(channels, range.from, range.to);
-      if (!samples.length) throw new Error(t('This sound block plays no sound.'));
-      const words = await listen(samples, buf.sampleRate, {
-        language: this.language, signal: ctl.signal,
-        onProgress: (f) => { this.progress(f); this.say(f === null ? t('Listening...') : tf('Listening: {percent}%', { percent: Math.round(f * 100) })); },
-      });
-      // a retimed block plays its sound faster or slower, so the heard times are brought to movie time
-      const timed = speed === 1 ? words : words.map((w) => ({ ...w, start: w.start / speed, end: w.end / speed }));
-      const lines = linesFromWords(timed, block.start / m.fps);
-      if (this.elsewhere()) { this.say(t(MOVED)); return; }
-      if (!lines.length) { this.say(t('No words were heard in this sound.')); return; }
-      const style = this.current();
-      const from = block.start, to = end(block);
-      let replaced = 0;
-      let stale = false;
-      const ok = this.engine.run('Subtitles from Sound', (mv) => {
-        // the listening took a while: the block is looked up again, and lines timed for a block since moved are not written
-        const now = findContent(mv, block.id);
-        stale = !now || !sameSound(block, now);
-        if (stale) return mv;
-        const cleared = clearSpan(mv, from, to);
-        replaced = cleared.removed;
-        return covered(addLines(cleared.movie, lines, style));
-      });
-      const added = tn(lines.length, '{n} line added.', '{n} lines added.');
-      if (stale) this.say(t('The sound block was changed or removed while it was heard, so no lines were added.'), true);
-      else this.say(!ok ? t('The lines could not be added to the movie.') : replaced ? `${added} ${t('They replace the lines that were under this sound.')}` : added, !ok);
-    } catch (e) {
-      if (this.elsewhere()) this.say(t(MOVED));
-      else if (isAbort(e)) this.say(t('Cancelled.'));
-      else { console.error('Subtitles from sound failed:', e); this.say(sentence(e), true); }
-    } finally {
-      this.busy = null;
-      this.patch();
+    const c = this.cue(id);
+    if (!m || !c) return;
+    const shown = secs(c[which], m.fps);
+    const raw = input.value.trim();
+    if (raw === shown) return;
+    const s = parseSeconds(raw);
+    if (Number.isFinite(s)) {
+      const f = Math.round(s * m.fps);
+      // start stays before end: the edited edge stops one frame short of the other
+      const v = which === 'start' ? Math.max(0, Math.min(f, c.end - 1)) : Math.max(c.start + 1, f);
+      if (v !== c[which]) this.engine.run('Edit Subtitle', (mv) => updateCue(mv, id, which === 'start' ? { start: v } : { end: v }));
     }
+    // the field is focused, so the redraw leaves it: write what the movie now holds
+    const after = this.cue(id);
+    input.value = after ? secs(after[which], m.fps) : shown;
   }
 
-  /** True when the movie open now is not the one the run in hand was started in. */
-  private elsewhere(): boolean {
+  private commitText(id: string, input: HTMLInputElement): void {
+    const c = this.cue(id);
+    if (!c) return;
+    const text = input.value.trim();
+    if (!text) { input.value = c.text; return; }
+    if (text !== c.text) this.engine.run('Edit Subtitle', (m) => updateCue(m, id, { text }));
+  }
+
+  private makeRow(cue: SubtitleCue): HTMLElement {
+    const id = cue.id;
+    const r = el<HTMLElement>(
+      '<div class="fm-sub-cue" role="listitem">' +
+      `<button class="fm-sub-icon fm-sub-seek" type="button">${GO}</button>` +
+      '<input class="cv-input fm-sub-time fm-sub-start" type="text" inputmode="decimal" spellcheck="false" autocomplete="off">' +
+      '<input class="cv-input fm-sub-time fm-sub-end" type="text" inputmode="decimal" spellcheck="false" autocomplete="off">' +
+      '<input class="cv-input fm-sub-text" type="text" spellcheck="true" autocomplete="off">' +
+      `<button class="fm-sub-icon fm-sub-del" type="button">${BIN}</button>` +
+      '</div>');
+    const seek = q<HTMLButtonElement>(r, '.fm-sub-seek');
+    const start = q<HTMLInputElement>(r, '.fm-sub-start');
+    const end = q<HTMLInputElement>(r, '.fm-sub-end');
+    const text = q<HTMLInputElement>(r, '.fm-sub-text');
+    const del = q<HTMLButtonElement>(r, '.fm-sub-del');
+    seek.setAttribute('aria-label', t('Go to this line'));
+    seek.title = t('Go to this line');
+    start.setAttribute('aria-label', t('Starts at, in seconds'));
+    end.setAttribute('aria-label', t('Ends at, in seconds'));
+    text.setAttribute('aria-label', t('Words'));
+    del.setAttribute('aria-label', t('Delete this line'));
+    del.title = t('Delete this line');
+    seek.addEventListener('click', () => { const c = this.cue(id); if (c) this.engine.seek(c.start); });
+    del.addEventListener('click', () => { this.engine.run('Delete Subtitle', (m) => deleteCues(m, [id])); });
+    for (const [input, which] of [[start, 'start'], [end, 'end']] as const) {
+      input.addEventListener('change', () => this.commitTime(id, which, input));
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.commitTime(id, which, input); } });
+    }
+    text.addEventListener('change', () => this.commitText(id, text));
+    text.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.commitText(id, text); } });
+    this.fillRow(r, cue);
+    return r;
+  }
+
+  private fillRow(r: HTMLElement, cue: SubtitleCue): void {
     const m = this.engine.movie;
-    return !!m && m.id !== this.runMovie;
+    if (!m) return;
+    setValue(q<HTMLInputElement>(r, '.fm-sub-start'), secs(cue.start, m.fps));
+    setValue(q<HTMLInputElement>(r, '.fm-sub-end'), secs(cue.end, m.fps));
+    setValue(q<HTMLInputElement>(r, '.fm-sub-text'), cue.text);
+    setClass(r, 'is-now', cue.id === this.nowId);
   }
 
-  private say(text: string, bad = false): void {
-    setClass(this.status, 'is-bad', bad);
-    setText(this.status, text);
+  private rowOf(id: string): HTMLElement | null {
+    for (const n of Array.from(this.list.children)) if ((n as HTMLElement).dataset.key === id) return n as HTMLElement;
+    return null;
   }
 
-  /** Null: at work with no figure to show, so the bar sweeps and reads no value. */
-  private progress(fraction: number | null): void {
-    setClass(this.meter, 'is-unknown', fraction === null);
-    if (fraction === null) { this.meter.removeAttribute('aria-valuenow'); return; }
-    const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
-    setStyleVar(this.meter, '--pct', `${pct}%`);
-    this.meter.setAttribute('aria-valuenow', String(pct));
+  /** Marks the line under the playhead; scrolls it into the list's view only when asked (playback stopped). */
+  private patchNow(scroll: boolean): void {
+    const m = this.engine.movie;
+    const id = m ? cueAt(m, this.engine.frame)?.id ?? null : null;
+    if (id !== this.nowId) {
+      const old = this.nowId ? this.rowOf(this.nowId) : null;
+      if (old) setClass(old, 'is-now', false);
+      this.nowId = id;
+    }
+    const cur = id ? this.rowOf(id) : null;
+    if (!cur) return;
+    setClass(cur, 'is-now', true);
+    if (!scroll) return;
+    const top = cur.offsetTop;
+    const bottom = top + cur.offsetHeight;
+    if (top < this.list.scrollTop) this.list.scrollTop = top;
+    else if (bottom > this.list.scrollTop + this.list.clientHeight) this.list.scrollTop = bottom - this.list.clientHeight;
+  }
+
+  // ---- listening ----
+
+  private soundSelected(): Content | null {
+    const m = this.engine.movie;
+    if (!m) return null;
+    const sounds = this.engine.selected.filter((c) => isSound(m, c));
+    return sounds.length === 1 ? sounds[0] : null;
+  }
+
+  private async refresh(): Promise<void> {
+    try {
+      this.st = await voiceApi.listenStatus();
+    } catch (e) {
+      this.showErr(message(e));
+      this.patchListen();
+      return;
+    }
+    this.job = this.st.job;
+    if (this.job?.state === 'running') this.poll();
+    this.patchListen();
+  }
+
+  private async startSetup(): Promise<void> {
+    this.clearErr();
+    try {
+      this.job = await voiceApi.setupListen();
+    } catch (e) {
+      this.showErr(message(e));
+      return;
+    }
+    this.patchListen();
+    this.poll();
+  }
+
+  /** Polls the download only while the card is open and the download runs. */
+  private poll(): void {
+    window.clearTimeout(this.pollTimer);
+    this.pollTimer = window.setTimeout(() => { void this.pollOnce(); }, POLL_MS);
+  }
+
+  private async pollOnce(): Promise<void> {
+    this.pollTimer = 0;
+    if (!this.open) return;
+    let job: VoiceJob | null;
+    try {
+      job = await voiceApi.listenJob();
+    } catch (e) {
+      this.showErr(message(e));
+      this.job = null;
+      this.patchListen();
+      return;
+    }
+    this.job = job;
+    if (job?.state === 'running') { this.patchListen(); if (this.open) this.poll(); return; }
+    if (job?.state === 'failed') this.showErr(job.error || t('The download did not finish.'));
+    if (job?.state === 'cancelled') this.say(t('Download cancelled.'));
+    if (job?.state === 'done') {
+      this.job = null;
+      try { this.st = await voiceApi.listenStatus(); } catch (e) { this.showErr(message(e)); }
+    }
+    this.patchListen();
+  }
+
+  private async cancelSetup(): Promise<void> {
+    try { await voiceApi.cancelListen(); } catch (e) { this.showErr(message(e)); }
+  }
+
+  private async listen(): Promise<void> {
+    const block = this.soundSelected();
+    if (!block || this.ctrl || !this.st?.ready) return;
+    const id = block.id;
+    const name = block.name || this.engine.movie?.assets[block.asset as string]?.name || t('this sound');
+    const language = this.language.value || 'auto';
+    this.clearErr();
+    this.say('');
+    const ctrl = new AbortController();
+    this.ctrl = ctrl;
+    this.patchListen();
+    try {
+      const sound = await soundForSpeech(this.engine, id);
+      if (ctrl.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      if (!sound) { this.showErr(t('This sound could not be read.')); return; }
+      const heard = await voiceApi.listen(sound.wav, language, ctrl.signal);
+      const lines: TimedLine[] = sound.lines(heard.cues);
+      const m = this.engine.movie;
+      const cues = m ? linesToCues(m, id, lines) : [];
+      if (!cues.length) { this.say(t('No words were heard in this sound.')); return; }
+      let count = 0;
+      this.engine.run('Subtitles', (mv) => { const made = linesToCues(mv, id, lines); count = made.length; return addCues(mv, made, id); });
+      this.say(t('{count} lines from {name}').replace('{count}', String(count)).replace('{name}', name));
+    } catch (e) {
+      if (isAbort(e)) this.say(t('Cancelled.'));
+      else this.showErr(message(e));
+    } finally {
+      this.ctrl = null;
+      this.patchListen();
+    }
   }
 
   // ---- files ----
 
-  private async importFile(file: File): Promise<void> {
-    const m = this.engine.movie;
-    if (!m) return;
-    // judged by its size alone, before a byte is read
-    if (file.size > MAX_SUBTITLE_FILE_BYTES) { this.say(t('That file is larger than 5 MB, so it was not read as a subtitles file.'), true); return; }
-    let lines: ReturnType<typeof fromSrt>;
-    try { lines = fromSrt(await file.text()); } catch (e) {
-      console.error('Subtitles file could not be read:', e);
-      this.say(t('That file could not be read.'), true);
+  private async importFile(): Promise<void> {
+    const file = this.fileInput.files?.[0];
+    this.fileInput.value = '';
+    const m0 = this.engine.movie;
+    if (!file || !m0) return;
+    this.clearErr();
+    let lines: TimedLine[];
+    try {
+      lines = parseSubtitles(await file.text());
+    } catch (e) {
+      this.showErr(message(e));
       return;
     }
-    if (!lines.length) { this.say(t('No subtitle lines were found in that file.'), true); return; }
-    const had = readSubtitles(m).lines.length;
-    if (had && !(await confirmAction(t('Replace subtitles'), tf('Replace the {had} lines in this movie with the {n} lines in the file?', { had, n: lines.length }), t('Replace'), true))) return;
-    const style = this.current();
-    const ok = this.engine.run('Import Subtitles', (mv) => covered(writeSubtitles(mv, lines, style)));
-    this.say(ok ? tn(lines.length, '{n} line imported.', '{n} lines imported.') :t('The lines could not be added to the movie.'), !ok);
+    if (!lines.length) { this.say(t('No subtitles were found in that file.')); return; }
+    const toCues = (fps: number): Array<Omit<SubtitleCue, 'id'>> => lines.map((l) => {
+      const start = Math.max(0, Math.round(l.start * fps));
+      return { start, end: Math.max(start + 1, Math.round(l.end * fps)), text: l.text };
+    });
+    let replace = false;
+    const have = subtitlesOf(m0).cues.length;
+    if (have) {
+      const pick = await chooseOrCancel(
+        t('Replace the subtitles?'),
+        t('This movie has {have} lines already. Replace them with the {count} lines of the file, or add these to them.').replace('{have}', String(have)).replace('{count}', String(lines.length)),
+        t('Replace'), t('Add'),
+      );
+      if (pick === null) return;
+      replace = pick;
+    }
+    if (!this.engine.movie) return;
+    this.engine.run('Import Subtitles', (m) => (replace ? setCues(m, toCues(m.fps)) : addCues(m, toCues(m.fps))));
+    this.say(t('{count} lines imported from {name}').replace('{count}', String(lines.length)).replace('{name}', file.name));
   }
 
-  private exportFile(): void {
+  private exportFile(format: 'srt' | 'vtt'): void {
     const m = this.engine.movie;
     if (!m) return;
-    const text = toSrt(readSubtitles(m).lines);
-    if (!text) return;
-    const name = (m.name || 'Subtitles').replace(/[\\/:*?"<>|]/g, '_');
-    downloadBlob(new Blob([text], { type: 'application/x-subrip' }), `${name}.srt`);
+    const cues = subtitlesOf(m).cues;
+    if (!cues.length) return;
+    const lines: TimedLine[] = cues.map((c) => ({ start: c.start / m.fps, end: c.end / m.fps, text: c.text }));
+    const blob = new Blob([writeSubtitles(lines, format)], { type: format === 'vtt' ? 'text/vtt' : 'application/x-subrip' });
+    const base = (m.name || t('Subtitles')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'subtitles';
+    downloadBlob(blob, `${base}.${format}`);
+  }
+
+  // ---- patching ----
+
+  private patchSize(v: number): void { setText(this.sizeVal, `${Number.isFinite(v) ? Number(v.toFixed(1)) : 5}%`); }
+
+  /** The font list as the card opened with it, plus the movie's own font, keyed so an unchanged list is not touched. */
+  private patchFonts(current: string): void {
+    const items = this.fonts.includes(current) || !current ? this.fonts : [current, ...this.fonts];
+    const sig = items.join('\u0001');
+    if (this.font.dataset.sig !== sig) {
+      this.font.dataset.sig = sig;
+      patchList(this.font, items, {
+        key: (f) => f,
+        create: (f) => new Option(f, f),
+        update: () => undefined,
+      });
+    }
+    if (current && this.font.value !== current) this.font.value = current;
+  }
+
+  private patch(): void {
+    const m = this.engine.movie;
+    const sub = m ? subtitlesOf(m) : null;
+    const style = sub?.style ?? null;
+    const off = !m;
+
+    setChecked(this.showBox, !!sub?.show);
+    setDisabled(this.showBox, off);
+    this.patchFonts(style?.font ?? '');
+    setDisabled(this.font, off);
+    if (style) { setValue(this.size, String(style.size)); this.patchSize(document.activeElement === this.size ? Number(this.size.value) : style.size); }
+    setDisabled(this.size, off);
+    for (const id of ['top', 'middle', 'bottom'] as const) {
+      const on = style?.position === id;
+      const b = this.posBtns[id];
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on || (!style && id === 'bottom') ? 0 : -1;
+      setClass(b, 'is-on', on);
+      setDisabled(b, off);
+    }
+    if (style) setValue(this.color, style.color);
+    setDisabled(this.color, off);
+    setChecked(this.band, !!style?.band);
+    setDisabled(this.band, off);
+
+    const cues = sub?.cues ?? [];
+    if (m) this.nowId = cueAt(m, this.engine.frame)?.id ?? null;
+    patchList(this.list, cues, { key: (c) => c.id, create: (c) => this.makeRow(c), update: (n, c) => this.fillRow(n, c) });
+    setHidden(this.list, !cues.length);
+    setText(this.empty, off ? t('Open a movie to add subtitles.') : t('No subtitles yet. AI voices add theirs when they speak.'));
+    setHidden(this.empty, !!cues.length);
+    setDisabled(this.addBtn, off);
+    setDisabled(this.voicesBtn, off);
+    setDisabled(this.importBtn, off);
+    setDisabled(this.srtBtn, !cues.length);
+    setDisabled(this.vttBtn, !cues.length);
+    this.patchListen();
+  }
+
+  private patchListen(): void {
+    const st = this.st;
+    const listening = !!this.ctrl;
+    const job = this.job?.state === 'running' ? this.job : null;
+    const ready = !!st?.ready && !job;
+    setHidden(this.runtimeNote, !st || ready || !!job || st.runtime);
+    setHidden(this.setupBox, !st || ready || (!st.runtime && !job));
+    setHidden(this.readyBox, !ready);
+    setHidden(this.setupBtn, !!job);
+    setHidden(this.setupCancel, !job);
+    setClass(this.prog, 'is-idle', !job);
+    const sized = !!job && job.total > 0;
+    setClass(this.prog, 'is-busy', !!job && !sized);
+    const frac = sized ? Math.min(1, job.done / job.total) : 0;
+    setStyleVar(this.prog, '--p', frac.toFixed(3));
+    if (sized) this.prog.setAttribute('aria-valuenow', String(Math.round(frac * 100)));
+    else this.prog.removeAttribute('aria-valuenow');
+    let step = '';
+    if (job) {
+      step = t('Downloading the listening model');
+      if (sized) step += ` · ${t('{done} MB of {total} MB').replace('{done}', mb(job.done)).replace('{total}', mb(job.total))}`;
+    }
+    setText(this.stepLine, step);
+    const off = !this.engine.movie;
+    setDisabled(this.setupBtn, off);
+
+    setText(this.listenBtn, listening ? t('Listening...') : t('Subtitles from this sound'));
+    setClass(this.listenBtn, 'is-busy', listening);
+    setDisabled(this.listenBtn, listening || !ready || !this.soundSelected());
+    setHidden(this.listenCancel, !listening);
+    setDisabled(this.language, off || listening);
   }
 }

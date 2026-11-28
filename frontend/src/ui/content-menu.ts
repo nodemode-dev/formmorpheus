@@ -14,7 +14,8 @@ import { canLinkPaths } from '../io/source-api';
 import { canSplitLayers, layersToTracks } from '../engine/layer-split-ops';
 import { ParentPicker } from './parent-picker';
 import { TransformRows } from './stage-box-menu';
-import { EdRows } from './content-menu-ed';
+import { ArrangeRows, EdRows } from './content-menu-ed';
+import { pickAt } from './action-picker';
 import '../styles/timeline-menu.css';
 
 const MASKS: Array<[MaskMode, string]> = [['none', 'None'], ['clipping', 'Clipping'], ['alpha', 'Alpha'], ['luminance', 'Luminance']];
@@ -75,7 +76,12 @@ export class ContentMenu {
   /** Size, speed, freeze and transition rows (content-menu-ed.ts). */
   private readonly ed: EdRows;
   private readonly opacityBox: HTMLElement;
-
+  /** Apply Action... on a character: the action card opens where the menu was opened. */
+  private readonly applyAct: PopRow;
+  /** Bring to Front, Bring Forward, Send Backward, Send to Back (content-menu-ed.ts). */
+  private readonly arrange: ArrangeRows;
+  private openX = 0;
+  private openY = 0;
   constructor(private readonly engine: Engine) {
     this.pop = new Popover('fm-cm', 264);
     const body = this.pop.body;
@@ -263,14 +269,24 @@ export class ContentMenu {
     this.xform = new TransformRows(engine, () => this.ids, () => this.pop.hide());
     this.ed = new EdRows(engine, this.pop, () => this.ids, () => this.pop.hide());
     this.opacityBox = opacity;
+    this.applyAct = popRow('play', 'Apply Action...');
+    this.applyAct.el.addEventListener('click', () => {
+      this.pop.hide();
+      // the command opens the card at pickAt (app/action-commands.ts), here the pointer that opened this menu
+      pickAt.x = this.openX;
+      pickAt.y = this.openY;
+      document.dispatchEvent(new CustomEvent('fm:command', { detail: 'action-apply' }));
+      pickAt.x = pickAt.y = Number.NaN;
+    });
+    this.arrange = new ArrangeRows(engine, this.pop, () => this.ids, () => this.pop.hide());
     // Sections with submenus keep the menu short: Transform, Time, Convert and More; a section with nothing to offer hides.
     const [sizeRow, speedRow, freezeRow, transitionRow, keyToolsRow] = this.ed.rows;
     const sTransform = this.section('rotate', 'Transform', [...this.xform.rows, sizeRow, this.parents.row.el]);
     const sTime = this.section('fillDuration', 'Time', [speedRow, freezeRow, transitionRow]);
     const sConvert = this.section('flipbook', 'Convert', [this.toFlip.el, this.toBoil.el, this.toTracks.el, this.splitLayers.el, this.separate.el]);
     const sMore = this.section('layers', 'More', [this.lip.el, this.soundRow.el, this.shapeRow.el, this.formvis.el, keyToolsRow]);
-    body.append(tileRow, popSep(), opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
-      sTransform, sTime, sConvert, sMore, popSep(),
+    body.append(tileRow, popSep(), this.applyAct.el, opacity, this.volume, this.name.el, this.highlight.el, this.blend.el, this.mask.el, popSep(),
+      sTransform, this.arrange.row.el, sTime, sConvert, sMore, popSep(),
       this.split.el, this.after.el, this.reverse.el, this.fill.el, this.flipOrder.el, this.group.el, this.ungroup.el, this.makeChar.el, this.saveChar.el, this.mouthChar.el, this.buildChar.el, this.srcUpdate.el, this.srcUnlink.el, this.srcRelink.el, trackRow.el, popSep(), this.del.el);
   }
 
@@ -291,6 +307,8 @@ export class ContentMenu {
   }
 
   open(x: number, y: number): void {
+    this.openX = x;
+    this.openY = y;
     this.patchAll();
     this.pop.showAt(x, y);
   }
@@ -423,6 +441,8 @@ export class ContentMenu {
     setClass(this.srcUpdate.el, 'is-gone', !isChar);
     setClass(this.srcUnlink.el, 'is-gone', !(isChar && canLinkPaths() && !!first.character?.source));
     setClass(this.srcRelink.el, 'is-gone', !(isChar && canLinkPaths()));
+    setClass(this.applyAct.el, 'is-gone', !isChar);
+    this.arrange.patch();
     this.del.setDisabled(none);
     this.syncSections();
   }

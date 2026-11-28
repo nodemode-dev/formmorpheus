@@ -13,6 +13,10 @@
       "export_movie",
       "import_file",
       "add_character",
+      "list_voices",
+      "add_voice",
+      "list_subtitles",
+      "set_subtitles",
       "list_commands",
       "run_command"
     ],
@@ -22,6 +26,8 @@
       "get_movie",
       "get_movie_picture",
       "list_characters",
+      "list_voices",
+      "list_subtitles",
       "list_commands"
     ],
     "approval_gated": [
@@ -29,12 +35,16 @@
       "export_movie",
       "import_file",
       "add_character",
+      "add_voice",
+      "set_subtitles",
       "run_command"
     ],
     "asks_first": [
       "export_movie",
       "import_file",
-      "add_character"
+      "add_character",
+      "add_voice",
+      "set_subtitles"
     ],
     "commands": [
       {
@@ -79,11 +89,13 @@
     {
       "name": "formmorpheus",
       "sub_skills": [
+        "ai-voice",
         "export",
         "fmo-and-engine",
         "ipad-build",
         "mcp-tools",
-        "releasing"
+        "releasing",
+        "subtitles"
       ]
     }
   ],

@@ -16,6 +16,7 @@
 }
 .fm-ss-card:hover:not(:disabled), .fm-ss-card:focus-visible { background: var(--surface-raised); outline: none; }
 .fm-ss-card:focus-visible { box-shadow: 0 0 0 2px var(--accent-color); }
+.fm-ss-card.is-picked { background: var(--surface-raised); box-shadow: 0 0 0 2px var(--accent-color); }
 .fm-ss-card:disabled { cursor: default; }
 .fm-ss-card.is-busy { opacity: 0.6; }
 .fm-ss-thumb { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radius-sm); background: var(--surface-1); }

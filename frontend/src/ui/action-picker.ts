@@ -12,6 +12,9 @@ const TITLES: Record<PickMode, string> = { apply: 'Apply Action', swap: 'Swap Ac
 
 interface Slot { row: PopRow; id: string }
 
+/** A one-shot place for the next card: the content menu's Apply Action row puts the pointer here before it runs the command. */
+export const pickAt = { x: Number.NaN, y: Number.NaN };
+
 export class ActionPicker {
   private readonly pop = new Popover('fm-act-pick', 260);
   private readonly title = el<HTMLElement>('<div class="fm-pop-row fm-pop-note"><span class="fm-pop-label"></span></div>');

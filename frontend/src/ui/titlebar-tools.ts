@@ -34,7 +34,8 @@ export class TitleTools {
       const n = this.results.children.length;
       if (e.key === 'Escape') { this.close(); return; }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (n) { this.picked = (this.picked + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; this.mark(); } return; }
-      if (e.key === 'Enter') { const b = this.results.children[this.picked] as HTMLElement | undefined; if (b) b.click(); }
+      // the Enter that picks a command ends here: unprevented, its keypress pressed whatever the command focused (a card's close button, a text field)
+      if (e.key === 'Enter') { e.preventDefault(); const b = this.results.children[this.picked] as HTMLElement | undefined; if (b) b.click(); }
     });
     document.addEventListener('pointerdown', (e) => { if (!this.pop.hidden && !this.pop.contains(e.target as Node) && !search.contains(e.target as Node)) this.close(); });
     this.root.append(theme, search, this.pop);

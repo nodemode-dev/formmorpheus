@@ -27,6 +27,7 @@ import { srcFrame } from './retime';
 import { transitionAt, tracksHaveTransition } from './transitions';
 import { mixTransition } from './transition-draw';
 import { visibleMovie } from './hide-ops';
+import { drawSubtitles } from './subtitles';
 import { paintAdjustGlyph, paintShape } from './shape-draw';
 import { resolveShape } from './shape';
 import { adjustWeight, applyAdjustCpu, type AdjustHost } from './shape-adjust';
@@ -445,6 +446,8 @@ export class Renderer {
     this.nest.length = 0;
     this.flat = null;
     try { this.drawFrameInner(ctx, mv, frame, view, opts); } finally { this.frameNow = -1; }
+    // subtitles lie over the finished frame, outside the camera: the Stage and every export draw through here
+    drawSubtitles(ctx, movie, frame, view);
   }
 
   /** The tracks alone, over what `ctx` holds: no background or backstage (the Stage drag cache composes layers itself). CPU only. `_proxy` is kept for callers and ignored. */

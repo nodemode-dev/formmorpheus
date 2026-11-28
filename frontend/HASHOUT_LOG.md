@@ -2,90 +2,85 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.32.0
-Last updated: 2026-11-27 · generated voice, subtitles and speech to text (issue 31)
+Current build version: v0.35.0
+Last updated: 2026-11-27 · the translations, and main's other voice build left out
 
 ---
 
-## v0.32.0 · the speech cards after review (issue 31)
+## v0.35.0 · the translations, and main's other voice build left out
 
-- refers-to: ui/speech-panel.ts :: generate, land, elsewhere; ui/subtitles-panel.ts :: fromSound, retime, reword, refill, addLine, importFile; ui/speech-logic.ts :: lineAt, addEmptyLine, placeVoice, sameSound, unheardReason; ui/speech-set-row.ts :: act, fetchSet; media/speech/voice.ts :: endVoice, voiced, VOICE_IDLE_MS; media/speech/numbers.ts :: MAX_CARDINAL; platform/types.ts :: FeatureFlags.speech; app/speech-commands.ts; .npmrc
-- kind: decisions
+- refers-to: ui/i18n/*.ts (the 27 full tables); the first commit of this branch on main, which takes pull request #32's files out
+- kind: decision
+- logged: v0.35.0 · 2026-11-27
+
+- **113 new strings in each of the 27 full tables**, one appended block per table. `Position` was there already under a double-quoted key and was left alone. Sentences with a count put the number where the language needs no inflected noun beside the placeholder (for example a colon form in Czech, Polish, Ukrainian and Serbian), because these strings go through `tf`, not the plural forms. The regional tables (es-MX, fr-CA) keep only what differs and were not touched.
+- **Main gained pull request #32 while this branch was in work**: another build of the same two features (a Generate voice card with speech models run in the window, a loopback speech server relay, a Subtitles card, its own `engine/subtitles.ts`, `ui/subtitles-panel.ts` and `styles/subtitles.css` at the same paths as this branch's). The owner's call on 2026-11-27: where the two differ, this branch stands. This branch sits on main as a straight line: its first commit puts the files back as they were before #32, and its own commits follow on the tree they were written on (a merge commit would not have survived the signing rebase). So none of #32's files are in the tree: `ui/speech-*.ts`, `media/speech/*`, `app/speech-commands.ts`, `styles/speech.css`, `ui/subtitle-style-store.ts`, its tests under `tests/unit/` for those, its `package.json` additions and `.npmrc`, its small edits in `platform/`. They remain in the history at `4de35da`. Keeping both would have meant two voice cards, two subtitle models at one path and its tests run against this branch's different functions.
+- **Worth reading in #32 before anything like it is written here**: its three counted sentences use the language's plural forms; a spoken run never lands in a movie other than the one it started in; unspeakable text adds nothing.
+- The panel work (a docked Build panel, the mode switch in the Timeline's head row, where exports go) was under way when this was cut and is not in this version.
+
+## v0.34.0 · the faults of a tester's first session (discussion 16)
+
+- refers-to: ui/stage-view.ts :: boxOf, corners, pick, onSelected, clickTo, stretchTo, scaleFromSide, turnCentre, keepCentre, contentAt; ui/stage-world.ts :: hugBox, inkIndex; ui/content-menu.ts :: applyAct, arrange; ui/content-menu-ed.ts :: arrangeTracks, canArrange, ArrangeRows; ui/action-picker.ts :: pickAt; app/action-commands.ts :: applied, playOnce; engine/action-ops.ts :: resizeAction, actRoom, innerFrame; ui/timeline-acts.ts; ui/timeline.ts :: actspan drag, palette().chip, drawThumbs, the Theater button; ui/timeline-ed.ts :: snapAt; styles/timeline-look.css :: --fm-tl-plate; ui/character-builder.ts :: the Mine group, savedMine, add; ui/characters-panel.ts :: save; io/svg-export.ts :: characterToSvg, level; io/svg-import.ts :: parseSvgParts, svgToCharacterGroup; engine/starter-scene.ts :: layerTracks, sceneLayers, laySceneBehind; io/starter-scenes.ts :: addStarterSceneToMovie; ui/starter-scene-dialog.ts :: show(mode), onAdd; styles/movie-settings.css; styles/panels.css; ui/titlebar-tools.ts :: the Enter key; app/app.ts :: stage.nav.onContext, the info toast, add-starter-scene
+- kind: fix
+- logged: v0.34.0 · 2026-11-27
+
+- **The selection box was the movie's frame.** `StageView.boxOf` hugged only Shapes and a part picked inside a group; a top-level group (a character), a Drawing and a Flipbook fell back to `canvasOf`. Outline, handles, snapping and `pick` all used that, so clicks landed on whatever covered the Stage and side nodes squeezed a character. `hugBox` (stage-world.ts) now gives the union of a group's drawn parts at the playhead and the ink of a drawing's visible layers (one reduced read per decoded picture, at most 512 px a side, on a reused surface; kept per content object and frame). Nothing drawn falls back to the full canvas. An imported picture's box is the picture as fitted, which was right already.
+- **Picking.** `pick` uses the hugged box and skips hidden content. A press on the selected content's box drags it and never selects another (`onSelected`); a click there with no drag selects what is on top (`clickTo`). A hit is the hugged box, not `partAt`, which misses a built character's shins (left open: `ui/inner-pick.ts`).
+- **Handles.** In Compose the corner and turn handles work about the hugged box's centre; Keyframe and Perform keep the pivot. A side node on a group scales it whole about the opposite side; Alt gives the old one-way stretch. Other kinds keep the one-way stretch and text keeps its wrap width.
+- **The Stage's right-click** opens the content menu when content is under the pointer (`contentAt`, selected first), else the Stage's own menu.
+- **Apply Action in the content menu**, for one selected character; the card opens where the menu was opened through the one-shot `pickAt`. **Arrange** moves the tracks holding the selection with `ops.moveTrack`, since what is in front is the track order; a block shares its track's place, so its neighbours on that track move with it.
+- **An applied action plays once** from its first frame and the Playhead goes back; skipped when the movie is already playing; a stop by the person ends it there. Only seek, play and stop, so no undo step. The sentence goes to the status line and, as an info notice with vars, to a toast.
+- **An action's length** is changed by dragging its strip's edge on a selected block. `resizeAction` clears and applies again, so Clear still removes exactly what the action set; spans stay between their neighbours. A loop gets its passes and eases for the new length; a one-shot is cut when shortened and holds its last pose when lengthened, which is how `seal` and `shapeAt` already read an over-long span. The whole drag is one undo step.
+- **Block names** sat on `--fm-chip` (black at 62 percent in every theme) in `--text-primary`, so the light themes drew dark on black. `--fm-tl-plate` is the panel's own background at 88 percent; it is read once with the palette.
+- **A group's block showed grey bars** for its inner blocks (`drawGroupPreview`), which read as an empty block with lines. A group now shows its own picture along the block (`renderer.thumb`) on the lane's ground, like a picture block: it gets no paper, because that layer has no background of its own and a white block looked like one (the owner's call on 2026-11-27). `drawGroupPreview` stays in timeline-look.ts, unused.
+- **Theater** has a back chevron, a title with the default shortcut and an accessible name. It stays where it is until the panels of v0.35.0.
+- **Saved characters had no place in the builder.** The roster now starts with Mine: saved characters that carry a recipe, read once per name and modified time; a save is listed at once from the entry the write returns. While empty, a placeholder tile and a note hold one tile row so the first save moves nothing. Add to Movie closes the builder once the character is placed.
+- **The character SVG** nested every part in its parent's group, which painted a part drawn far below its parent (the cape, the back hair) at its parent's place; the import then stacked a nested part above its parent's own art. Parts now go out back to front as the Stage draws them, nested only where that keeps the order, else written where drawn with `data-fm-parent`. The import stacks by the document position of each part's first own element. Hidden parts are written `display:none`; shapes hidden by display, visibility or opacity 0 are kept as hidden shapes instead of dropped.
+- **A starter scene into the open movie.** The building code is shared (`layerTracks`, `scenePictures`); `laySceneBehind` appends the scene as bottom tracks, covering the frame with proportions kept, spanning the movie, taking the floor guide only when the movie has none and never the scene's camera. One undo step. The chooser has two modes and now picks on a click and takes on the button or a double click.
+- **Movie settings** overflowed because `.fm-ms-pane` had an auto grid column that grew to the widest row; `minmax(0, 1fr)` and wrapping labels. **Menus** get a max height from under the menu bar and scroll inside; a menu of 16 or more rows uses compact rows through `:has()`.
+- **The command search's Enter** was not prevented, so its keypress pressed whatever the chosen command gave focus to: the Characters card's close button (it opened and closed at once), an action card, a text field. `preventDefault` on that keydown.
+- Looked at in Chromium on 2026-11-27, most with the CPU throttled 4 times, both themes: each slice's before and after, then the tester's own path in one build (save a character, see it under Mine, Add to Movie closes the builder, the tight box, the right-click menu, a starter scene behind her, the character's picture on her block, the Characters card from the command search).
+
+## v0.33.0 · subtitles
+
+- refers-to: engine/subtitles.ts; engine/types.ts :: Subtitles, SubtitleCue, SubtitleStyle, Movie.subtitles; engine/render.ts :: drawFrame (last line); engine/normalize.ts :: normalizeMovie (tidySubtitles); io/subtitle-files.ts; media/speech-pcm.ts; media/fonts.ts :: subtitleFace, loadTextFonts; export/worker-host.ts :: the subtitle face in loads; ui/subtitles-panel.ts; styles/subtitles.css; app/voice-commands.ts :: blockOf; app/agent-bridge.ts :: setSubtitles; app/app.ts :: subtitlesPanel, subFace
+- kind: decision
+- logged: v0.33.0 · 2026-11-27
+
+- **Subtitles are a movie field, not content on a track**: one list of lines and one look. They are drawn by `drawSubtitles` as the last thing `Renderer.drawFrame` does, over the finished frame and outside the camera, so the Stage, the posters and every export carry them from the one call. Nothing in `export/` draws them itself.
+- **Frames inside, seconds outside.** A line in the movie is in frames with the end not included. A voice, a listening and a file speak in seconds; `linesToCues` maps them through the block's start, `offset` (the trimmed-off beginning) and `speed`, and each enclosing group, the way `media/audio.ts` schedules the sound. Where playback is silent (speed 0, a Time Remap lane, a retimed group) there are no lines.
+- **`from`** on a line is the sound block it came from, so making the lines of one sound again replaces only those and leaves hand-written lines alone.
+- **An AI voice adds its lines in the same step that writes `Asset.spoken`** (`speakToTimeline`). A voice with no timing (a voice app, the online voice) gets each sentence a share of the sound's time by its length.
+- **`tidySubtitles` drops an object that holds only defaults**, so a movie that never used subtitles saves none; show off or a changed look is kept even with no lines.
+- **Drawing**: weight 600 in the Text content's own family quoting and fallback stack (`fontCss`), wrapped to 88 percent of the width and 3 lines with an ellipsis, 6 percent from the edge. The bands of all lines are one path with one fill, so overlapping paddings are not twice as dark. With no band the letters get an outline. The wrap of the last line drawn is cached, keyed with `fontEpoch()`.
+- **The face is loaded** when the movie opens, before an export (`subtitleFace` in `loadTextFonts` and in the worker's `loads`), and when the font or the words' scripts change (`subFace` in `app.ts`).
+- **The card never keeps its own copy of the lines**; it redraws from `engine.movie` on `movie` and `projects`. Rows are keyed by line id and values go through `setValue`, so a field being typed in is never overwritten. Size and colour drags merge into one undo step.
+- **Import asks Replace or Add** through `chooseOrCancel`, so Escape cancels instead of adding.
+- **Listening** decodes the whole asset, mixes to mono, resamples to 16 kHz with an OfflineAudioContext and reuses `encodeWav`. A listening that hears nothing does not touch the movie.
+- **The subtitle files reader** parses times by hand, not with a backtracking pattern, and builds times from whole milliseconds so a write and a read give the same numbers.
+- Looked at in Chromium on 2026-11-27 with the CPU throttled 4 times, dark theme: a spoken line made its two lines by itself, they showed on the Stage with the band, Top and Bottom moved them, and Subtitles from this sound heard the same two sentences.
+
+## v0.32.0 · the AI Voice card
+
+- refers-to: ui/ai-voice-panel.ts; styles/ai-voice.css; io/voice-api.ts; app/voice-commands.ts :: speakToTimeline, spokenName; app/agent-bridge.ts :: addVoice; app/app.ts :: speakAt, the ai-voice command; engine/types.ts :: Asset.spoken
+- kind: decision
 - logged: v0.32.0 · 2026-11-27
 
-- **A run belongs to the movie it started in.** Generate and Make subtitles from this sound remember the movie's id. Opening another movie stops the run, and the id is looked at once more right before the movie step, so a result that still comes back is dropped with a sentence in the status line.
-- **Text with nothing to speak adds nothing.** Sentences that come back with no samples (no letters, or a language the voice does not speak) are left out of the sound and of the lines (`voiced`). With none left, the card shows "There are no words to speak in that text."; before, a silent one-frame block was added.
-- **A locked Subtitles track does not cost the voice.** `placeVoice` places the sound without lines and reports `locked`; the status line says so. Before, the lock threw and the finished voice was dropped.
-- **Add a line at the playhead never lands on a line.** Where a line already shows on that frame, nothing is added and that line's words field takes the caret (`lineAt`). Before, the new line replaced a line that started there and cut one it started inside.
-- **Lines heard from a sound are written only if the block still plays the same sound** (`sameSound`: asset, start, length, offset, speed, direction), looked up by id inside the movie step. A frozen block (speed 0) is refused at the start, as a backward one already was. A sound block cannot carry Time Remap keys (`engine/retime.ts :: timeKeys` gives none for sound), so there is nothing to refuse for those.
-- **A line's fields show what the movie holds after every edit** (`refill`), also when the edit was refused, as on a locked track. Before, the typed values stayed.
-- **The download row rides out missed status requests** (five in a row) while the engine downloads, and a 409 from Download means "already downloading", so the row reads the status again.
-- **The voice worker is ended** after five minutes without use and when the voice files are removed, so the model does not stay in memory for the session.
-- **Numbers up to 999 trillion are read in words;** longer runs of digits are still read digit by digit.
-- **iPad.** `platform.features.speech` is false there. Generate voice is not registered, so no menu, card or palette lists it. The Subtitles card stays, since typed lines, styling and subtitle files need no engine route; its From sound part is never put on the card and it asks the engine nothing.
-- **`.npmrc` sets `onnxruntime-node-install=skip`.** That package is a Node-side dependency of the speech to text library, never loaded or bundled; its install script would fetch binaries on Linux x64 outside the lockfile's hashes. npm 11 warns that a project setting it does not know stops being passed on in npm 12; the environment variable `ONNXRUNTIME_NODE_INSTALL=skip` does the same and will outlast that.
-
-## v0.32.0 · Generate voice and Subtitles cards (issue 31)
-
-- refers-to: ui/speech-panel.ts, ui/subtitles-panel.ts, ui/speech-set-row.ts, ui/speech-logic.ts, ui/subtitle-style-store.ts, app/speech-commands.ts, styles/speech.css, styles/subtitles.css, media/speech/listen-worker.ts, app/app.ts
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **Two cards, one pattern.** Both are built once into `#overlay-root` and patched in place, as `ui/voice-panel.ts` is. Everything that can be worked out with no window (sentence timing, typed seconds, a block's sample range, the style from the controls, the one movie step that lands a voice) is in `ui/speech-logic.ts` so it is tested with no model.
-- **A voice makes the movie longer when it has to.** An imported sound may lie past the end; a generated voice with its subtitles would then be cut off with no sign why, so `placeVoice` grows the movie's duration to the end of the block in the same undo step. The line edits of the Subtitles card do the same.
-- **Lines heard from a sound replace the lines under it.** Merged in, the heard lines and the ones already there (a generated voice's own sentences, say) cut each other into one-frame slivers, so `clearSpan` takes away the lines that start under the block first, in the same undo step, and the status line says so.
-- **The first lines of a movie take the style last chosen** (`ui/subtitle-style-store.ts`); a movie that has lines keeps its own, read from the first line.
-- **Line times are kept between the neighbours** (`clampSpan`): a typed time never reorders or overlaps lines, and the field shows what was kept.
-- **Speech server sound is kept as sent.** It is decoded only to learn its length; with no timing from the server, its length is shared between the text's sentences by their letters, with no gap.
-- **Speech to text under the page policy.** The speech to text library, with its runtime cache on, imports the runtime from a `blob:` address, which `script-src 'self' 'wasm-unsafe-eval'` refuses ("no available backend found"). `listen-worker.ts` turns that cache off (`env.useWasmCache = false`), so the runtime comes from the engine's own address. Found by running the built page from the engine; the dev server has no policy and hides it.
-- **Phrase timing, asked for outright.** The pinned listen files carry no cross attention outputs, so they can never time words. The worker first asked for word timing and fell back to phrase timing; on silence or phrases that meant hearing the whole sound twice. It now asks for phrase timing once (removed: the word timing call, its check for word-sized chunks and the console warning). A line's times are a phrase's span shared between its words.
-- **Listening progress.** The library reports nothing inside a 30 second window and ends a streamer once after each window, so the worker counts windows (`media/speech/listen-progress.ts`): a sound of more than one window shows a percentage that moves a window at a time; a sound that fits one window shows "Listening..." and a sweeping bar, where it used to show 30% until it was done.
-- **The Subtitles card stays over the Stage** (`max-height: 56vh`): the Timeline under it is where the sound block for speech to text is picked.
-
-## v0.32.0 · the built-in voice core (issue 31)
-
-- refers-to: media/speech/voice.ts :: speak, join, sentence, drop; media/speech/voice-worker.ts :: read, once, loadCore, speakOne; media/speech/paths.ts :: fileUrl; media/speech/models.ts; media/speech/phonemes.ts :: known, sayWord, weak, camel, compound, suffixed, spell; media/speech/numbers.ts :: normalizeText, yearLike; media/speech/sentences.ts :: splitSentences; media/speech/tokens.ts :: chunkPhonemes, styleFor, MAX_TOKENS
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **The worker sends the window key itself.** The engine answers only to the window's key, and the page's patched fetch (`io/window-key.ts`) does not exist inside a worker. Each job carries the key, and `voice-worker.ts` puts it on every read of a model file.
-- **`fileUrl` lives in `paths.ts`,** a module with no import, so the worker does not bundle the page's engine client (`io/api.ts`, which `models.ts` imports for its error type). `models.ts` hands the same function on to the page.
-- **One `speak()` at a time.** A cancel or a failure ends the worker so nothing half done is left running, and a second call sharing that worker would lose its sentence with it. Calls wait in a line; a call that failed does not hold up the next.
-- **One sentence a message.** Progress is per sentence, a cancel never waits for more than the sentence in hand, and the subtitle lines come from the same pieces. Inside the worker sentences also run one after another, because the model's session is not reentrant.
-- **One thread.** More threads need a cross-origin isolated page, which this one is not.
-- **A failed load is forgotten** (`once`, `loadCore`), so the next sentence tries the file again instead of failing until the app restarts. A 404 from the engine is told apart from other failures and becomes the "not installed yet" sentence.
-- **Beyond plain lookup.** The dictionaries are tried as written and lower case, gold before silver. Rules of our own were added where lookup alone read wrongly:
-  - weak forms: "a", "the" and "to" are in the dictionaries only in their strong form, so they are said weak, with "the" and "to" following whether the next word starts with a vowel sound, and "to" kept strong before a pause;
-  - a hyphenated word is tried joined (`lookup` with the hyphens taken out) before it is read part by part;
-  - capitalised joins (FormMorpheus as Form and Morpheus) and two dictionary words written as one (keyframe as key and frame, the longest first word winning) are read by their parts instead of being spelled.
-  - The code also builds plurals, possessives, -ed and -ing forms from a stem the dictionaries have, with the ending's sound chosen from the stem's last sound; this was not in the list of three and is recorded here because it is in `suffixed`.
-- **Short initialisms are spelled and not reported.** Two to five capitals the dictionaries lack (DNA, TV) are said as letters; that is the right reading, so they are left out of `unknown`. Any other word no dictionary or rule can read is spelled letter by letter and listed, and the card shows the list.
-- **Numbers become words first** (`numbers.ts`): money, percentages, ordinals, clock times, decades and a few symbols and abbreviations. A bare four-digit number from 1100 to 2099 is read as a year; with a comma, a decimal or a percent sign it is a plain number.
-- **A sentence over the model's limit.** Text is cut into sentences of at most 220 characters, at a comma, semicolon or colon before the limit when there is one. If the phonemes of one sentence still exceed 509 characters (`MAX_TOKENS`; the model takes fewer than 510), they are cut at a space and the pieces' audio is joined into that sentence's buffer.
-- **Sentences are joined with 0.3 s of silence** (`SENTENCE_GAP_SECONDS`), the same gap `engine/subtitles.ts` uses, so lines and sound agree.
-
-## v0.32.0 · the subtitles and speech to text core (issue 31)
-
-- refers-to: engine/subtitles.ts :: writeSubtitles, addSubtitles, restyleSubtitles, showSubtitles, readSubtitles, lineContent, restyled, settle, linesFromSentences, linesFromWords, toSrt, fromSrt; engine/types.ts :: Track.subtitles; media/speech/listen.ts :: listen, run, heardWords, resample16k, looped; media/speech/listen-worker.ts
-- kind: decisions
-- logged: v0.32.0 · 2026-11-27
-
-- **Subtitles are ordinary text blocks.** Each line is a text block made from the existing `subtitle` preset, on the one track marked `subtitles`. The track is inserted on top (index 0 is drawn last) and fixed to the screen, so the Stage and the export draw the lines with no change of their own, and a line can be edited like any text.
-- **Show and hide is the track's own `hidden`,** which the renderer and the export already skip.
-- **Seconds become frames by rounding the start and the end,** not the length, so two lines that touch in seconds still touch in frames.
-- **Restyle changes only what the style owns:** font, size, color, the box behind the words and `transform.y`. Runs, keys and anything else set by hand on a line survive.
-- **The card reads the style back from the first line** (the nearest size and position), so a movie carries its own style and nothing extra is saved.
-- **What a person put on the track stays.** `writeSubtitles` and `addSubtitles` replace or merge the text blocks only; a picture dropped on the subtitles track is carried through as it is (`withOthers`). Before, `settle` ran over the whole track, so a line could replace a picture that started on its frame or cut one it started inside. A locked track refuses the change.
-- **No overlaps between lines.** Lines are sorted by start, a later line trims the one before it, and of two that start on the same frame the later given stays. Other content on the track takes no part in this.
-- **Tags in a subtitles file are matched in one pass** (`SRT_TAG`, `<[^<>]*>|\{\\[^{}]*\}`). The first pattern let a tag run over later openers, so a row of 200,000 `<` was read once from each of them. The card refuses a file over 5 MB before reading it (`MAX_SUBTITLE_FILE_BYTES`).
-- **Line shapes.** A spoken sentence over 84 characters is split into lines of at most 42 that share its time by length. Heard words are grouped into lines of at most 42 characters or 7 words, with a new line after a silence over 0.7 s or sentence-ending punctuation.
-- **Speech to text runs in a one-job worker,** ended after each run. Ending it frees the model's memory, and it is the only way to stop a run part way.
-- **Model files come only from the engine.** The library's host is pointed at `/api/speech-models/`, its local models and its browser cache are off, and the worker's fetch adds the window key to requests for the engine's own address. It runs on wasm with the quantized files (`dtype: 'q8'`), the only ones the engine pins.
-- **The runtime cache is off and timing is per phrase:** both are in the cards entry above (Speech to text under the page policy; Word timing). Checked for this entry: the pinned decoder file has no `cross_attentions` outputs. A segment's span is shared between its words by their length, so lines made from a sound are timed per phrase, not per word.
-- **Sound is brought to 16 kHz mono on the page,** averaged over each step going down so highs do not fold back.
-- **Loops are dropped.** A small speech model repeats a phrase or a word over silence and noise; a stretch that repeats is left out, judged a stretch at a time so real speech beside it stays.
-- **The language is given, never guessed.** `listen` takes a two-letter code; the card always sends one (English until the person picks another).
-- **Subtitle files** are SubRip text. Reading is lenient: any line ends, a byte order mark, a dot for the comma, missing indexes; simple tags are dropped and a cue that cannot be read is skipped.
+- **A spoken sound comes in through the same import as any sound file** (`importFiles` with a Timeline drop at the frame), so decoding, the waveform, the sound track and undo are the ones every sound has. `speakToTimeline` then finds the one new audio asset and writes `Asset.spoken` (text, engine, voice, cues) in a second step named AI Voice. That makes two undo steps for one Speak; folding them into one is left for the subtitles work, which reads the note.
+- **`spokenName`** keeps letters, digits and spaces of the first 40 characters and ends on a whole word when one ends in the last stretch, so a block is not named with half a word.
+- **The card is built once** with `el()` and afterwards only hidden states, classes, text and attributes change. The setup bar keeps its box while idle (hidden with `visibility`) and the step line has a minimum height, so starting the setup moves nothing. Voice selects are updated in place by voice id under optgroups; a list that did not change is not touched.
+- **It takes the Record sound card's spot** and `--z-companion`, so `app.ts` closes one when the other opens (the two commands and the track menu's Record row).
+- **The setup is polled every 700 ms** only while the card is open and a job runs; showing the card again reads the status and picks the polling up.
+- **Closing the card aborts nothing**: a running Speak finishes and lands. Escape closes only when nothing runs. Cancel aborts the request; the engine may still finish the sound, which its hourly sweep removes.
+- **The text area keeps maxlength 10000 on both tabs** so a tab switch never cuts the text; Online counts against 2000 and disables Speak above it.
+- **The first voice offered is af_heart**, the model's own default, not the first of the alphabet.
+- **Speed is sent only with the built-in voice**, the only engine that shows the control. The built-in voice is sent its own language, so a Spanish voice reads Spanish.
+- **The local app's address, model and voice are saved** when Check succeeds and before each local Speak; its key is sent only after the Key field was typed in.
+- **Remove the built-in voice** asks through `confirmAction` (`ui/dialogs.ts`).
+- **The online key line names ElevenLabs** because the person must know which key to paste; the name is not in `setup/lint_text_banned.txt`.
+- **AI Voice is off on iPad** (`platform.kind !== 'ipad'`): the routes are desktop only.
+- **New labels are English only** in this version; `t()` falls back to English in the other languages until the tables are filled.
+- Looked at in Chromium on 2026-11-27 with the CPU throttled 4 times, dark theme: the card opened from the command search, the built-in voice spoke two sentences, and the block with its waveform appeared on a new sound track at the playhead with nothing else moving.
 
 ## v0.31.0 · line comments moved here
 

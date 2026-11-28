@@ -19,7 +19,8 @@ import { openKeyField } from './key-inline';
 import { KeyGroupDrag } from './key-group';
 import { keyChosen } from './key-state';
 import { mods, perform, REC_GLYPH } from './perform-ui';
-import { el, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
+import { el, isMac, q, setClass, setHidden, setHtml, setText, setTitle } from './dom';
+import { formatKeys } from './commands';
 import { icon } from './icons';
 import { cameraMode } from './camera-view';
 import { LANES_GAP, LANE_H, drawLanes, hitLanes, keyBefore, laneSlots, lanesHeight, setGlyphLoadHandler, setLaneHover, type LaneGeom, type LaneHit } from './key-lanes';
@@ -35,7 +36,7 @@ import { srcFrame } from '../engine/retime';
 import * as lockOps from '../engine/lock-ops';
 import * as hideOps from '../engine/hide-ops';
 import { drawBrackets, drawChevron, drawLift, drawLockHatch, drawSoundMark } from './timeline-marks';
-import { chipFill, drawFlipCells, drawGroupPreview } from './timeline-look';
+import { chipFill, drawFlipCells } from './timeline-look';
 import { drawPerson } from './character-glyph';
 import { TrackHeads } from './timeline-heads';
 import { InnerMenu } from './timeline-inner';
@@ -44,6 +45,8 @@ import { findDeep, movieStart } from '../engine/character-ops';
 import { laneFocus } from './lane-focus';
 import { loadView, saveView, type SavedView } from './timeline-view';
 import { actPick, actStripAt, drawActStrips } from './act-strips';
+import { actEdgeAt, drawActHandles, shownFrames } from './timeline-acts';
+import { blockFrame, resizeAction } from '../engine/action-ops';
 type SavedViewArgs = SavedView & { id: string };
 import { rulerDrag, SpacePan } from './timeline-nav';
 import { toast } from './toast';
@@ -98,6 +101,8 @@ type Drag =
   | { kind: 'move'; x0: number; y0: number; applied: number; appliedTrack: number; tag: string; moved: boolean; id: string; lane0: number; s0: number; gx: number; gy: number; px: number; py: number; insert: number | null; blocked: boolean; want: number; wantLane: number }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; x0: number; applied: number; ripple: boolean; tag: string; hold?: number }
   | { kind: 'fade'; id: string; which: 'in' | 'out'; tag: string }
+  /** An action strip's edge: `field` of span `index`, from `v0`; every step is placed again from `base`, the movie as the drag began. */
+  | { kind: 'actspan'; id: string; index: number; field: 'from' | 'to'; v0: number; from0: number; to0: number; x0: number; here: number; rate: number; lo: number; hi: number; cur: number; base: Movie; tag: string }
   | { kind: 'inner'; id: string; mode: 'move' | 'start' | 'end'; x0: number; y0: number; applied: number; appliedRow: number; moved: boolean; tag: string; lane0: number; gx: number; itemStart: number; w: number; out: { lane: number; insert: number | null } | null }
   | { kind: 'box'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'lasso'; pts: Pt[]; base: string[] }
@@ -135,7 +140,7 @@ export class TimelineView {
   readonly root = el(`<section class="fm-timeline" aria-label="Timeline">
     <div class="fm-transport">
       <div class="fm-transport-left">
-        <button class="fm-pill-btn" type="button" data-act="home">Theater</button>
+        <button class="fm-pill-btn fm-home-btn" type="button" data-act="home" title="Theater: back to your movies (${formatKeys('Shift+Mod+H')})" aria-label="Theater: back to your movies" aria-keyshortcuts="Shift+${isMac ? 'Meta' : 'Control'}+H"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Theater</button>
         <button class="fm-round-btn" type="button" data-act="settings" title="Movie settings" aria-label="Movie settings">${icon('movieSettings', 18)}</button>
         <button class="fm-round-btn" type="button" data-act="multi" title="Multi-select" aria-label="Multi-select" aria-pressed="false">${icon('multiSelect', 18)}</button>
         <button class="fm-round-btn" type="button" data-act="camera" title="Camera mode" aria-label="Camera mode" aria-pressed="false">${kindSpec('camera').icon}</button>
@@ -341,7 +346,7 @@ export class TimelineView {
     // While a block is dragged or trimmed only its position changes: the thumbnails are kept and renewed once at the drop.
     engine.on('movie', () => {
       const k = this.drag?.kind;
-      if (k === 'move' || k === 'trim' || k === 'inner' || k === 'key') this.thumbStale = true; else this.thumbGen++;
+      if (k === 'move' || k === 'trim' || k === 'inner' || k === 'key' || k === 'actspan') this.thumbStale = true; else this.thumbGen++;
       this.schedule();
     });
     engine.on('selection', () => {
@@ -704,7 +709,7 @@ export class TimelineView {
       lane: v('--fm-lane', '#1b1b1f'), laneAlt: v('--fm-lane-alt', '#202026'), block: v('--fm-block', '#2c2c33'), blockLine: v('--fm-block-line', '#3a3a44'),
       text: v('--text-primary', '#f2f2f2'), muted: v('--text-muted', '#8a8a8a'), accent: v('--accent-color', '#857cf3'), select: v('--fm-tl-select', v('--accent-color', '#f97316')), playhead: v('--fm-playhead', '#f2f2f2'),
       keyBar: v('--fm-key-bar', '#1e1e22'), keyRow: v('--fm-key-row', '#1a1a1e'), onAccent: v('--text-on-accent', '#ffffff'),
-      ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-chip', 'rgba(10,10,12,.72)'),
+      ruler: v('--fm-ruler', '#151518'), tick: v('--fm-tick', '#55555e'), end: v('--fm-end', '#0d0d10'), chip: v('--fm-tl-plate', v('--fm-chip', 'rgba(10,10,12,.72)')),
       hl: {
         none: v('--fm-block', '#2c2c33'), red: v('--fm-hl-red', '#e5484d'), orange: v('--fm-hl-orange', '#f97316'), yellow: v('--fm-hl-yellow', '#e8c547'),
         green: v('--fm-hl-green', '#46a758'), teal: v('--fm-hl-teal', '#12a594'), blue: v('--fm-hl-blue', '#3a7bff'), purple: v('--fm-hl-purple', '#8e4ec6'), pink: v('--fm-hl-pink', '#e93d82'),
@@ -1203,7 +1208,10 @@ export class TimelineView {
       }
       c.restore();
     }
-    if (item.character?.acts && w > 8) drawActStrips(c, item, x0, w, y, BLOCK_H, this.ppf, p);
+    if (item.character?.acts && w > 8) {
+      drawActStrips(c, item, x0, w, y, BLOCK_H, this.ppf, p);
+      if (selected) drawActHandles(c, item, x0, w, y, BLOCK_H, this.ppf, this.drag?.kind === 'actspan' && this.drag.id === item.id ? this.drag.index : -1, p.accent, p.onAccent);
+    }
     if (item.kind === 'group' && w > 70) {
       const open = this.opened.has(item.id), ax = x1 - 18, ay = y + 6;
       c.fillStyle = p.chip;
@@ -1274,7 +1282,8 @@ export class TimelineView {
       drawFlipCells(c, item, x0, y, BLOCK_H, this.ppf, this.width, tileW, (local) => this.flipTile(m, item, local, tileW), m.transparent ? undefined : m.background);
       return;
     }
-    if (item.kind === 'group') { drawGroupPreview(c, item, x0, y, w, BLOCK_H, this.ppf, this.palette().text); return; }
+    // a group (a character) shows its own picture on the lane's ground, like a picture block: it has no paper of its own.
+    // It used to show grey bars for its inner blocks, which read as an empty block with lines.
     // a Drawing, Text or Shape sits on the paper it will be seen on
     if (item.kind === 'drawing' || item.kind === 'text' || item.kind === 'shape') {
       c.fillStyle = m.transparent ? '#d9d9de' : m.background;
@@ -1544,11 +1553,18 @@ export class TimelineView {
     return null;
   }
 
+  /** An action strip's edge under the pointer on a selected character block, gripped as a block's edges are. */
+  private actEdge(h: { item: Content | null; index: number; x: number; y: number }, e: PointerEvent): ReturnType<typeof actEdgeAt> {
+    const it = h.item;
+    if (!it?.character?.acts || !this.engine.selection.content.includes(it.id)) return null;
+    return actEdgeAt(it, h.x - this.fx(it.start), h.y - this.laneTop(h.index), BLOCK_H, this.ppf, e.pointerType === 'touch' ? 14 : 6);
+  }
+
   private hover(e: PointerEvent): void {
     const h = this.hit(e);
     const m = this.engine.movie;
     const nearEnd = !!m && Math.abs((e.clientX - this.tracksCanvas.getBoundingClientRect().left) - this.fx(m.duration) - 4) < 6;
-    this.tracksCanvas.style.cursor = h?.edge || nearEnd ? 'ew-resize' : h?.item ? 'grab' : 'default';
+    this.tracksCanvas.style.cursor = h?.edge || nearEnd || (h && this.actEdge(h, e)) ? 'ew-resize' : h?.item ? 'grab' : 'default';
     const lane = h ? h.index : -1;
     if (lane !== this.hoverLane) { this.hoverLane = lane; this.schedule(); }
     const lh = this.laneHit(e);
@@ -1685,6 +1701,20 @@ export class TimelineView {
           this.schedule();
           return;
         }
+      }
+      // an action strip's edge on the selected block: the drag gives the action new frames (before the block's own edge, which still trims above the strip)
+      const ae = !additive && e.button === 0 ? this.actEdge(h, e) : null;
+      const acts = h.item.character?.acts;
+      if (ae && acts) {
+        const g = h.item, s = acts[ae.index], sp = g.speed ?? 1, shown = shownFrames(g), v0 = s[ae.field];
+        actPick.id = g.id;
+        actPick.index = ae.index;
+        this.drag = {
+          kind: 'actspan', id: g.id, index: ae.index, field: ae.field, v0, from0: s.from, to0: s.to, x0: e.clientX, here: g.start + blockFrame(g, v0),
+          rate: g.reverse ? -sp : sp, lo: Math.min(shown.lo, v0), hi: Math.max(shown.hi, v0), cur: v0, base: m, tag: `actspan-${Date.now()}`,
+        };
+        this.schedule();
+        return;
       }
       const strip = h.item.character?.acts && !h.edge ? actStripAt(h.item, x - this.fx(h.item.start), h.y - this.laneTop(h.index), BLOCK_H, this.ppf) : -1;
       if (strip >= 0 || actPick.id) { actPick.id = strip >= 0 ? h.item.id : null; actPick.index = strip; this.schedule(); }
@@ -1992,6 +2022,18 @@ export class TimelineView {
       const bx = this.fx(item.start), w = this.fx(end(item)) - bx;
       const px = e.clientX - this.tracksCanvas.getBoundingClientRect().left - bx;
       this.engine.run(d.which === 'in' ? 'Fade In' : 'Fade Out', (mv) => setFade(mv, d.id, d.which, fadeFramesFor(d.which, px, w, this.ppf)), d.tag);
+    } else if (d.kind === 'actspan') {
+      // block frames under the pointer (snapped as a trim is), turned into frames of the character's tracks inside what the block shows
+      const total = this.ed.snapAt(m, d.here, d.tag, Math.round(((e.clientX - d.x0) / this.ppf) * speed), e);
+      const v = Math.max(d.lo, Math.min(d.hi, d.v0 + Math.round(total * d.rate)));
+      if (v === d.cur) return;
+      d.cur = v;
+      try {
+        const r = resizeAction(d.base, d.id, d.index, d.field === 'from' ? v : d.from0, d.field === 'to' ? v : d.to0);
+        this.engine.run('Action Length', () => r.movie, d.tag);
+        actPick.id = d.id;
+        actPick.index = r.index;
+      } catch (err) { if (!(err instanceof ops.OpError)) throw err; this.lastErr = err.message; }
     } else if (d.kind === 'trim') {
       const total = this.ed.snapTrim(m, d.id, d.edge, d.tag, d.applied, Math.round(((e.clientX - d.x0) / this.ppf) * speed), e);
       const step = total - d.applied;
@@ -2153,7 +2195,7 @@ export class TimelineView {
       d.g.end();
       if (!d.g.moved && e.type === 'pointerup') this.keySel.toggle(d.id, d.lk, d.key);
     }
-    if (d.kind === 'move' ||d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade') this.engine.endGesture();
+    if (d.kind === 'move' ||d.kind === 'trim' || d.kind === 'duration' || d.kind === 'key' || d.kind === 'inner' || d.kind === 'fade' || d.kind === 'actspan') this.engine.endGesture();
     if (d.kind === 'move' && !d.moved && !this.addsToSelection(e)) {
       const h = this.hit(e);
       if (h?.item) this.engine.select([h.item.id], h.track.id);
@@ -2212,7 +2254,7 @@ export class TimelineView {
     gestureRegion(this.root, {
       dragging: () => {
         const k = this.drag?.kind;
-        return k === 'move' || k === 'trim' || k === 'key' || k === 'duration' || k === 'box' || k === 'lasso' || k === 'keylasso';
+        return k === 'move' || k === 'trim' || k === 'key' || k === 'duration' || k === 'box' || k === 'lasso' || k === 'keylasso' || k === 'actspan';
       },
       holdOwn: (target, x, y) => target === this.tracksCanvas && !!this.laneHit({ clientX: x, clientY: y }),
       begin: (_n, cx) => {
