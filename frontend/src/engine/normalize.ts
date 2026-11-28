@@ -134,6 +134,7 @@ function character(c: Obj, kind: string): void {
   if (Object.keys(was).length) ch.missingWas = was; else delete ch.missingWas;
   if (Array.isArray(ch.builtHidden)) ch.builtHidden = ch.builtHidden.filter((n): n is string => typeof n === 'string' && n in parts);
   if (!Array.isArray(ch.builtHidden) || !ch.builtHidden.length) delete ch.builtHidden;
+  if (Array.isArray(ch.sourceHidden)) ch.sourceHidden = ch.sourceHidden.filter((n): n is string => typeof n === 'string' && n in parts); else delete ch.sourceHidden;
   characterDef(ch);
 }
 

@@ -312,6 +312,8 @@ export interface CharacterInfo {
   build?: import('./cast/spec').CastSpec;
   /** Parts a rebuild hid because the recipe no longer draws them; a later rebuild that draws one shows it again. Absent: none. */
   builtHidden?: string[];
+  /** Part names the linked source file hid when it was last read; a part's hidden state follows the file only where the file changed it. Absent: the parts hidden now. */
+  sourceHidden?: string[];
 }
 
 /** A linked source file as the engine's stat route last saw it (bytes, seconds since the epoch, hex digest). */
