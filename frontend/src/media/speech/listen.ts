@@ -149,7 +149,7 @@ async function requireInstalled(signal?: AbortSignal): Promise<void> {
     console.error('Speech models status failed:', e);
     throw new Error(t('The FormMorpheus engine did not answer, so speech to text cannot start.'));
   }
-  if (!installed) throw new Error(t('Speech to text is not installed yet. Download it in the speech settings first.'));
+  if (!installed) throw new Error(t('Speech to text is not installed yet. Download it in the Subtitles card first.'));
 }
 
 function run(samples: Float32Array, opts: ListenOptions): Promise<{ chunks: HeardChunk[]; byWord: boolean }> {

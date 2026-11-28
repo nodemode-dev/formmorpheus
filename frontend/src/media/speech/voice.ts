@@ -29,7 +29,7 @@ export const VOICES: readonly VoiceInfo[] = Object.freeze(IDS.map(describe));
 export const SENTENCE_GAP_SECONDS = 0.3;
 const MIN_SPEED = 0.5;
 const MAX_SPEED = 2;
-const NOT_INSTALLED = 'The built-in voice is not installed yet. Download it in the speech settings first.';
+const NOT_INSTALLED = 'The built-in voice is not installed yet. Download it in the Generate voice card first.';
 
 const aborted = (): DOMException => new DOMException('Speaking was cancelled', 'AbortError');
 
