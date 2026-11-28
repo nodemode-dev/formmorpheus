@@ -9,7 +9,14 @@ import { confirmAction } from './dialogs';
 import { el, patchList, q, setClass, setDisabled, setHidden, setStyleVar, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
 import { t } from './i18n';
+import { platform } from '../platform';
 import '../styles/ai-voice.css';
+
+// the built-in voice is a Python runtime the iPad cannot run: there the offline voice is a speech server on the network
+const IPAD = platform.kind === 'ipad';
+const KEY_NOTE = IPAD
+  ? 'Your own ElevenLabs key. It is kept in this iPad\'s keychain and sent only to that service.'
+  : 'Your own ElevenLabs key. It is kept in this computer\'s keychain and sent only to that service.';
 
 type Tab = 'offline' | 'online';
 type Source = 'builtin' | 'local';
@@ -26,8 +33,8 @@ const X = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="c
 function loadOpts(): Opts {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE) ?? '{}') as Partial<Opts>;
-    return { ...DEFAULTS, ...raw, voice: { ...(raw.voice ?? {}) }, local: { ...DEFAULTS.local, ...(raw.local ?? {}) } };
-  } catch { return { ...DEFAULTS, voice: {}, local: { ...DEFAULTS.local } }; }
+    return { ...DEFAULTS, ...raw, ...(IPAD ? { engine: 'local' as const } : {}), voice: { ...(raw.voice ?? {}) }, local: { ...DEFAULTS.local, ...(raw.local ?? {}) } };
+  } catch { return { ...DEFAULTS, ...(IPAD ? { engine: 'local' as const } : {}), voice: {}, local: { ...DEFAULTS.local } }; }
 }
 
 const mb = (bytes: number): string => (bytes / 1048576).toFixed(0);
@@ -201,7 +208,7 @@ export class AiVoicePanel {
 
     // ---- offline: a voice app on this computer ----
     this.localBox = el<HTMLElement>('<div class="fm-aiv-src" hidden></div>');
-    this.base = named<HTMLInputElement>('<input class="cv-input" type="url" spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:8080">', 'Address');
+    this.base = named<HTMLInputElement>(`<input class="cv-input" type="url" spellcheck="false" autocomplete="off" placeholder="${IPAD ? 'http://192.168.1.20:8080' : 'http://127.0.0.1:8080'}">`, 'Address');
     this.modelList = el<HTMLDataListElement>('<datalist id="fm-aiv-models"></datalist>');
     this.voiceList = el<HTMLDataListElement>('<datalist id="fm-aiv-voices"></datalist>');
     this.model = named<HTMLInputElement>('<input class="cv-input" type="text" spellcheck="false" autocomplete="off" list="fm-aiv-models">', 'Model');
@@ -215,9 +222,16 @@ export class AiVoicePanel {
     this.localBox.append(
       row('Address', baseRow), this.checkLine, row('Model', this.model), row('Voice', this.localVoice), row('Key', this.localKey),
       this.modelList, this.voiceList,
-      para('fm-aiv-note', 'Any voice app on this computer that answers the common speech API works here, a cloned voice included. Start the app first.'),
+      IPAD
+        ? para('fm-aiv-note', 'Give the address of a speech server on a computer on the same network. Any app there that answers the common speech API works, a cloned voice included. Start it first.')
+        : para('fm-aiv-note', 'Any voice app on this computer that answers the common speech API works here, a cloned voice included. Start the app first.'),
     );
-    this.panels.offline.append(row('Voice from', this.source), this.builtinBox, this.localBox);
+    const sourceRow = row('Voice from', this.source);
+    if (IPAD) {
+      setHidden(sourceRow, true);
+      this.panels.offline.append(para('fm-aiv-note', 'The built-in voice needs a computer. On iPad, use a speech server on the same network, or an online voice.'));
+    }
+    this.panels.offline.append(sourceRow, this.builtinBox, this.localBox);
 
     // ---- online ----
     this.keyBox = el<HTMLElement>('<div class="fm-aiv-src"></div>');
@@ -225,7 +239,7 @@ export class AiVoicePanel {
     this.saveKeyBtn = button('cv-btn', 'Save key');
     const keyRow = el<HTMLElement>('<div class="fm-aiv-split"></div>');
     keyRow.append(this.onlineKey, this.saveKeyBtn);
-    this.keyNote = para('fm-aiv-note', 'Your own ElevenLabs key. It is kept in this computer\'s keychain and sent only to that service.');
+    this.keyNote = para('fm-aiv-note', KEY_NOTE);
     this.keyBox.append(row('Key', keyRow), this.keyNote);
     this.onlineBox = el<HTMLElement>('<div class="fm-aiv-src" hidden></div>');
     this.onlineVoice = named<HTMLSelectElement>('<select class="cv-input"></select>', 'Voice');
@@ -293,7 +307,8 @@ export class AiVoicePanel {
     setHidden(this.root, false);
     this.syncControls();
     this.patch();
-    if (!was) this.text.focus();
+    // on iPad a focused field brings up the on-screen keyboard over half the window before anything is chosen
+    if (!was && !IPAD) this.text.focus();
     void this.refresh();
   }
 
@@ -630,7 +645,7 @@ export class AiVoicePanel {
     setHidden(this.keyBox, !st || hasKey);
     setHidden(this.onlineBox, !hasKey);
     setText(this.keyNote, canStore
-      ? t('Your own ElevenLabs key. It is kept in this computer\'s keychain and sent only to that service.')
+      ? t(KEY_NOTE)
       : t('This computer has no keychain FormMorpheus can use, so a key cannot be kept here.'));
     setClass(this.keyNote, 'is-warn', !canStore);
     setDisabled(this.onlineKey, !canStore);

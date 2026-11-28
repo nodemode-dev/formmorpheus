@@ -226,13 +226,21 @@ export function startApp(): void {
     engine.select([id]);
     commands.run('character.walk-here');
   });
+  // iPad: a touch and hold opens the menu, but its touch already changed the selection when it went down
+  let touchedFrom: { id: string | null; at: number } | null = null;
+  if (platform.kind === 'ipad') stage.root.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse') touchedFrom = { id: selectedCharacter(engine)?.id ?? null, at: performance.now() };
+  }, true);
   stage.nav.onContext = (x, y) => {
     lastContext = { x, y };
     // over content, the right-click is about that content: select it and open its menu; over empty Stage, the Stage's own
     const hit = stage?.contentAt(x, y) ?? null;
-    const was = selectedCharacter(engine);
-    walker = hit && was && was.id !== hit ? was.id : null;
+    const held = touchedFrom && performance.now() - touchedFrom.at < 2000 ? touchedFrom.id : undefined;
+    touchedFrom = null;
+    const was = held === undefined ? selectedCharacter(engine)?.id ?? null : held;
+    walker = hit && was && was !== hit ? was : null;
     if (hit) { if (!engine.selection.content.includes(hit)) engine.select([hit]); contentMenu.open(x, y); return; }
+    if (held && !selectedCharacter(engine) && engine.movie && findContent(engine.movie, held)) engine.select([held]);
     stageMenu.setItems(['character.walk-here', '-', 'stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
   // like New: the movie opens unnamed and the library adopts it under a free "Untitled Movie" name
@@ -720,7 +728,7 @@ export function startApp(): void {
     { id: 'import-video', label: 'Video...', icon: 'video', enabled: has, run: () => pickFor('video/*') },
     { id: 'import-audio', label: 'Audio...', icon: 'audio', enabled: has, run: () => pickFor('audio/*,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2') },
     { id: 'record-audio', label: 'Record sound...', icon: 'audio', enabled: has, run: () => { aiVoice.close(); subtitlesPanel.close(); voicePanel.show(); } },
-    { id: 'ai-voice', label: 'AI Voice...', icon: 'audio', enabled: () => has() && platform.kind !== 'ipad', run: () => { voicePanel.close(); subtitlesPanel.close(); aiVoice.show(); } },
+    { id: 'ai-voice', label: 'AI Voice...', icon: 'audio', enabled: () => has(), run: () => { voicePanel.close(); subtitlesPanel.close(); aiVoice.show(); } },
     { id: 'subtitles', label: 'Subtitles...', icon: 'text', enabled: has, run: () => { voicePanel.close(); aiVoice.close(); subtitlesPanel.show(); } },
     { id: 'sound-card', label: 'Sound options...', enabled: () => engine.selected.some((c) => c.kind === 'audio'), run: () => soundCard.show() },
     { id: 'import-file', label: 'File...', icon: 'upload', enabled: has, run: () => pickFor(MEDIA_ACCEPT) },

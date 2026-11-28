@@ -12,7 +12,11 @@ import { chooseOrCancel } from './dialogs';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
 import { t } from './i18n';
+import { platform } from '../platform';
 import '../styles/subtitles.css';
+
+// the iPad listens with its own on-device speech recognition: no runtime, no model to download, a permission asked once
+const IPAD = platform.kind === 'ipad';
 
 type Position = SubtitleStyle['position'];
 
@@ -189,7 +193,9 @@ export class SubtitlesPanel {
     setHidden(this.listenCancel, true);
     const listenActs = el<HTMLElement>('<div class="fm-sub-acts"></div>');
     listenActs.append(this.listenBtn, this.listenCancel);
-    this.runtimeNote = para('fm-sub-note', 'Listening uses the built-in voice\'s runtime. Set up the built-in voice first, in the AI Voice card.');
+    this.runtimeNote = IPAD
+      ? para('fm-sub-note', 'Listening uses this iPad\'s own speech recognition, on the device. It asks for permission the first time.')
+      : para('fm-sub-note', 'Listening uses the built-in voice\'s runtime. Set up the built-in voice first, in the AI Voice card.');
     setHidden(this.runtimeNote, true);
     this.setupBox = el<HTMLElement>('<div class="fm-sub-setup" hidden></div>');
     this.setupBtn = button('cv-btn', 'Download the listening model');
@@ -506,7 +512,7 @@ export class SubtitlesPanel {
 
   private async listen(): Promise<void> {
     const block = this.soundSelected();
-    if (!block || this.ctrl || !this.st?.ready) return;
+    if (!block || this.ctrl || !this.st || !(this.st.ready || IPAD)) return;
     const id = block.id;
     const name = block.name || this.engine.movie?.assets[block.asset as string]?.name || t('this sound');
     const language = this.language.value || 'auto';
@@ -516,6 +522,7 @@ export class SubtitlesPanel {
     this.ctrl = ctrl;
     this.patchListen();
     try {
+      if (!this.st.ready && !(await this.allowListening(ctrl.signal))) return;
       const sound = await soundForSpeech(this.engine, id);
       if (ctrl.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
       if (!sound) { this.showErr(t('This sound could not be read.')); return; }
@@ -534,6 +541,20 @@ export class SubtitlesPanel {
       this.ctrl = null;
       this.patchListen();
     }
+  }
+
+  /** iPad: the first listening asks for the speech recognition permission through the setup route; says whether it was given. */
+  private async allowListening(signal: AbortSignal): Promise<boolean> {
+    let job: VoiceJob | null = await voiceApi.setupListen();
+    while (job?.state === 'running') {
+      await new Promise((r) => window.setTimeout(r, POLL_MS));
+      if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      job = await voiceApi.listenJob();
+    }
+    this.st = await voiceApi.listenStatus();
+    if (this.st.ready) return true;
+    this.showErr(job?.error || t('Listening needs permission to use speech recognition. Allow it for FormMorpheus in the Settings app.'));
+    return false;
   }
 
   // ---- files ----
@@ -646,9 +667,9 @@ export class SubtitlesPanel {
     const listening = !!this.ctrl;
     const job = this.job?.state === 'running' ? this.job : null;
     const ready = !!st?.ready && !job;
-    setHidden(this.runtimeNote, !st || ready || !!job || st.runtime);
-    setHidden(this.setupBox, !st || ready || (!st.runtime && !job));
-    setHidden(this.readyBox, !ready);
+    setHidden(this.runtimeNote, !st || ready || (IPAD ? false : !!job || st.runtime));
+    setHidden(this.setupBox, IPAD || !st || ready || (!st.runtime && !job));
+    setHidden(this.readyBox, IPAD ? !st : !ready);
     setHidden(this.setupBtn, !!job);
     setHidden(this.setupCancel, !job);
     setClass(this.prog, 'is-idle', !job);
@@ -669,7 +690,7 @@ export class SubtitlesPanel {
 
     setText(this.listenBtn, listening ? t('Listening...') : t('Subtitles from this sound'));
     setClass(this.listenBtn, 'is-busy', listening);
-    setDisabled(this.listenBtn, listening || !ready || !this.soundSelected());
+    setDisabled(this.listenBtn, listening || !(IPAD ? !!st : ready) || !this.soundSelected());
     setHidden(this.listenCancel, !listening);
     setDisabled(this.language, off || listening);
   }
