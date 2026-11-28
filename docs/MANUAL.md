@@ -61,6 +61,7 @@ In Compose you build the structure of the movie.
 - **Copy, Cut, Paste** with Ctrl+C, Ctrl+X, Ctrl+V.
 - **Delete** with Delete or Backspace. A Preferences option asks first.
 - **Right-click** a block for its options: opacity, volume, rename, highlight color, blend mode, mask, invert, reverse keyframes, convert to Flipbook, group, and track options.
+- **Foreground and background.** Each block is drawn on its track, and the order of the tracks is the stacking order: the track at the top of the Timeline is in front, and the track at the bottom is at the back. To put something in front of another, move its track above the other's with Move up or down in the track options, or right-click the content and choose **Arrange**: Bring to Front, Bring Forward, Send Backward or Send to Back moves it forward or back, by moving its track in the stack.
 - **Right-click** a track name for track options: rename, show all, hide all, add track above, move up or down, remove an empty section, delete.
 - **Right-click** content on the Stage for the same menu as its block. A right-click on empty Stage opens the Stage's own menu. The menu has Duplicate and Delete, and an **Arrange** group: **Bring to Front**, **Bring Forward**, **Send Backward** and **Send to Back**. They move the content's track in the stack, since the track higher up is drawn in front, and each is one undo step. On a character the menu also has **Apply Action...** (see Actions).
 
@@ -200,6 +201,7 @@ Choose **Build a character** at the top of the Characters panel, Content · **Ch
 - **Presets** on the left: the built starter characters, grouped as Women, Men and Specials, under a first group, **Mine**, that lists the characters you saved. With none saved it reads "Characters you save appear here." Press one to start from it; a saved one opens again with its recipe. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
 - **The preview** in the middle shows the character as it will be added, redrawn as you change it.
 - **Look**: the name; the kind (Human, Robot, Alien, Monster, Fox, Dino or Sprout); skin; the body sliders Height, Build, Shoulders and Head size, and Frame A or B; and the face: eye color, Jaw, Lashes, Blush, Freckles, Earrings, Glasses, facial hair (None, Stubble, Mustache, Goatee, Full) and lip color. A kind dims the face options it does not draw: a robot has no jaw or lip color, for example. Each row of swatches ends in a custom color.
+- **Frame A and Frame B** are two body frames to build on, not two appearances for one character. Choose one and the character has that frame: **A** is the lighter one, with narrower shoulders, waist and neck, slimmer arms and legs and smaller hands and feet; **B** is the broader one, with wider shoulders and waist, thicker arms and legs, a thicker neck and larger hands and feet. The body sliders then work on top of the frame. It changes the shape of the body and nothing else: skin, face, hair and outfit stay. The Women presets start on A and the Men presets on B (a special has its own), and you can set either frame on any preset or kind. Use it to pick the basic body first, then fine-tune with Height, Build and Shoulders. To keep two looks of one character, save them as two characters under two names. Nothing compares or switches between A and B once the character is built.
 - **Hair**: 16 styles and None, and the hair color. A fox shows a tuft between its ears for any style but None; for a dino the hair color paints its crest and the spikes on its tail, and for a sprout its leaves and petals, so their styles are dimmed. A note beside the last style says so.
 - **Outfit**: 16 outfits (Tee & Jeans, Hoodie & Joggers, Business Suit, Sundress, Athletic, Lab Coat, Chef, Hi-Vis Crew, Tuxedo, Winter Puffer, Hero Suit, Pajamas, Overalls, Varsity Jacket, Cardigan and Scrubs), each with a color for each of its three pieces. **Reset colors** puts back the outfit's own.
 - **Randomize** makes a new look of the same kind, and **Reset** goes back to the preset you started from.
@@ -245,6 +247,24 @@ Draw the character in a vector app with **one group per part**, and open the SVG
 
 An SVG that holds nothing FormMorpheus can read is refused with its name.
 
+### Start from an existing character
+
+The quickest template for your own character is one that already exists. To see its layout, change it and keep the original:
+
+1. Put the starter or built character in a movie (Add to Movie in the Characters panel), select it and choose File · Round Trips · **Character as SVG for Vector App...** (see Working with a vector app). It is written with one group for each part, named for the part.
+2. Open the file in your vector app and change the art. Keep one group for each part and keep the group names. Move a part's pivot mark if a joint should turn somewhere else.
+3. Save the edited file under a **new name**. Saving it over the exported file would change the original character too, because the desktop app links the character to the file it wrote (see The source link).
+4. Choose Import (Ctrl+I) and pick the new file, or drop it on the window. It arrives as a new character, named after the new file, on its own track. The character you sent out is not touched.
+
+The importer asks for no fixed list of part names: any name works, and the file's own group names become the part names. A few names matter because the app looks for them:
+
+- `head`, `body`, `arm-l`, `arm-r`, `leg-l` and `leg-r` are what the starter actions move. A part with another name is left still when you apply an action, and a name the character lacks is skipped with a note. A built character adds `hip`, `neck`, `forearm-l`, `forearm-r`, `hand-l`, `hand-r`, `shin-l`, `shin-r`, `foot-l`, `foot-r`, `eyes`, `brows`, `hair-front`, `hair-back`, `hair-sway`, `shadow` and others (see "A built character's parts"); the builder's own action versions use them.
+- `mouth` is the part Lip-sync from Sound writes into. It works when the part is a mouth chart: inside it, one group for each mouth shape, named Rest, MBP, AI, E, O, U, FV and L / th (at least six, and no more than ten groups).
+
+How the parts are parented follows the groups. A group inside another group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A part written outside its parent's group names that parent in `data-fm-parent`, and it is parented to it again. A part with no group above it has no parent. The order of the file is the order on the Stage, back to front. The notes under "A character from an SVG" cover pivots, hidden groups, shapes and pictures.
+
+A drawn starter's exported file has only the nine parts named in the Characters panel, which makes it the simplest template to start from.
+
 ### Make Character
 
 For a Group you built by hand, select it and choose Content · **Make Character...** (also on the block's menu, in the Action menu as **Character**, and in command search). Type a name. The group's inner blocks become the parts, named as they are named on the Timeline, and the first inner Flipbook that holds a mouth chart becomes its mouth. It is one undo step. On a block that already is a character, Make Character names the parts again and keeps its actions.
@@ -271,9 +291,26 @@ View · **Characters** opens a panel beside the Stage with two lists. It sits on
 
 ### Save to Characters
 
-Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. The name is cleaned first, as a file name is (a slash becomes a space, so `A/B` is saved as `A B`), and it is that cleaned name that is compared with the saved ones. When it is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". Closing the question (Escape, the close button or a click outside) saves nothing. The saved character is a copy: later changes in the movie do not change it. Its actions go with it. A part's link to something outside the character, such as a hand parented to a prop on another track, is not kept in the copy; the links between the character's own parts are.
+Select a character and choose Content · **Save to Characters** (or the same row on the block's menu). It is kept in the **Characters** folder in your data folder, one file for each character, and stays there after a restart. The data folder is not the folder you installed the app in: it is a folder of your user account, so an update that replaces the app leaves it alone. Where it is, and how to open it, is under "The data folder" in Preferences. The name is cleaned first, as a file name is (a slash becomes a space, so `A/B` is saved as `A B`), and it is that cleaned name that is compared with the saved ones. When it is taken, the dialog offers **Replace** or **Keep Both**, which saves the new one as "Name 2". Closing the question (Escape, the close button or a click outside) saves nothing. The saved character is a copy: later changes in the movie do not change it. Its actions go with it. A part's link to something outside the character, such as a hand parented to a prop on another track, is not kept in the copy; the links between the character's own parts are.
 
 Deleted characters stay in Recently Deleted on Home for 30 days. Restoring one puts it back in Characters.
+
+### Make a character talk
+
+A **mouth chart** is the character's mouth drawn eight ways, one drawing for each sound shape: Rest, MBP, AI, E, O, U, FV and L / th. Lip-sync picks the drawing that fits each moment of a sound. Every starter character and every character from the Character Builder already has one as its `mouth`, so you do not need to make or import a chart; **Use as Mouth Chart** is only for giving a character of your own another mouth. A character from an SVG of your own has a mouth chart only when the file has one.
+
+FormMorpheus does not speak by itself: the voice comes from a sound you make, record or import, and Lip-sync then moves the mouth to match it.
+
+1. Put a character in the movie: Add to Movie in the Characters panel, or a starter or built one. Its mouth rests on its Rest drawing.
+2. Get a voice onto the Timeline, in one of three ways. Each lands as a sound block at the Playhead.
+   - **Record sound...** (Content · Add, or More in the Create card): you speak into your microphone while the movie plays.
+   - **Import** (Ctrl+I) or a drop: a sound file you already have.
+   - **AI Voice...** (Content · Add, or More in the Create card): you type the words, choose a voice and press Speak, and the app makes the speech (see AI Voice).
+3. Select the sound block and choose **Lip-sync from Sound...** on its menu. The dialog starts with the sound you selected and with the mouth of the selected character, or, when none is selected, of the first character in the movie. Change either in its lists if needed, and check the **Frames** range.
+4. Press **Lip-sync**. The app listens to the sound and writes the mouth shapes frame by frame in one undo step. Press Space to play: the voice and the mouth move together.
+5. If you want the words on screen, open Content · Add · **Subtitles...** (see Subtitles). An AI voice adds its subtitle lines by itself. For a recording or an imported sound, select its block and press **Subtitles from this sound**, which needs the built-in voice set up and the listening model downloaded once.
+
+What is automatic: the speech of an AI voice, its subtitle lines, and the listening and mouth shapes once you press Lip-sync. What you do yourself: choosing the voice, pressing Lip-sync and, for a recording or a file, asking for subtitles. Lip-sync is not run when a sound is added, and it does not follow a sound that you move or change afterwards: run it again.
 
 ### Lip-sync onto a character's mouth
 
@@ -283,7 +320,7 @@ Until you lip-sync, the mouth rests on its Rest drawing for the whole block; it 
 
 ### Use as Mouth Chart
 
-A character with no mouth chart, or one you want to give another, can take one from an SVG. Select the character and choose Content · **Use as Mouth Chart...** (also on the block's menu). Pick an SVG of the eight mouth shapes (one top-level group for each shape, named as in "A mouth chart" above). The shapes become a Flipbook that replaces the character's `mouth` part, or, when it has none, a new inner track on top following `head`, and it is the character's mouth. It is one undo step, and Lip-sync from Sound then writes into it. A file that cannot be read says so and changes nothing; closing the file dialog does nothing. This works for any character, one that came from an SVG included.
+A character with no mouth chart, or one you want to give another, can take one from an SVG. You do not need this for a starter or a built character, which have a mouth chart already (see "Make a character talk"). Select the character and choose Content · **Use as Mouth Chart...** (also on the block's menu). Pick an SVG of the eight mouth shapes (one top-level group for each shape, named as in "A mouth chart" above). The shapes become a Flipbook that replaces the character's `mouth` part, or, when it has none, a new inner track on top following `head`, and it is the character's mouth. It is one undo step, and Lip-sync from Sound then writes into it. A file that cannot be read says so and changes nothing; closing the file dialog does nothing. This works for any character, one that came from an SVG included.
 
 ## Actions
 
@@ -527,7 +564,7 @@ Every export downloads and is also kept in the engine's **Exports**, never overw
 
 ## Home
 
-Open Home with Shift+Ctrl+H, the Theater button in the Timeline bar (a back chevron, named "Theater: back to your movies"), or View · Theater (Theater is the menu's name for Home). The left list has:
+Theater is the name of the Home screen, where your movies are kept. The Theater button in the Timeline bar (a back chevron, named "Theater: back to your movies") takes you back to it from the movie you are working on, after saving it to the library. You can also open it with Shift+Ctrl+H or View · Theater. The left list has:
 
 - **Start**: New movie, New flipbook, Open, and a short guide.
 - **Recent**: the movies you opened lately.
@@ -547,6 +584,20 @@ Open with Ctrl+, (File or Edit menu). The pages:
 - **Video Tools** (desktop only): which ffmpeg FormMorpheus uses and what it can encode, and Download ffmpeg and Remove for the family's build (see Engine formats).
 - **Agents** (desktop only): whether outside agents may work on your movies, the address and command that connect a client, and a button that opens the terminal panel (see Agents).
 - **Interface** (GPU): **GPU compositing** draws the Stage and exports on the graphics card. It is on when the card is faster and gives the same picture as the processor, and otherwise the processor does the work. Open the app with `?gpu=force` at the end of the address to skip the speed test.
+
+### The data folder
+
+FormMorpheus keeps what is yours in one **data folder**: the settings file, **Characters** (what you saved with Save to Characters), **Exports**, **Recently Deleted**, **Brushes**, the **voice** folder and the movie library (in its **Library** folder, unless you chose another). It is not the folder you installed the app in. An update replaces the install folder, so your work is kept apart in a folder of your user account, where an update and a reinstall leave it alone.
+
+Unless you move it, the data folder is named `formmorpheus` and sits here, for the installed app and for a source run (`./formmorpheus`) alike:
+
+- **Windows**: `C:\Users\your name\AppData\Roaming\formmorpheus` (the `%APPDATA%` folder; AppData is hidden in Explorer, so paste the path into its address bar).
+- **macOS**: `~/Library/Application Support/formmorpheus`. In Finder, choose Go · Go to Folder and paste it.
+- **Linux**: `~/.local/share/formmorpheus`, or `formmorpheus` inside the folder `XDG_DATA_HOME` names when that is set.
+
+Three things move it. The `FORMMORPHEUS_DATA_DIR` variable names another folder. A portable copy, started with `FORMMORPHEUS_PORTABLE=1` (or `--portable` on the desktop app), or an installed app with a file named `portable` or `portable.txt` beside it, keeps it in a `FormmorpheusData` folder beside the program. And the desktop app takes `--user-data-dir` and a folder.
+
+To see where yours is, open Preferences · General: **Settings folder** shows the data folder, and **Library folder** shows where the movies are. Both are read-only text boxes with no open button, so select the path, copy it and paste it into your file manager. No command opens the data folder itself.
 
 ## Languages
 
