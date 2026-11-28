@@ -4,6 +4,7 @@ import { E, n, R, shade } from './prims';
 import { OUTFITS } from './outfits';
 import { headBuild, speciesHair, tailBuild } from './head';
 import { hairBuild } from './hair';
+import { isTurned, viewOf, viewRig, viewSpread } from './views';
 
 /** The studio's character input: any field left out takes its group's default. */
 export interface CastInput {
@@ -40,14 +41,16 @@ export function build(c: CastSpec): CastRig {
   B('root', null, 0, 0); B('shadow', 'root', 0, 0); B('hip', 'root', 0, -legLen); B('torso', 'hip', 0, -M.pelvisH, 0, 0, -T); B('neck', 'torso', 0, -T, 0, 0, -M.neckLen);
   B('head', 'neck', 0, -M.neckLen, 0, 0, -H); B('eyes', 'head', 0, -H * .44); B('brows', 'head', 0, -H * .44 - 14 * M.u); B('mouth', 'head', 0, -H * .2); B('mouthO', 'head', 0, -H * .2, 0, 0, 0, 0);
   B('hairSway', 'head', 0, -H * .62, 0, 0, H * .55);
+  const view = viewOf(c), turn = isTurned(view), cb = viewSpread(view), side = view === 'side';
+  const lat = (x: number, s: number, near: number, far: number): number => (turn ? x * cb + (side ? (s < 0 ? near : far) : 0) : x);
   for (const s of [-1, 1]) {
     const x = s < 0 ? 'L' : 'R';
-    B(`arm_${x}_upper`, 'torso', s * (S - M.armW * .42), -T + M.armW * .55, -s * 7, 0, M.upperLen); B(`arm_${x}_fore`, `arm_${x}_upper`, 0, M.upperLen, s * 3, 0, M.foreLen); B(`hand_${x}`, `arm_${x}_fore`, 0, M.foreLen, 0, 0, M.handR * 1.6);
-    B(`thigh_${x}`, 'hip', s * M.hipX, 0, -s * 1.5, 0, M.thighLen); B(`shin_${x}`, `thigh_${x}`, 0, M.thighLen, s * 1.5, 0, M.shinLen); B(`foot_${x}`, `shin_${x}`, 0, M.shinLen, 0, s * M.footL * .55, M.footH - 4);
+    B(`arm_${x}_upper`, 'torso', lat(s * (S - M.armW * .42), s, -2, 5), -T + M.armW * .55, -s * 7 * cb, 0, M.upperLen); B(`arm_${x}_fore`, `arm_${x}_upper`, 0, M.upperLen, s * 3 * cb, 0, M.foreLen); B(`hand_${x}`, `arm_${x}_fore`, 0, M.foreLen, 0, 0, M.handR * 1.6);
+    B(`thigh_${x}`, 'hip', lat(s * M.hipX, s, -3, 5), 0, -s * 1.5 * cb, 0, M.thighLen); B(`shin_${x}`, `thigh_${x}`, 0, M.thighLen, s * 1.5 * cb, 0, M.shinLen); B(`foot_${x}`, `shin_${x}`, 0, M.shinLen, 0, (turn ? 1 : s) * M.footL * .55, M.footH - 4);
   }
   SL('shadow', 'shadow', [E(0, 2, M.hipW * .75 + 18, 9, '#000000', { op: .16 })]);
   SL('cape', 'torso', pt.cape); SL('tail', 'hip', tailBuild(c, M)); SL('hairSway', 'hairSway', hr.sway, H * .62); SL('hairBack', 'head', hr.back); SL('hoodBack', 'torso', pt.hoodBack);
-  for (const s of [-1, 1]) { const x = s < 0 ? 'L' : 'R'; SL(`thigh_${x}`, `thigh_${x}`, pt.thigh(s)); SL(`shin_${x}`, `shin_${x}`, pt.shin(s)); SL(`foot_${x}`, `foot_${x}`, pt.foot(s)); }
+  for (const s of [-1, 1]) { const x = s < 0 ? 'L' : 'R'; SL(`thigh_${x}`, `thigh_${x}`, pt.thigh(s)); SL(`shin_${x}`, `shin_${x}`, pt.shin(s)); SL(`foot_${x}`, `foot_${x}`, pt.foot(turn ? 1 : s)); }
   SL('pelvis', 'hip', pt.pelvis); SL('neck', 'torso', [R(-M.neckW / 2, -T - M.neckLen - 6, M.neckW, M.neckLen + 14, 5, shade(c.skin, -.08))]);
   SL('torso', 'torso', pt.torso); SL('skirt', 'hip', pt.skirt);
   for (const s of [-1, 1]) { const x = s < 0 ? 'L' : 'R'; SL(`arm_${x}_upper`, `arm_${x}_upper`, pt.armU(s)); SL(`arm_${x}_fore`, `arm_${x}_fore`, pt.armF(s)); SL(`hand_${x}`, `hand_${x}`, pt.hand(s)); }
@@ -55,5 +58,5 @@ export function build(c: CastSpec): CastRig {
   SL('mouth', 'mouth', hd.mouth); SL('mouthOpen', 'mouthO', hd.mouthO); SL('hairFront', 'head', hr.front); SL('headAcc', 'head', hd.acc);
   const eyes = slots.find((s) => s.name === 'eyes');
   if (eyes) eyes.oy = 0;
-  return { M, bones, slots, height: legLen + M.pelvisH + T + M.neckLen + H };
+  return viewRig({ M, bones, slots, height: legLen + M.pelvisH + T + M.neckLen + H }, c);
 }

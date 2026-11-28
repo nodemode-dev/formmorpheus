@@ -5,6 +5,16 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.37.0', name: 'Props, effects and scenes',
+    additions: [
+      { title: 'Props and scene effects', text: 'The Build panel has two new tabs. Props holds 49 objects to add at the Playhead, and Effects lays rain, snow, fog, light and more over the whole movie.', command: 'props.library' },
+      { title: 'Turn a character', text: 'A character made in the Character Builder can face front, three-quarters, side or back, and be flipped. Its keyframes and actions stay.', command: 'character.view-side' },
+      { title: 'Scenes in your movie', text: 'A strip above the Timeline cuts the movie into named scenes. Save as Scene keeps scenery of your own to lay behind any movie, and there are five more starter scenes.', command: 'scene-new' },
+      { title: 'Camera moves and depth', text: 'One click writes a push in, a pan, a whip pan or a shake from the Playhead. Depth lets the camera move far things less than near ones.', command: 'camera-move-push-in' },
+      { title: 'Walk to a spot', text: 'Right-click the Stage and choose Walk To Here, or walk a character in from the left or right, or off. It plays once and is one undo step.', command: 'character.walk-here' },
+    ],
+  },
+  {
     version: '0.36.0', name: 'Build panel',
     additions: [
       { title: 'A Build panel beside the Stage', text: 'Characters, actions, starter scenes, Create and Camera sit in a panel beside the Stage. A click adds a character at the Playhead, applies an action or adds a scene. Open it from View, Build Panel.', command: 'build-panel' },

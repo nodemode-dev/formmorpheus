@@ -5,6 +5,7 @@ import manual from '../../../docs/MANUAL.md?raw';
 import '../styles/help.css';
 import { Dialog } from './dialogs';
 import { el, q, setClass, setHidden, setText } from './dom';
+import { figure, pictureLine } from './help-figures';
 import { icon } from './icons';
 import { onLanguage, t } from './i18n';
 import { tf } from './i18n-fill';
@@ -48,6 +49,13 @@ export function renderMarkdown(src: string, into: ParentNode): void {
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
+    const pic = pictureLine(line);
+    if (pic) {
+      const fig = figure(pic.name, pic.alt);
+      if (fig) into.appendChild(fig);
+      i++;
+      continue;
+    }
     const fence = /^```/.exec(line);
     if (fence) {
       const out: string[] = [];

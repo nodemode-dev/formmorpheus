@@ -1,0 +1,148 @@
+/* Camera moves and transitions in the Build panel's Camera tab (app/features/camera-moves.ts). Each tile's diagram
+   loops only while its tab shows (a hidden pane is not drawn). */
+.fm-cmv { display: flex; flex-direction: column; }
+.fm-cmv-status { min-height: calc(var(--fs-12) * 1.4 * 3); }
+.fm-cmv-status.is-two { min-height: calc(var(--fs-12) * 1.4 * 2); }
+
+.fm-cmv-len {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: 0 var(--space-2);
+  padding-inline: var(--space-1);
+}
+.fm-cmv-lenlabel { flex: 0 0 auto; color: var(--text-secondary); font-size: var(--fs-12); }
+.fm-cmv-seg {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: calc(var(--space-1) / 2);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.fm-cmv-segbtn {
+  min-width: 0;
+  height: var(--ctl-sm);
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.fm-cmv-segbtn:hover { color: var(--text-primary); }
+.fm-cmv-segbtn.is-on { background: var(--surface-raised); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.fm-cmv-segbtn:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+
+.fm-cmv-tiles { grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-8) * 2.5), 1fr)); }
+.fm-cmv-tile:disabled { opacity: 0.45; }
+.fm-cmv-thumb { aspect-ratio: 8 / 5; }
+.fm-cmv-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: calc(var(--fs-12) * 1.25 * 2);
+  overflow: hidden;
+  font-size: var(--fs-12);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.fm-cmv-none { margin-block-start: var(--space-1); }
+
+/* ---- the diagrams ---- */
+.fm-cmv-art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fm-cmv-sky { fill: var(--label-blue); opacity: 0.22; }
+.fm-cmv-sun { fill: var(--label-yellow); opacity: 0.85; }
+.fm-cmv-hill { fill: var(--label-green); opacity: 0.5; }
+.fm-cmv-tree { fill: var(--label-green); stroke: var(--label-green); stroke-width: 1; opacity: 0.8; }
+.fm-cmv-fig { fill: var(--text-secondary); }
+.fm-cmv-speed { fill: none; stroke: var(--text-muted); stroke-width: 1; stroke-linecap: round; opacity: 0; }
+.fm-cmv-cam {
+  fill: none;
+  stroke: var(--accent-color);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-duration: 2.8s;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+.fm-cmv-cam.is-push-in { animation-name: fm-cmv-push; }
+.fm-cmv-cam.is-pull-out { animation-name: fm-cmv-pull; }
+.fm-cmv-cam.is-pan-left { animation-name: fm-cmv-pan-l; }
+.fm-cmv-cam.is-pan-right { animation-name: fm-cmv-pan-r; }
+.fm-cmv-cam.is-tilt-up { animation-name: fm-cmv-tilt-u; }
+.fm-cmv-cam.is-tilt-down { animation-name: fm-cmv-tilt-d; }
+.fm-cmv-cam.is-push-selection { animation-name: fm-cmv-sel; }
+.fm-cmv-cam.is-whip-pan { animation-name: fm-cmv-whip; }
+.fm-cmv-cam.is-drift { animation-name: fm-cmv-drift; animation-duration: 4s; }
+.fm-cmv-cam.is-shake { animation-name: fm-cmv-shake; }
+.fm-cmv-cam.is-reset { animation-name: fm-cmv-reset; }
+.fm-cmv-art:has(.is-whip-pan) .fm-cmv-speed { animation: fm-cmv-lines 2.8s infinite both; }
+.fm-cmv-art:has(.is-push-selection) .fm-cmv-fig { fill: var(--accent-ink); }
+
+@keyframes fm-cmv-push { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: scale(0.6); } }
+@keyframes fm-cmv-pull { 0%, 12% { transform: scale(0.6); animation-timing-function: ease-in-out; } 70%, 100% { transform: none; } }
+@keyframes fm-cmv-pan-l { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: translateX(-7px); } }
+@keyframes fm-cmv-pan-r { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: translateX(7px); } }
+@keyframes fm-cmv-tilt-u { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: translateY(-4px); } }
+@keyframes fm-cmv-tilt-d { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: translateY(4px); } }
+@keyframes fm-cmv-sel { 0%, 12% { transform: none; animation-timing-function: ease-in-out; } 70%, 100% { transform: translate(4px, 4.5px) scale(0.36); } }
+@keyframes fm-cmv-whip { 0%, 30% { transform: translateX(-26px); animation-timing-function: cubic-bezier(0.1, 0.9, 0.2, 1); } 55%, 100% { transform: none; } }
+@keyframes fm-cmv-lines { 0%, 28% { opacity: 0; } 34% { opacity: 1; } 55%, 100% { opacity: 0; } }
+@keyframes fm-cmv-drift { 0% { transform: none; } 50% { transform: translate(2.5px, -1.2px) scale(0.94); } 100% { transform: none; } }
+@keyframes fm-cmv-shake {
+  0%, 12% { transform: none; }
+  16% { transform: translate(-2.4px, 1.6px); }
+  20% { transform: translate(2.2px, -1.8px); }
+  25% { transform: translate(-1.8px, -1.2px); }
+  30% { transform: translate(1.6px, 1.4px); }
+  36% { transform: translate(-1.1px, 0.9px); }
+  43% { transform: translate(0.8px, -0.7px); }
+  52% { transform: translate(-0.4px, 0.3px); }
+  60%, 100% { transform: none; }
+}
+@keyframes fm-cmv-reset { 0%, 12% { transform: translate(6px, -3px) scale(0.55); animation-timing-function: ease-in-out; } 70%, 100% { transform: none; } }
+
+.fm-cmv-a rect { fill: var(--label-blue); opacity: 0.55; }
+.fm-cmv-a circle { fill: var(--label-yellow); }
+.fm-cmv-b rect { fill: var(--label-violet); opacity: 0.6; }
+.fm-cmv-b path { fill: var(--label-green); }
+.fm-cmv-a, .fm-cmv-b, .fm-cmv-dip { animation-duration: 2.8s; animation-iteration-count: infinite; animation-fill-mode: both; }
+.fm-cmv-dip { fill: var(--fade-dip-dark); opacity: 0; }
+.fm-cmv-art.is-crossfade .fm-cmv-b { animation-name: fm-cmv-in; }
+.fm-cmv-art.is-dip .fm-cmv-b { animation-name: fm-cmv-dip-b; }
+.fm-cmv-art.is-dip .fm-cmv-dip { animation-name: fm-cmv-dip; }
+.fm-cmv-art.is-wipe .fm-cmv-b { animation-name: fm-cmv-wipe; }
+.fm-cmv-art.is-push .fm-cmv-a { animation-name: fm-cmv-push-a; }
+.fm-cmv-art.is-push .fm-cmv-b { animation-name: fm-cmv-push-b; }
+
+@keyframes fm-cmv-in { 0%, 15% { opacity: 0; } 65%, 100% { opacity: 1; } }
+@keyframes fm-cmv-dip { 0%, 12% { opacity: 0; } 38%, 44% { opacity: 1; } 70%, 100% { opacity: 0; } }
+@keyframes fm-cmv-dip-b { 0%, 41% { opacity: 0; } 42%, 100% { opacity: 1; } }
+@keyframes fm-cmv-wipe { 0%, 15% { clip-path: inset(0 100% 0 0) fill-box; animation-timing-function: ease-in-out; } 65%, 100% { clip-path: inset(0 0 0 0) fill-box; } }
+@keyframes fm-cmv-push-a { 0%, 15% { transform: none; animation-timing-function: ease-in-out; } 65%, 100% { transform: translateX(-64px); } }
+@keyframes fm-cmv-push-b { 0%, 15% { transform: translateX(64px); animation-timing-function: ease-in-out; } 65%, 100% { transform: none; } }
+
+/* where the move starts, dashed; with reduced motion the frame stands where it ends (a11y.css runs every animation to its end) */
+.fm-cmv-ghost {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.fm-cmv-ghost.is-pull-out { transform: scale(0.6); }
+.fm-cmv-ghost.is-whip-pan { transform: translateX(-26px); }
+.fm-cmv-ghost.is-reset { transform: translate(6px, -3px) scale(0.55); }
+.fm-cmv-ghost.is-drift, .fm-cmv-ghost.is-shake { display: none; }

@@ -90,6 +90,15 @@ import { findContent } from '../engine/transform';
 import { ShortcutsDialog } from '../ui/shortcuts-dialog';
 import { RecoveryDialog } from '../ui/recovery-dialog';
 import { ckCommands } from './ck-commands';
+import type { FeatureKit } from './feature-kit';
+import { installCharacterViews } from './features/character-views';
+import { installPropsLibrary } from './features/props-library';
+import { installMyScenes } from './features/my-scenes';
+import { installSceneEffects } from './features/scene-effects';
+import { installCameraMoves } from './features/camera-moves';
+import { installSceneStrip } from './features/scene-strip';
+import { installDepth } from './features/depth';
+import { installWalkTo } from './features/walk-to';
 import { pushCommands } from './push-commands';
 import { loopCommands } from './loop-commands';
 import { ACTION_MENU_ITEMS, actionCommands, importActionFile } from './action-commands';
@@ -206,11 +215,25 @@ export function startApp(): void {
   const movieSettings = new MovieSettings(engine, stageOptions.picker, () => stage?.snapshot(360) ?? Promise.resolve(null));
   const stageAt = (): { x: number; y: number } => { const r = q(root, '.fm-stage').getBoundingClientRect(); return { x: r.right - 360, y: r.top + 24 }; };
   const stageMenu = new PopupMenu(commands, null, true);
+  let lastContext: { x: number; y: number } | null = null;
+  // the character that was selected when a right-click landed on other content (a backdrop covers the whole frame,
+  // so the empty Stage's menu is out of reach there): the content's menu offers to walk that character to the spot
+  let walker: string | null = null;
+  contentMenu.addRow('pin', 'Walk To Here', () => !!walker && !!commands.get('character.walk-here'), () => {
+    const id = walker;
+    walker = null;
+    if (!id) return;
+    engine.select([id]);
+    commands.run('character.walk-here');
+  });
   stage.nav.onContext = (x, y) => {
+    lastContext = { x, y };
     // over content, the right-click is about that content: select it and open its menu; over empty Stage, the Stage's own
     const hit = stage?.contentAt(x, y) ?? null;
+    const was = selectedCharacter(engine);
+    walker = hit && was && was.id !== hit ? was.id : null;
     if (hit) { if (!engine.selection.content.includes(hit)) engine.select([hit]); contentMenu.open(x, y); return; }
-    stageMenu.setItems(['stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
+    stageMenu.setItems(['character.walk-here', '-', 'stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
   // like New: the movie opens unnamed and the library adopts it under a free "Untitled Movie" name
   const starterScenes = new StarterSceneDialog(async (entry) => {
@@ -224,7 +247,7 @@ export function startApp(): void {
   starterScenes.onAdd = (entry) => addStarterSceneToMovie(engine, renderer, entry);
   const createMenu = new CreateMenu(commands, CREATE_MORE);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
-    contentMenu: (x, y) => contentMenu.open(x, y),
+    contentMenu: (x, y) => { walker = null; contentMenu.open(x, y); },
     trackMenu: (x, y, id) => trackMenu.open(x, y, id),
     movieSettings: (a) => movieSettings.toggle(a),
     home: () => { void toTheater(); },
@@ -241,6 +264,7 @@ export function startApp(): void {
   const builder = (): CharacterBuilder => (characterBuilder ??= new CharacterBuilder(engine, { renderer, characters: charactersPanel }));
   charactersPanel.onBuild = () => builder().open();
   charactersPanel.onOpenPreset = (id) => builder().openPreset(id);
+  charactersPanel.onOpenMine = (name, spec) => builder().openSpec(spec, name);
   new CameraLane(timeline, engine);
   timeline.setMedia({ video, audio });
   engine.setRegion(() => timeline?.visibleRange() ?? null);
@@ -889,6 +913,36 @@ export function startApp(): void {
   syncRecentCommands();
   engine.on('saved', syncRecentCommands);
   engine.on('projects', syncRecentCommands);
+
+  // the features of 0.37.0 come in through one seam (app/feature-kit.ts), before the menu bar reads the menus
+  const kit: FeatureKit = {
+    root, engine, renderer, commands, stage: stage as StageView,
+    buildSection: (tab, node, patch) => buildPanel.addSection(tab, node, patch),
+    showBuild: (tab) => buildPanel.show(tab),
+    menu: (label, items) => {
+      const def = menus.find((m) => m.label === label);
+      if (!def) return;
+      const was = def.items;
+      def.items = typeof was === 'function' ? () => [...was(), ...items] : [...was, ...items];
+    },
+    contentMenu: (ids) => {
+      for (const id of ids) {
+        const c = commands.get(id);
+        if (c) contentMenu.addRow(c.icon ?? null, commands.label(c), () => commands.enabled(c), () => { commands.run(id); });
+      }
+    },
+    lastContext: () => lastContext,
+    addCharacter: (key) => charactersPanel.addToMovie(key),
+    importFiles: (files) => importFiles(files),
+  };
+  installCharacterViews(kit);
+  installPropsLibrary(kit);
+  installMyScenes(kit);
+  installSceneEffects(kit);
+  installCameraMoves(kit);
+  installSceneStrip(kit);
+  installDepth(kit);
+  installWalkTo(kit);
 
   setMenuStyle(prefs.menuHidden, prefs.menuColors);
   const menubar = new MenuBar(q(root, '.cv-menubar'), commands, menus);

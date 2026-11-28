@@ -24,19 +24,19 @@ export function headBuild(c: Pick<CastSpec, 'species' | 'skin' | 'face' | 'hair'
   if (c.species === 'robot') {
     const g = f.eyeColor, dk = shade(sk, -.35);
     o.behind = [L(0, -H, 0, -H - 20 * u, 4 * u, dk), E(0, -H - 25 * u, 7 * u, 7 * u, g)];
-    o.head = [R(-W / 2 - 7 * u, -H * .58, W + 14 * u, H * .26, 5 * u, dk), R(-W / 2, -H, W, H, 18 * u, sk), R(-W / 2 + 5 * u, -H + 5 * u, W * .5, 6 * u, 3 * u, shade(sk, .3), { op: .6 }), R(-W * .4, -H * .76, W * .8, H * .58, 14 * u, '#18222e')];
+    o.head = [R(-W / 2 - 7 * u, -H * .58, W + 14 * u, H * .26, 5 * u, dk, { z: 's' }), R(-W / 2, -H, W, H, 18 * u, sk, { z: 's' }), R(-W / 2 + 5 * u, -H + 5 * u, W * .5, 6 * u, 3 * u, shade(sk, .3), { op: .6, z: 's' }), R(-W * .4, -H * .76, W * .8, H * .58, 14 * u, '#18222e')];
     o.eyes = mirror((s) => [R(s * ex - 9 * u, -9 * u, 18 * u, 17 * u, 6 * u, g), R(s * ex - 5 * u, -6 * u, 5 * u, 5 * u, 2 * u, '#ffffff', { op: .7 })]);
     o.mouth = [P(D`M${-11 * u} ${-1 * u}Q0 ${6 * u} ${11 * u} ${-1 * u}`, null, { stroke: g, sw: n(3.2 * u) })]; o.mouthO = [R(-9 * u, -3 * u, 18 * u, 10 * u, 3.5 * u, g)];
   } else if (c.species === 'alien') {
     o.behind = mirror((s) => [P(D`M${s * 12 * u} ${-H + 5 * u}Q${s * 20 * u} ${-H - 22 * u} ${s * 32 * u} ${-H - 26 * u}`, null, { stroke: sd, sw: n(4 * u) }), E(s * 33 * u, -H - 27 * u, 6.5 * u, 6.5 * u, shade(sk, .35))]);
-    o.head = [P(headPath(W, H, .5), sk), E(-W * .2, -H * .84, W * .14, H * .06, shade(sk, .3), { op: .55, rot: -16 }), E(-2.6 * u, ey + 17 * u, 1.4 * u, 2 * u, sd), E(2.6 * u, ey + 17 * u, 1.4 * u, 2 * u, sd)];
+    o.head = [P(headPath(W, H, .5), sk, { z: 's' }), E(-W * .2, -H * .84, W * .14, H * .06, shade(sk, .3), { op: .55, rot: -16, z: 's' }), E(-2.6 * u, ey + 17 * u, 1.4 * u, 2 * u, sd), E(2.6 * u, ey + 17 * u, 1.4 * u, 2 * u, sd)];
     o.eyes = mirror((s) => [E(s * ex * 1.22, 2 * u, 12.5 * u, 18 * u, '#14151c', { rot: -s * 20 }), E(s * ex * 1.22 + 3 * u, -5 * u, 3.6 * u, 5 * u, f.eyeColor, { op: .9, rot: -s * 20 })]);
     o.mouth = [P(D`M${-6 * u} ${-1 * u}Q0 ${4 * u} ${6 * u} ${-1 * u}`, null, { stroke: shade(sk, -.5), sw: n(2.6 * u) })]; o.mouthO = [E(0, 1 * u, 4.5 * u, 4.5 * u, shade(sk, -.6))];
   } else if (c.species === 'monster') {
     const horn = '#f3e7c9';
     o.behind = [...mirror((s) => [P(D`M${s * W * .36} ${-H * .9}Q${s * W * .56} ${-H * 1.2} ${s * W * .3} ${-H * 1.3}Q${s * W * .3} ${-H * 1.06} ${s * W * .14} ${-H * .97}Z`, horn),
       P(D`M${s * (W / 2 - 6)} ${-H * .56}L${s * (W / 2 + 12 * u)} ${-H * .44}L${s * (W / 2 - 2)} ${-H * .36}L${s * (W / 2 + 11 * u)} ${-H * .24}L${s * (W / 2 - 8)} ${-H * .14}Z`, sd)])];
-    o.head = [P(headPath(W, H, .98), sk), E(0, -H * .1, W * .3, H * .09, shade(sk, .22), { op: .5 })];
+    o.head = [P(headPath(W, H, .98), sk, { z: 's' }), E(0, -H * .1, W * .3, H * .09, shade(sk, .22), { op: .5 })];
     o.eyes = [E(0, -2 * u, 17 * u, 17 * u, '#ffffff'), E(0, 0, 8.5 * u, 8.5 * u, f.eyeColor), E(0, 0, 4.2 * u, 4.2 * u, '#15151a'), E(3 * u, -4 * u, 2.4 * u, 2.4 * u, '#ffffff')];
     o.brows = [L(-15 * u, -8 * u, 15 * u, -8 * u, 5 * u, shade(sk, -.45))];
     o.mouth = [P(D`M${-15 * u} ${-2 * u}Q0 ${9 * u} ${15 * u} ${-2 * u}`, null, { stroke: shade(sk, -.55), sw: n(3.4 * u) }), ...monsterFangs(u)];
@@ -44,7 +44,7 @@ export function headBuild(c: Pick<CastSpec, 'species' | 'skin' | 'face' | 'hair'
   } else if (c.species === 'fox') {
     const m = (pts: readonly Pt[], k?: number) => blob(pts.map((p): Pt => [X(p[0]), Y(p[1])]), k), ln = shade(sk, -.6);
     o.behind = mirror((s) => [P(m([[.18 * s, .88], [.5 * s, 1.3], [.66 * s, 1.4], [.98 * s, .9], [.92 * s, .62]], .7), sk), P(m([[.36 * s, .9], [.58 * s, 1.22], [.7 * s, 1.28], [.86 * s, .92], [.8 * s, .72]], .7), FUR)]);
-    o.head = [...mirror((s) => [P(m([[.6 * s, .5], [1.22 * s, .38], [.98 * s, .29], [1.16 * s, .15], [.72 * s, .05], [.5 * s, .2]], .45), sk)]), P(headPath(W, H, .66), sk),
+    o.head = [...mirror((s) => [P(m([[.6 * s, .5], [1.22 * s, .38], [.98 * s, .29], [1.16 * s, .15], [.72 * s, .05], [.5 * s, .2]], .45), sk, { z: 's' })]), P(headPath(W, H, .66), sk, { z: 's' }),
       P(m([[-.86, .3], [-.42, .36], [0, .33], [.42, .36], [.86, .3], [.66, .12], [.3, .02], [0, 0], [-.3, .02], [-.66, .12]]), FUR)];
     if (f.blush) o.head.push(...mirror((s) => [E(s * W * .33, ey + 17 * u, 7 * u, 4.5 * u, '#ff6b6b', { op: .22 })]));
     o.head.push(E(0, ey + 14 * u, 5.6 * u, 3.9 * u, NOSE), E(-1.6 * u, ey + 12.8 * u, 1.8 * u, 1.1 * u, '#ffffff', { op: .5 }), L(0, ey + 17.5 * u, 0, ey + 22 * u, 2.2 * u, ln));
@@ -55,9 +55,9 @@ export function headBuild(c: Pick<CastSpec, 'species' | 'skin' | 'face' | 'hair'
     o.mouthO = [E(0, 3 * u, 5.4 * u, 5.4 * u, INSIDE), E(0, 5.8 * u, 3.2 * u, 1.9 * u, TONGUE)];
   } else if (c.species === 'dino') {
     const m = (pts: readonly Pt[], k?: number) => blob(pts.map((p): Pt => [X(p[0]), Y(p[1])]), k), dk = shade(sk, -.45), bel = shade(sk, .5);
-    o.head = [P(m([[0, 1.0], [.62, .97], [.94, .78], [1.0, .5], [1.1, .3], [1.04, .1], [.68, -.02], [0, -.05], [-.68, -.02], [-1.04, .1], [-1.1, .3], [-1.0, .5], [-.94, .78], [-.62, .97]]), sk),
+    o.head = [P(m([[0, 1.0], [.62, .97], [.94, .78], [1.0, .5], [1.1, .3], [1.04, .1], [.68, -.02], [0, -.05], [-.68, -.02], [-1.04, .1], [-1.1, .3], [-1.0, .5], [-.94, .78], [-.62, .97]]), sk, { z: 's' }),
       P(m([[-.9, .17], [-.45, .21], [0, .22], [.45, .21], [.9, .17], [.66, .01], [0, -.03], [-.66, .01]]), bel),
-      E(X(-.36), Y(.88), W * .08, H * .045, sd, { rot: -14 }), E(X(.06), Y(.93), W * .05, H * .03, sd), E(X(.42), Y(.84), W * .065, H * .04, sd, { rot: 18 }), E(X(.3), Y(.95), W * .035, H * .022, sd),
+      E(X(-.36), Y(.88), W * .08, H * .045, sd, { rot: -14, z: 's' }), E(X(.06), Y(.93), W * .05, H * .03, sd, { z: 's' }), E(X(.42), Y(.84), W * .065, H * .04, sd, { rot: 18, z: 's' }), E(X(.3), Y(.95), W * .035, H * .022, sd, { z: 's' }),
       ...mirror((s) => [E(s * 5.5 * u, ey + 15 * u, 2 * u, 1.4 * u, dk, { rot: s * 20 })])];
     if (f.blush) o.head.push(...mirror((s) => [E(s * W * .36, ey + 13 * u, 7.5 * u, 4.5 * u, '#ff6b6b', { op: .22 })]));
     o.eyes = mirror((s) => [E(s * ex, -1 * u, 6.4 * u, 8.2 * u, f.eyeColor), E(s * ex + 2 * u, -4 * u, 2.2 * u, 2.2 * u, '#ffffff')]);
@@ -71,7 +71,7 @@ export function headBuild(c: Pick<CastSpec, 'species' | 'skin' | 'face' | 'hair'
       petal.push(E(Math.cos(a) * W * .4, -H * .2 + Math.sin(a) * H * .32, W * .2, W * .09, back ? shade(lf, -.22) : lf, { rot: n(a * 180 / Math.PI) }));
     }
     o.behind = [...petal.filter((_, i) => i % 2 === 0), ...petal.filter((_, i) => i % 2 === 1)];
-    o.head = [P(headPath(W, H, .8), sk), E(-W * .2, -H * .84, W * .14, H * .06, shade(sk, .3), { op: .55, rot: -16 })];
+    o.head = [P(headPath(W, H, .8), sk, { z: 's' }), E(-W * .2, -H * .84, W * .14, H * .06, shade(sk, .3), { op: .55, rot: -16, z: 's' })];
     if (f.blush) o.head.push(...mirror((s) => [E(s * W * .33, ey + 15 * u, 7 * u, 4.5 * u, '#ff8a9a', { op: .5 })]));
     if (f.freckles) o.head.push(...mirror((s) => [E(s * W * .27, ey + 13 * u, 1.3 * u, 1.3 * u, sd), E(s * W * .34, ey + 16 * u, 1.3 * u, 1.3 * u, sd), E(s * W * .31, ey + 10 * u, 1.3 * u, 1.3 * u, sd)]));
     o.head.push(P(D`M${-2.5 * u} ${ey + 14 * u}Q${.5 * u} ${ey + 17.5 * u} ${3.5 * u} ${ey + 14 * u}`, null, { stroke: shade(sk, -.3), sw: n(2.2 * u) }));
@@ -81,8 +81,8 @@ export function headBuild(c: Pick<CastSpec, 'species' | 'skin' | 'face' | 'hair'
     o.mouth = [P(D`M${-7.5 * u} ${-1.5 * u}Q0 ${6 * u} ${7.5 * u} ${-1.5 * u}`, null, { stroke: ln, sw: n(2.8 * u) })];
     o.mouthO = [E(0, 2 * u, 5.6 * u, 5 * u, shade(sk, -.66)), E(0, 4.6 * u, 3.4 * u, 1.8 * u, TONGUE)];
   } else {
-    o.head = [...mirror((s) => [E(s * W / 2, -H * .42, 7 * u, 10 * u, sk), E(s * W / 2, -H * .42, 3.5 * u, 6 * u, sd, { op: .6 })]), P(headPath(W, H, f.jaw), sk)];
-    if (f.earrings) o.head.push(...mirror((s) => [E(s * (W / 2 + 1), -H * .3, 3.2 * u, 3.2 * u, '#f2c14e')]));
+    o.head = [...mirror((s) => [E(s * W / 2, -H * .42, 7 * u, 10 * u, sk, { z: 'e' }), E(s * W / 2, -H * .42, 3.5 * u, 6 * u, sd, { op: .6, z: 'e' })]), P(headPath(W, H, f.jaw), sk, { z: 's' })];
+    if (f.earrings) o.head.push(...mirror((s) => [E(s * (W / 2 + 1), -H * .3, 3.2 * u, 3.2 * u, '#f2c14e', { z: 'e' })]));
     if (f.blush) o.head.push(...mirror((s) => [E(s * W * .33, ey + 15 * u, 8 * u, 5 * u, '#ff6b6b', { op: .22 })]));
     if (f.freckles) o.head.push(...mirror((s) => [E(s * W * .27, ey + 13 * u, 1.3 * u, 1.3 * u, sd), E(s * W * .34, ey + 16 * u, 1.3 * u, 1.3 * u, sd), E(s * W * .31, ey + 10 * u, 1.3 * u, 1.3 * u, sd)]));
     o.head.push(P(D`M${-3 * u} ${ey + 13 * u}Q${.5 * u} ${ey + 18 * u} ${4 * u} ${ey + 13 * u}`, null, { stroke: shade(sk, -.26), sw: n(2.4 * u) }));

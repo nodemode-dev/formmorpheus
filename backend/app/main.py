@@ -14,6 +14,7 @@ from app.routers import save_to, fonts,audio_encode, proxy, brushes, characters,
 from app.routers import agents, mcp, terminal
 from app.routers import video_tools
 from app.routers import voice
+from app.routers import scenes
 from app.services import claude_code
 from app.services import terminal as terminals
 
@@ -37,6 +38,7 @@ app.include_router(window_key.router)
 app.include_router(system.router, prefix="/api")
 app.include_router(library.router, prefix="/api/library")
 app.include_router(characters.router, prefix="/api/characters")
+app.include_router(scenes.router, prefix="/api/scenes")
 app.include_router(exports.router, prefix="/api/exports")
 app.include_router(brushes.router, prefix="/api/brushes")
 app.include_router(fonts.router, prefix="/api/fonts")

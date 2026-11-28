@@ -37,7 +37,7 @@ export interface BuildPanelDeps {
   onCharactersChanged(listener: () => void): void;
 }
 
-type Tab = 'characters' | 'actions' | 'scenes' | 'create' | 'camera';
+type Tab = 'characters' | 'actions' | 'scenes' | 'props' | 'effects' | 'create' | 'camera';
 
 const STORE = 'formmorpheus.build';
 const NARROW = 1100;
@@ -48,6 +48,8 @@ const TABS: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
   { id: 'characters', label: 'Characters', icon: 'character' },
   { id: 'actions', label: 'Actions', icon: 'perform' },
   { id: 'scenes', label: 'Scenes', icon: 'image' },
+  { id: 'props', label: 'Props', icon: 'shape' },
+  { id: 'effects', label: 'Effects', icon: 'sun' },
   { id: 'create', label: 'Create', icon: 'plus' },
   { id: 'camera', label: 'Camera', icon: 'camera' },
 ];
@@ -60,7 +62,6 @@ const CREATE: ReadonlyArray<{ title: string; rows: ReadonlyArray<readonly [strin
   { title: 'Import', rows: [['import-photo', 'image'], ['import-video', 'video'], ['import-audio', 'audio'], ['import-file', 'upload']] },
   { title: 'Sound', rows: [['record-audio', 'record'], ['ai-voice', 'audio'], ['subtitles', 'text']] },
 ];
-const TRANSITIONS: ReadonlyArray<string> = ['group-transition-crossfade', 'group-transition-dip', 'group-transition-wipe', 'group-transition-push', 'group-transition-none'];
 
 interface Tile { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean }
 
@@ -106,6 +107,8 @@ export class BuildPanel {
   private readonly cmdRows: Array<{ id: string; node: HTMLButtonElement; label: HTMLElement; bound: boolean }> = [];
   private readonly camBtn: HTMLButtonElement;
   private patchFrame = 0;
+  // sections other files add to a tab (app/feature-kit.ts), each with what patches it
+  private readonly added = new Map<Tab, Array<() => void>>();
 
   constructor(private readonly host: HTMLElement, private readonly engine: Engine, private readonly deps: BuildPanelDeps) {
     const saved = loadState();
@@ -215,10 +218,7 @@ export class BuildPanel {
     setText(q(this.camBtn, '.fm-build-rowlabel'), t('Camera mode'));
     this.camBtn.addEventListener('click', () => cameraMode.toggle());
     cameraMode.onChange(() => this.patchCamera());
-    const transRows = el<HTMLElement>('<div class="fm-build-rows" role="group"></div>');
-    for (const id of TRANSITIONS) transRows.appendChild(this.cmdRow(id, 'swap'));
-    cam.append(this.camBtn, note('Drag the camera frame on the Stage to pan, a corner to zoom, the round handle to turn: each drag sets camera keys at the Playhead.'),
-      head('Transitions'), transRows, note('A transition goes between two touching blocks inside the selected group, at the cut nearest the Playhead.'));
+    cam.append(this.camBtn, note('Drag the camera frame on the Stage to pan, a corner to zoom, the round handle to turn: each drag sets camera keys at the Playhead.'));
 
     host.appendChild(this.root);
 
@@ -258,6 +258,7 @@ export class BuildPanel {
     this.store();
     this.paintTabs();
     this.sync();
+    if (this.shownNow) { this.patch(); this.lazyPaint(); }
   }
 
   hide(): void {
@@ -339,6 +340,18 @@ export class BuildPanel {
     if (this.tab === 'actions') this.paintActions();
     if (this.tab === 'characters') this.paintCharacters();
     if (this.tab === 'scenes') this.paintScenes();
+    for (const fn of this.added.get(this.tab) ?? []) fn();
+  }
+
+  /** Appends a section built elsewhere to the end of a tab; `patch` runs with the panel's own patching while that tab shows. */
+  addSection(tab: string, node: HTMLElement, patch?: () => void): void {
+    if (!isTab(tab)) return;
+    this.pane(tab).appendChild(node);
+    if (!patch) return;
+    const list = this.added.get(tab) ?? [];
+    list.push(patch);
+    this.added.set(tab, list);
+    if (this.shownNow && this.tab === tab) patch();
   }
 
   // ---- building blocks ----

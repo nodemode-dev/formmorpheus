@@ -5,7 +5,20 @@ import { updateInner } from './group-inner-ops';
 import { uid } from './model';
 import * as ops from './ops';
 import { findContent } from './transform';
-import type { Asset, Content, Highlight, Movie, SourceLink, Track } from './types';
+import type { Asset, CharacterInfo, Content, Highlight, Movie, SourceLink, Track } from './types';
+
+type LinkedInfo = CharacterInfo & { sourceHidden?: string[] };
+
+const hiddenNames = (info: CharacterInfo, have: Map<string, Found>): string[] => Object.entries(info.parts).filter(([, id]) => have.get(id)?.c.hidden).map(([n]) => n);
+
+/** The part's hidden state after an update: the file's when it changed since the file was last read, else the app's. */
+function hiddenAfter(c: Content, fileNow: boolean, fileWas: boolean): Content {
+  const hidden = fileNow !== fileWas ? fileNow : c.hidden === true;
+  if (hidden === (c.hidden === true)) return c;
+  if (hidden) return { ...c, hidden: true };
+  const { hidden: _h, ...rest } = c;
+  return rest as Content;
+}
 
 export interface SourceMerge {
   movie: Movie;
@@ -62,6 +75,9 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
   if (fresh.kind !== 'group' || !fresh.character) throw new ops.OpError('The source file did not read as a character.');
   const oldParts = g.character.parts, freshParts = fresh.character.parts;
   const have = index(g.tracks), got = index(fresh.tracks);
+  const follow = !fresh.character.build;
+  const fileWas = new Set((g.character as LinkedInfo).sourceHidden ?? hiddenNames(g.character, have));
+  const fileHid = new Set(Object.entries(freshParts).filter(([, id]) => got.get(id)?.c.hidden).map(([n]) => n));
   const nameOfFresh = new Map<string, string>();
   for (const [name, id] of Object.entries(freshParts)) nameOfFresh.set(id, name);
 
@@ -112,7 +128,8 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
     const f = matched.get(c.id);
     const name = nameOf.get(c.id) ?? '';
     if (f) {
-      const art = takeArt(c, f, partIds);
+      const took = takeArt(c, f, partIds);
+      const art = follow ? hiddenAfter(took, fileHid.has(name), fileWas.has(name)) : took;
       return wasMissing.has(name) && art.highlight === MISSING_HIGHLIGHT ? { ...art, highlight: prevWas[name] ?? 'none' } : art;
     }
     if (gone.has(c.id)) {
@@ -127,7 +144,8 @@ export function mergeFromSource(movie: Movie, charId: string, fresh: Content, as
   for (const id of usedAssetIds([], taken)) if (assets[id] && !movie.assets[id]) table[id] = assets[id];
   const { missing: _was, missingWas: _wasHl, build: _build, builtHidden: _hid, ...info } = g.character;
   const kept = Object.keys(was).length ? { missingWas: was } : {};
-  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing, ...kept } : {}) } });
+  const record = follow ? { sourceHidden: [...fileHid] } : {};
+  const next = (c: Content): Content => ({ ...c, tracks, character: { ...info, ...record, parts: { ...oldParts, ...newIds }, ...(missing.length ? { missing, ...kept } : {}) } });
   const withAssets: Movie = Object.keys(table).length ? { ...movie, assets: { ...movie.assets, ...table } } : movie;
   return { movie: editCharacter(withAssets, charId, next), added, missing };
 }
@@ -141,8 +159,9 @@ function editCharacter(movie: Movie, charId: string, fn: (c: Content) => Content
 export function setSourceLink(movie: Movie, charId: string, link: SourceLink | null): Movie {
   const g = findContent(movie, charId);
   if (!g || g.kind !== 'group' || !g.character) throw new ops.OpError('That character no longer exists.');
-  const { source: _old, ...info } = g.character;
-  return editCharacter(movie, charId, (c) => ({ ...c, character: link ? { ...info, source: link } : info }));
+  const { source: _old, sourceHidden: rec, ...info } = g.character as LinkedInfo;
+  const seen = rec ?? hiddenNames(g.character, index(g.tracks));
+  return editCharacter(movie, charId, (c) => ({ ...c, character: link ? { ...info, source: link, sourceHidden: seen } : info }));
 }
 
 /** Every character in the movie, nested ones too, that has a source link. */

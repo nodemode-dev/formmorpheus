@@ -30,7 +30,7 @@ The movie model and the paint core are pure code with no DOM, so they could run 
 
 ## The window
 
-The window is a Stage over a Timeline. The Build panel (`ui/build-panel.ts`) is a column docked beside the Stage in the same grid, not over it, with tabs for Characters, Actions, Scenes, Create and Camera. It shows only while a movie is open in the editor, keeps its open state and tab in `localStorage`, and runs commands through the same registry as the menus. Compose, Perform and Keyframe are a segmented switch (`.fm-modes`) in the Timeline's top row, and its Preview button runs the full-screen preview from the first frame.
+The window is a Stage over a Timeline. The Build panel (`ui/build-panel.ts`) is a column docked beside the Stage in the same grid, not over it, with seven tabs in two rows: Characters, Actions, Scenes, Props, Effects, Create and Camera. Features add their own sections to a tab through `kit.buildSection(tab, node, patch)` (`app/feature-kit.ts`): the character views, my scenes, props, scene effects, camera moves and depth each live in `app/features/` or beside it. A scene strip (`ui/scene-strip.ts`) sits above the Timeline in the same host. The Build panel shows only while a movie is open in the editor, keeps its open state and tab in `localStorage`, and runs commands through the same registry as the menus. Compose, Perform and Keyframe are a segmented switch (`.fm-modes`) in the Timeline's top row, and its Preview button runs the full-screen preview from the first frame.
 
 ## Data
 

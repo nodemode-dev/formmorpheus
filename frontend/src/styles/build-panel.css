@@ -32,8 +32,8 @@
 /* ---- tabs ---- */
 .fm-build-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: calc(var(--space-1) / 2) 0;
   flex: 0 0 auto;
   padding: var(--space-2) var(--space-1) var(--space-1);
   border-block-end: 1px solid var(--border-soft);

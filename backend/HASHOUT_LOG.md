@@ -2,10 +2,19 @@
 
 Living log of comment content, rationale, TODOs & removed code for the engine service. Read this first, then edit code surgically.
 
-Current build version: v0.35.0
-Last updated: 2026-11-27 · main's speech routes left out
+Current build version: v0.37.0
+Last updated: 2026-11-27 · scenes of your own
 
 ---
+
+## v0.37.0 · scenes of your own
+
+- refers-to: routers/scenes.py; services/scenes.py; routers/trash.py :: _meta, restore; main.py
+- kind: decision
+- logged: v0.37.0 · 2026-11-27
+
+- `/api/scenes` mirrors the characters store: list, get, poster, put, rename, delete. A scene is one `.fmo` in the data folder's `Scenes` folder; a save checks the `PK` zip mark, writes a `.part` file and replaces; a rename to a taken name answers 409; a delete goes to Recently Deleted with kind `scene`.
+- Recently Deleted knows the kind: a scene is listed by its name without the extension and restored into the `Scenes` folder (it would have gone to Exports).
 
 ## v0.35.0 · main's speech routes left out
 

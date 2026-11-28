@@ -1,0 +1,119 @@
+/* The scene strip (ui/scene-strip.ts): one row above the Timeline, the same height with or without scenes. */
+.fm-tl-host.has-scene-strip {
+  --fm-scenes-h: calc(var(--ctl-xl) + var(--space-1) * 2);
+  --fm-scene-pic-w: calc(var(--space-8) + var(--space-6));
+  --fm-scene-pic-h: var(--space-8);
+  display: grid;
+  grid-template-rows: var(--fm-scenes-h) minmax(0, 1fr);
+  row-gap: var(--space-1);
+}
+.fm-tl-host.has-scene-strip > .fm-timeline { min-height: 0; }
+
+.fm-scenes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  height: var(--fm-scenes-h);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-row);
+  background: var(--bg-secondary);
+  box-shadow: inset 0 0 0 1px var(--line-0, var(--border-color));
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  overflow: hidden;
+  overflow: clip;
+}
+.fm-scenes [hidden] { display: none; }
+
+.fm-scenes-new {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--ctl-md);
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.fm-scenes-new:hover, .fm-scenes-new:focus-visible { color: var(--text-primary); background: var(--bg-hover); }
+
+.fm-scenes-list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.fm-scenes-list::-webkit-scrollbar { display: none; }
+.fm-scenes-add { flex: none; }
+
+.fm-scene {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--ctl-xl);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--line-2, var(--border-light));
+}
+.fm-scene:hover { background: var(--surface-raised, var(--bg-hover)); }
+.fm-scene.is-current { box-shadow: inset 0 0 0 1px var(--accent-line); background: var(--accent-wash); }
+.fm-scene.is-focus { box-shadow: inset 0 0 0 2px var(--accent-color); }
+
+.fm-scene-main {
+  display: grid;
+  grid-template-columns: var(--fm-scene-pic-w) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  width: calc(var(--space-8) * 5);
+  height: 100%;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.fm-scene-main:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+.fm-scene-pic {
+  display: block;
+  width: var(--fm-scene-pic-w);
+  height: var(--fm-scene-pic-h);
+  border-radius: var(--radius-sm);
+  background: var(--surface-0);
+  box-shadow: 0 0 0 1px var(--line-1, var(--border-color));
+}
+.fm-scene-text { display: grid; min-width: 0; line-height: 1.25; }
+.fm-scene-name { overflow: hidden; color: var(--text-primary); font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.fm-scene-len { color: var(--text-muted); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
+.fm-scene-focus { display: inline-grid; place-items: center; color: var(--accent-ink); visibility: hidden; }
+.fm-scene.is-focus .fm-scene-focus { visibility: visible; }
+.fm-scene-more { flex: none; width: var(--ctl-sm); height: var(--ctl-sm); margin-inline: var(--space-1); }
+
+.fm-scene-input {
+  position: absolute;
+  inset-block: var(--space-1);
+  inset-inline-start: calc(var(--fm-scene-pic-w) + var(--space-1) + var(--space-2));
+  inset-inline-end: calc(var(--ctl-sm) + var(--space-2));
+  min-width: 0;
+  padding-inline: var(--space-2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 500;
+}
+.fm-scene-input:focus { outline: none; border-color: var(--accent-color); }
+.fm-scene.is-editing .fm-scene-text { visibility: hidden; }

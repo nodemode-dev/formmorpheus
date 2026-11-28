@@ -49,8 +49,6 @@ const neg = (keys: Key[]): Key[] => keys.map((k) => ({ ...k, value: k.value === 
 const IDLE = 48;
 const WALK = 24;
 
-const walkBody: Array<[number, number]> = [[2, 5], [8, -4], [14, 5], [20, -4]];
-const walkArm: Key[] = cyc(WALK, [[6, -5], [18, 5]], 2);
 const jumpArm: Key[] = seq([[0, 0], [6, -12], [11, 40], [16, 25], [21, -8], [26, 3], [30, 0]]);
 const jumpArmY: Key[] = seq([[0, 0], [6, 32, 'in'], [14, -124, 'out'], [21, 32], [27, -4], [30, 0]]);
 const jumpLegY: Key[] = seq([[0, 0], [6, 24.08, 'in'], [14, -120, 'out'], [21, 20.64], [26, 0], [30, 0]]);
@@ -73,17 +71,89 @@ const S_IDLE: SAnim = { dur: 3.2, tracks: {
   hairSway: { r: [[0, 1.6], [0.5, -1.6], [1, 1.6]] }, tail: { r: [[0, -1.5], [0.5, 1.5], [1, -1.5]] },
 } };
 
-const S_WALK: SAnim = { dur: 1, tracks: {
-  hip: { y: [[0, 0], [0.25, -5], [0.5, 0], [0.75, -5], [1, 0]], x: [[0, 0], [0.25, 3], [0.5, 0], [0.75, -3], [1, 0]] },
-  torso: { r: [[0, 0], [0.25, 2.2], [0.5, 0], [0.75, -2.2], [1, 0]] },
-  head: { r: [[0, 0], [0.25, -1.6], [0.5, 0], [0.75, 1.6], [1, 0]] }, hairSway: { r: [[0, 0], [0.25, -5], [0.5, 0], [0.75, 5], [1, 0]] },
-  thigh_L: { sy: [[0, 1], [0.25, 0.72], [0.5, 1], [1, 1]], r: [[0, 0], [0.25, 4], [0.5, 0], [1, 0]] }, shin_L: { sy: [[0, 1], [0.25, 0.82], [0.5, 1], [1, 1]] },
-  thigh_R: { sy: [[0, 1], [0.5, 1], [0.75, 0.72], [1, 1]], r: [[0, 0], [0.5, 0], [0.75, -4], [1, 0]] }, shin_R: { sy: [[0, 1], [0.5, 1], [0.75, 0.82], [1, 1]] },
-  arm_L_upper: { r: [[0, 0], [0.25, 3], [0.5, 0], [0.75, -4], [1, 0]] }, arm_R_upper: { r: [[0, 0], [0.25, 4], [0.5, 0], [0.75, -3], [1, 0]] },
-  arm_R_fore: { sy: [[0, 1], [0.25, 0.78], [0.5, 1], [1, 1]], r: [[0, 0], [0.25, 14], [0.5, 0], [1, 0]] },
-  arm_L_fore: { sy: [[0, 1], [0.5, 1], [0.75, 0.78], [1, 1]], r: [[0, 0], [0.5, 0], [0.75, -14], [1, 0]] }, eyes: { sy: blink(0.6) },
-  tail: { r: [[0, 0], [0.25, 3], [0.5, 0], [0.75, -3], [1, 0]] },
-} };
+const W_LEG = 344;
+const W_STEP = 240;
+const W_HIP = 320;
+const W_BOB = 10;
+const W_THIGH = (W_LEG * 80) / 173;
+const W_LEAN = 3;
+/** How far one pass of the walk carries the character, in lengths of its leg from hip to sole. */
+export const WALK_STRIDE = (2 * W_STEP) / W_LEG;
+/** Frames of one pass of the walk at 24 fps. */
+export const WALK_FRAMES = WALK;
+
+const DEG = 180 / Math.PI;
+const TAU = Math.PI * 2;
+const r3 = (v: number): number => { const x = Math.round(v * 1000) / 1000; return x === 0 ? 0 : x; };
+
+/** The sole against its hip joint (y down) at phase `u` of the leg: planted and sliding back evenly, then lifted and swung through. */
+function sole(u: number, h: number, lift: number): [number, number] {
+  if (u < 0.5) return [W_STEP / 2 - W_STEP * (u / 0.5), h];
+  const s = (u - 0.5) / 0.5;
+  return [-W_STEP / 2 + W_STEP * s * s * (3 - 2 * s), h - lift * Math.sin(Math.PI * s)];
+}
+
+interface WalkPose { uA: number; uB: number; w: number; h: number }
+
+function walkPose(t: number): WalkPose {
+  const uA = (t / WALK + 0.25) % 1, uB = (uA + 0.5) % 1, w = (uA % 0.5) / 0.5;
+  return { uA, uB, w, h: W_HIP - W_BOB * Math.cos(TAU * (w - 0.25)) };
+}
+
+/** Two-bone reach: thigh angle forward of straight down and knee bend, in degrees, for a sole at (x, y). */
+function reachLeg(x: number, y: number, a: number, b: number): [number, number] {
+  const d = Math.min(a + b - 1e-6, Math.max(Math.abs(a - b) + 1e-6, Math.hypot(x, y)));
+  const toward = Math.atan2(x, y);
+  const atHip = Math.acos(Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d))));
+  const atKnee = Math.acos(Math.min(1, Math.max(-1, (a * a + b * b - d * d) / (2 * a * b))));
+  return [(toward + atHip) * DEG, (Math.PI - atKnee) * DEG];
+}
+
+/**
+ * The walk, sampled on every frame of a pass and keyed linear: frame 0 is the passing pose, nearest to standing. The sole
+ * on the ground slides back at one speed, so a body carried WALK_STRIDE legs a pass keeps its feet planted. Arms swing
+ * against the legs, a little late; the body leans forward (toward +x) and rises and falls twice a pass.
+ */
+function walkAction(rig: boolean): ActionDef {
+  const ch: Record<string, Record<string, Key[]>> = {};
+  const put = (p: string, c: string, f: number, v: number): void => { ((ch[p] ??= {})[c] ??= []).push({ frame: f, value: r3(v), ease: 'linear' }); };
+  for (let f = 0; f <= WALK; f++) {
+    const t = f % WALK, p = walkPose(t), drop = W_LEG - p.h, late = walkPose((t + WALK - 1) % WALK);
+    const bob = Math.cos(TAU * (p.w - 0.25));
+    const swing = Math.cos(TAU * (p.uA - 2 / WALK));
+    const legs: Array<[string, number, string, string]> = [['leg-r', p.uA, 'shin-r', 'foot-r'], ['leg-l', p.uB, 'shin-l', 'foot-l']];
+    if (rig) {
+      const tilt = 1.5 * Math.sin(TAU * p.uA);
+      put('hip', 'y', f, drop); put('hip', 'x', f, 0); put('hip', 'rotation', f, tilt);
+      for (const [leg, u, shin, foot] of legs) {
+        const [x, y] = sole(u, p.h, 44);
+        const [thigh, knee] = reachLeg(x, y, W_THIGH, W_LEG - W_THIGH);
+        put(leg, 'rotation', f, -thigh - tilt); put(leg, 'scaleY', f, 1);
+        put(shin, 'rotation', f, knee); put(shin, 'scaleY', f, 1);
+        put(foot, 'rotation', f, thigh - knee);
+      }
+      put('body', 'rotation', f, W_LEAN + 0.8 * bob - 0.7 * tilt);
+      put('head', 'rotation', f, -1.2 + Math.cos(TAU * (p.w - 1 / 3)));
+      put('arm-l', 'rotation', f, -16 * swing); put('arm-r', 'rotation', f, 16 * swing);
+      put('forearm-l', 'rotation', f, -(6 + 6 * (1 + swing))); put('forearm-r', 'rotation', f, -(6 + 6 * (1 - swing)));
+      put('forearm-l', 'scaleY', f, 1); put('forearm-r', 'scaleY', f, 1);
+      put('hair-sway', 'rotation', f, -2.5 * Math.cos(TAU * (p.w - 0.4)));
+      put('tail', 'rotation', f, 3 * Math.sin(TAU * p.uA));
+      put('eyes', 'scaleY', f, 1);
+    } else {
+      const lean = 2.5, lateDrop = W_LEG - late.h;
+      put('body', 'y', f, drop); put('body', 'rotation', f, lean + 0.6 * bob);
+      put('head', 'y', f, lateDrop); put('head', 'x', f, 13); put('head', 'rotation', f, -0.8 + Math.cos(TAU * (p.w - 1 / 3)));
+      put('arm-l', 'y', f, lateDrop); put('arm-l', 'x', f, 12); put('arm-l', 'rotation', f, -14 * swing);
+      put('arm-r', 'y', f, lateDrop); put('arm-r', 'x', f, 12); put('arm-r', 'rotation', f, 14 * swing);
+      for (const [leg, u] of legs) {
+        const [x, y] = sole(u, p.h, 30);
+        put(leg, 'y', f, drop); put(leg, 'rotation', f, -Math.atan2(x, y) * DEG); put(leg, 'scaleY', f, Math.hypot(x, y) / W_LEG);
+      }
+    }
+  }
+  return { id: 'builtin:walk', name: 'Walk in place', length: WALK, loop: true, fps: S_FPS, blend: 4, lanes: Object.keys(ch).map((n) => part(n, ch[n])) };
+}
 
 const S_RUN: SAnim = { dur: 0.56, tracks: {
   hip: { y: [[0, 0], [0.25, -11], [0.5, 0], [0.75, -11], [1, 0]], x: [[0, 0], [0.25, 4], [0.5, 0], [0.75, -4], [1, 0]] },
@@ -261,7 +331,7 @@ const S_THIGH = 80;
 /** On a character with the builder's parts (a hip, a forearm), these play in place of the starter of the same id. */
 const RIG_ACTIONS: ReadonlyMap<string, ActionDef> = new Map([
   { ...fromStudio('builtin:idle', 'Idle', true, S_IDLE), blend: 4 },
-  fromStudio('builtin:walk', 'Walk in place', true, S_WALK),
+  walkAction(true),
   { ...fromStudio('builtin:run', 'Run', true, S_RUN), blend: 4 },
   fromStudio('builtin:wave', 'Wave Hello', false, S_WAVE, true),
   fromStudio('builtin:jump', 'Jump', false, S_JUMP),
@@ -357,17 +427,7 @@ export const BUILTIN_ACTIONS: readonly ActionDef[] = [
       part('arm-r', { y: seq([[0, 0], [5, 2], [12, -1], [17, 0], [36, 0]]) }),
     ],
   },
-  {
-    id: 'builtin:walk', name: 'Walk in place', length: WALK, loop: true, fps: 24,
-    lanes: [
-      part('leg-r', { y: seq([[0, 0], [6, -30, 'out'], [12, 0, 'linear'], [24, 0]]), rotation: seq([[0, 0], [6, 3, 'out'], [12, 0, 'linear'], [24, 0]]) }),
-      part('leg-l', { y: seq([[0, 0, 'linear'], [12, 0], [18, -30, 'out'], [24, 0]]), rotation: seq([[0, 0, 'linear'], [12, 0], [18, -3, 'out'], [24, 0]]) }),
-      part('body', { y: cyc(WALK, walkBody), rotation: cyc(WALK, [[6, 1.5], [18, -1.5]]) }),
-      part('head', { y: cyc(WALK, walkBody, 2), rotation: cyc(WALK, [[9, -1.2], [21, 1.2]]) }),
-      part('arm-r', { y: cyc(WALK, walkBody, 1), rotation: walkArm }),
-      part('arm-l', { y: cyc(WALK, walkBody, 1), rotation: neg(walkArm) }),
-    ],
-  },
+  walkAction(false),
   flat(rigOf('builtin:run')),
   {
     id: 'builtin:jump', name: 'Jump', length: 30, loop: false, fps: 24,

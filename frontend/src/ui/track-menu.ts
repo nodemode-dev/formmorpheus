@@ -2,12 +2,30 @@ import type { Engine } from '../engine/engine';
 import * as ops from '../engine/ops';
 import * as trackOps from '../engine/track-ops';
 import * as lockOps from '../engine/lock-ops';
-import { setTrackScreen } from '../engine/camera';
+import { setTrackDepth, setTrackScreen } from '../engine/camera';
 import { setMute, setSolo } from '../media/audio-edit';
 import { el, q, setClass, setText } from './dom';
 import { icon } from './icons';
 import { soundFxCard } from './sound-fx-card';
 import { Popover, popField, popRow, popSep } from './popover';
+import { t } from './i18n';
+import '../styles/depth.css';
+
+/** The named depth steps, far to near; `depth` is what the camera's move is multiplied by. */
+export const DEPTH_STEPS: ReadonlyArray<{ name: string; depth: number }> = [
+  { name: 'Far background', depth: 0.25 },
+  { name: 'Background', depth: 0.5 },
+  { name: 'Middle', depth: 0.75 },
+  { name: 'Normal', depth: 1 },
+  { name: 'Foreground', depth: 1.5 },
+  { name: 'Close foreground', depth: 2 },
+];
+
+/** The index of the step a depth value is, or -1 for a value between steps (set by the Camera card's slider). */
+export function depthStepOf(depth: number | undefined): number {
+  const d = depth ?? 1;
+  return DEPTH_STEPS.findIndex((s) => Math.abs(s.depth - d) < 0.005);
+}
 
 export class TrackMenu {
   private readonly pop: Popover;
@@ -26,6 +44,7 @@ export class TrackMenu {
   private readonly solo = popRow(null, 'Solo sound', { check: true });
   private readonly rec = popRow('audio', 'Record sound...');
   private readonly fxRow = popRow('audio', 'Sound effects...');
+  private readonly depthRows = DEPTH_STEPS.map((s) => popRow(null, s.name, { check: true }));
   onRecord: (() => void) | null = null;
 
   constructor(private readonly engine: Engine) {
@@ -55,6 +74,11 @@ export class TrackMenu {
     });
     this.mute.el.addEventListener('click', () => { const on = !this.mute.el.classList.contains('is-checked'); this.act(on ? 'Mute Track' : 'Unmute Track', (m, id) => setMute(m, id, on)); });
     this.solo.el.addEventListener('click', () => { const on = !this.solo.el.classList.contains('is-checked'); this.act(on ? 'Solo Track' : 'Unsolo Track', (m, id) => setSolo(m, id, on)); });
+    this.depthRows.forEach((row, i) => row.el.addEventListener('click', () => {
+      this.act(`Depth: ${DEPTH_STEPS[i].name}`, (m, id) => setTrackDepth(m, id, DEPTH_STEPS[i].depth));
+    }));
+    const depthHead = el<HTMLElement>('<div class="fm-tm-depth-h"></div>');
+    setText(depthHead, t('Depth'));
     this.rec.el.addEventListener('click', () => { this.close(); this.onRecord?.(); });
     this.fxRow.el.addEventListener('click', () => { const id = this.trackId; this.close(); if (id) soundFxCard(this.engine).show({ kind: 'track', id }); });
     // the whole-track clipboard as the icon row on top, as the block menu has
@@ -70,7 +94,7 @@ export class TrackMenu {
     tile('copy', 'Copy', () => { const t = this.engine.movie?.tracks.find((x) => x.id === this.trackId); if (t) trackOps.copyTrack(t); this.close(); });
     tile('duplicate', 'Duplicate', () => this.trackOp('Duplicate Track', (m, id) => trackOps.duplicateTrack(m, id).movie));
     this.pasteT = tile('paste', 'Paste', () => this.trackOp('Paste Track', (m, id) => trackOps.pasteTrack(m, id).movie));
-    this.list.append(this.name.el, tileRow, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), this.screen.el, this.lock.el, this.mute.el, this.solo.el, this.rec.el, this.fxRow.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
+    this.list.append(this.name.el, tileRow, this.paste.el, popSep(), showAll.el, hideAll.el, this.clearGap.el, popSep(), depthHead, ...this.depthRows.map((r) => r.el), popSep(), this.screen.el, this.lock.el, this.mute.el, this.solo.el, this.rec.el, this.fxRow.el, popSep(), add.el, this.up.el, this.down.el, popSep(), del.el);
     this.pop.body.appendChild(this.list);
   }
 
@@ -99,6 +123,8 @@ export class TrackMenu {
     this.clearGap.setDisabled(at < 0 || !m || m.tracks[at].content.some((c) => this.engine.isOver(c)));
     this.screen.setChecked(at >= 0 && !!m?.tracks[at].screen);
     this.screen.setDisabled(at < 0);
+    const step = at >= 0 && m ? depthStepOf(m.tracks[at].depth) : -1;
+    this.depthRows.forEach((r, i) => { r.setChecked(i === step); r.setDisabled(at < 0); });
     this.lock.setChecked(at >= 0 && !!m?.tracks[at].locked);
     this.lock.setDisabled(at < 0);
     this.mute.setChecked(at >= 0 && !!m?.tracks[at].mute);

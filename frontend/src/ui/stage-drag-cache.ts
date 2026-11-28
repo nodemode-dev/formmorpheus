@@ -6,6 +6,8 @@
 import type { Renderer, View } from '../engine/render';
 import { BACKSTAGE_DEFAULT } from '../engine/render';
 import { end, locate } from '../engine/model';
+import { drawSceneFx } from '../engine/scene-fx';
+import { drawSubtitles } from '../engine/subtitles';
 import type { Content, Movie, Track } from '../engine/types';
 
 interface Opts { backstage: boolean; background: string; transparentChecker: CanvasPattern | string | null }
@@ -79,6 +81,8 @@ export class DragCache {
     this.renderer.composeLayer(mc, { ...m, tracks: this.span(m, b.lo, b.hi) }, frame, view, true);
     if (b.above && this.above) mc.drawImage(this.above, 0, 0);
     this.wrap(ctx, m, view, opts, mix);
+    drawSceneFx(ctx, m, frame, view);
+    drawSubtitles(ctx, m, frame, view);
     return true;
   }
 

@@ -7,7 +7,7 @@ On macOS use Cmd where this manual says Ctrl. The table of keys is under Keyboar
 ## Getting started
 
 1. Start the app. The **Home** screen opens first.
-2. Choose **New movie** (Ctrl+N), pick a size and a frame rate, and press create. Or choose **New flipbook** to start a frame by frame animation. Or choose File · **New from Starter Scene...** and pick a scene: a new movie opens with the scene's background and props, each on its own track, and a guide line on the floor. A starter character added from the Characters panel then stands on that floor at half its size.
+2. Choose **New movie** (Ctrl+N), pick a size and a frame rate, and press create. Or choose **New flipbook** to start a frame by frame animation. Or choose File · **New from Starter Scene...** and pick a scene: a new movie opens with the scene's background and props, each on its own track, and a guide line on the floor. A starter character added from the Characters panel then stands on that floor at half its size, and in a movie of another size than 1920 by 1080 it stands on the floor at the scene's size.
 3. Add content with the round **Create** button at the right of the Timeline: Drawing, Flipbook, Text, Track, or Import.
 4. Press Space to play. Press Space again to pause. To see the movie as it will look when finished, press **Preview** in the Timeline's top row: it plays from the first frame, full screen, and Escape leaves.
 5. Save with Ctrl+S. The first save asks for a name.
@@ -16,9 +16,12 @@ You can also drop pictures, video or sound anywhere on the window to bring them 
 
 ## The screen
 
+![The whole window with a starter park scene on the Stage, a character selected, the Build panel on the left and the Timeline below.](img/window-overview.webp)
+
 - **Title bar and menus**: File, Edit, Movie, Content, View and Help. On macOS the menus can sit in the system menu bar, or in the window (View · Menus in Window).
 - **Stage**: the movie frame, with a dimmed backstage around it. Content shows here as it will export. A timecode shows the Playhead position.
-- **Build panel**: a column beside the Stage with Characters, Actions, Scenes, Create and Camera. Open it with View · Build Panel. See The Build panel below.
+- **Build panel**: a column beside the Stage with seven tabs: Characters, Actions, Scenes, Props, Effects, Create and Camera. Open it with View · Build Panel. See The Build panel below.
+- **Scene strip**: a row of scene cards above the Timeline. See Scenes on the Timeline.
 - **Timeline**: tracks of content blocks, with the Playhead, the play controls, a Preview button, the Movie settings button, Multi-select, Camera mode, the Compose, Perform and Keyframe switch and the Create button.
 - **Split**: drag the line between Stage and Timeline to give either more room. The place is remembered.
 - **Status bar**: shows the engine state, running jobs and short notices.
@@ -28,15 +31,21 @@ Drag the Timeline with the wheel: the wheel scrolls tracks, Shift+wheel or a sid
 
 ### The Build panel
 
-The Build panel sits beside the Stage, not over it. Choose View · Build Panel to show or hide it. It is there only while a movie is open in the editor: not on Home, in Draw and Paint, or in the full-screen preview. It remembers whether it is open and which tab you were on, and it starts closed on a window narrower than 1100 px. Use the arrow keys to move between its five tabs.
+![The Build panel open on its Characters tab, scrolled to the Character view section, beside a Stage that shows a starter park scene.](img/build-panel-characters.webp)
 
-- **Characters**: **New Character...** opens the Character Builder. **Mine** lists the characters you saved and **Starters** lists the built cast. A click adds that character to the movie at the Playhead.
+The Build panel sits beside the Stage, not over it. Choose View · Build Panel to show or hide it. It is there only while a movie is open in the editor: not on Home, in Draw and Paint, or in the full-screen preview. It remembers whether it is open and which tab you were on, and it starts closed on a window narrower than 1100 px. Its seven tabs sit in two rows. Use the arrow keys to move between them.
+
+- **Characters**: **New Character...** opens the Character Builder. **Mine** lists the characters you saved and **Starters** lists the built cast. A click adds that character to the movie at the Playhead. At the end of the tab, a **Character view** section turns the selected character to the front, three-quarter, side or back view, or flips it (see Character views).
 - **Actions**: the actions of the selected character, its own first and then the starter actions. A click applies one the way Apply Action... does, so it plays once. With no character selected the tab says "Select a character to see its actions."
-- **Scenes**: the starter scenes. A click adds that scene's backdrop and props behind everything in the movie, as Add Starter Scene to This Movie... does. **Background Color...** under them sets the Stage's background.
+- **Scenes**: **My scenes** at the top, with **Save as Scene...** above them, and then the starter scenes. A click on a scene adds its backdrop and props behind everything in the movie. **Background Color...** under the starter scenes sets the Stage's background. See Starter scenes and My scenes.
+- **Props**: 49 ready-made objects to add to the movie, in three styles and eight categories, with a search box. See Props.
+- **Effects**: weather, particles and light to lay over the whole movie, and a list of the ones already in it. See Scene effects.
 - **Create**: the rows of the Create card: Drawing, Flipbook, Text, Track, shapes, pictures, video and sound to import, Record sound, AI Voice and Subtitles. A row is greyed out when its command is.
-- **Camera**: **Camera mode**, which turns the camera frame on the Stage on, and the group transitions: Crossfade, Dip to Color, Wipe, Push and None.
+- **Camera**: **Camera mode**, which turns the camera frame on the Stage on; **Camera moves**, ready-made moves with a length of 0.5, 1, 2 or 4 seconds; **Transitions**, the group transitions Crossfade, Dip to Color, Wipe and Push, and Remove Transition; and **Depth**, which sets how much each picture track moves with the camera. See Camera.
 
 ## Modes
+
+![The top row of the Timeline: the Theater button, the Movie settings, Multi-select and Camera mode buttons, the Compose, Perform and Keyframe switch, the play controls, the Preview button and the Create button.](img/timeline-top-row.webp)
 
 The three modes change what dragging on the Stage does. They are a compact switch in the Timeline's top row, after the Theater and Camera mode buttons; when the row is narrow only the icons show, and each keeps its name as a tooltip. Switch with Ctrl+1, Ctrl+2 and Ctrl+3, or from the View menu.
 
@@ -94,7 +103,27 @@ A transition mixes one block into the next where two blocks touch on one track: 
   - **Push** slides the second block in from one side while it pushes the first block out the other way.
 - **Direction** (Wipe and Push only): **From left** (the default), **From right**, **From top** or **From bottom** is the side the second block comes from.
 - **Length:** the **Frames** field in the Transition menu sets it. The shortest is 2 frames; a new transition is half a second long at the movie's frame rate. On the Timeline a band marks the transition over the cut, with a handle at its right end: drag it to change the length. Dragging cannot make it longer than twice the shorter of the two blocks. The Frames field takes any whole number of 2 or more.
-- **Inside a group:** the commands **Group Transition: Crossfade**, **Group Transition: Dip to Color**, **Group Transition: Wipe**, **Group Transition: Push** and **Group Transition: None** act on the cut nearest the Playhead between two touching blocks inside the selected group.
+- **Inside a group:** the commands **Group Transition: Crossfade**, **Group Transition: Dip to Color**, **Group Transition: Wipe**, **Group Transition: Push** and **Group Transition: None** act on the cut nearest the Playhead between two touching blocks inside the selected group. The Camera tab of the Build panel has the same five as tiles (see Camera).
+
+## Scenes on the Timeline
+
+![The scene strip above the Timeline with three scene cards named Hello, Talk and Goodbye, each with a small picture, its name and its length.](img/scene-strip.webp)
+
+A movie is one timeline with one set of tracks. **Scenes** cut that timeline into named stretches, so you can find, loop, copy and reorder them. They are shown as a **scene strip**, a row of cards above the Timeline. A scene runs from its start to the start of the next one, and the last runs to the end of the movie.
+
+- **Make a cut.** Put the Playhead where a new scene starts and press **New Scene at Playhead** in the strip (or Movie · Scenes). In a movie with no scenes, the first press makes Scene 1 from the start and a second scene at the Playhead. The new card opens for a name; type it and press Enter. A scene cannot start on a frame where another one starts.
+- **A card** shows a small picture of the scene's first frame, its name and its length. Click it to put the Playhead at the scene's start. Double-click it to rename it. The round plus after the last card makes another cut at the Playhead.
+- **The card's menu** (the three dots, or a right-click on the card):
+  - **Go to Scene** (the command is named Go to Scene Start) and **Rename Scene**.
+  - **Focus on Scene** makes the Timeline show just that stretch and sets the loop range to it, so playback loops inside the scene. Choose it again, shown ticked, to **Show Whole Movie**.
+  - **Duplicate Scene** puts a copy of the scene, with copies of everything in it, right after it.
+  - **Move Scene Earlier** and **Move Scene Later** swap the scene with its neighbour.
+  - **Add Empty Scene After** adds 3 seconds of nothing after the scene; what follows moves later.
+  - **Delete Cut, Keep Content** takes away the cut at the scene's start, so the scene joins the one before it. The first scene has no cut before it.
+  - **Delete Scene and Content** removes the scene and everything in it; what follows moves up. The only scene cannot be deleted.
+- **What travels with a scene.** Content, keyframes, camera keys, markers, subtitles and scene effects move, copy and delete with the scene they are in. Content that crosses a cut is split at the cut first when the scene is moved, duplicated or deleted.
+- **Commands.** Movie · Scenes holds New Scene at Playhead, Previous Scene, Next Scene and the card's actions for the scene at the Playhead.
+- **Limits.** You cannot drag a card to reorder: use Move Scene Earlier and Move Scene Later. A movie keeps one set of tracks for the whole movie, so a scene has no tracks of its own. The scenes are saved in the `.fmo`.
 
 ## Draw and Paint
 
@@ -188,6 +217,52 @@ Both are on the **Action** menu in Keyframe mode, each with a card and handles o
 - The offsets are in the picture's own pixels and apply before move, scale and rotation.
 - In Perform mode, dragging a node while the movie plays records its keys, and one undo removes the take.
 
+## Camera
+
+![The Camera tab of the Build panel with Camera mode, the Camera moves length buttons and the tiles of the moves.](img/build-panel-camera.webp)
+
+The camera pans, zooms and turns the whole movie. Turn **Camera mode** on with the camera button in the Timeline's top row, or with the first row of the Build panel's Camera tab. Then drag the camera frame on the Stage to pan, a corner to zoom and the round handle to turn: each drag sets camera keys at the Playhead, on the Camera lane at the top of the Timeline. A track set Fixed to screen ignores the camera. Subtitles are drawn after the camera, so a camera move never shifts them.
+
+### Camera moves
+
+![A looping demonstration: the camera pushes in on a park scene with a girl standing beside a bench.](img/demo-camera-push-in.webp)
+
+A camera move writes the camera keys for you. Open the **Camera** tab of the Build panel, choose a **Length** of 0.5, 1, 2 or 4 seconds (2 seconds unless you chose another; it is remembered), and click a tile. Each tile has a small moving diagram of what the camera does.
+
+- **Push In** moves the camera closer to the middle of the frame, and **Pull Out** moves it back and shows more.
+- **Pan Left** and **Pan Right** turn the camera sideways, and **Tilt Up** and **Tilt Down** tip it.
+- **Push In on Selection** moves in until the selected content fills the frame. With nothing selected it says "Select something to push in on."
+- **Whip Pan** swings in fast from the side and settles on the framing the camera has at the Playhead.
+- **Slow Drift** floats the camera a little, as if held by hand.
+- **Shake** shakes the camera hard and then calms it down.
+- **Reset Camera Here** takes the camera back to the whole frame. Where it is already there, it says "The camera is already at rest here."
+
+A move starts at the Playhead, writes camera keys for the length you chose, and plays once; the Playhead then goes back to where the move starts. It is one undo step. Camera keys that were already inside the move's stretch are replaced, and the key at the start takes the camera as it is there, so nothing before the move changes. A move needs room after the Playhead: when there is none, the tab says "Move the Playhead earlier: a move needs room after it." Where the camera is level and the move starts inside the movie, a move zooms in just enough that no edge of the movie shows. The same moves are in Movie · Camera Moves, as Camera Move: Push In and so on.
+
+The tab's **Transitions** tiles (Crossfade, Dip to Color, Wipe, Push and Remove Transition) are the five group transitions of Transitions in Compose, with a moving diagram each. They act inside the selected group, at the cut nearest the Playhead between two touching blocks, so they are greyed out until a group like that is selected.
+
+### Depth
+
+![The Depth part of the Camera tab: each picture track with its depth step, and the Spread Tracks by Depth and Flatten Depth rows.](img/build-panel-depth.webp)
+
+**Depth** makes the camera move far things less and near things more, so a pan or a push shows layers sliding past each other. Every track has a depth step:
+
+| Step | How much of the camera's pan and zoom the track takes |
+|---|---|
+| Far background | a quarter |
+| Background | half |
+| Middle | three quarters |
+| Normal | all of it (the default) |
+| Foreground | one and a half times |
+| Close foreground | twice |
+
+- **For one track**, right-click its name and choose **Depth**, then a step.
+- **In the Camera tab**, the **Depth** list shows every track that holds a picture, the front one first, each with its step in a menu. A click on a row selects that track. A track fixed to the screen is greyed out, since depth does not apply to it.
+- **Spread Tracks by Depth** gives the picture tracks a step each, from Far background at the back to Close foreground at the front, in one undo step. It needs two or more picture tracks. A starter scene has one track for its background and one for each prop, so one press gives it parallax.
+- **Flatten Depth** sets every track back to Normal. Both are also in the Movie menu.
+
+Depth shows only when the camera moves, in Camera mode or through a camera move.
+
 ## Perform
 
 Perform records a gesture instead of placing keys by hand.
@@ -207,10 +282,12 @@ There are three ways to get one: build it in the **Character Builder** by choosi
 
 ### The Character Builder
 
+![The Character Builder with the Maya preset shown in the side view, the View row above the preview and the Look tab on the right.](img/character-builder-views.webp)
+
 Choose **Build a character** at the top of the Characters panel, Content · **Character Builder...**, or Character Builder in command search. A large window opens in three columns.
 
 - **Presets** on the left: the built starter characters, grouped as Women, Men and Specials, under a first group, **Mine**, that lists the characters you saved. With none saved it reads "Characters you save appear here." Press one to start from it; a saved one opens again with its recipe. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
-- **The preview** in the middle shows the character as it will be added, redrawn as you change it.
+- **The preview** in the middle shows the character as it will be added, redrawn as you change it. A **View** row above it turns the character: Front, Three-Quarter, Side and Back, and a Flip button that mirrors it. See Character views.
 - **Look**: the name; the kind (Human, Robot, Alien, Monster, Fox, Dino or Sprout); skin; the body sliders Height, Build, Shoulders and Head size, and Frame A or B; and the face: eye color, Jaw, Lashes, Blush, Freckles, Earrings, Glasses, facial hair (None, Stubble, Mustache, Goatee, Full) and lip color. A kind dims the face options it does not draw: a robot has no jaw or lip color, for example. Each row of swatches ends in a custom color.
 - **Frame A and Frame B** are two body frames to build on, not two appearances for one character. Choose one and the character has that frame: **A** is the lighter one, with narrower shoulders, waist and neck, slimmer arms and legs and smaller hands and feet; **B** is the broader one, with wider shoulders and waist, thicker arms and legs, a thicker neck and larger hands and feet. The body sliders then work on top of the frame. It changes the shape of the body and nothing else: skin, face, hair and outfit stay. The Women presets start on A and the Men presets on B (a special has its own), and you can set either frame on any preset or kind. Use it to pick the basic body first, then fine-tune with Height, Build and Shoulders. To keep two looks of one character, save them as two characters under two names. Nothing compares or switches between A and B once the character is built.
 - **Hair**: 16 styles and None, and the hair color. A fox shows a tuft between its ears for any style but None; for a dino the hair color paints its crest and the spikes on its tail, and for a sprout its leaves and petals, so their styles are dimmed. A note beside the last style says so.
@@ -231,6 +308,18 @@ A character from the Character Builder, a built starter included, is an ordinary
 - `shadow`, the shadow on the floor, which follows nothing
 
 `-l` is the character's own left, on your right as it faces you. A piece the look does not draw makes no part, so a character in trousers has no `skirt`. The `mouth` is a mouth chart of the eight shapes drawn to match the face, so Lip-sync from Sound works on it at once. Every part can be picked, moved and keyed like a part of any character, and the starter actions know these names.
+
+### Character views
+
+![One character from the Character Builder shown four times on a stage scene, from left to right in the front, three-quarter, side and back views.](img/character-views.webp)
+
+A character made in the Character Builder can face the front, three-quarters, the side or away from you, and it can be flipped to look the other way. The views are drawn from the character's recipe, so the same look, outfit and colors carry over.
+
+- **In the builder**, the **View** row above the preview (Front, Three-Quarter, Side, Back) and the **Flip** button turn the character before it is added. See The Character Builder.
+- **On the Stage**, select a character and choose Content · **Character View**: **View Front**, **View Three-Quarter**, **View Side**, **View Back** and **Flip Character**. The same rows are in the content's right-click menu and in the **Character view** section at the end of the Build panel's Characters tab. The view the character has is ticked.
+- **What stays.** The character is built again in place from the new view in one undo step, and its keyframes, actions and strips, lip-sync and place stay, matched by part name.
+- **Which characters.** A character made in the Character Builder, a built starter or a saved one included. The five drawn starters (Kofi, Ines, Marisol, Bram and Noor) and a character from an SVG or a drawing have one drawn view, so the rows are greyed out for them.
+- **Limits.** The side view is a near profile, not a full one. The starter actions are drawn for the front view and play as they are in the other views. The three-quarter and side views face the right of the Stage; Flip makes them face left.
 
 ### Edit in Character Builder
 
@@ -284,7 +373,7 @@ For a Group you built by hand, select it and choose Content · **Make Character.
 
 To move, turn or key one part of a character, such as an arm, pick that part.
 
-- **Pick.** Double-click the character on the Stage (not in Perform mode) and the part under the pointer is picked. A part is found where one of its drawn pieces is, not by a box around it. On the Timeline in Compose, double-click the character's block to open its parts in place, then press a part's bar.
+- **Pick.** Double-click the character on the Stage (not in Perform mode) and the part under the pointer is picked. A part is found where one of its drawn pieces is, not by a box around it, and a thin part such as a lower leg, a forearm or a brow is found even when the pointer is a few pixels off its edge. On the Timeline in Compose, double-click the character's block to open its parts in place, then press a part's bar.
 - **Pick another.** With a part picked, a click on another part of the same character picks that one. A press on the picked part keeps it.
 - **Go back.** A press on the character away from every part goes back to the whole character. Escape leaves the part and keeps the character selected; a second Escape deselects.
 - **What it changes.** While a part is picked, Move, rotate, scale, the pivot (Edit anchor, or dragging it), motion path nodes and the keys written in Keyframe mode apply to that part only, and the character's other parts do not move. A part on a locked track is not grabbed.
@@ -296,7 +385,7 @@ To move, turn or key one part of a character, such as an arm, pick that part.
 View · **Characters** opens a panel beside the Stage with two lists. It sits on the left, so the Media Bin can stay open too.
 
 - **Starter** holds 26 original characters, each row with its figure and what it is. Kofi, Ines, Marisol, Bram and Noor are drawn, with the nine part names of an SVG character (`head`, `body`, the arms and legs, a hand on each arm and the `mouth`). The other 21 are built in the Character Builder's style, with the parts listed in "A built character's parts": Maya, Ingrid, Zuri, Mei, Rosa, Amara and Jade; Leo, Karl, Arjun, Finn, Otto, Dev, Walt and Sami; and Bolt (a robot), Zib (a visitor from space), Moss (a friendly monster), Pip (a woodland fox), Rex (a little dino) and Sprig (a garden sprite). Every starter has a pivot at every joint and a mouth chart of eight drawings, so every action and Lip-sync from Sound works on it at once. A built starter's row also has **Open in Character Builder**. Starter rows cannot be renamed or deleted.
-- **Mine** holds the characters you saved, each with its picture. A row shows a person glyph for a moment and then its picture, and the panel opens with both lists in place. Each row has **Add to Movie**, **Rename** and **Delete**. Delete moves the character to Recently Deleted.
+- **Mine** holds the characters you saved, each with its picture. A row shows a person glyph for a moment and then its picture, and the panel opens with both lists in place. Each row has **Add to Movie**, **Rename** and **Delete**. A character you made in the Character Builder also has **Edit in Character Builder**, which opens the builder on its saved recipe, with its name; a drawn or imported character has no recipe, so it has no such row. Delete moves the character to Recently Deleted.
 
 **Add to Movie**, or dragging a row onto the Stage or onto the Timeline, puts an independent copy at the Playhead (or where you dropped it) on a new track named for it. Every part is new, so two copies of the same character move apart. A character saved from a larger movie is scaled down to fit. It is one undo step. Each character you add takes its own spot across the frame, so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left, each keeping its size and height. The spots are spaced for that size, so five full-height characters stand side by side in a 1920 by 1080 movie. A starter character added to a movie made from a starter scene stands on that scene's floor (see Starter scenes).
 
@@ -357,6 +446,23 @@ An applied action shows as a labelled **strip** along the lower edge of the char
 
 To make a strip longer or shorter, select the character's block and drag either edge of the strip. A looping action plays for the new length, with its eases at both ends. A one-shot action is cut when you shorten it and holds its last pose when you make it longer. A strip stops at a neighbouring action. It is one undo step, **Action Length**.
 
+### Walk
+
+![The Stage's right-click menu opened on the dimmed backstage with Walk To Here as its first row, and a character selected.](img/walk-to-here.webp)
+
+A character can walk across the Stage and stop where you choose. The starter action **Walk in place** is a walk with planted feet: each foot stays on the floor while it slides back, then lifts and swings through, so a body carried across the Stage at the right pace does not skate. The commands below move the character across the Stage and play that walk over the same frames. Select one character, put the Playhead over its block, and then:
+
+- **Walk To Here:** with the character selected, right-click the spot on the Stage and choose **Walk To Here**. It is in the Stage's own menu on an empty spot, and in the content's menu when the spot is on scenery such as a backdrop. The character walks from where it stands at the Playhead to that spot, which is where its feet go, and then stands.
+- **Walk In from Left** and **Walk In from Right**, in Content · **Walk** and in the character's right-click menu: from the Playhead the character walks in from off screen to where it stands now.
+- **Walk Off Left** and **Walk Off Right**, in the same places: from the Playhead the character walks from where it stands to off screen.
+
+![A looping demonstration: a girl walks in from the left edge of a park scene and stops at the middle.](img/demo-walk-in.webp)
+
+The walk writes move keys for exactly that stretch, plus the walk action over the same frames, at a pace that suits the length of the character's leg. The character turns to face the way it goes. It is one undo step, and it plays once, with a notice that says how many seconds it walks. The character's own move keys inside that stretch are replaced.
+
+- **Where to right-click.** A block under the pointer takes the right-click as its own, and opens that block's menu. A picture that covers the whole frame, such as the background of a starter scene, is such a block, so inside the frame the Stage's own menu opens only where nothing is drawn. Right-click in the dimmed backstage around the frame, or hide that track while you place the walk, or use the four Walk In and Walk Off commands, which need no spot.
+- **Refused.** A walk that would run past the end of the character's block on the Timeline, or of the movie, is refused with a sentence that tells you to lengthen the block or the movie or start earlier. Putting the Playhead off the character's block, or asking it to walk to where it already stands, is refused too.
+
 ### Your own actions
 
 - **Save Action...** makes an action from the character's own keys across the loop range, or across the whole block when none is set. Type a name. It takes the Move and Bones keys inside the range, adds a key at each end where the picture is, and is marked Loop when every channel ends where it starts. The keys it came from stay plain keys.
@@ -372,7 +478,7 @@ An action is a small text file you can keep, share and open in another movie.
 
 ## Starter scenes
 
-File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Click a card to pick it and press **Create** to take it, or double-click a card to take it at once. A new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+File · **New from Starter Scene...** shows ten original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom, Stage, Office, Castle Hall, Space Station, Beach and Living Room. Click a card to pick it and press **Create** to take it, or double-click a card to take it at once. A new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
 
 To add a scene to the movie that is open, choose Content · Add · **Add Starter Scene to This Movie...**. The same chooser opens, and its button reads **Add to Movie**. The scene's backdrop and props go behind everything already in the movie, each picture on its own track, fitted to the movie's size, in one undo step. The floor guide is taken only when the movie has none, and the scene's camera is left out so nothing already there moves.
 
@@ -383,7 +489,72 @@ To add a scene to the movie that is open, choose Content · Add · **Add Starter
 
 The props and rooms are drawn to the starter characters' scale: a character at half size is about as tall as an adult, so a bench, a table, a desk and a doorway are the size they should be beside it, every prop stands on the floor, and each background has depth.
 
-A starter character added to this movie from the Characters panel stands on the floor guide at half its size, and each one has its own spot so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left. Without a floor guide, and for a character from Mine, it keeps its size and height and takes the same spots across the frame.
+A starter character added to this movie from the Characters panel stands on the floor guide at half its size, and each one has its own spot so two never land on each other: the first at mid-frame, then to the right, to the left, further right and further left. Without a floor guide, and for a character from Mine, it keeps its size and height and takes the same spots across the frame. In a movie of another size than 1920 by 1080 that has a floor guide, a starter character stands on the floor at the scene's size too.
+
+## My scenes
+
+![The Scenes tab of the Build panel with My scenes at the top, a Save as Scene button, one saved scene, and the starter scenes below.](img/build-panel-scenes.webp)
+
+A scene of your own is scenery you built in one movie and keep, to lay behind any other movie the way a starter scene is. It is not the same as the scenes of the scene strip: those cut one movie into stretches (see Scenes on the Timeline).
+
+### Save as Scene
+
+![The Save as Scene card with a name field, a list of the movie's tracks with ticks, and a Background color row.](img/save-as-scene.webp)
+
+Choose Movie · **Save as Scene...**, or **Save as Scene...** at the top of the Scenes tab. It is greyed out until the movie has a block on some track. A card opens:
+
+- **Name**: starts as the movie's name, or "My Scene" when the movie is still untitled, and is made free by adding a number ("My Scene 2") when it is taken.
+- **The tracks**: every track that holds something, with its kind. Everything on a ticked track goes into the scene. Pictures, drawings, shapes and props start ticked; characters and sound start unticked, and you tick them if you want them.
+- **Background color**: ticked when the movie's background is not white. It is kept as a track of its own.
+- **Save Scene** is greyed out until a track or the background color is ticked and the name is not empty. When a scene of that name is already saved, a question offers **Replace** or **Keep Both**.
+
+The scene keeps the movie's size and length, the floor guide if there is one, and a small picture of the movie at the Playhead for its tile. A link from a ticked block to something on a track you did not tick is cut.
+
+### Use a scene of yours
+
+In the Scenes tab, **My scenes** lists them, newest first, above the starter scenes. A click lays that scene behind everything in the open movie, in one undo step, **Add Scene**. A block that lasts the whole scene is stretched to the whole movie; the others keep their times and are cut at the movie's end. When the movie is another size, each track's blocks are scaled together to cover the frame, keeping their proportions. The floor guide is taken only when the movie has none.
+
+- **Rename and delete.** The three dots on a tile, or a right-click on it, open **Rename...** and **Delete...**. Delete moves the scene to **Recently Deleted** on Home, where it can be restored for 30 days; a restore puts it back in My scenes.
+- **Where they are kept.** Each scene is a `.fmo` file in the **Scenes** folder of your data folder (see The data folder), one file for each, and stays there after a restart. The engine serves them under `/api/scenes`. A scene is a copy: later changes in the movie it came from do not change it, and the scene is never changed when you lay it behind a movie.
+- **The engine keeps them.** My scenes are read from and written through the engine, so when the engine is not running the tab says so instead of listing them.
+
+## Props
+
+![The Props tab of the Build panel with a search box, the styles All, Flat, Outline and Stick, the eight categories and the first tiles.](img/build-panel-props.webp)
+
+The **Props** tab of the Build panel (also Content · **Add Prop...**, which opens it with the search box ready) holds 49 ready-made objects: chairs, trees, street lamps, signs and more.
+
+- **Styles**: **Flat** (flat color shapes), **Outline** (a hand-drawn outline) and **Stick** (thick simple lines). **All** shows every style.
+- **Categories**: Furniture, Nature, City, Office, Food, History, Future and Signs, and **All**.
+- **Search** matches a prop's name, its category and style, and a few words of its own: type "kitchen" to find the table and the chair.
+- **Add one.** Click a tile. The prop is added at the Playhead on a new track at the top, in one undo step. It stands on the floor guide when the movie has one. A prop is one group of vector shapes, so it stays sharp at any zoom.
+- **Move and resize.** A prop is an ordinary block: drag, scale, turn, key and hide it, and move its track to put it in front of or behind other things.
+
+A prop that cannot be loaded says so in a notice and adds nothing.
+
+## Scene effects
+
+![The Effects tab of the Build panel with Snow listed under In this movie with its Strength slider, and the Weather and Particles tiles below, beside a park scene with snow falling.](img/build-panel-effects.webp)
+
+A scene effect is weather, particles or light drawn over the whole frame: choose Movie · **Scene Effects**, or open the **Effects** tab of the Build panel.
+
+![A looping demonstration: snow falling over a park scene.](img/demo-snow.webp)
+
+- **Weather**: Rain, Snow, Fog and Blowing Leaves.
+- **Particles**: Dust, Confetti, Fireflies and Bubbles.
+- **Light**: Sun Rays, Sunset Glow, Night, Spotlight and Lightning.
+
+Click a tile to lay that effect over the whole movie. A notice says it is over the whole movie and that its strength, start and end are under Effects. The **In this movie** list at the top of the tab shows each effect with:
+
+- **Strength**, a slider from 0 to 100 percent. Each effect starts at 60 percent, or 70 percent for Night, Spotlight and Lightning.
+- **From the Playhead**, which starts the effect at the Playhead (and runs it to the end of the movie when the Playhead is already past its end), and **To the Playhead**, which ends it there. The card names the stretch it covers, which is "The whole movie" at first.
+- **Remove**, the bin at the card's corner.
+
+Each change is one undo step. You can lay several effects at once, for example Night with Fireflies. Movie · Scene Effects also has **Remove All Scene Effects**, which takes them all out in one step.
+
+- **Where it is drawn.** Over the content and under the subtitles, on the Stage and through the same drawing that every export uses. It lies outside the camera, so a camera move does not shift it. It stays visible while you drag content on the Stage.
+- **Scenes.** An effect moves, copies and deletes with the scene it is in (see Scenes on the Timeline).
+- **Saved in the movie.** The effects are saved in the `.fmo`. A scene of yours does not keep them.
 
 ## Working with a vector app
 
@@ -412,6 +583,7 @@ Parts are matched by name:
 - **A part that is new** in the file is added on top, on its own inner track, parented as the file says.
 - **A part that is gone** from the file stays. It gets the red highlight, and when it is selected the status bar adds "Not in the source file". A highlight you gave the part yourself is kept while it is missing, and is put back when the part comes back; a part you highlighted another way while it was missing keeps that.
 - **A part that comes back** to the file loses the red mark, since the red was only a sign that it was missing.
+- **A hidden part** follows the file when the file changed it: a part you hid in the vector app arrives hidden, and is shown again when the file shows it. A part you hid in FormMorpheus stays as you set it, unless the file's own setting for that part changed since the file was last read.
 - A part on a locked track refuses the update: "A part of this character is on a locked track. Unlock it, then update again."
 
 An undo of an update is not put back by the next look at the file. Save the file again, choose Update from Source..., or Redo, to bring it back. If the file cannot be found, a notice says "Source file not found" once and the link is kept, so it is picked up when the file is back. Only SVG files up to 20 MB that are plain files, not links to other files, are read.
@@ -463,6 +635,8 @@ Sound is the clock during playback, so picture and sound stay together. A sound 
 
 ## AI Voice
 
+![The AI Voice card on its Offline tab, with the built-in voice not yet set up, a sentence typed into What to say and the Speak button below.](img/ai-voice-card.webp)
+
 Type what to say, choose a voice and press **Speak**: the spoken sound lands on the Timeline at the Playhead, on a sound track, like any sound. Fades, pan, Lip-sync and export all work on it. Open the card from Content · Add · **AI Voice...**, or from More in the Create card, next to **Record sound...**. It has two tabs, **Offline** and **Online**.
 
 ### The built-in voice
@@ -496,6 +670,8 @@ The built-in voice lives in the **voice** folder of your data folder: its runtim
 - **Subtitles come with the voice.** Each spoken sound remembers its words and the timing of each sentence inside the movie file, and an AI voice adds its subtitles by itself when it speaks. See Subtitles.
 
 ## Subtitles
+
+![The Subtitles card with Show subtitles in the video ticked and one line, and the line "Welcome to the park." drawn on the Stage over a park scene.](img/subtitles-card.webp)
 
 Subtitles are words drawn over the picture, on the Stage and in every export. Open the card from Content · Add · **Subtitles...**, or from More in the Create card. All the lines share one look. Every change you make in the card is one undo step.
 
@@ -547,6 +723,8 @@ Add Text from Create. Type the words, and the Text card opens: **font** (the bun
 
 ## Export
 
+![The Export card on its Quick share tab, with the Save to row under the tabs and the tiles for video, animated GIF, frames, sprite sheet and movie file.](img/export-card.webp)
+
 Open Export with Ctrl+E (File · Export). The dialog has **Quick share** tiles and **Advanced** options.
 
 - **Quick share**: MP4 video, Animated GIF, PNG frames, Current frame, Movie file (.fmo).
@@ -585,13 +763,15 @@ Every export is also kept in the engine's **Exports**, in the data folder, never
 
 ## Home
 
+![The Home screen, Theater, with its list on the left and the movie library as thumbnails.](img/home-theater.webp)
+
 Theater is the name of the Home screen, where your movies are kept. The Theater button in the Timeline bar (a back chevron, named "Theater: back to your movies") takes you back to it from the movie you are working on, after saving it to the library. You can also open it with Shift+Ctrl+H or View · Theater. The left list has:
 
 - **Start**: New movie, New flipbook, Open, and a short guide.
 - **Recent**: the movies you opened lately.
 - **Movies**: the whole library, as thumbnails or a list, with a filter box and sorting. Rename, duplicate and delete are on each item.
 - **Exports**: everything you exported. Open, save a copy or delete.
-- **Recently Deleted**: deleted movies, characters and exports stay here for 30 days. A character is marked with the person glyph, and restoring it puts it back in Characters. A movie and a character of the same name, deleted at the same moment, each keep their own place, and each restores as what it is. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
+- **Recently Deleted**: deleted movies, characters, scenes and exports stay here for 30 days. A character is marked with the person glyph, and restoring it puts it back in Characters; restoring a scene puts it back in My scenes. A movie and a character of the same name, deleted at the same moment, each keep their own place, and each restores as what it is. Restore one, delete it for good, or empty the list. Items past 30 days are swept away. If a name is taken, the restore gets a new one such as "name 2" and a notice tells you. The movie that is open cannot be deleted from Home: close it first.
 - **Preferences** and **Help** at the foot.
 
 ## Preferences
@@ -608,7 +788,7 @@ Open with Ctrl+, (File or Edit menu). The pages:
 
 ### The data folder
 
-FormMorpheus keeps what is yours in one **data folder**: the settings file, **Characters** (what you saved with Save to Characters), **Exports**, **Recently Deleted**, **Brushes**, the **voice** folder and the movie library (in its **Library** folder, unless you chose another). It is not the folder you installed the app in. An update replaces the install folder, so your work is kept apart in a folder of your user account, where an update and a reinstall leave it alone.
+FormMorpheus keeps what is yours in one **data folder**: the settings file, **Characters** (what you saved with Save to Characters), **Scenes** (what you saved with Save as Scene, one `.fmo` file each), **Exports**, **Recently Deleted**, **Brushes**, the **voice** folder and the movie library (in its **Library** folder, unless you chose another). It is not the folder you installed the app in. An update replaces the install folder, so your work is kept apart in a folder of your user account, where an update and a reinstall leave it alone.
 
 Unless you move it, the data folder is named `formmorpheus` and sits here, for the installed app and for a source run (`./formmorpheus`) alike:
 
@@ -700,6 +880,32 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.37.0
+
+**The Build panel has seven tabs.** Characters, Actions, Scenes, Props, Effects, Create and Camera, in two rows. See The Build panel.
+
+**Character views.** A character made in the Character Builder can face the front, three-quarters, the side or the back, and be flipped, from a View row in the builder, from Content · Character View, from the content's right-click menu or from the Characters tab. Keyframes, actions and lip-sync stay. The side view is a near profile, and the starter actions are drawn for the front view. See Character views.
+
+**Props.** A Props tab with 49 objects in three styles and eight categories, with a search box. A click adds one at the Playhead on a new track, standing on the floor guide when there is one. See Props.
+
+**Five more starter scenes.** Office, Castle Hall, Space Station, Beach and Living Room make ten. A starter character added to a movie of another size than 1920 by 1080 now stands at the scene's size. See Starter scenes.
+
+**My scenes.** Save as Scene... keeps the tracks you tick as a scene of your own in the Scenes folder of the data folder, and a click on it in the Scenes tab lays it behind any movie. Rename and delete are on the tile; a deleted scene waits in Recently Deleted. See My scenes.
+
+**Scene effects.** Rain, Snow, Fog, Blowing Leaves, Dust, Confetti, Fireflies, Bubbles, Sun Rays, Sunset Glow, Night, Spotlight and Lightning, laid over the whole movie from the Effects tab, each with a strength and a start and end. They stay visible while you drag content on the Stage. See Scene effects.
+
+**Camera moves and transitions.** The Camera tab has Push In, Pull Out, Pan Left, Pan Right, Tilt Up, Tilt Down, Push In on Selection, Whip Pan, Slow Drift, Shake and Reset Camera Here, with a length of 0.5, 1, 2 or 4 seconds. A click writes camera keys from the Playhead and plays once. The transitions are tiles with moving diagrams. See Camera.
+
+**Scenes on the Timeline.** A strip above the Timeline cuts the movie into named scenes: go to one, rename, focus and loop in it, duplicate, move earlier or later, add an empty scene, or delete a cut or a scene with its content. A scene has no tracks of its own and cannot be dragged to reorder. See Scenes on the Timeline.
+
+**Depth made easy.** A Depth step for each track (Far background to Close foreground) in the track's menu, and Spread Tracks by Depth and Flatten Depth in the Camera tab and the Movie menu. The camera moves far things less. See Depth.
+
+**Walk.** Walk in place is a walk with planted feet. With one character selected, right-click the Stage and choose Walk To Here, or use Content · Walk for Walk In from Left, Walk In from Right, Walk Off Left and Walk Off Right. See Walk.
+
+**In the Characters panel,** a character you made in the builder and saved has Edit in Character Builder.
+
+**Fixed.** A double-click picks a character's part where it is drawn, and now finds thin parts such as lower legs, forearms and brows. Update from Source brings in a part hidden in the vector app as hidden, and shows it again when the file shows it; a part you hid in FormMorpheus stays as you set it unless the file changed. Scene effects and subtitles stay visible while content is dragged on the Stage.
 
 ## New in 0.36.0
 

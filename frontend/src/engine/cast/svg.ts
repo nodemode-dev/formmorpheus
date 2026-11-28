@@ -30,7 +30,7 @@ export function primSVG(p: CastPrim): string {
 const mat = (m: Mat) => `matrix(${m.map((v) => +v.toFixed(3)).join(' ')})`;
 
 export function slotsSVG(rig: CastRig, W: Record<string, Mat>): string {
-  return rig.slots.map((s) => {
+  return rig.slots.filter((s) => !s.hide).map((s) => {
     const m = s.oy ? mul(W[s.bone], [1, 0, 0, 1, s.ox, s.oy]) : W[s.bone];
     return `<g data-slot="${s.name}" transform="${mat(m)}">${s.prims.map(primSVG).join('')}</g>`;
   }).join('');

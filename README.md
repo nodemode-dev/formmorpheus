@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="version 0.36.0" src="https://img.shields.io/badge/version-v0.36.0-eef0f4?style=flat-square">
+  <img alt="version 0.37.0" src="https://img.shields.io/badge/version-v0.37.0-eef0f4?style=flat-square">
   <img alt="TypeScript and Vite" src="https://img.shields.io/badge/TypeScript-Vite-3178c6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="Python and FastAPI" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square">
   <img alt="macOS, Linux and Windows" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-native-2f7bf5?style=flat-square">
@@ -47,7 +47,7 @@
   <tr>
     <td width="25%" valign="top">
       <h3>Stage over Timeline</h3>
-      One screen: the movie frame above, tracks of content below, with a frame-accurate timecode, and a Build panel beside the Stage for characters, actions, scenes, Create and Camera.
+      One screen: the movie frame above, tracks of content below, with a frame-accurate timecode, and a Build panel beside the Stage for characters, actions, scenes, props, effects, Create and Camera.
     </td>
     <td width="25%" valign="top">
       <h3>Three ways to animate</h3>
@@ -97,11 +97,11 @@
   <tr>
     <td width="33%" valign="top">
       <h4>Content blocks</h4>
-      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups · Characters · Character Builder · 26 starter characters · Starter scenes
+      Drawings · Flipbooks · Pictures · Video · Sound · Text · Shapes · Solids · Adjustments · Groups · Characters · Character Builder · 26 starter characters · 10 starter scenes · Scenes of your own · 49 props
     </td>
     <td width="33%" valign="top">
       <h4>Animation tools</h4>
-      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera · Bones · Warp · Lip-sync · Actions, 12 ready to apply · AI Voice, spoken onto the Timeline · Subtitles, drawn in every export
+      Compose · Keyframe · Perform · Graph editor · Motion paths · Pivots · Parenting · Camera, with ready-made moves and depth · Bones · Warp · Lip-sync · Actions, 12 ready to apply · Walk To Here · Character views · Scenes on the Timeline · Scene effects, 13 ready to lay · AI Voice, spoken onto the Timeline · Subtitles, drawn in every export
     </td>
     <td width="33%" valign="top">
       <h4>Formats</h4>
@@ -118,7 +118,7 @@
 - **Decoupled core:** the movie model, ops, history and renderer in `frontend/src/engine/` never touch the DOM.
 - **Movies:** `.fmo` files hold the movie, assets and undo history; ProRes and HEVC export use your own ffmpeg, or the family's LGPL build that Preferences, Video Tools downloads on request.
 - **Perform:** drag a block on the Stage while the movie plays and the gesture becomes keys at the movie's frame rate.
-- **Characters:** build one in the Character Builder by choosing a kind, body, face, hair and outfit, start from one of 26 original starter characters, or open an SVG with one group per body part. Every character has named parts, pivots and parenting, and a built one has a part for every joint, from hip and forearm to shin, foot, eyes, brows, hair and tail, with a mouth ready for lip-sync. Save it to the Characters library, apply the 12 starter actions or your own, change a built one again with Edit in Character Builder and keep its animation, and send any character to a vector app and back, where it updates by part name and keeps its animation. Five starter scenes are included.
+- **Characters:** build one in the Character Builder by choosing a kind, body, face, hair and outfit, start from one of 26 original starter characters, or open an SVG with one group per body part. Every character has named parts, pivots and parenting, and a built one has a part for every joint, from hip and forearm to shin, foot, eyes, brows, hair and tail, with a mouth ready for lip-sync. Save it to the Characters library, apply the 12 starter actions or your own, change a built one again with Edit in Character Builder and keep its animation, and send any character to a vector app and back, where it updates by part name and keeps its animation. A built character turns to the front, three-quarter, side or back view and can walk to a spot. Ten starter scenes and 49 props are included, and you can save your own scenes.
 - **Agents:** an MCP server at `/mcp` with a small core tool list, and a terminal panel for Claude Code, Codex, Cursor and Antigravity. A change waits for your yes in the window unless you allow agents; see [`.docs/wiki/Agents.md`](.docs/wiki/Agents.md).
 - **AI Voice:** type what to say and the spoken sound lands on the Timeline like any sound, ready for fades, pan, lip-sync and export. A built-in offline voice (Kokoro, 54 voices, set up once from the card), a voice app on this computer for a cloned voice, or an online voice with your own key. Each spoken sound keeps its words and sentence timing, and adds its subtitles by itself. See `docs/MANUAL.md`.
 - **Subtitles:** tick one box and the lines are drawn on the Stage and in every export, in one look for all of them: font, size, position, color and a dark band. AI voices add theirs when they speak; for a recording or a sound file, listening runs on this computer with its own model, a one-time download of about 80 MB, and sends nothing anywhere. Edit the lines in the card, and import or export `.srt` and `.vtt`. See `docs/MANUAL.md`.
