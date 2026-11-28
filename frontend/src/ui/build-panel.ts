@@ -62,7 +62,6 @@ const CREATE: ReadonlyArray<{ title: string; rows: ReadonlyArray<readonly [strin
   { title: 'Import', rows: [['import-photo', 'image'], ['import-video', 'video'], ['import-audio', 'audio'], ['import-file', 'upload']] },
   { title: 'Sound', rows: [['record-audio', 'record'], ['ai-voice', 'audio'], ['subtitles', 'text']] },
 ];
-const TRANSITIONS: ReadonlyArray<string> = ['group-transition-crossfade', 'group-transition-dip', 'group-transition-wipe', 'group-transition-push', 'group-transition-none'];
 
 interface Tile { key: string; name: string; meta: string; poster: string; v?: number; mine: boolean }
 
@@ -219,10 +218,7 @@ export class BuildPanel {
     setText(q(this.camBtn, '.fm-build-rowlabel'), t('Camera mode'));
     this.camBtn.addEventListener('click', () => cameraMode.toggle());
     cameraMode.onChange(() => this.patchCamera());
-    const transRows = el<HTMLElement>('<div class="fm-build-rows" role="group"></div>');
-    for (const id of TRANSITIONS) transRows.appendChild(this.cmdRow(id, 'swap'));
-    cam.append(this.camBtn, note('Drag the camera frame on the Stage to pan, a corner to zoom, the round handle to turn: each drag sets camera keys at the Playhead.'),
-      head('Transitions'), transRows, note('A transition goes between two touching blocks inside the selected group, at the cut nearest the Playhead.'));
+    cam.append(this.camBtn, note('Drag the camera frame on the Stage to pan, a corner to zoom, the round handle to turn: each drag sets camera keys at the Playhead.'));
 
     host.appendChild(this.root);
 
@@ -262,6 +258,7 @@ export class BuildPanel {
     this.store();
     this.paintTabs();
     this.sync();
+    if (this.shownNow) { this.patch(); this.lazyPaint(); }
   }
 
   hide(): void {
