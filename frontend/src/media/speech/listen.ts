@@ -3,22 +3,23 @@
 // functions so it can be tested with no Worker and no model.
 import { windowKey } from '../../io/window-key';
 import { t } from '../../ui/i18n';
+import { LISTEN_RATE } from './listen-progress';
 
 /** Seconds from the start of the samples. */
 export interface HeardWord { text: string; start: number; end: number }
-export interface ListenOptions { language?: string; signal?: AbortSignal; onProgress?: (fraction: number) => void }
+/** `onProgress` is given null while the model is at work with no figure to report. */
+export interface ListenOptions { language?: string; signal?: AbortSignal; onProgress?: (fraction: number | null) => void }
 
 /** A piece of text with its span as the speech model gives it: one word, or a whole segment. The end may be missing. */
 export interface HeardChunk { text: string; timestamp: [number | null, number | null] }
 
 export interface ListenJob { samples: Float32Array; language?: string; key: string }
 export type ListenReply =
-  | { type: 'progress'; fraction: number }
+  | { type: 'progress'; fraction: number | null }
   | { type: 'done'; chunks: HeardChunk[]; byWord: boolean }
   | { type: 'error'; message: string };
 
-/** The rate the speech model hears at. */
-export const LISTEN_RATE = 16000;
+export { LISTEN_RATE };
 const STATUS_URL = '/api/speech-models';
 /** Words closer than this, with no sentence end between them, are judged together when looking for a loop. */
 const RUN_GAP_SECONDS = 0.7;
@@ -168,7 +169,7 @@ function run(samples: Float32Array, opts: ListenOptions): Promise<{ chunks: Hear
     worker.onerror = (e): void => { finish(); reject(new Error(e.message || t('Speech to text stopped unexpectedly.'))); };
     worker.onmessage = (e: MessageEvent<ListenReply>): void => {
       const m = e.data;
-      if (m.type === 'progress') opts.onProgress?.(Math.min(1, Math.max(0, m.fraction)));
+      if (m.type === 'progress') opts.onProgress?.(m.fraction === null ? null : Math.min(1, Math.max(0, m.fraction)));
       else if (m.type === 'done') { finish(); resolve({ chunks: m.chunks, byWord: m.byWord }); }
       else { finish(); reject(new Error(m.message || t('Speech to text failed.'))); }
     };

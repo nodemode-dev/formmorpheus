@@ -1,6 +1,7 @@
 // The download row of one speech model set, shared by the Generate voice and Subtitles cards: what the files are,
 // their size and licence, Download, progress with Cancel, a failure with a retry, and a quiet Remove once installed.
 // Built once, then patched in place from the engine's status, which is asked again while a download runs.
+import { ApiError } from '../io/api';
 import { cancelSet, downloadSet, removeSet, speechModels, type SetState, type SpeechSet } from '../media/speech/models';
 import { confirmAction } from './dialogs';
 import { el, q, setDisabled, setHidden, setStyleVar, setText } from './dom';
@@ -9,6 +10,8 @@ import { tf } from './i18n-fill';
 import '../styles/speech.css';
 
 const POLL_MS = 500;
+/** Status requests in a row that may fail before a running download is shown as failed. */
+const POLL_MISSES = 5;
 const MB = 1024 * 1024;
 
 export interface SetWords {
@@ -44,6 +47,7 @@ export class SpeechSetRow {
   private error = '';
   private live = false;
   private timer = 0;
+  private misses = 0;
 
   constructor(private readonly set: SpeechSet, private readonly words: SetWords, private readonly onChange: () => void) {
     this.root = el<HTMLElement>(
@@ -69,8 +73,8 @@ export class SpeechSetRow {
     this.remove = el<HTMLButtonElement>('<button class="fm-ss-remove" type="button" hidden></button>');
     setText(this.remove, t(words.remove));
 
-    this.get.addEventListener('click', () => { void this.act(() => downloadSet(this.set)); });
-    retry.addEventListener('click', () => { void this.act(() => (this.state ? downloadSet(this.set) : speechModels())); });
+    this.get.addEventListener('click', () => { void this.act(() => this.fetchSet()); });
+    retry.addEventListener('click', () => { void this.act(() => (this.state ? this.fetchSet() : speechModels())); });
     this.stop.addEventListener('click', () => { void this.act(() => cancelSet(this.set)); });
     this.remove.addEventListener('click', () => { void this.askRemove(); });
     this.patch();
@@ -91,19 +95,31 @@ export class SpeechSetRow {
     window.clearTimeout(this.timer);
   }
 
-  private async act(call: () => Promise<Record<SpeechSet, SetState>>): Promise<void> {
+  /** Download, where "already downloading" is not a failure: the row was behind, so it reads the status again. */
+  private fetchSet(): Promise<Record<SpeechSet, SetState>> {
+    return downloadSet(this.set).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 409) return speechModels();
+      throw e;
+    });
+  }
+
+  /** `poll`: the timed re-read of a running download, where one missed answer is not yet a failure. */
+  private async act(call: () => Promise<Record<SpeechSet, SetState>>, poll = false): Promise<void> {
     window.clearTimeout(this.timer);
     try {
       const sets = await call();
       this.state = sets[this.set];
       this.error = '';
+      this.misses = 0;
     } catch (e) {
       console.error('Speech model set request failed:', e);
-      this.error = sentence(e);
+      // the download goes on in the engine whatever one request did, so the row rides out a few misses
+      const riding = poll && this.state?.task.state === 'downloading' && ++this.misses < POLL_MISSES;
+      this.error = riding ? '' : sentence(e);
     }
     this.patch();
     this.onChange();
-    if (this.live && !this.error && this.state?.task.state === 'downloading') this.timer = window.setTimeout(() => { void this.act(() => speechModels()); }, POLL_MS);
+    if (this.live && !this.error && this.state?.task.state === 'downloading') this.timer = window.setTimeout(() => { void this.act(() => speechModels(), true); }, POLL_MS);
   }
 
   private async askRemove(): Promise<void> {
@@ -114,8 +130,8 @@ export class SpeechSetRow {
   private patch(): void {
     const s = this.state;
     const task = s?.task;
-    const loading = task?.state === 'downloading';
     const failed = !!this.error || task?.state === 'failed';
+    const loading = task?.state === 'downloading' && !this.error;
     setHidden(this.root, !!s?.installed);
     // a failed request leaves the files where they were, so Remove stays reachable for another try
     setHidden(this.remove, !s?.installed);

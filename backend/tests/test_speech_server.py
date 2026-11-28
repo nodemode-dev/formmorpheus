@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -9,6 +10,11 @@ from app.services import speech_server as relay
 BASE = "/api/speech-server"
 WAV = b"RIFF\x24\x00\x00\x00WAVEfmt " + bytes(range(64))
 LONG = "the voice is not loaded " * 40
+# address mode -> the Content-Type the stand-in answers a speak with (None: no header at all)
+KINDS = {
+    "kind-params": "Audio/MPEG; codecs=mp3", "kind-octet": "application/octet-stream", "kind-none": None, "kind-flac": "audio/flac",
+    "kind-two": "audio/x, text/html", "kind-unknown": "audio/x-made-up", "kind-svg": "image/svg+xml", "kind-script": "audio/wav\x0bx",
+}
 
 
 class Upstream(BaseHTTPRequestHandler):
@@ -42,6 +48,37 @@ class Upstream(BaseHTTPRequestHandler):
             self._send(200, "audio/wav", WAV)
         elif mode == "page":
             self._send(200, "text/html", b"<h1>Not a speech server</h1>")
+        elif mode == "drip":
+            # headers at once, then a byte now and then for as long as anyone listens
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.end_headers()
+            try:
+                while not self.server.release.wait(0.05):
+                    self.wfile.write(b"x")
+                    self.wfile.flush()
+            except OSError:
+                pass
+        elif mode == "driphead":
+            # a status line, then a header now and then: the reply never starts
+            try:
+                self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+                count = 0
+                while not self.server.release.wait(0.05) and count < 90:
+                    self.wfile.write(f"X-Wait-{count}: 1\r\n".encode())
+                    self.wfile.flush()
+                    count += 1
+            except OSError:
+                pass
+        elif mode == "control":
+            self._send(500, "text/plain", b"bad\x00 \x1b[31mvoice\x7f\x08 \xc2\x9bname\xe2\x80\xae")
+        elif mode in KINDS:
+            self.send_response(200)
+            if KINDS[mode] is not None:
+                self.send_header("Content-Type", KINDS[mode])
+            self.send_header("Content-Length", str(len(WAV)))
+            self.end_headers()
+            self.wfile.write(WAV)
         elif rest == "v1/models":
             shapes = {"ok": {"object": "list", "data": [{"id": "one"}, {"id": "two"}, {"id": "one"}]}, "names": {"models": [{"name": "a"}, "b", 7, {}]},
                       "bare": ["x", {"model": "y"}], "odd": {"data": "nothing"}}
@@ -200,3 +237,66 @@ def test_the_relay_needs_the_window_key_and_never_uses_a_proxy(anon_client, upst
     monkeypatch.delenv("no_proxy", raising=False)
     monkeypatch.delenv("NO_PROXY", raising=False)
     assert relay.check(at(upstream))["ok"] is True
+
+
+@pytest.mark.parametrize("raw", ["http://127.0.0.1/é", "http://127.0.0.1:8080/голос", "http://ｌｏｃａｌｈｏｓｔ:8080", "http://localhost:٨٠/", "http://127.0.0.1/a\x7fb"])
+def test_an_address_that_is_not_plain_ascii_is_refused_with_a_sentence(client, upstream, raw):
+    with pytest.raises(relay.Refused):
+        relay.base_url(raw)
+    for route, body in (("check", {"url": raw}), ("speak", {"url": raw, "model": "m", "voice": "v", "input": "Hi", "speed": 1})):
+        reply = client.post(f"{BASE}/{route}", json=body)
+        assert reply.status_code == 400
+        assert reply.json()["detail"].startswith("The speech server address ")
+    assert upstream.seen == []
+
+
+def test_a_reply_that_drips_is_cut_off_at_the_total_deadline(client, upstream, monkeypatch):
+    monkeypatch.setattr(relay, "CHECK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(relay, "SPEAK_TIMEOUT_SECONDS", 0.3)
+    began = time.monotonic()
+    assert relay.check(at(upstream, "drip")) == {"ok": False, "models": [], "error": "The speech server did not answer within 0.3 seconds."}
+    reply = client.post(f"{BASE}/speak", json={"url": at(upstream, "drip"), "model": "m", "voice": "v", "input": "Hi", "speed": 1})
+    assert (reply.status_code, reply.json()["detail"]) == (504, "The speech server did not answer within 0.3 seconds.")
+    assert time.monotonic() - began < 3
+
+
+def test_headers_that_drip_are_cut_off_at_the_total_deadline(upstream, monkeypatch):
+    monkeypatch.setattr(relay, "CHECK_TIMEOUT_SECONDS", 0.3)
+    began = time.monotonic()
+    assert relay.check(at(upstream, "driphead")) == {"ok": False, "models": [], "error": "The speech server did not answer within 0.3 seconds."}
+    assert time.monotonic() - began < 3
+
+
+def test_the_deadlines_are_five_seconds_to_check_and_five_minutes_to_speak():
+    assert (relay.CHECK_TIMEOUT_SECONDS, relay.SPEAK_TIMEOUT_SECONDS) == (5, 300)
+
+
+@pytest.mark.parametrize("mode, kind", [("kind-params", "audio/mpeg"), ("kind-octet", "application/octet-stream"), ("kind-none", "audio/wav"),
+                                        ("kind-flac", "audio/flac"), ("ok", "audio/x-wav")])
+def test_a_known_sound_type_is_answered_in_its_plain_form(client, upstream, mode, kind):
+    reply = client.post(f"{BASE}/speak", json={"url": at(upstream, mode), "model": "m", "voice": "v", "input": "Hi", "speed": 1})
+    assert reply.status_code == 200
+    assert reply.headers["content-type"] == kind
+    assert reply.content == WAV
+
+
+@pytest.mark.parametrize("mode", ["kind-two", "kind-unknown", "kind-svg", "kind-script", "page"])
+def test_any_other_type_is_502_and_never_passed_on(client, upstream, mode):
+    reply = client.post(f"{BASE}/speak", json={"url": at(upstream, mode), "model": "m", "voice": "v", "input": "Hi", "speed": 1})
+    assert reply.status_code == 502
+    said = reply.json()["detail"]
+    assert said.startswith("The speech server did not send sound (it sent ")
+    assert reply.headers["content-type"] == "application/json"
+    assert all(ch.isprintable() for ch in said)
+
+
+def test_the_accepted_sound_types_are_the_eleven_listed():
+    assert set(relay.SOUND_TYPES) == {"audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/flac", "audio/aac",
+                                      "audio/mp4", "audio/webm", "application/octet-stream"}
+
+
+def test_what_a_failing_server_said_is_echoed_without_control_characters(client, upstream):
+    reply = client.post(f"{BASE}/speak", json={"url": at(upstream, "control"), "model": "m", "voice": "v", "input": "Hi", "speed": 1})
+    assert reply.status_code == 502
+    assert reply.json()["detail"] == "The speech server answered 500: bad [31mvoice name"
+    assert relay._message(("a\x00b\x01" * 400).encode()) == "ab" * 150

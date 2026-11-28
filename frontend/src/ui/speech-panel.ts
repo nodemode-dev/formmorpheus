@@ -8,7 +8,7 @@ import type { AudioEngine } from '../media/audio';
 import { encodeWav } from '../media/recorder';
 import { splitSentences } from '../media/speech/sentences';
 import { SERVER_DEFAULTS, checkServer, speakOnServer, type ServerSettings } from '../media/speech/server';
-import { SENTENCE_GAP_SECONDS, VOICES, join, speak } from '../media/speech/voice';
+import { SENTENCE_GAP_SECONDS, VOICES, endVoice, join, speak, voiced } from '../media/speech/voice';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
 import { t } from './i18n';
@@ -54,6 +54,7 @@ function loadOpts(): Opts {
   } catch { return { ...DEFAULTS, server: { ...SERVER_DEFAULTS } }; }
 }
 
+const MOVED = 'Another movie was opened, so the voice was not added.';
 const isAbort = (e: unknown): boolean => (e as { name?: unknown } | null)?.name === 'AbortError';
 const sentence = (e: unknown): string => (e instanceof Error && e.message ? e.message : t('The voice could not be made.'));
 
@@ -84,6 +85,8 @@ export class SpeechPanel {
   private opts = loadOpts();
   private open = false;
   private busy: AbortController | null = null;
+  /** The id of the movie the run in hand was started in. */
+  private runMovie = '';
   private checking = false;
   private textTimer = 0;
 
@@ -146,7 +149,11 @@ export class SpeechPanel {
       remove: 'Remove the voice files',
       confirmTitle: 'Remove the voice files',
       confirmText: 'Remove the built-in voice files from this computer? They can be downloaded again.',
-    }, () => this.patch());
+    }, () => {
+      // with its files gone the worker holds a model nothing can use
+      if (this.setRow.known && !this.setRow.installed) endVoice();
+      this.patch();
+    });
     this.voice = el<HTMLSelectElement>('<select class="cv-input"></select>');
     this.voice.setAttribute('aria-label', t('Voice'));
     for (const [accent, gender, label] of GROUPS) {
@@ -227,7 +234,11 @@ export class SpeechPanel {
       ev.stopImmediatePropagation();
       this.busy.abort();
     }, true);
-    this.engine.on('projects', () => { if (!this.engine.movie) this.close(); });
+    this.engine.on('projects', () => {
+      if (!this.engine.movie) this.close();
+      // a voice asked for in one movie never lands in the next one opened
+      else if (this.busy && this.elsewhere()) this.busy.abort();
+    });
     this.syncControls();
     this.showTab(this.opts.tab, false);
   }
@@ -331,6 +342,7 @@ export class SpeechPanel {
     if (!this.engine.movie || this.busy || !text) return;
     const ctl = new AbortController();
     this.busy = ctl;
+    this.runMovie = this.engine.movie.id;
     setHidden(this.unknown, true);
     setClass(this.status, 'is-bad', false);
     this.patch();
@@ -338,7 +350,8 @@ export class SpeechPanel {
       if (this.opts.tab === 'built') await this.fromBuiltIn(text, ctl.signal);
       else await this.fromServer(text, ctl.signal);
     } catch (e) {
-      if (isAbort(e)) setText(this.status, t('Cancelled.'));
+      if (this.elsewhere()) setText(this.status, t(MOVED));
+      else if (isAbort(e)) setText(this.status, t('Cancelled.'));
       else {
         console.error('Generate voice failed:', e);
         setClass(this.status, 'is-bad', true);
@@ -354,14 +367,14 @@ export class SpeechPanel {
     const total = splitSentences(text).length;
     const said = (done: number): void => setText(this.status, tf('Sentence {done} of {total}', { done: Math.min(total, done + 1), total }));
     said(0);
-    const spoken = await speak(text, { voice: this.opts.voice, speed: this.opts.speed, signal, onProgress: (done) => said(done) });
+    // a sentence with no letters, or in a language the voice does not speak, comes back with no sound
+    const spoken = voiced(await speak(text, { voice: this.opts.voice, speed: this.opts.speed, signal, onProgress: (done) => said(done) }));
     if (!spoken.sentences.length) throw new Error(t('There are no words to speak in that text.'));
     const { samples } = join(spoken, SENTENCE_GAP_SECONDS);
     const seconds = samples.length / spoken.sampleRate;
     const blob = encodeWav({ channels: [samples], sampleRate: spoken.sampleRate, seconds });
     const id = uid('a');
-    this.engine.assets.set(id, blob);
-    this.land(id, blob, seconds, (at) => linesFromSentences(spoken.sentences, at, SENTENCE_GAP_SECONDS));
+    if (!this.land(id, blob, seconds, (at) => linesFromSentences(spoken.sentences, at, SENTENCE_GAP_SECONDS))) return;
     if (spoken.unknown.length) {
       setText(this.unknown, tf('Spelled out, because no dictionary has them: {words}', { words: spoken.unknown.join(', ') }));
       setHidden(this.unknown, false);
@@ -372,6 +385,7 @@ export class SpeechPanel {
     setText(this.status, t('Waiting for the speech server...'));
     const settings: ServerSettings = { ...this.opts.server, url: this.opts.server.url.trim() || SERVER_DEFAULTS.url };
     const blob = await speakOnServer(text, settings, signal);
+    if (signal.aborted) throw new DOMException('Speaking was cancelled', 'AbortError');
     // the sound is kept as the server sent it; it is decoded only to learn how long it is
     const id = uid('a');
     this.engine.assets.set(id, blob);
@@ -384,24 +398,41 @@ export class SpeechPanel {
     this.land(id, blob, buf.duration, (at) => linesForWholeSound(text, buf.duration, at));
   }
 
-  /** The sound and its lines onto the movie as one undo step; the stored sound is dropped again when the step fails. */
-  private land(assetId: string, blob: Blob, seconds: number, linesAt: (startSeconds: number) => SubtitleLine[]): void {
+  /** True when the movie open now is not the one the run in hand was started in. */
+  private elsewhere(): boolean {
+    const m = this.engine.movie;
+    return !!m && m.id !== this.runMovie;
+  }
+
+  /**
+   * The sound and its lines onto the movie as one undo step; the stored sound is dropped again when the step fails.
+   * False, with the reason in the status line, when the movie the voice was made for is no longer the one open.
+   */
+  private land(assetId: string, blob: Blob, seconds: number, linesAt: (startSeconds: number) => SubtitleLine[]): boolean {
     const m = this.engine.movie;
     if (!m) { this.engine.assets.delete(assetId); throw new Error(t('The movie was closed before the voice was ready.')); }
+    // looked at last, right before the step: the wait for the voice is where another movie gets opened
+    if (this.elsewhere()) { this.engine.assets.delete(assetId); setText(this.status, t(MOVED)); return false; }
     const start = this.engine.frame;
     const lines = this.opts.subtitles ? linesAt(start / m.fps) : [];
     const mime = blob.type.split(';')[0].trim() || 'audio/wav';
     const style = loadSubtitleStyle();
+    this.engine.assets.set(assetId, blob);
     let ok = false;
+    let locked = false;
     try {
       ok = this.engine.run('Generate Voice', (mv) => {
         const placed = placeVoice(mv, { assetId, mime, size: blob.size, seconds }, start, lines, style);
+        locked = placed.locked;
         return { movie: placed.movie, select: [placed.blockId] };
       });
     } finally {
       if (!ok) this.engine.assets.delete(assetId);
     }
     if (!ok) throw new Error(t('The voice could not be added to the movie.'));
-    setText(this.status, tf(lines.length ? 'Voice added: {seconds} s, with subtitles.' : 'Voice added: {seconds} s.', { seconds: seconds.toFixed(1) }));
+    const words = locked ? 'Voice added: {seconds} s. The Subtitles track is locked, so no lines were added.'
+      : lines.length ? 'Voice added: {seconds} s, with subtitles.' : 'Voice added: {seconds} s.';
+    setText(this.status, tf(words, { seconds: seconds.toFixed(1) }));
+    return true;
   }
 }

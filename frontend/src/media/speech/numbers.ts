@@ -4,7 +4,7 @@
 const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
   'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
 const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-const SCALES = ['', 'thousand', 'million', 'billion'];
+const SCALES = ['', 'thousand', 'million', 'billion', 'trillion'];
 const IRREGULAR: Record<string, string> = { one: 'first', two: 'second', three: 'third', five: 'fifth', eight: 'eighth', nine: 'ninth', twelve: 'twelfth' };
 const MONEY: Record<string, { one: string; many: string; part: string; parts: string }> = {
   $: { one: 'dollar', many: 'dollars', part: 'cent', parts: 'cents' },
@@ -15,7 +15,8 @@ const SYMBOLS: Record<string, string> = { '&': 'and', '@': 'at', '+': 'plus', '=
 const SHORT: Record<string, string> = { 'e.g.': 'for example', 'i.e.': 'that is', 'prof.': 'Professor', 'vs.': 'versus', 'sr.': 'Senior', 'jr.': 'Junior' };
 
 /** The largest whole number read as a cardinal; longer runs of digits are read digit by digit. */
-export const MAX_CARDINAL = 999_999_999_999;
+export const MAX_CARDINAL = 999_999_999_999_999;
+const MAX_CARDINAL_DIGITS = String(MAX_CARDINAL).length;
 
 function belowThousand(n: number): string[] {
   const words: string[] = [];
@@ -80,7 +81,7 @@ function decade(n: number): string {
 /** The whole part of a number as written, commas and all. */
 function whole(run: string): string {
   const plain = run.replace(/,/g, '');
-  if (plain.length > 12 || (plain.length > 1 && plain.startsWith('0'))) return digits(plain);
+  if (plain.length > MAX_CARDINAL_DIGITS ||(plain.length > 1 && plain.startsWith('0'))) return digits(plain);
   return cardinal(Number(plain));
 }
 

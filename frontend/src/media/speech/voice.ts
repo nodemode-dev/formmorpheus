@@ -38,9 +38,20 @@ let nextId = 1;
 // one speak at a time: a cancel ends the worker, which must not take another call's sentence with it
 let line: Promise<unknown> = Promise.resolve();
 
+/** The worker holds the speech model, about 100 MB, so it is ended once it has gone unused this long. */
+export const VOICE_IDLE_MS = 5 * 60 * 1000;
+let idle: ReturnType<typeof setTimeout> | undefined;
+let speaking = 0;
+
 function drop(): void {
+  clearTimeout(idle);
   worker?.terminate();
   worker = null;
+}
+
+/** Ends the worker and frees the model, unless it is speaking: for when the voice files are removed. */
+export function endVoice(): void {
+  if (!speaking) drop();
 }
 
 function ensure(): Worker {
@@ -114,9 +125,20 @@ async function run(text: string, info: VoiceInfo, opts: SpeakOptions): Promise<S
 export function speak(text: string, opts: SpeakOptions): Promise<Spoken> {
   const info = VOICES.find((v) => v.id === opts.voice);
   if (!info) return Promise.reject(new Error(t('That voice is not one of the built-in voices.')));
-  const turn = line.then(() => run(text, info, opts));
+  speaking++;
+  clearTimeout(idle);
+  const turn = line.then(() => run(text, info, opts)).finally(() => {
+    if (--speaking) return;
+    clearTimeout(idle);
+    if (worker) idle = setTimeout(drop, VOICE_IDLE_MS);
+  });
   line = turn.catch(() => undefined);
   return turn;
+}
+
+/** What was spoken without the sentences that made no sound: no letters, or words in a language the voice does not speak. */
+export function voiced(spoken: Spoken): Spoken {
+  return { ...spoken, sentences: spoken.sentences.filter((s) => s.samples.length > 0) };
 }
 
 /** Every sentence in one buffer with a short silence between them; `starts[i]` is the second at which sentence i begins. */

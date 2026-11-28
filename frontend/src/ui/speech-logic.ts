@@ -108,14 +108,39 @@ export function lineBlocks(movie: Movie): Content[] {
   return tr ? tr.content.filter((c) => c.kind === 'text' && !!c.text).sort((a, b) => a.start - b.start) : [];
 }
 
-/** An empty line of NEW_LINE_SECONDS at `startSeconds`, and its id so the card can put the caret in it. */
-export function addEmptyLine(movie: Movie, startSeconds: number, style: SubtitleStyle): { movie: Movie; id: string | null } {
+/** The subtitle line shown on a frame, if any. */
+export function lineAt(movie: Movie, frame: number): Content | null {
+  return lineBlocks(movie).find((c) => c.start <= frame && frame < end(c)) ?? null;
+}
+
+/**
+ * An empty line of NEW_LINE_SECONDS at `startSeconds`, and its id so the card can put the caret in it. Where a line
+ * already shows at that time nothing is added (a new one would replace or cut it): `id` is that line's, `added` false.
+ */
+export function addEmptyLine(movie: Movie, startSeconds: number, style: SubtitleStyle): { movie: Movie; id: string | null; added: boolean } {
+  const here = lineAt(movie, Math.max(0, Math.round(startSeconds * movie.fps)));
+  if (here) return { movie, id: here.id, added: false };
   const had = new Set(lineBlocks(movie).map((c) => c.id));
   // a line with no words is not kept by the subtitle code, so it is made with one and emptied
   const made = addLines(movie, [{ start: startSeconds, end: startSeconds + NEW_LINE_SECONDS, text: '-' }], style);
   const fresh = lineBlocks(made).find((c) => !had.has(c.id));
-  if (!fresh) return { movie, id: null };
-  return { movie: ops.updateContent(made, fresh.id, (c) => (c.text ? { ...c, name: '', text: { ...c.text, text: '' } } : c)), id: fresh.id };
+  if (!fresh) return { movie, id: null, added: false };
+  return { movie: ops.updateContent(made, fresh.id, (c) => (c.text ? { ...c, name: '', text: { ...c.text, text: '' } } : c)), id: fresh.id, added: true };
+}
+
+/** A subtitles file larger than this is refused unread: real ones are a few hundred kilobytes. */
+export const MAX_SUBTITLE_FILE_BYTES = 5 * 1024 * 1024;
+
+/** Why speech to text cannot hear a sound block as it plays, or null when it can. */
+export function unheardReason(block: Content): 'backward' | 'frozen' | null {
+  if (block.reverse) return 'backward';
+  return block.speed === 0 ? 'frozen' : null;
+}
+
+/** True while a block still plays the same stretch of the same sound, so times heard in it still fit the movie. */
+export function sameSound(a: Content, b: Content): boolean {
+  return a.asset === b.asset && a.start === b.start && a.duration === b.duration && a.offset === b.offset
+    && (a.speed ?? 1) === (b.speed ?? 1) && !!a.reverse === !!b.reverse;
 }
 
 /** One line taken away; the subtitles track goes with its last block. */
@@ -138,11 +163,13 @@ export function clearSpan(movie: Movie, from: number, to: number): { movie: Movi
   return { movie: tr.content.length === ids.length ? ops.deleteTrack(next, tr.id) : next, removed: ids.length };
 }
 
-export interface VoicePlacement { movie: Movie; blockId: string }
+/** `locked`: lines were asked for and left out, because the subtitles track is locked. */
+export interface VoicePlacement { movie: Movie; blockId: string; locked: boolean }
 
 /**
  * A generated voice on the movie in one step: its sound on a new track named Voice from `startFrame`, its lines on
  * the subtitles track, and the movie made long enough to play all of it. `assetId` is the id its sound is kept under.
+ * A locked subtitles track takes no lines, and the voice, which took its time to make, lands all the same.
  */
 export function placeVoice(movie: Movie, sound: { assetId: string; mime: string; size: number; seconds: number }, startFrame: number, lines: SubtitleLine[], style: SubtitleStyle): VoicePlacement {
   const frames = Math.max(1, Math.round(sound.seconds * movie.fps));
@@ -151,5 +178,6 @@ export function placeVoice(movie: Movie, sound: { assetId: string; mime: string;
   const added = ops.addTrack({ ...movie, assets: { ...movie.assets, [asset.id]: asset } }, 0, VOICE_TRACK_NAME);
   const placed = ops.placeContent(added.movie, added.track.id, block).movie;
   const long = { ...placed, duration: Math.max(placed.duration, end(block)) };
-  return { movie: addLines(long, lines, style), blockId: block.id };
+  const locked = lines.length > 0 && subtitleTrack(movie)?.locked === true;
+  return { movie: locked ? long : addLines(long, lines, style), blockId: block.id, locked };
 }

@@ -60,12 +60,39 @@ def _target(name: str, pin: Pin) -> Path:
     return folder(name).joinpath(*pin.path.split("/"))
 
 
+def _linked(name: str, pin: Pin) -> bool:
+    """True when the set's folder, or a folder between it and the file, is there and is not a plain folder (a link)."""
+    junction = getattr(os.path, "isjunction", None)   # Windows: a junction reads as a folder to lstat
+    where = folder(name)
+    for part in ("", *pin.path.split("/")[:-1]):
+        where = where / part if part else where
+        try:
+            info = os.lstat(where)
+        except FileNotFoundError:
+            return False   # nothing below this level exists yet
+        except OSError:
+            return True
+        if not stat.S_ISDIR(info.st_mode) or (junction is not None and junction(where)):
+            return True
+    return False
+
+
 def _present(name: str, pin: Pin) -> bool:
+    if _linked(name, pin):
+        return False
     try:
         info = os.lstat(_target(name, pin))
     except OSError:
         return False
     return stat.S_ISREG(info.st_mode) and info.st_size == pin.size
+
+
+def _new_part(part: Path):
+    """The part file made new and opened for writing: a leftover is unlinked first, and a link in its place is never followed."""
+    part.unlink(missing_ok=True)
+    # O_NOFOLLOW is POSIX only; O_BINARY is Windows only, where a file opened this way would otherwise be text
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    return os.fdopen(os.open(part, flags, 0o644), "wb")
 
 
 def installed(name: str) -> bool:
@@ -125,13 +152,18 @@ def _fetch(name: str, pin: Pin, before: int) -> None:
         raise ValueError("only HTTPS addresses are used")
     stop = _tasks[name].stop
     target = _target(name, pin)
+    linked = ValueError(f"a folder on the way to {pin.path} is a link, so nothing was written there")
+    if _linked(name, pin):   # before any folder is made: making one through a link would make it somewhere else
+        raise linked
     target.parent.mkdir(parents=True, exist_ok=True)
+    if _linked(name, pin):
+        raise linked
     part = target.with_name(f".{target.name}.part")   # the hourly part-file sweep knows this shape
     request = urllib.request.Request(pin.url, headers={"User-Agent": "FormMorpheus"})
     digest = hashlib.sha256()
     received = 0
     try:
-        with _opener().open(request, timeout=TIMEOUT_SECONDS) as response, part.open("wb") as out:
+        with _opener().open(request, timeout=TIMEOUT_SECONDS) as response, _new_part(part) as out:
             while True:
                 if stop.is_set():
                     raise Cancelled()

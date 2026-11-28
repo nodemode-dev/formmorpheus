@@ -676,7 +676,7 @@ export function startApp(): void {
     { id: 'import-video', label: 'Video...', icon: 'video', enabled: has, run: () => pickFor('video/*') },
     { id: 'import-audio', label: 'Audio...', icon: 'audio', enabled: has, run: () => pickFor('audio/*,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2') },
     { id: 'record-audio', label: 'Record sound...', icon: 'audio', enabled: has, run: () => voicePanel.show() },
-    ...speechCommands({ hasMovie: has, generateVoice: () => speechPanel.show(), subtitles: () => subtitlesPanel.show() }),
+    ...speechCommands({ hasMovie: has, speech: platform.features.speech, generateVoice: () => speechPanel.show(), subtitles: () => subtitlesPanel.show() }),
     { id: 'sound-card', label: 'Sound options...', enabled: () => engine.selected.some((c) => c.kind === 'audio'), run: () => soundCard.show() },
     { id: 'import-file', label: 'File...', icon: 'upload', enabled: has, run: () => pickFor(MEDIA_ACCEPT) },
     { id: 'import-font', label: 'Import font...', enabled: has, run: () => pickFor('.otf,.ttf,.ttc,.woff,.woff2') },

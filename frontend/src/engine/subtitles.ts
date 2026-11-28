@@ -147,9 +147,13 @@ export function readSubtitles(movie: Movie): { lines: SubtitleLine[]; style: Sub
 export function writeSubtitles(movie: Movie, lines: SubtitleLine[], style: SubtitleStyle): Movie {
   const tr = open(movie);
   const made = lines.map((l) => lineContent(movie, l, style)).filter((c): c is Content => c !== null);
-  // anything that is not a line (a picture a person dropped on the track) is theirs and stays
+  return withContent(movie, tr, withOthers(tr, settle(made)));
+}
+
+/** The settled lines beside whatever else the track holds: a picture a person dropped there is theirs, so it is never trimmed or replaced. */
+function withOthers(tr: Track | null, lines: Content[]): Content[] {
   const others = tr ? tr.content.filter((c) => !isLine(c)) : [];
-  return withContent(movie, tr, settle([...others, ...made]));
+  return others.length ? [...others, ...lines].sort((a, b) => a.start - b.start) : lines;
 }
 
 /** Merges lines into what is there, in the style of what is there. A later line trims the one before it. */
@@ -158,7 +162,7 @@ export function addSubtitles(movie: Movie, lines: SubtitleLine[]): Movie {
   const { style } = readSubtitles(movie);
   const made = lines.map((l) => lineContent(movie, l, style)).filter((c): c is Content => c !== null);
   if (!made.length && tr?.content.length) return movie;
-  return withContent(movie, tr, settle([...(tr?.content ?? []), ...made]));
+  return withContent(movie, tr, withOthers(tr, settle([...(tr?.content.filter(isLine) ?? []), ...made])));
 }
 
 export function restyleSubtitles(movie: Movie, style: SubtitleStyle): Movie {
@@ -250,6 +254,9 @@ export function toSrt(lines: SubtitleLine[]): string {
 
 const SRT_TIME = /^\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})\s*-->\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})/;
 
+/** A tag is closed before another opens, so a row of nothing but openers is read once, not once from each opener. */
+const SRT_TAG = /<[^<>]*>|\{\\[^{}]*\}/g;
+
 const stamp = (h: string | undefined, m: string, s: string, frac: string): number =>
   Number(h ?? 0) * 3600 + Number(m) * 60 + Number(s) + Number(frac.padEnd(3, '0')) / 1000;
 
@@ -261,7 +268,7 @@ export function fromSrt(text: string): SubtitleLine[] {
   const out: SubtitleLine[] = [];
   let cur: { start: number; end: number; rows: string[] } | null = null;
   const close = (): void => {
-    const words = cur ? clean(cur.rows.join(' ').replace(/<[^>]*>|\{\\[^}]*\}/g, '')) : '';
+    const words = cur ? clean(cur.rows.join(' ').replace(SRT_TAG, '')) : '';
     if (cur && words && cur.end > cur.start) out.push({ start: cur.start, end: cur.end, text: words });
     cur = null;
   };

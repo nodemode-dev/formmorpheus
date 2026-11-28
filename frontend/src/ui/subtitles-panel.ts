@@ -5,6 +5,7 @@
 import type { Engine } from '../engine/engine';
 import { end } from '../engine/model';
 import * as ops from '../engine/ops';
+import { findContent } from '../engine/transform';
 import { fromSrt, linesFromWords, readSubtitles, restyleSubtitles, showSubtitles, subtitleTrack, toSrt, writeSubtitles, type SubtitleStyle } from '../engine/subtitles';
 import type { Content, Movie } from '../engine/types';
 import { downloadBlob } from '../io/api';
@@ -12,6 +13,7 @@ import { embedLibraryFamily, inLibrary } from '../io/fonts-library';
 import type { AudioEngine } from '../media/audio';
 import { ensureTextFont, fontCatalog, previewFont } from '../media/fonts';
 import { listen } from '../media/speech/listen';
+import { platform } from '../platform';
 import { ColourPanel } from './colour-panel';
 import { confirmAction } from './dialogs';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText, setValue } from './dom';
@@ -19,7 +21,7 @@ import { enhanceSelect } from './dropdown';
 import { t } from './i18n';
 import { tf } from './i18n-fill';
 import { icon } from './icons';
-import { addEmptyLine, addLines, clampSpan, clearSpan, formatSeconds, lineBlocks, listenLanguages, monoSamples, parseSeconds, removeLine, sampleRange, styleFromControls, type StyleControls } from './speech-logic';
+import { MAX_SUBTITLE_FILE_BYTES, addEmptyLine, addLines, clampSpan, clearSpan, formatSeconds, lineBlocks, listenLanguages, monoSamples, parseSeconds, removeLine, sameSound, sampleRange, styleFromControls, unheardReason, type StyleControls } from './speech-logic';
 import { SpeechSetRow } from './speech-set-row';
 import { loadSubtitleStyle, saveSubtitleStyle } from './subtitle-style-store';
 import '../styles/subtitles.css';
@@ -32,6 +34,7 @@ const SIZES: ReadonlyArray<readonly [SubtitleStyle['size'], string]> = [['small'
 const POSITIONS: ReadonlyArray<readonly [SubtitleStyle['position'], string]> = [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
 const FONT_GROUPS: ReadonlyArray<readonly ['bundled' | 'library' | 'movie' | 'system', string]> = [['bundled', 'Built in'], ['library', 'Fonts library'], ['movie', 'In this movie'], ['system', 'On this computer']];
 const NAME_CHARS = 80;
+const MOVED = 'Another movie was opened, so no lines were added.';
 
 const isAbort = (e: unknown): boolean => (e as { name?: unknown } | null)?.name === 'AbortError';
 const sentence = (e: unknown): string => (e instanceof Error && e.message ? e.message : t('Speech to text failed.'));
@@ -78,6 +81,10 @@ export class SubtitlesPanel {
   private fontKey = '';
   private open = false;
   private busy: AbortController | null = null;
+  /** The id of the movie the run in hand was started in. */
+  private runMovie = '';
+  /** Speech to text needs the engine's speech model files, which an iPad's engine does not keep. */
+  private readonly canHear = platform.features.speech;
 
   constructor(private readonly engine: Engine, private readonly audio: () => AudioEngine) {
     const mk = (label: string, ...controls: HTMLElement[]): HTMLElement => {
@@ -169,7 +176,8 @@ export class SubtitlesPanel {
       show.row,
       head('Style'), mk('Font', this.font), mk('Size', this.size), mk('Position', this.position), mk('Color', this.color, this.hex), band.row,
       head('Lines'), this.list, this.empty, this.add,
-      head('From sound'), this.source, this.setRow.root, this.heardOn, this.status, this.setRow.remove,
+      // without speech to text the From sound part is never put on the card; the status line also serves File
+      ...(this.canHear ? [head('From sound'), this.source, this.setRow.root, this.heardOn] : []), this.status, ...(this.canHear ? [this.setRow.remove] : []),
       head('File'), fileRow,
     );
     (document.getElementById('overlay-root') ?? document.body).appendChild(this.root);
@@ -203,7 +211,11 @@ export class SubtitlesPanel {
     }, true);
     this.engine.on('movie', () => { if (this.open) this.sync(); });
     this.engine.on('selection', () => { if (this.open) this.patch(); });
-    this.engine.on('projects', () => { if (!this.engine.movie) this.close(); });
+    this.engine.on('projects', () => {
+      if (!this.engine.movie) this.close();
+      // lines heard in one movie's sound never land in the next movie opened
+      else if (this.busy && this.elsewhere()) this.busy.abort();
+    });
     window.addEventListener('fm:fonts', () => { if (this.open) this.sync(); });
     this.lang.value = this.language;
   }
@@ -212,7 +224,7 @@ export class SubtitlesPanel {
     if (!this.engine.movie) return;
     this.open = true;
     setHidden(this.root, false);
-    this.setRow.start();
+    if (this.canHear) this.setRow.start();
     this.sync();
   }
 
@@ -377,23 +389,38 @@ export class SubtitlesPanel {
     const hi = i < blocks.length - 1 ? blocks[i + 1].start : Number.POSITIVE_INFINITY;
     const span = clampSpan(parseSeconds(start.value) ?? c.start / m.fps, parseSeconds(stop.value) ?? end(c) / m.fps, m.fps, lo, hi);
     if (span.start !== c.start || span.duration !== c.duration) this.engine.run('Subtitle Time', (mv) => covered(ops.updateContent(mv, id, (x) => ({ ...x, start: span.start, duration: span.duration }))));
-    // the field in hand shows what was kept, which may not be what was typed
-    start.value = formatSeconds(span.start / m.fps);
-    stop.value = formatSeconds((span.start + span.duration) / m.fps);
+    this.refill(id);
   }
 
   private reword(id: string, value: string): void {
     const text = value.replace(/\s+/g, ' ').trim();
     this.engine.run('Subtitle Words', (m) => ops.updateContent(m, id, (c) => (c.text && c.text.text !== text ? { ...c, name: text.slice(0, NAME_CHARS), text: { ...c.text, text } } : c)));
+    this.refill(id);
+  }
+
+  /**
+   * A row's fields set from the movie after an edit, the field in hand included: they show what the movie kept,
+   * which is not what was typed when a time was held between its neighbours or the edit was refused (a locked track).
+   */
+  private refill(id: string): void {
+    const m = this.engine.movie;
+    const c = m ? lineBlocks(m).find((x) => x.id === id) : undefined;
+    const row = Array.from(this.list.children).find((n) => (n as HTMLElement).dataset.key === id);
+    if (!m || !c || !row) return;
+    const set = (name: string, value: string): void => { q<HTMLInputElement>(row, `[data-f="${name}"]`).value = value; };
+    set('start', formatSeconds(c.start / m.fps));
+    set('end', formatSeconds(end(c) / m.fps));
+    set('text', c.text?.text ?? '');
   }
 
   private addLine(): void {
     let made: string | null = null;
     const style = this.current();
+    // where a line already shows at the playhead nothing is added, and `made` is that line
     this.engine.run('Add Subtitle', (m) => {
       const r = addEmptyLine(m, this.engine.frame / m.fps, style);
       made = r.id;
-      return covered(r.movie);
+      return r.added ? covered(r.movie) : m;
     });
     if (!made) return;
     const row = Array.from(this.list.children).find((n) => (n as HTMLElement).dataset.key === made);
@@ -408,9 +435,12 @@ export class SubtitlesPanel {
     const m = this.engine.movie;
     const block = this.soundBlock();
     if (!m || !block || !block.asset || this.busy) return;
-    if (block.reverse) { this.say(t('This sound block plays backward, so its words cannot be heard.'), true); return; }
+    const unheard = unheardReason(block);
+    if (unheard === 'backward') { this.say(t('This sound block plays backward, so its words cannot be heard.'), true); return; }
+    if (unheard === 'frozen') { this.say(t('This sound block is frozen, so it plays no words to hear.'), true); return; }
     const ctl = new AbortController();
     this.busy = ctl;
+    this.runMovie = m.id;
     this.progress(0);
     this.say(t('Reading the sound...'));
     this.patch();
@@ -424,24 +454,32 @@ export class SubtitlesPanel {
       if (!samples.length) throw new Error(t('This sound block plays no sound.'));
       const words = await listen(samples, buf.sampleRate, {
         language: this.language, signal: ctl.signal,
-        onProgress: (f) => { this.progress(f); this.say(tf('Listening: {percent}%', { percent: Math.round(f * 100) })); },
+        onProgress: (f) => { this.progress(f); this.say(f === null ? t('Listening...') : tf('Listening: {percent}%', { percent: Math.round(f * 100) })); },
       });
       // a retimed block plays its sound faster or slower, so the heard times are brought to movie time
       const timed = speed === 1 ? words : words.map((w) => ({ ...w, start: w.start / speed, end: w.end / speed }));
       const lines = linesFromWords(timed, block.start / m.fps);
+      if (this.elsewhere()) { this.say(t(MOVED)); return; }
       if (!lines.length) { this.say(t('No words were heard in this sound.')); return; }
       const style = this.current();
       const from = block.start, to = end(block);
       let replaced = 0;
+      let stale = false;
       const ok = this.engine.run('Subtitles from Sound', (mv) => {
+        // the listening took a while: the block is looked up again, and lines timed for a block since moved are not written
+        const now = findContent(mv, block.id);
+        stale = !now || !sameSound(block, now);
+        if (stale) return mv;
         const cleared = clearSpan(mv, from, to);
         replaced = cleared.removed;
         return covered(addLines(cleared.movie, lines, style));
       });
       const added = tf(lines.length === 1 ? '{n} line added.' : '{n} lines added.', { n: lines.length });
-      this.say(!ok ? t('The lines could not be added to the movie.') : replaced ? `${added} ${t('They replace the lines that were under this sound.')}` : added, !ok);
+      if (stale) this.say(t('The sound block was changed or removed while it was heard, so no lines were added.'), true);
+      else this.say(!ok ? t('The lines could not be added to the movie.') : replaced ? `${added} ${t('They replace the lines that were under this sound.')}` : added, !ok);
     } catch (e) {
-      if (isAbort(e)) this.say(t('Cancelled.'));
+      if (this.elsewhere()) this.say(t(MOVED));
+      else if (isAbort(e)) this.say(t('Cancelled.'));
       else { console.error('Subtitles from sound failed:', e); this.say(sentence(e), true); }
     } finally {
       this.busy = null;
@@ -449,12 +487,21 @@ export class SubtitlesPanel {
     }
   }
 
+  /** True when the movie open now is not the one the run in hand was started in. */
+  private elsewhere(): boolean {
+    const m = this.engine.movie;
+    return !!m && m.id !== this.runMovie;
+  }
+
   private say(text: string, bad = false): void {
     setClass(this.status, 'is-bad', bad);
     setText(this.status, text);
   }
 
-  private progress(fraction: number): void {
+  /** Null: at work with no figure to show, so the bar sweeps and reads no value. */
+  private progress(fraction: number | null): void {
+    setClass(this.meter, 'is-unknown', fraction === null);
+    if (fraction === null) { this.meter.removeAttribute('aria-valuenow'); return; }
     const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
     setStyleVar(this.meter, '--pct', `${pct}%`);
     this.meter.setAttribute('aria-valuenow', String(pct));
@@ -465,6 +512,8 @@ export class SubtitlesPanel {
   private async importFile(file: File): Promise<void> {
     const m = this.engine.movie;
     if (!m) return;
+    // judged by its size alone, before a byte is read
+    if (file.size > MAX_SUBTITLE_FILE_BYTES) { this.say(t('That file is larger than 5 MB, so it was not read as a subtitles file.'), true); return; }
     let lines: ReturnType<typeof fromSrt>;
     try { lines = fromSrt(await file.text()); } catch (e) {
       console.error('Subtitles file could not be read:', e);

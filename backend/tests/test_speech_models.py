@@ -52,7 +52,7 @@ def sets(data_dir, monkeypatch):
     pins = tuple(record.Pin(path=path, url=url(path), size=len(body), sha256=sha(body)) for path, body in FILES.items())
     fake = {
         "voice": record.SpeechSet(licence="Apache-2.0", sources=("https://example.invalid/pinned",), files=pins),
-        "listen": record.SpeechSet(licence="MIT", sources=("https://example.invalid/pinned",), files=pins[:1]),
+        "listen": record.SpeechSet(licence="Apache-2.0", sources=("https://example.invalid/pinned",), files=pins[:1]),
     }
     monkeypatch.setattr(models, "SETS", fake)
     monkeypatch.setattr(models, "_tasks", {name: models.Task() for name in fake})
@@ -75,7 +75,7 @@ def settle(name="voice"):
 def test_the_record_pins_every_file_of_both_sets():
     voice, listen = record.SETS["voice"], record.SETS["listen"]
     assert (voice.licence, len(voice.files)) == ("Apache-2.0", 34)
-    assert (listen.licence, len(listen.files)) == ("MIT", 7)
+    assert (listen.licence, len(listen.files)) == ("Apache-2.0", 7)   # as the model card of the pinned files states
     assert sum(1 for pin in voice.files if re.fullmatch(r"voices/[a-z]{2}_[a-z]+\.bin", pin.path)) == 28
     assert {"model.onnx", "tokenizer.json", "dict/us_gold.json", "dict/us_silver.json", "dict/gb_gold.json", "dict/gb_silver.json"} <= {pin.path for pin in voice.files}
     assert voice.total == sum(pin.size for pin in voice.files)
@@ -124,7 +124,7 @@ def test_a_file_of_the_wrong_size_is_refused(sets, data_dir, body, said):
 
 def test_an_address_that_is_not_https_is_never_asked(sets, monkeypatch):
     pin = record.Pin(path="model.onnx", url="http://example.invalid/model.onnx", size=1, sha256=sha(b"m"))
-    monkeypatch.setitem(models.SETS, "listen", record.SpeechSet(licence="MIT", sources=(), files=(pin,)))
+    monkeypatch.setitem(models.SETS, "listen", record.SpeechSet(licence="Apache-2.0", sources=(), files=(pin,)))
     models.start("listen")
     assert settle("listen")["state"] == "failed"
     assert sets.asked == []
@@ -199,7 +199,7 @@ def test_a_file_of_another_size_or_a_link_is_not_installed(sets, data_dir, tmp_p
 def test_routes_report_download_cancel_and_remove(sets, client):
     body = client.get(BASE).json()
     assert set(body["sets"]) == {"voice", "listen"}
-    assert body["sets"]["listen"] == {"installed": False, "bytes": 3000, "files": 1, "licence": "MIT",
+    assert body["sets"]["listen"] == {"installed": False, "bytes": 3000, "files": 1, "licence": "Apache-2.0",
                                       "task": {"state": "idle", "done": 0, "total": 0, "error": ""}}
     reply = client.post(f"{BASE}/voice/download")
     assert reply.status_code == 200 and "sets" in reply.json()
@@ -275,4 +275,74 @@ def test_the_file_route_answers_404_when_a_set_is_only_partly_there(sets, client
     models.start("voice")
     settle()
     (data_dir / "speech" / "voice" / "dict" / "us_gold.json").unlink()
+    assert client.get(f"{BASE}/voice/file/model.onnx").status_code == 404
+
+
+def test_a_leftover_part_file_that_is_a_link_is_never_written_through(sets, data_dir, tmp_path):
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"not ours")
+    voices = data_dir / "speech" / "voice" / "voices"
+    voices.mkdir(parents=True)
+    (voices / ".one.bin.part").symlink_to(outside)
+    models.start("voice")
+    assert settle()["state"] == "idle"
+    assert outside.read_bytes() == b"not ours"
+    assert (voices / "one.bin").read_bytes() == FILES["voices/one.bin"]
+    assert not (voices / "one.bin").is_symlink()
+    assert not list(voices.glob(".*.part"))
+
+
+def test_the_part_file_is_made_new_and_never_follows_a_link(sets, data_dir, tmp_path, monkeypatch):
+    seen = []
+    real = models.os.open
+
+    def spy(path, flags, *rest, **more):
+        seen.append((str(path), flags))
+        return real(path, flags, *rest, **more)
+
+    monkeypatch.setattr(models.os, "open", spy)
+    models.start("listen")
+    assert settle("listen")["state"] == "idle"
+    parts = [flags for path, flags in seen if path.endswith(".part")]
+    assert len(parts) == 1
+    for flag in ("O_WRONLY", "O_CREAT", "O_EXCL", "O_NOFOLLOW"):
+        assert parts[0] & getattr(models.os, flag) == getattr(models.os, flag)
+
+
+def test_a_linked_folder_inside_the_set_is_not_written_into(sets, data_dir, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    folder = data_dir / "speech" / "voice"
+    folder.mkdir(parents=True)
+    (folder / "voices").symlink_to(elsewhere, target_is_directory=True)
+    models.start("voice")
+    task = settle()
+    assert task["state"] == "failed"
+    assert task["error"] == "The download could not be finished: a folder on the way to voices/one.bin is a link, so nothing was written there."
+    assert list(elsewhere.iterdir()) == []
+    assert not models.installed("voice")
+
+
+def test_a_linked_set_folder_is_not_written_into(sets, data_dir, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (data_dir / "speech").mkdir()
+    (data_dir / "speech" / "voice").symlink_to(elsewhere, target_is_directory=True)
+    models.start("voice")
+    assert settle()["state"] == "failed"
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_file_behind_a_linked_folder_is_neither_installed_nor_served(sets, client, data_dir, tmp_path):
+    models.start("voice")
+    settle()
+    assert client.get(f"{BASE}/voice/file/voices/one.bin").status_code == 200
+    voices = data_dir / "speech" / "voice" / "voices"
+    elsewhere = tmp_path / "elsewhere"
+    voices.rename(elsewhere)
+    voices.symlink_to(elsewhere, target_is_directory=True)
+    assert (voices / "one.bin").read_bytes() == FILES["voices/one.bin"]   # the same bytes, reached through a link
+    assert not models.installed("voice")
+    assert models.served_file("voice", "voices/one.bin") is None
+    assert client.get(f"{BASE}/voice/file/voices/one.bin").status_code == 404
     assert client.get(f"{BASE}/voice/file/model.onnx").status_code == 404

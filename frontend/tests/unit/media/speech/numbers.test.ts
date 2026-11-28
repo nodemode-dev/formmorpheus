@@ -18,7 +18,14 @@ describe('cardinal', () => {
     expect(cardinal(10000)).toBe('ten thousand');
     expect(cardinal(1000000)).toBe('one million');
     expect(cardinal(2000003)).toBe('two million three');
-    expect(cardinal(MAX_CARDINAL)).toBe('nine hundred ninety nine billion nine hundred ninety nine million nine hundred ninety nine thousand nine hundred ninety nine');
+    expect(cardinal(999_999_999_999)).toBe('nine hundred ninety nine billion nine hundred ninety nine million nine hundred ninety nine thousand nine hundred ninety nine');
+  });
+
+  it('says trillions, up to 999 trillion', () => {
+    expect(cardinal(1_000_000_000_000)).toBe('one trillion');
+    expect(cardinal(2_500_000_000_001)).toBe('two trillion five hundred billion one');
+    expect(MAX_CARDINAL).toBe(999_999_999_999_999);
+    expect(cardinal(MAX_CARDINAL)).toBe(`nine hundred ninety nine trillion ${cardinal(999_999_999_999)}`);
   });
 
   it('says nothing for a number it does not cover', () => {
@@ -76,7 +83,7 @@ describe('normalizeText', () => {
     expect(normalizeText('3 cats')).toBe('three cats');
     expect(normalizeText('Making 1,250 drawings')).toBe('Making one thousand two hundred fifty drawings');
     expect(normalizeText('1,000,000 frames')).toBe('one million frames');
-    expect(normalizeText('999,999,999,999')).toBe(cardinal(MAX_CARDINAL));
+    expect(normalizeText('999,999,999,999')).toBe(cardinal(999_999_999_999));
   });
 
   it('reads a list of numbers as separate numbers', () => {
@@ -146,7 +153,14 @@ describe('normalizeText', () => {
 
   it('reads leading zeros and very long numbers digit by digit', () => {
     expect(normalizeText('agent 007')).toBe('agent zero zero seven');
-    expect(normalizeText('1234567890123')).toBe('one two three four five six seven eight nine zero one two three');
+    expect(normalizeText('1234567890123456')).toBe('one two three four five six seven eight nine zero one two three four five six');
+  });
+
+  it('reads a trillion or more in words, and keeps digits past 999 trillion', () => {
+    expect(normalizeText('1,000,000,000,000')).toBe('one trillion');
+    expect(normalizeText('1234567890123')).toBe('one trillion two hundred thirty four billion five hundred sixty seven million eight hundred ninety thousand one hundred twenty three');
+    expect(normalizeText('999999999999999')).toBe(cardinal(MAX_CARDINAL));
+    expect(normalizeText('1000000000000000')).toBe('one zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero');
   });
 
   it('reads clock times', () => {

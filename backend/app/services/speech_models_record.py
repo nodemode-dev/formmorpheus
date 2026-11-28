@@ -94,7 +94,8 @@ SETS: dict[str, SpeechSet] = {
         files=_pins(VOICE_MODEL, _VOICE_MODEL_ROWS) + _pins(VOICE_DICTIONARIES, _VOICE_DICTIONARY_ROWS),
     ),
     "listen": SpeechSet(
-        licence="MIT",
+        # what the model card of the files downloaded here states; the model's author publishes it under MIT (see NOTICE.md)
+        licence="Apache-2.0",
         sources=(LISTEN_MODEL,),
         files=_pins(LISTEN_MODEL, _LISTEN_ROWS),
     ),

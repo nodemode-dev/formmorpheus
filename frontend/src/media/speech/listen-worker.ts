@@ -5,13 +5,11 @@ import { env, pipeline } from '@huggingface/transformers';
 import ortRuntime from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ortBinary from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import type { HeardChunk, ListenJob, ListenReply } from './listen';
+import { LOAD_SHARE, WINDOW_SECONDS, listenFraction, windowCount } from './listen-progress';
 
 const KEY_HEADER = 'X-Formmorpheus-Window-Key';
 /** Host, template and id join to /api/speech-models/listen/file/<path>. */
 const MODEL_ID = 'listen';
-const CHUNK_SECONDS = 30;
-/** Share of the progress bar given to reading the files; the rest is the listening. */
-const LOAD_SHARE = 0.3;
 
 let key = '';
 
@@ -57,18 +55,15 @@ async function load(): Promise<Transcriber> {
 
 async function hear(job: ListenJob): Promise<{ chunks: HeardChunk[]; byWord: boolean }> {
   const transcriber = await load();
-  say({ type: 'progress', fraction: LOAD_SHARE });
-  const base: Record<string, unknown> = { chunk_length_s: CHUNK_SECONDS, ...(job.language ? { language: job.language } : {}) };
-  try {
-    const out = await transcriber(job.samples, { ...base, return_timestamps: 'word' });
-    const chunks = out.chunks ?? [];
-    // phrases in place of words mean the model timed segments only; they are handled as segments below
-    if (chunks.length && !chunks.some((c) => c.text.trim().split(/\s+/).length > 3)) return { chunks, byWord: true };
-  } catch (e) {
-    // a model made without word timing refuses here; segment timing still gives usable lines
-    console.warn('Word timing is not available, using segment timing:', e);
-  }
-  const out = await transcriber(job.samples, { ...base, return_timestamps: true });
+  const total = windowCount(job.samples.length);
+  let done = 0;
+  say({ type: 'progress', fraction: listenFraction(0, total) });
+  // The pinned files time phrases, not words (their decoder gives no cross-attention), so phrases are asked for
+  // outright. The library says nothing while it hears a window; it ends this streamer once after each one.
+  const out = await transcriber(job.samples, {
+    chunk_length_s: WINDOW_SECONDS, return_timestamps: true, ...(job.language ? { language: job.language } : {}),
+    streamer: { put: (): void => undefined, end: (): void => { done++; if (done < total) say({ type: 'progress', fraction: listenFraction(done, total) }); } },
+  });
   return { chunks: out.chunks ?? [], byWord: false };
 }
 

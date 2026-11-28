@@ -214,6 +214,70 @@ describe('speak', () => {
   });
 });
 
+describe('ending the voice worker', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('ends the worker after five minutes without use, and starts a fresh one for the next call', async () => {
+    vi.useFakeTimers();
+    await mod.speak('One.', { voice: 'af_heart', speed: 1 });
+    expect(mod.VOICE_IDLE_MS).toBe(5 * 60 * 1000);
+    vi.advanceTimersByTime(mod.VOICE_IDLE_MS - 1);
+    expect(workers[0].ended).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(workers[0].ended).toBe(true);
+    await mod.speak('Two.', { voice: 'af_heart', speed: 1 });
+    expect(workers).toHaveLength(2);
+  });
+
+  it('counts the five minutes from the last use', async () => {
+    vi.useFakeTimers();
+    await mod.speak('One.', { voice: 'af_heart', speed: 1 });
+    vi.advanceTimersByTime(mod.VOICE_IDLE_MS - 1000);
+    await mod.speak('Two.', { voice: 'af_heart', speed: 1 });
+    vi.advanceTimersByTime(mod.VOICE_IDLE_MS - 1000);
+    expect(workers).toHaveLength(1);
+    expect(workers[0].ended).toBe(false);
+    vi.advanceTimersByTime(1000);
+    expect(workers[0].ended).toBe(true);
+  });
+
+  it('ends the worker when asked, as when the voice files are removed', async () => {
+    await mod.speak('One.', { voice: 'af_heart', speed: 1 });
+    mod.endVoice();
+    expect(workers[0].ended).toBe(true);
+    mod.endVoice();
+    await mod.speak('Two.', { voice: 'af_heart', speed: 1 });
+    expect(workers).toHaveLength(2);
+  });
+
+  it('leaves a worker that is speaking alone', async () => {
+    reply = () => 'silent';
+    const stop = new AbortController();
+    const caught = mod.speak('One.', { voice: 'af_heart', speed: 1, signal: stop.signal }).catch((e: unknown) => e);
+    await flush();
+    mod.endVoice();
+    expect(workers[0].ended).toBe(false);
+    stop.abort();
+    await caught;
+  });
+});
+
+describe('voiced', () => {
+  const part = (text: string, n: number): { text: string; samples: Float32Array; seconds: number } => ({ text, samples: new Float32Array(n), seconds: n / 24000 });
+
+  it('keeps only the sentences that made sound', () => {
+    const all: Spoken = { sampleRate: 24000, sentences: [part('...', 0), part('Hello.', 2400), part('Привет.', 0)], unknown: ['x'] };
+    const kept = mod.voiced(all);
+    expect(kept.sentences.map((s) => s.text)).toEqual(['Hello.']);
+    expect(kept.unknown).toEqual(['x']);
+    expect(all.sentences).toHaveLength(3);
+  });
+
+  it('keeps nothing when nothing was speakable', () => {
+    expect(mod.voiced({ sampleRate: 24000, sentences: [part('...', 0)], unknown: [] }).sentences).toEqual([]);
+  });
+});
+
 describe('join', () => {
   const spoken = (lengths: number[]): Spoken => ({
     sampleRate: 24000, unknown: [],
