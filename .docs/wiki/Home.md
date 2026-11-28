@@ -15,6 +15,8 @@ The animation studio of the form family: a Stage over a Timeline, drawn frame by
 - Compose, Keyframe and Perform modes
 - Draw & Paint with 18 brushes in 7 sets, layers, select, transform and filters
 - Flipbooks with onion skins, row masks and a mini preview
+- A Build panel with seven tabs: characters, actions, starter scenes and scenes of your own, 49 props, 13 scene effects, Create and Camera
+- Characters that turn to four views and walk to a spot, scenes on the Timeline, camera moves and per-track depth
 - Warp and Distort keys, recorded by hand or in Perform
 - Draw & Paint layer groups and masks, an eyedropper loupe and canvas rotate
 - An optional GPU compositor that is used only when it is faster and matches the processor

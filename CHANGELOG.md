@@ -2,6 +2,30 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.37.0 · 2026-11-27
+
+The Build panel grows to seven tabs, with Props and Effects added, and a character can turn, walk, stand in more scenes, and sit in a scene of your own.
+
+### New
+- Props is a new tab in the Build panel, with 49 objects in three styles (Flat, Outline and Stick) and eight categories, and a search box. A click adds one at the Playhead on a new top track, standing on the floor guide when the movie has one. Content, Add Prop... opens it.
+- A character made in the Character Builder can face front, three-quarters, side or back, and be flipped. Use the View row in the builder, Content, Character View, the content's right-click menu or the Characters tab. Its keyframes, actions and lip-sync stay, and it is one undo step. The side view is a near profile, and the starter actions are drawn for the front view.
+- Right-click the Stage and choose Walk To Here to walk the selected character to that spot, or use Content, Walk for Walk In from Left, Walk In from Right, Walk Off Left and Walk Off Right. It faces the way it goes and plays once. A walk that would run past the end of the character's block is refused with a sentence.
+- Effects is a new tab in the Build panel: Rain, Snow, Fog, Blowing Leaves, Dust, Confetti, Fireflies, Bubbles, Sun Rays, Sunset Glow, Night, Spotlight and Lightning. A click lays one over the whole movie, and In this movie sets its strength, where it starts and where it ends. They are drawn under the subtitles, also in every export.
+- The Camera tab has Camera moves: Push In, Pull Out, Pan Left, Pan Right, Tilt Up, Tilt Down, Push In on Selection, Whip Pan, Slow Drift, Shake and Reset Camera Here, each for 0.5, 1, 2 or 4 seconds. A click writes camera keys from the Playhead and plays once, in one undo step. The transitions there are tiles with moving diagrams.
+- A scene strip above the Timeline cuts the movie into named scenes. Click a card to go to it and double-click to rename it. Its menu has Focus on Scene, Duplicate Scene, Move Scene Earlier and Later, Add Empty Scene After, Delete Cut, Keep Content, and Delete Scene and Content. Content, keys, markers, subtitles and effects go with their scene.
+- Movie, Save as Scene... keeps the tracks you tick as a scene of your own. My scenes in the Scenes tab lays one behind everything in a movie with a click, and the three dots rename or delete it. A deleted scene waits in Recently Deleted. They are kept in the Scenes folder of the data folder.
+- Depth is easier: the Track menu has Depth with six steps from Far background to Close foreground, and the Camera tab lists the picture tracks with Spread Tracks by Depth and Flatten Depth. The camera moves far things less.
+
+### Improved
+- Five more starter scenes join the five: Office, Castle Hall, Space Station, Beach and Living Room. A starter character added to a movie of another size than 1920 by 1080 now stands at the scene's size.
+- Walk in place is now a walk with planted feet.
+- A character you made in the builder and saved has Edit in Character Builder in the Characters card.
+
+### Fixed
+- A double-click now picks a character's part where it is drawn, so lower legs, forearms and brows can be picked.
+- Update from Source brings in a part hidden in the vector app as hidden, and shows it again when the file shows it. A part you hid in FormMorpheus stays as you set it unless the file changed.
+- Scene effects and subtitles stay visible while you drag content on the Stage.
+
 ## 0.36.0 · 2026-11-27
 
 A Build panel beside the Stage puts characters, actions, scenes, Create and Camera in reach, the three modes move into the Timeline's top row, and you choose where exports go.

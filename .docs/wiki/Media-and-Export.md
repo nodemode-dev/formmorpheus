@@ -25,6 +25,10 @@
 
 Files live in `voice/` of the data folder: `runtime/` and `models/` for the built-in voice, and `out/` for a spoken sound until the window fetches it (swept after an hour). Keys are in the system keyring, never in `settings.json`.
 
+## Scene effects
+
+`Movie.sceneFx` holds the weather, particles and light laid over the movie (`engine/scene-fx.ts`, 13 kinds). `render.ts` calls `drawSceneFx` after the content is drawn and before the subtitles, outside the camera, so the Stage and every export draw them through the same call and a camera move does not shift them. Each effect has a start and end frame, a strength and a seed, so a frame draws the same every time it is drawn. The Effects tab of the Build panel (`ui/scene-fx-panel.ts`) lays, sets and removes them.
+
 ## Subtitles
 
 `Movie.subtitles` holds whether they show, one look and the cues. `engine/subtitles.ts` draws them: `render.ts` calls `drawSubtitles` over the finished frame, after the camera, for the Stage and for every export, so every export carries them while they are shown, and none when `show` is off or no cue covers the frame. `subtitleFonts` lists the families the export must have loaded.
