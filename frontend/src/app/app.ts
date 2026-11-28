@@ -35,6 +35,9 @@ import { Commands, type Command } from '../ui/commands';
 import { ContentMenu } from '../ui/content-menu';
 import { LipsyncDialog } from '../ui/lipsync-dialog';
 import { VoicePanel } from '../ui/voice-panel';
+import { SpeechPanel } from '../ui/speech-panel';
+import { SubtitlesPanel } from '../ui/subtitles-panel';
+import { speechCommands } from './speech-commands';
 import { SoundCard, loadScrubPref } from '../ui/sound-card';
 import { anyDialogOpen, confirmAction, promptName } from '../ui/dialogs';
 import { el, mountOnce, q, revealApp, setDisabled, setText, setTitle } from '../ui/dom';
@@ -127,7 +130,7 @@ const FLIP_RATES = [6, 8, 12, 15, 24, 30];
 const FLIP_FPS_MENU = { label: 'Flipbook at frame rate', items: FLIP_RATES.map((n) => `add-flipbook-${n}`) };
 /** The Create menu: what to make, then what to bring in. */
 /** Under the card's More row: what the four tiles and three rows leave out. */
-const CREATE_MORE: CreateItem[] = [FLIP_FPS_MENU, ...SHAPE_CREATE_ITEMS, '-', 'import-audio', 'record-audio', '-', 'create-opens-paint'];
+const CREATE_MORE: CreateItem[] = [FLIP_FPS_MENU, ...SHAPE_CREATE_ITEMS, '-', 'import-audio', 'record-audio', 'generate-voice', 'subtitles', '-', 'create-opens-paint'];
 const CUSTOM_TITLE_KEY ='formmorpheus.customTitleBar';
 const stored = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
 const store = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* this session only */ } };
@@ -179,6 +182,8 @@ export function startApp(): void {
   contentMenu.onLipsync = () => lipsyncDialog.show();
   audio.setScrub(loadScrubPref());
   const voicePanel = new VoicePanel(engine, () => audio);
+  const speechPanel = new SpeechPanel(engine, () => audio);
+  const subtitlesPanel = new SubtitlesPanel(engine, () => audio);
   const soundCard = new SoundCard(engine, () => audio);
   contentMenu.onSound = () => soundCard.show();
   contentMenu.onConvert = (ids) => { void convertToFlipbook(engine, renderer, ids); };
@@ -671,6 +676,7 @@ export function startApp(): void {
     { id: 'import-video', label: 'Video...', icon: 'video', enabled: has, run: () => pickFor('video/*') },
     { id: 'import-audio', label: 'Audio...', icon: 'audio', enabled: has, run: () => pickFor('audio/*,.flac,.ogg,.opus,.m4a,.aif,.aiff,.caf,.ac3,.mp2') },
     { id: 'record-audio', label: 'Record sound...', icon: 'audio', enabled: has, run: () => voicePanel.show() },
+    ...speechCommands({ hasMovie: has, generateVoice: () => speechPanel.show(), subtitles: () => subtitlesPanel.show() }),
     { id: 'sound-card', label: 'Sound options...', enabled: () => engine.selected.some((c) => c.kind === 'audio'), run: () => soundCard.show() },
     { id: 'import-file', label: 'File...', icon: 'upload', enabled: has, run: () => pickFor(MEDIA_ACCEPT) },
     { id: 'import-font', label: 'Import font...', enabled: has, run: () => pickFor('.otf,.ttf,.ttc,.woff,.woff2') },
@@ -835,7 +841,7 @@ export function startApp(): void {
     { label: 'File', items: () => ['new', 'new-from-scene', 'new-flipbook', 'open', 'open-file', ...(prefs.recent.length ? [{ label: 'Open Recent', items: prefs.recent.slice(0, 10).map((r) => `recent:${r}`) }] : []), '-', 'save', 'save-as', '-', 'export', 'export-fmo', 'export-fmo-history', { label: 'Round Trips', items: ['export-fvd', 'export-fvfx', 'export-char-svg', '-', 'import-fvd', 'import-fvfx'] }, '-', 'import-media', '-', 'close'] },
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
-    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', 'character.builder', 'character.builder-edit', { label: 'Actions', items: ACTION_MENU_ITEMS }] },
+    { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', '-', 'import-photo', 'import-video', 'import-audio', 'import-file', '-', 'generate-voice', 'subtitles'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', 'character.builder', 'character.builder-edit', { label: 'Actions', items: ACTION_MENU_ITEMS }] },
     { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', 'characters-panel', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'help-web', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );

@@ -7,6 +7,22 @@ Last updated: 2026-11-25 · the 0.31.0 release fixes
 
 ---
 
+## v0.31.0 · Generate voice and Subtitles cards (issue 31)
+
+- refers-to: ui/speech-panel.ts, ui/subtitles-panel.ts, ui/speech-set-row.ts, ui/speech-logic.ts, ui/subtitle-style-store.ts, app/speech-commands.ts, styles/speech.css, styles/subtitles.css, media/speech/listen-worker.ts, app/app.ts
+- kind: decisions
+- logged: v0.31.0
+
+- **Two cards, one pattern.** Both are built once into `#overlay-root` and patched in place, as `ui/voice-panel.ts` is. Everything that can be worked out with no window (sentence timing, typed seconds, a block's sample range, the style from the controls, the one movie step that lands a voice) is in `ui/speech-logic.ts` so it is tested with no model.
+- **A voice makes the movie longer when it has to.** An imported sound may lie past the end; a generated voice with its subtitles would then be cut off with no sign why, so `placeVoice` grows the movie's duration to the end of the block in the same undo step. The line edits of the Subtitles card do the same.
+- **Lines heard from a sound replace the lines under it.** Merged in, the heard lines and the ones already there (a generated voice's own sentences, say) cut each other into one-frame slivers, so `clearSpan` takes away the lines that start under the block first, in the same undo step, and the status line says so.
+- **The first lines of a movie take the style last chosen** (`ui/subtitle-style-store.ts`); a movie that has lines keeps its own, read from the first line.
+- **Line times are kept between the neighbours** (`clampSpan`): a typed time never reorders or overlaps lines, and the field shows what was kept.
+- **Speech server sound is kept as sent.** It is decoded only to learn its length; with no timing from the server, its length is shared between the text's sentences by their letters, with no gap.
+- **Speech to text under the page policy.** The speech to text library, with its runtime cache on, imports the runtime from a `blob:` address, which `script-src 'self' 'wasm-unsafe-eval'` refuses ("no available backend found"). `listen-worker.ts` turns that cache off (`env.useWasmCache = false`), so the runtime comes from the engine's own address. Found by running the built page from the engine; the dev server has no policy and hides it.
+- **Word timing.** The pinned listen files carry no cross attention outputs, so the worker's word timing call is refused and it falls back to segment timing every time (a warning in the console). Lines still land; their times are a segment's span shared between its words.
+- **The Subtitles card stays over the Stage** (`max-height: 56vh`): the Timeline under it is where the sound block for speech to text is picked.
+
 ## v0.31.0 · line comments moved here
 
 - refers-to: engine/actions-builtin.ts :: S_IDLE to S_CHEER (above them), rigSit, RIG_ACTIONS (S_WAVE); engine/action-ops.ts :: sizeOf, applyAction (end), actionFromKeys; io/fmact.ts :: parseFmact (blend); ui/character-builder.ts :: apply (busy)

@@ -18,6 +18,9 @@ let key = '';
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 env.useBrowserCache = false;
+// with its cache on, the library imports the runtime from a blob: address, which the page policy refuses; off, the
+// runtime is imported from the engine's own address below
+env.useWasmCache = false;
 env.remoteHost = `${self.location.origin}/api/speech-models/`;
 env.remotePathTemplate = '{model}/file/';
 // a Worker's fetch is not the page's: the engine's window key has to be put on each request here
