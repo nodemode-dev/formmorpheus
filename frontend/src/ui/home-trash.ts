@@ -44,10 +44,11 @@ export class HomeTrash {
   private async restore(item: TrashItem): Promise<void> {
     try {
       const back = await api.restoreTrash(item.id);
-      const named = item.kind === 'movie' || item.kind === 'character';
+      const named = item.kind === 'movie' || item.kind === 'character' || item.kind === 'scene';
       const shown = named ? back.restored.replace(/\.fmo$/i, '') : back.restored;
       const was = named ? item.name : item.original;
       if (item.kind === 'character') toast((shown !== was ? t('Restored to Characters as {name}') : t('{name} is back in Characters.')).replace('{name}', shown));
+      else if (item.kind === 'scene') toast(t('{name} is back in My scenes.').replace('{name}', shown));
       else if (shown !== was) toast(t('Restored as {name}').replace('{name}', shown));
     } catch (err) { toast((err as Error).message); }
     await this.refresh();
@@ -87,7 +88,7 @@ export class HomeTrash {
   private fill(n: HTMLElement, i: TrashItem): void {
     setText(q(n, '.fm-trash-name'), i.name);
     setTitle(q(n, '.fm-trash-name'), i.original);
-    setText(q(n, '.fm-trash-kind'), i.kind === 'movie' ? 'Movie' : i.kind === 'character' ? 'Character' : 'Export');
+    setText(q(n, '.fm-trash-kind'), i.kind === 'movie' ? 'Movie' : i.kind === 'character' ? 'Character' : i.kind === 'scene' ? 'Scene' : 'Export');
     setText(q(n, '.fm-trash-when'), dateText(i.deleted * 1000));
     setText(q(n, '.fm-trash-left'), tn(i.daysLeft, '{n} day left', '{n} days left'));
     setClass(q(n, '.fm-trash-left'), 'is-soon', i.daysLeft <= 3);
