@@ -56,4 +56,4 @@ HEVC can be made as MP4 or as MOV. The engine takes an exact rational frame rate
 
 ## Where exports go
 
-Every export downloads and is also kept by the engine in Exports, never overwritten. The Home screen lists them. Deleting one moves it to Recently Deleted for 30 days. A restore whose name is taken is renamed and says so.
+The Export card's Save to row sends the file to the browser's download folder, to a folder the person chose, or to a save dialog each time; the window does that, and a taken name in a chosen folder becomes "name 2". Every export is also kept by the engine in Exports, never overwritten. The Home screen lists them. Deleting one moves it to Recently Deleted for 30 days. A restore whose name is taken is renamed and says so.

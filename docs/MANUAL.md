@@ -9,7 +9,7 @@ On macOS use Cmd where this manual says Ctrl. The table of keys is under Keyboar
 1. Start the app. The **Home** screen opens first.
 2. Choose **New movie** (Ctrl+N), pick a size and a frame rate, and press create. Or choose **New flipbook** to start a frame by frame animation. Or choose File · **New from Starter Scene...** and pick a scene: a new movie opens with the scene's background and props, each on its own track, and a guide line on the floor. A starter character added from the Characters panel then stands on that floor at half its size.
 3. Add content with the round **Create** button at the right of the Timeline: Drawing, Flipbook, Text, Track, or Import.
-4. Press Space to play. Press Space again to pause.
+4. Press Space to play. Press Space again to pause. To see the movie as it will look when finished, press **Preview** in the Timeline's top row: it plays from the first frame, full screen, and Escape leaves.
 5. Save with Ctrl+S. The first save asks for a name.
 
 You can also drop pictures, video or sound anywhere on the window to bring them into the movie.
@@ -18,16 +18,27 @@ You can also drop pictures, video or sound anywhere on the window to bring them 
 
 - **Title bar and menus**: File, Edit, Movie, Content, View and Help. On macOS the menus can sit in the system menu bar, or in the window (View · Menus in Window).
 - **Stage**: the movie frame, with a dimmed backstage around it. Content shows here as it will export. A timecode shows the Playhead position.
-- **Timeline**: tracks of content blocks, with the Playhead, the play controls, the Movie settings button, Multi-select and the Create button.
+- **Build panel**: a column beside the Stage with Characters, Actions, Scenes, Create and Camera. Open it with View · Build Panel. See The Build panel below.
+- **Timeline**: tracks of content blocks, with the Playhead, the play controls, a Preview button, the Movie settings button, Multi-select, Camera mode, the Compose, Perform and Keyframe switch and the Create button.
 - **Split**: drag the line between Stage and Timeline to give either more room. The place is remembered.
 - **Status bar**: shows the engine state, running jobs and short notices.
 - **Command search**: Ctrl+K lists every command. Type a few letters and press Enter.
 
 Drag the Timeline with the wheel: the wheel scrolls tracks, Shift+wheel or a sideways swipe moves in time, Ctrl+wheel zooms. Ctrl+= and Ctrl+- zoom, Ctrl+0 fits the whole movie.
 
+### The Build panel
+
+The Build panel sits beside the Stage, not over it. Choose View · Build Panel to show or hide it. It is there only while a movie is open in the editor: not on Home, in Draw and Paint, or in the full-screen preview. It remembers whether it is open and which tab you were on, and it starts closed on a window narrower than 1100 px. Use the arrow keys to move between its five tabs.
+
+- **Characters**: **New Character...** opens the Character Builder. **Mine** lists the characters you saved and **Starters** lists the built cast. A click adds that character to the movie at the Playhead.
+- **Actions**: the actions of the selected character, its own first and then the starter actions. A click applies one the way Apply Action... does, so it plays once. With no character selected the tab says "Select a character to see its actions."
+- **Scenes**: the starter scenes. A click adds that scene's backdrop and props behind everything in the movie, as Add Starter Scene to This Movie... does. **Background Color...** under them sets the Stage's background.
+- **Create**: the rows of the Create card: Drawing, Flipbook, Text, Track, shapes, pictures, video and sound to import, Record sound, AI Voice and Subtitles. A row is greyed out when its command is.
+- **Camera**: **Camera mode**, which turns the camera frame on the Stage on, and the group transitions: Crossfade, Dip to Color, Wipe, Push and None.
+
 ## Modes
 
-The three modes change what dragging on the Stage does. Switch with Ctrl+1, Ctrl+2 and Ctrl+3, or from the View menu.
+The three modes change what dragging on the Stage does. They are a compact switch in the Timeline's top row, after the Theater and Camera mode buttons; when the row is narrow only the icons show, and each keeps its name as a tooltip. Switch with Ctrl+1, Ctrl+2 and Ctrl+3, or from the View menu.
 
 | Mode | Keys | Dragging a block on the Stage |
 |---|---|---|
@@ -560,7 +571,17 @@ ProRes, ProRes 4444 (with alpha) and HEVC (in an MP4 or a MOV) cannot be encoded
 
 ### Where exports go
 
-Every export downloads and is also kept in the engine's **Exports**, never overwritten (a second export of the same name sits beside the first). While an export runs you can cancel. Close the movie only after it ends.
+A **Save to** row under the Export card's tabs says where the next export goes.
+
+- **This browser's download folder** is where an export goes until you choose otherwise.
+- **Choose...** picks a folder, and exports go there. A file is never overwritten: when the name is taken, the new one becomes "name 2".
+- **Ask every time** shows a save dialog for each export.
+- **Forget folder** goes back to the download folder.
+- In the desktop app, with no folder chosen, the row says exports are kept in the Exports folder of your data folder.
+
+Where a browser or system has no folder chooser, the row says the browser's download folder is used and shows no buttons. The old Advanced checkbox "Choose a folder to save to" is this row now.
+
+Every export is also kept in the engine's **Exports**, in the data folder, never overwritten (a second export of the same name sits beside the first). While an export runs you can cancel. Close the movie only after it ends.
 
 ## Home
 
@@ -679,6 +700,20 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.36.0
+
+**The Build panel.** View · Build Panel opens a panel beside the Stage with Characters, Actions, Scenes, Create and Camera. A click on a character adds it at the Playhead, a click on an action applies it to the selected character, and a click on a scene adds it behind everything in the movie. See The Build panel.
+
+**The modes and Preview.** Compose, Perform and Keyframe are a compact switch in the Timeline's top row, after the Theater and Camera mode buttons, and on a narrow window only the icons show. A Preview button plays the movie from the first frame, full screen. See Modes.
+
+**Where exports go.** A Save to row in the Export card sends exports to this browser's download folder, to a folder you choose, or asks each time. It replaces the Advanced checkbox "Choose a folder to save to". See Where exports go.
+
+## New in 0.35.0
+
+**27 languages.** AI Voice, Subtitles and the menus and notices added since 0.31.0 are now in all 27 languages the app has.
+
+**Explained.** The manual says where the data folder is on Windows, macOS and Linux, has a walkthrough, Make a character talk, and explains Frame A and Frame B in the Character Builder, starting a new character from an existing one through an SVG, what Theater is, and how track order decides what is in front.
 
 ## New in 0.34.0
 

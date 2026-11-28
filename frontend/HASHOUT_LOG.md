@@ -2,10 +2,23 @@
 
 Living log of all comment content, explainers, rationale, TODOs, & removed code for the interface. Source files stay comment-free; everything they would have said lives here, indexed. Read this first, then edit code surgically.
 
-Current build version: v0.35.0
-Last updated: 2026-11-27 · the translations, and main's other voice build left out
+Current build version: v0.36.0
+Last updated: 2026-11-27 · the Build panel, the mode switch in the Timeline's top row, where exports go
 
 ---
+
+## v0.36.0 · the Build panel, the mode switch in the Timeline's top row, where exports go
+
+- refers-to: ui/build-panel.ts :: BuildPanel; styles/build-panel.css; app/app.ts (the `build-panel` command and the panel's deps); ui/characters-panel.ts :: onLibrary, starterEntries, addToMovie; app/action-commands.ts :: applySelected; ui/timeline.ts (`.fm-modes`, `movie-preview`); styles/morpheus.css; styles/ipad-window.css; ui/export-dialog.ts :: paintWhere; io/api.ts :: keepExportFolder, keptExportFolder, folderWritable, canAskSaveFile, askSaveFile, writeSavedFile
+- kind: decision
+- logged: v0.36.0 · 2026-11-27
+
+- **The Build panel** answers discussion 16's ask for the making tools to stay on screen instead of living in cards that open and close. It is a grid column of `.fm-main` (`has-build`), built once; a tab change shows and hides panes, and a list is patched row by row when the library or the selection changes. It owns no logic: every row runs a registered command or one of the calls handed in by app.ts (`starters`, `addCharacter`, `applyAction`, `addScene`), so the cards and the panel cannot drift apart. Open or closed and the tab are kept in localStorage `formmorpheus.build`. Below 1100 px it starts closed and the stored choice is kept for a wider window. It is not shown on Home, in Paint or in the full-screen preview.
+- **Three small public doors were added for it**, nothing else in those files changed: `CharactersPanel.onLibrary` (called at the end of `refresh`), `starterEntries` (waits for the manifest), `addToMovie` (the card's own add, at the Playhead); `actionCommands` returns `applySelected`, the action picker's apply for the selected character.
+- **Compose, Perform and Keyframe** moved from a pill floating over the tracks into `.fm-transport-left` as a segmented switch. The labels hide when the head row's container is under 1189 px (`@container fm-head`), not by window width, because the row is what runs out of room. The pill's old rules (FV-207) were removed with it; iPad's sheet follows in ipad-window.css.
+- **Preview** (`data-act="movie-preview"`, beside the frame-step buttons) stops, seeks to frame 0 and runs `stage-fullscreen`. The command itself stays a toggle.
+- **Save to** replaces the Advanced checkbox "Choose a folder to save to". In a browser the folder is a File System Access handle kept in IndexedDB `formmorpheus.save-to`; permission is asked again when the browser dropped it, and a refusal downloads the file and says so. A taken name becomes "name 2", never an overwrite. Where the platform cannot pick a folder the two buttons are hidden and the row says the download folder is used; the row is hidden on iPad, where the share sheet decides. The desktop app asks through `plugin:dialog`.
+- Left open: the string `Choose a folder to save to` stays in the tables, unused. Where a desktop download lands with no folder chosen is the system's choice; a `src-tauri` `on_download` handler could fix it to one folder and was not written.
 
 ## v0.35.0 · the translations, and main's other voice build left out
 
