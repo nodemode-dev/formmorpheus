@@ -432,6 +432,12 @@ export interface SubtitleCue { id: string; start: number; end: number; text: str
 export interface SubtitleStyle { font: string; size: number; position: 'top' | 'middle' | 'bottom'; color: string; band: boolean }
 export interface Subtitles { show: boolean; style: SubtitleStyle; cues: SubtitleCue[] }
 
+/** One scene effect (engine/scene-fx.ts): on from movie frame `start` up to, not including, `end`. `kind` names a
+ *  registered effect; `amount` is 0 to 1; `seed` makes its particles the same on every draw of a frame. */
+export interface SceneFx { id: string; kind: string; start: number; end: number; amount: number; seed: number; color?: string; params?: Record<string, number> }
+/** A scene (engine/scene-marks.ts): a named stretch of the timeline from frame `start` to the next scene's start. */
+export interface SceneMark { id: string; name: string; start: number }
+
 export interface OnionSettings {
   enabled: boolean;
   /** Ghost frames shown before and after the current frame; 0 turns that side off. */
@@ -486,6 +492,10 @@ export interface Movie {
   motionBlur?: { on: boolean; shutter: number; samples: number };
   /** Subtitles (engine/subtitles.ts): the lines, their one look, and whether the video shows them. Absent: none. */
   subtitles?: Subtitles;
+  /** Scene effects drawn over the content, under the subtitles. Absent: none. */
+  sceneFx?: SceneFx[];
+  /** Scenes, in order of their start. Absent: the movie is one stretch. */
+  scenes?: SceneMark[];
   onion: OnionSettings;
   tracks: Track[];
   assets: Record<string, Asset>;

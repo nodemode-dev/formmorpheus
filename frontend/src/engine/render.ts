@@ -28,6 +28,7 @@ import { transitionAt, tracksHaveTransition } from './transitions';
 import { mixTransition } from './transition-draw';
 import { visibleMovie } from './hide-ops';
 import { drawSubtitles } from './subtitles';
+import { drawSceneFx } from './scene-fx';
 import { paintAdjustGlyph, paintShape } from './shape-draw';
 import { resolveShape } from './shape';
 import { adjustWeight, applyAdjustCpu, type AdjustHost } from './shape-adjust';
@@ -446,6 +447,8 @@ export class Renderer {
     this.nest.length = 0;
     this.flat = null;
     try { this.drawFrameInner(ctx, mv, frame, view, opts); } finally { this.frameNow = -1; }
+    // scene effects lie over the content and under the subtitles, outside the camera
+    drawSceneFx(ctx, movie, frame, view);
     // subtitles lie over the finished frame, outside the camera: the Stage and every export draw through here
     drawSubtitles(ctx, movie, frame, view);
   }

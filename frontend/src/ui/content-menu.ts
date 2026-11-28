@@ -291,6 +291,15 @@ export class ContentMenu {
   }
 
   private readonly sections: Array<{ row: PopRow; kids: HTMLElement[] }> = [];
+  private readonly added: Array<{ row: PopRow; shown: () => boolean }> = [];
+
+  /** A row another file adds under Apply Action... (app/feature-kit.ts): it runs `run` and shows only while `shown` says so. */
+  addRow(iconName: string | null, label: string, shown: () => boolean, run: () => void): void {
+    const row = popRow(iconName, label);
+    row.el.addEventListener('click', () => { this.pop.hide(); run(); });
+    (this.added.length ? this.added[this.added.length - 1].row.el : this.applyAct.el).after(row.el);
+    this.added.push({ row, shown });
+  }
 
   /** A submenu row holding `kids`; hidden by syncSections when every child is gone. */
   private section(iconName: string, label: string, kids: HTMLElement[]): HTMLElement {
@@ -442,6 +451,7 @@ export class ContentMenu {
     setClass(this.srcUnlink.el, 'is-gone', !(isChar && canLinkPaths() && !!first.character?.source));
     setClass(this.srcRelink.el, 'is-gone', !(isChar && canLinkPaths()));
     setClass(this.applyAct.el, 'is-gone', !isChar);
+    for (const x of this.added) setClass(x.row.el, 'is-gone', !x.shown());
     this.arrange.patch();
     this.del.setDisabled(none);
     this.syncSections();

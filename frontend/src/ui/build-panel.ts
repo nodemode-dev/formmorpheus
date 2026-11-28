@@ -37,7 +37,7 @@ export interface BuildPanelDeps {
   onCharactersChanged(listener: () => void): void;
 }
 
-type Tab = 'characters' | 'actions' | 'scenes' | 'create' | 'camera';
+type Tab = 'characters' | 'actions' | 'scenes' | 'props' | 'effects' | 'create' | 'camera';
 
 const STORE = 'formmorpheus.build';
 const NARROW = 1100;
@@ -48,6 +48,8 @@ const TABS: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
   { id: 'characters', label: 'Characters', icon: 'character' },
   { id: 'actions', label: 'Actions', icon: 'perform' },
   { id: 'scenes', label: 'Scenes', icon: 'image' },
+  { id: 'props', label: 'Props', icon: 'shape' },
+  { id: 'effects', label: 'Effects', icon: 'sun' },
   { id: 'create', label: 'Create', icon: 'plus' },
   { id: 'camera', label: 'Camera', icon: 'camera' },
 ];
@@ -106,6 +108,8 @@ export class BuildPanel {
   private readonly cmdRows: Array<{ id: string; node: HTMLButtonElement; label: HTMLElement; bound: boolean }> = [];
   private readonly camBtn: HTMLButtonElement;
   private patchFrame = 0;
+  // sections other files add to a tab (app/feature-kit.ts), each with what patches it
+  private readonly added = new Map<Tab, Array<() => void>>();
 
   constructor(private readonly host: HTMLElement, private readonly engine: Engine, private readonly deps: BuildPanelDeps) {
     const saved = loadState();
@@ -339,6 +343,18 @@ export class BuildPanel {
     if (this.tab === 'actions') this.paintActions();
     if (this.tab === 'characters') this.paintCharacters();
     if (this.tab === 'scenes') this.paintScenes();
+    for (const fn of this.added.get(this.tab) ?? []) fn();
+  }
+
+  /** Appends a section built elsewhere to the end of a tab; `patch` runs with the panel's own patching while that tab shows. */
+  addSection(tab: string, node: HTMLElement, patch?: () => void): void {
+    if (!isTab(tab)) return;
+    this.pane(tab).appendChild(node);
+    if (!patch) return;
+    const list = this.added.get(tab) ?? [];
+    list.push(patch);
+    this.added.set(tab, list);
+    if (this.shownNow && this.tab === tab) patch();
   }
 
   // ---- building blocks ----
