@@ -51,7 +51,7 @@ function loopRange(m: Movie, g: Content): [number, number] | null {
   return [charFrame(m, g, m.loopFrom), charFrame(m, g, m.loopTo)];
 }
 
-export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(x: number, y: number, id: string, index: number): void } {
+export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(x: number, y: number, id: string, index: number): void; applySelected(actionId: string): void } {
   const { engine, picker } = d;
   let future = engine.history.future.length;
   engine.on('history', () => {
@@ -219,7 +219,9 @@ export function actionCommands(d: ActionDeps): { commands: Command[]; openStrip(
       run: () => d.pickFile('.fmact'),
     },
   ];
-  return { commands, openStrip };
+  /** Apply Action without the picker (the Build panel): the same path, so it plays once and says so. */
+  const applySelected = (actionId: string): void => { const g = selectedCharacter(engine); if (g) apply(g, actionId); };
+  return { commands, openStrip, applySelected };
 }
 
 /** The items of the Actions submenu. */

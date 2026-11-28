@@ -80,6 +80,7 @@ import { GraphEditor } from '../ui/graph-editor';
 import { MediaBin } from '../ui/media-bin';
 import { CharactersPanel } from '../ui/characters-panel';
 import { CharacterBuilder } from '../ui/character-builder';
+import { BuildPanel } from '../ui/build-panel';
 import { TitleTools } from '../ui/titlebar-tools';
 import { installUndoUi } from '../ui/undo-banner';
 import { installTextWarpNote } from '../ui/text-warp-note';
@@ -821,6 +822,22 @@ export function startApp(): void {
     { id: 'recovery-points', label: 'Recovery Points...', enabled: has, run: () => recoveryDialog.show() },
     { id: 'recover-lost', label: 'Recover Lost Movies...', run: () => { void recovery.offer('menu'); } },
   );
+  // the Build panel: characters, actions, starter scenes, Create and Camera docked beside the Stage
+  const buildPanel = new BuildPanel(q(root, '.fm-main'), engine, {
+    run: (id) => { commands.run(id); },
+    enabled: (id) => { const c = commands.get(id); return !!c && commands.enabled(c); },
+    label: (id) => { const c = commands.get(id); return c ? commands.label(c) : null; },
+    starters: () => charactersPanel.starterEntries(),
+    addCharacter: (key) => charactersPanel.addToMovie(key),
+    applyAction: (id) => actions.applySelected(id),
+    addScene: (entry) => addStarterSceneToMovie(engine, renderer, entry),
+    onCharactersChanged: (listener) => { charactersPanel.onLibrary = listener; },
+  });
+  commands.add({
+    id: 'build-panel', label: 'Build Panel', icon: 'character', checked: () => buildPanel.isOpen,
+    group: 'View', description: 'Shows or hides the Build panel beside the Stage: characters, actions, starter scenes, Create and Camera.',
+    run: () => buildPanel.toggle(),
+  });
   reserveDock(platform.kind === 'ipad');
   const dock: Dock<'antigravity'> | null = platform.kind === 'ipad' ? null : new Dock(formmorpheusDock({
     context: () => {
@@ -863,7 +880,7 @@ export function startApp(): void {
     { label: 'Edit', items: ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'duplicate', 'duplicate-after', 'delete', '-', 'select-all', 'deselect', '-', 'recovery', 'recovery-points', 'recover-lost', '-', 'shortcuts', ...(platform.features.penLink ? ['pen-link'] : []), 'settings'] },
     { label: 'Movie', items: ['movie-settings', 'fit-to-content', '-', 'play', 'prev-frame', 'next-frame', 'go-start', 'go-end', '-', 'loop-in', 'loop-out', 'loop-clear'] },
     { label: 'Content', items: [{ label: 'Add', items: ['add-drawing', 'add-flipbook', FLIP_FPS_MENU, 'add-text', ...SHAPE_CREATE_ITEMS, 'add-track', 'add-starter-scene', '-', 'import-photo', 'import-video', 'import-audio', 'import-file', '-', 'record-audio', 'ai-voice', 'subtitles'] }, '-', 'split', 'fill-duration', 'push-content-left', 'push-content-right', 'flip-order', '-', { label: 'Size on Stage', items: ['size-fit', 'size-fill', 'size-original', '-', { label: 'Default on import', items: ['import-size-fit', 'import-size-fill', 'import-size-original'] }] }, { label: 'Speed', items: ['reverse-clip', 'freeze-frame', 'speed-reset'] }, { label: 'Keyframe tools', items: ['key-reverse', '-', 'keys-loop', 'keys-pingpong', 'keys-cycle', '-', 'keys-orient', 'keys-thin'] }, '-', 'group', 'ungroup', 'character.make', 'character.save', 'character.mouth', 'character.builder', 'character.builder-edit', { label: 'Actions', items: ACTION_MENU_ITEMS }] },
-    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', 'characters-panel', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
+    { label: 'View', items: ['home', '-', 'mode-compose', 'mode-perform', 'mode-keyframe', '-', 'multi-select', 'timeline-in', 'timeline-out', 'timeline-in-h', 'timeline-out-h', 'timeline-in-v', 'timeline-out-v', 'timeline-fit', 'timeline-zoom-selection', 'timeline-zoom-loop', 'timeline-headers', 'timeline-collapse', 'timeline-expand', 'track-lock', 'timeline-snap', 'snap-seconds', 'timeline-ruler-drag', 'preview-sounds', 'marker-add', 'marker-prev', 'marker-next', 'beat-markers', 'marker-clear', 'graph-editor', 'media-bin', 'characters-panel', 'build-panel', '-', 'stage-options', { label: 'Stage', items: ['stage-zoom-in', 'stage-zoom-out', 'stage-fit', 'stage-zoom-100', '-', 'stage-rotate-left', 'stage-rotate-right', 'stage-rotate-reset', '-', 'stage-background', 'stage-timecode'] }, 'stage-fullscreen', ...(dock ? ['-', 'view-terminal', 'new-terminal', 'claude-code'] : []), '-', 'search', ...(platform.kind === 'ipad' ? [] : ['-', 'chrome-hide-menu', 'chrome-hide-status', 'menus-in-window', 'custom-title-bar'])] },
     { label: 'Help', items: ['help-center', 'help', 'help-tutorials', 'help-idea', 'help-web', 'whats-new', 'tour', '-', 'reset-examples', '-', 'about'] },
   );
   const syncRecentCommands = (): void => {
