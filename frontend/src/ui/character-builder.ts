@@ -58,7 +58,7 @@ const HEAD_PX = 96, TALL_W = 84, TALL_H = 140;
 const RANDOM = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.2" fill="currentColor" stroke="none"/></svg>';
 const RESET = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5M4.5 4.5v4h4"/></svg>';
 
-export const VIEW_LABEL: Record<CastView, string> = { front: 'Front', three: 'Three-Quarter', side: 'Side', back: 'Back' };
+export const VIEW_LABEL: Record<CastView, string> = { front: 'Front', three: 'Three-Quarter', side: 'Side', back: 'Rear' };
 const glyph = (inner: string): string => `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 export const VIEW_ICON: Record<CastView, string> = {
   front: glyph('<circle cx="8" cy="8" r="5.5"/><circle cx="6" cy="7.5" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="7.5" r=".8" fill="currentColor" stroke="none"/><path d="M6.4 10.4q1.6 1 3.2 0"/>'),

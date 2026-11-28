@@ -25,7 +25,7 @@ export const PROP_CATEGORIES: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'city', label: 'City' },
   { id: 'office', label: 'Office' },
   { id: 'food', label: 'Food' },
-  { id: 'history', label: 'History' },
+  { id: 'history', label: 'Historical' },
   { id: 'future', label: 'Future' },
   { id: 'signs', label: 'Signs' },
 ];

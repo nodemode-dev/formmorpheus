@@ -11,7 +11,7 @@ import { FxPreviews, paintPreview } from './scene-fx-preview';
 const GROUPS: { id: SceneFxGroup; label: string }[] = [
   { id: 'weather', label: 'Weather' },
   { id: 'particles', label: 'Particles' },
-  { id: 'light', label: 'Light' },
+  { id: 'light', label: 'Lighting' },
 ];
 
 const TILE_W = 224, TILE_H = 126;
