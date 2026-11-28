@@ -18,7 +18,7 @@ import { ColourPanel } from './colour-panel';
 import { confirmAction } from './dialogs';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setStyleVar, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
-import { t } from './i18n';
+import { t, tn } from './i18n';
 import { tf } from './i18n-fill';
 import { icon } from './icons';
 import { MAX_SUBTITLE_FILE_BYTES, addEmptyLine, addLines, clampSpan, clearSpan, formatSeconds, lineBlocks, listenLanguages, monoSamples, parseSeconds, removeLine, sameSound, sampleRange, styleFromControls, unheardReason, type StyleControls } from './speech-logic';
@@ -474,7 +474,7 @@ export class SubtitlesPanel {
         replaced = cleared.removed;
         return covered(addLines(cleared.movie, lines, style));
       });
-      const added = tf(lines.length === 1 ? '{n} line added.' : '{n} lines added.', { n: lines.length });
+      const added = tn(lines.length, '{n} line added.', '{n} lines added.');
       if (stale) this.say(t('The sound block was changed or removed while it was heard, so no lines were added.'), true);
       else this.say(!ok ? t('The lines could not be added to the movie.') : replaced ? `${added} ${t('They replace the lines that were under this sound.')}` : added, !ok);
     } catch (e) {
@@ -525,7 +525,7 @@ export class SubtitlesPanel {
     if (had && !(await confirmAction(t('Replace subtitles'), tf('Replace the {had} lines in this movie with the {n} lines in the file?', { had, n: lines.length }), t('Replace'), true))) return;
     const style = this.current();
     const ok = this.engine.run('Import Subtitles', (mv) => covered(writeSubtitles(mv, lines, style)));
-    this.say(ok ? tf(lines.length === 1 ? '{n} line imported.' : '{n} lines imported.', { n: lines.length }) : t('The lines could not be added to the movie.'), !ok);
+    this.say(ok ? tn(lines.length, '{n} line imported.', '{n} lines imported.') :t('The lines could not be added to the movie.'), !ok);
   }
 
   private exportFile(): void {

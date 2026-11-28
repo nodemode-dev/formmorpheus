@@ -11,7 +11,7 @@ import { SERVER_DEFAULTS, checkServer, speakOnServer, type ServerSettings } from
 import { SENTENCE_GAP_SECONDS, VOICES, endVoice, join, speak, voiced } from '../media/speech/voice';
 import { el, patchList, q, setChecked, setClass, setDisabled, setHidden, setText, setValue } from './dom';
 import { enhanceSelect } from './dropdown';
-import { t } from './i18n';
+import { t, tn } from './i18n';
 import { tf } from './i18n-fill';
 import { linesForWholeSound, placeVoice } from './speech-logic';
 import { SpeechSetRow } from './speech-set-row';
@@ -329,7 +329,7 @@ export class SpeechPanel {
     if (!got.ok) setText(this.checkNote, got.error || t('The speech server could not be reached.'));
     else if (!got.models.length) setText(this.checkNote, t('The speech server answered. It lists no models, so type the model name.'));
     else {
-      setText(this.checkNote, tf(got.models.length === 1 ? 'The speech server answered with {n} model.' : 'The speech server answered with {n} models.', { n: got.models.length }));
+      setText(this.checkNote, tn(got.models.length, 'The speech server answered with {n} model.', 'The speech server answered with {n} models.'));
       if (!this.model.value.trim()) { this.model.value = got.models[0]; this.setServer({ model: got.models[0] }); }
     }
     this.patch();
