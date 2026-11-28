@@ -43,6 +43,9 @@
 .fm-help-list li::marker { color: var(--text-muted); }
 .fm-help-code { padding: 1px 5px; border-radius: var(--radius-xs); background: var(--bg-tertiary); color: var(--text-primary); font-family: var(--font-mono); font-size: 0.92em; }
 .fm-help-pre { margin: 0 0 var(--space-3); padding: var(--space-3); overflow-x: auto; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-input); font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-primary); }
+.fm-help-fig { margin: 0 0 var(--space-4); }
+.fm-help-img { display: block; width: 100%; height: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-input); }
+.fm-help-cap { margin-block-start: var(--space-1); font-size: var(--fs-12); color: var(--text-secondary); }
 .fm-help-link { color: var(--accent-color); text-decoration: none; }
 .fm-help-link:hover { text-decoration: underline; }
 .fm-help-table { margin: 0 0 var(--space-4); overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
