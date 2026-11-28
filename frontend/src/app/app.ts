@@ -216,10 +216,22 @@ export function startApp(): void {
   const stageAt = (): { x: number; y: number } => { const r = q(root, '.fm-stage').getBoundingClientRect(); return { x: r.right - 360, y: r.top + 24 }; };
   const stageMenu = new PopupMenu(commands, null, true);
   let lastContext: { x: number; y: number } | null = null;
+  // the character that was selected when a right-click landed on other content (a backdrop covers the whole frame,
+  // so the empty Stage's menu is out of reach there): the content's menu offers to walk that character to the spot
+  let walker: string | null = null;
+  contentMenu.addRow('pin', 'Walk To Here', () => !!walker && !!commands.get('character.walk-here'), () => {
+    const id = walker;
+    walker = null;
+    if (!id) return;
+    engine.select([id]);
+    commands.run('character.walk-here');
+  });
   stage.nav.onContext = (x, y) => {
     lastContext = { x, y };
     // over content, the right-click is about that content: select it and open its menu; over empty Stage, the Stage's own
     const hit = stage?.contentAt(x, y) ?? null;
+    const was = selectedCharacter(engine);
+    walker = hit && was && was.id !== hit ? was.id : null;
     if (hit) { if (!engine.selection.content.includes(hit)) engine.select([hit]); contentMenu.open(x, y); return; }
     stageMenu.setItems(['character.walk-here', '-', 'stage-options', 'stage-background', '-', 'stage-fit', 'stage-zoom-100', '-', 'stage-timecode', 'stage-fullscreen']); stageMenu.openAt(x, y); };
   const newMovie = new NewMovieDialog(engine);
@@ -235,7 +247,7 @@ export function startApp(): void {
   starterScenes.onAdd = (entry) => addStarterSceneToMovie(engine, renderer, entry);
   const createMenu = new CreateMenu(commands, CREATE_MORE);
   timeline = new TimelineView(q(root, '.fm-tl-host'), engine, renderer, {
-    contentMenu: (x, y) => contentMenu.open(x, y),
+    contentMenu: (x, y) => { walker = null; contentMenu.open(x, y); },
     trackMenu: (x, y, id) => trackMenu.open(x, y, id),
     movieSettings: (a) => movieSettings.toggle(a),
     home: () => { void toTheater(); },
