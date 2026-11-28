@@ -1,8 +1,9 @@
-// Starter scenes: a manifest entry and its layer pictures made into a new movie, and a starter character stood on
+// Starter scenes: a manifest entry and its layer pictures made into a new movie or laid behind an open one, and a starter character stood on
 // the scene's floor. Pure, no DOM: the pictures are drawn by io/starter-scenes.ts.
 import { setCameraKeys } from './camera';
+import { floorOf } from './guides';
 import { content, identity, newMovie, track, uid } from './model';
-import type { Asset, Content, Movie, Transform } from './types';
+import type { Asset, Content, Movie, Track, Transform } from './types';
 import { MAX_SIDE } from './types';
 
 export interface SceneLayer { name: string; file: string; x: number; y: number; scale: number }
@@ -38,12 +39,12 @@ export function rasterScale(w: number, h: number, _movieW: number, _movieH: numb
   return 2 * w <= MAX_SIDE && 2 * h <= MAX_SIDE ? 2 : 1;
 }
 
-/** The movie a scene opens as: one picture track per layer (the first layer at the bottom), the camera preset as its first key, the floor as a guide. */
-export function sceneMovie(entry: SceneEntry, pics: ScenePicture[]): { movie: Movie; assets: Map<string, Blob> } {
-  let movie = newMovie({ name: 'Untitled Movie', width: entry.width, height: entry.height, fps: entry.fps });
-  movie = { ...movie, duration: Math.max(1, Math.round(entry.duration)) };
-  if (typeof entry.background === 'string' && /^#[0-9a-f]{6}$/i.test(entry.background)) movie.background = entry.background.toLowerCase();
-  const W = movie.width, H = movie.height;
+/** How the scene's frame sits in a movie of `W` x `H`: scaled by `s` to cover it, keeping its proportions, about the centre. */
+interface SceneFit { s: number; W: number; H: number }
+
+/** The scene's layers as picture tracks, top first (the first layer is the last track), each spanning `duration` from frame 0. */
+function layerTracks(entry: SceneEntry, pics: ScenePicture[], fit: SceneFit, duration: number): { tracks: Track[]; table: Record<string, Asset>; assets: Map<string, Blob> } {
+  const { s } = fit;
   const assets = new Map<string, Blob>();
   const table: Record<string, Asset> = {};
   const tracks = entry.layers.map((l, i) => {
@@ -52,10 +53,42 @@ export function sceneMovie(entry: SceneEntry, pics: ScenePicture[]): { movie: Mo
     const asset: Asset = { id: uid('a'), kind: 'image', name: l.name, mime: 'image/png', width: aw, height: ah, frames: 0, size: p.blob.size };
     table[asset.id] = asset;
     assets.set(asset.id, p.blob);
-    const transform: Transform = { ...identity(), x: l.x - W / 2, y: l.y - H / 2, scale: (l.scale * p.w) / aw };
-    return track(l.name, [content('image', 0, movie.duration, { name: l.name, asset: asset.id, transform })]);
+    const transform: Transform = { ...identity(), x: (l.x - entry.width / 2) * s, y: (l.y - entry.height / 2) * s, scale: (s * l.scale * p.w) / aw };
+    return track(l.name, [content('image', 0, duration, { name: l.name, asset: asset.id, transform })]);
   });
-  movie = { ...movie, tracks: tracks.reverse(), assets: table };
+  return { tracks: tracks.reverse(), table, assets };
+}
+
+/** The scene's floor line in a movie it is fitted to. */
+const floorIn = (entry: SceneEntry, fit: SceneFit): number | null => (fin(entry.floorY) ? fit.H / 2 + (entry.floorY - entry.height / 2) * fit.s : null);
+
+/** A scene made ready for an open movie: its layer tracks fitted to cover the movie's frame (proportions kept, centred)
+ *  and spanning the movie, its pictures as assets, and where its floor falls. */
+export interface SceneLayers { tracks: Track[]; table: Record<string, Asset>; assets: Map<string, Blob>; floor: number | null }
+
+export function sceneLayers(movie: Movie, entry: SceneEntry, pics: ScenePicture[]): SceneLayers {
+  const W = movie.width, H = movie.height;
+  const fit: SceneFit = { s: Math.max(W / entry.width, H / entry.height), W, H };
+  const floor = floorIn(entry, fit);
+  return { ...layerTracks(entry, pics, fit, movie.duration), floor: floor === null ? null : Math.round(floor) };
+}
+
+/** The layers laid behind everything in `movie` (new bottom tracks, the first layer last), their pictures added, and the
+ *  floor guide taken over only when the movie has none (a starter character's spot follows it). Nothing the movie holds
+ *  is changed; the scene's camera preset is left out, as it would move what is already there. */
+export function laySceneBehind(movie: Movie, layers: SceneLayers): Movie {
+  let next: Movie = { ...movie, tracks: [...movie.tracks, ...layers.tracks], assets: { ...movie.assets, ...layers.table } };
+  if (layers.floor !== null && floorOf(movie.guides) === null) next = { ...next, guides: { ...movie.guides, lines: [...(movie.guides?.lines ?? []), { axis: 'y', at: layers.floor, role: 'floor' }] } };
+  return next;
+}
+
+/** The movie a scene opens as: one picture track per layer (the first layer at the bottom), the camera preset as its first key, the floor as a guide. */
+export function sceneMovie(entry: SceneEntry, pics: ScenePicture[]): { movie: Movie; assets: Map<string, Blob> } {
+  let movie = newMovie({ name: 'Untitled Movie', width: entry.width, height: entry.height, fps: entry.fps });
+  movie = { ...movie, duration: Math.max(1, Math.round(entry.duration)) };
+  if (typeof entry.background === 'string' && /^#[0-9a-f]{6}$/i.test(entry.background)) movie.background = entry.background.toLowerCase();
+  const { tracks, table, assets } = layerTracks(entry, pics, { s: 1, W: movie.width, H: movie.height }, movie.duration);
+  movie = { ...movie, tracks, assets: table };
   if (fin(entry.floorY)) movie.guides = { lines: [{ axis: 'y', at: entry.floorY, role: 'floor' }] };
   const cam = entry.camera;
   if (cam && fin(cam.panX) && fin(cam.panY) && fin(cam.zoom) && cam.zoom > 0) movie = setCameraKeys(movie, 0, { panX: cam.panX, panY: cam.panY, zoom: cam.zoom });

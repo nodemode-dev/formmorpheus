@@ -1,5 +1,6 @@
-// File, New from Starter Scene...: the scenes in the starter manifest as cards with a small picture of each; choosing
-// one makes a new movie from it. Built once; the cards are patched in place.
+// File, New from Starter Scene... and Add Starter Scene to This Movie...: the scenes in the starter manifest as cards
+// with a small picture of each; choosing one makes a new movie from it, or adds it behind the open movie. Built once;
+// the cards, title and primary button are patched in place.
 import type { SceneEntry } from '../engine/starter-scene';
 import { readSceneManifest, sceneFileUrl, withSvgImage } from '../io/starter-scenes';
 import { Dialog } from './dialogs';
@@ -20,17 +21,29 @@ export class StarterSceneDialog extends Dialog {
   private loading: Promise<void> | null = null;
   private busy: string | null = null;
   private readonly drawn = new Set<string>();
+  /** 'new' makes a new movie of the scene; 'add' lays it behind what the open movie holds (through `onAdd`). */
+  private mode: 'new' | 'add' = 'new';
+  private picked: string | null = null;
+  private readonly go: HTMLButtonElement;
+  /** Adds the scene to the open movie and says whether it did. */
+  onAdd: ((entry: SceneEntry) => Promise<boolean>) | null = null;
 
   /** `make` opens the scene and says whether it did; when the person stays with the current movie the dialog stays open. */
   constructor(private readonly make: (entry: SceneEntry) => Promise<boolean>) {
     super('New from Starter Scene', 560);
     this.body.append(this.grid, this.empty);
     this.button('Cancel', 'ghost', () => this.close());
-    this.grid.addEventListener('click', (e) => {
-      const key = (e.target as HTMLElement).closest<HTMLElement>('.fm-ss-card')?.dataset.key;
-      const entry = this.scenes?.find((s) => s.id === key);
+    this.go = this.button('Create', 'primary', () => {
+      const entry = this.scenes?.find((s) => s.id === this.picked);
       if (entry) void this.choose(entry);
     });
+    // a click picks a card and the primary button takes it; a double click takes it at once
+    const at = (e: Event): SceneEntry | undefined => {
+      const key = (e.target as HTMLElement).closest<HTMLElement>('.fm-ss-card')?.dataset.key;
+      return this.scenes?.find((s) => s.id === key);
+    };
+    this.grid.addEventListener('click', (e) => { const entry = at(e); if (entry && !this.busy) { this.picked = entry.id; this.paint(); } });
+    this.grid.addEventListener('dblclick', (e) => { const entry = at(e); if (entry) void this.choose(entry); });
     void this.load();
   }
 
@@ -45,8 +58,16 @@ export class StarterSceneDialog extends Dialog {
     return this.loading;
   }
 
-  async show(): Promise<void> {
+  /** Opens on the same list either to make a new movie or, with 'add', to add the scene to the open movie; the title and the primary button are patched for the mode. */
+  async show(mode: 'new' | 'add' = 'new'): Promise<void> {
+    this.mode = mode === 'add' && this.onAdd ? 'add' : 'new';
+    // each opening starts with nothing picked, so Enter on the primary button never takes a card picked last time
+    this.picked = null;
+    this.setTitle(this.mode === 'add' ? 'Add Starter Scene' : 'New from Starter Scene');
+    const label = this.mode === 'add' ? 'Add to Movie' : 'Create';
+    if (this.go.dataset.en !== label) { setText(this.go, t(label)); this.go.dataset.en = label; this.go.dataset.shown = this.go.textContent ?? ''; }
     await this.load();
+    this.paint();
     this.open();
   }
 
@@ -60,6 +81,8 @@ export class StarterSceneDialog extends Dialog {
     setText(this.empty, t('The starter scenes could not be read.'));
     setHidden(this.empty, !this.scenes || list.length > 0);
     for (const s of list) if (!this.drawn.has(s.id)) { this.drawn.add(s.id); void this.thumb(s); }
+    if (this.picked && !list.some((s) => s.id === this.picked)) this.picked = null;
+    setDisabled(this.go, this.busy !== null || this.picked === null);
   }
 
   private update(n: HTMLElement, s: SceneEntry): void {
@@ -68,6 +91,9 @@ export class StarterSceneDialog extends Dialog {
     setText(q(n, '.fm-ss-meta'), props === 1 ? t('1 prop') : tf('{n} props', { n: props }));
     if (n.getAttribute('aria-label') !== s.name) n.setAttribute('aria-label', s.name);
     setClass(n, 'is-busy', this.busy === s.id);
+    setClass(n, 'is-picked', this.picked === s.id);
+    const pressed = String(this.picked === s.id);
+    if (n.getAttribute('aria-pressed') !== pressed) n.setAttribute('aria-pressed', pressed);
     setDisabled(n as HTMLButtonElement, this.busy !== null);
   }
 
@@ -97,9 +123,10 @@ export class StarterSceneDialog extends Dialog {
     this.busy = entry.id;
     this.paint();
     try {
-      if (await this.make(entry)) this.close();
+      const done = this.mode === 'add' && this.onAdd ? await this.onAdd(entry) : await this.make(entry);
+      if (done) this.close();
     } catch (e) {
-      toast(e instanceof Error ? e.message : t('The scene could not be opened.'), 'error');
+      toast(e instanceof Error ? e.message : t(this.mode === 'add' ? 'The scene could not be added.' : 'The scene could not be opened.'), 'error');
     } finally {
       this.busy = null;
       this.paint();
