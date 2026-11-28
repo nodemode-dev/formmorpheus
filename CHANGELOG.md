@@ -2,6 +2,33 @@
 
 Versions are `v*.*.*` with dots. Dates are US Eastern. Each section is written for the person using FormMorpheus; the reasons behind a change are in the `HASHOUT_LOG.md` beside the code.
 
+## 0.34.0 · 2026-11-27
+
+Fixes from a tester's first session with Movie projects: the selection box, the right-click menu, actions, the Character Builder, the SVG round trip and starter scenes.
+
+### New
+- Right-click on content on the Stage opens that content's menu. Before, only the Stage's own menu opened.
+- The content menu has Apply Action... for a character, which opens the action list where you clicked, and an Arrange group: Bring to Front, Bring Forward, Send Backward and Send to Back. Each moves the content's track and is one undo step.
+- After an action is applied or swapped it plays once from its start and the Playhead goes back. A notice and the status line say "{action} applied to {character}".
+- An action's strip on the Timeline can be made longer or shorter by dragging either edge, on a selected character block. A loop plays for the new length, a one-shot is cut when shortened and holds its last pose when made longer, and a strip stops at a neighbouring action. One undo step, Action Length.
+- Content, Add, Add Starter Scene to This Movie... puts a starter scene's backdrop and props behind everything in the movie that is open, fitted to its size, in one undo step. The floor guide is taken only when the movie has none.
+
+### Improved
+- The Character Builder's roster starts with a group, Mine, that lists the characters you saved. Save to Characters shows the new one there at once, marked, and picking one opens it again. Add to Movie now closes the builder.
+- In the starter scene chooser a click picks a card and the button (Create, or Add to Movie) takes it. A double click takes it at once.
+- The Theater button has a back chevron and says "Theater: back to your movies" with its shortcut.
+- A menu is never taller than the window and scrolls inside itself, and long menus use compact rows.
+
+### Fixed
+- The selection box of a character, a drawing and other content was nearly as big as the movie frame. It now hugs what is drawn: the character, or the drawing's ink.
+- A click on empty Stage inside an old big box selected that content, and a drag on the selected content could select something else instead. A click now picks what is under the pointer, and a drag that starts on the selected content moves it.
+- Side nodes on a character or group squeezed it. They now scale it whole and keep its proportions (Alt still stretches one way).
+- A character's block on the Timeline showed grey lines instead of the character. It now shows the character's picture along the block, like a drawing or a picture does.
+- Block names on the Timeline were hard to read in the light themes. They now sit on a plate in the panel's own colour.
+- Choosing a command in the command search with Enter also pressed whatever the command gave focus to, so a card such as Characters opened and closed at once. The Enter now ends at the search.
+- Movie settings was cut off at the right edge. Nothing is cut off now, and long labels wrap.
+- Character as SVG for Vector App wrote parts in the wrong order, so back hair could land in front of the face, and importing the file back dropped parts and shapes hidden in the vector app. The file now lists the parts back to front as the Stage draws them, and the import keeps that order and keeps hidden parts and shapes hidden.
+
 ## 0.33.0 · 2026-11-27
 
 Subtitles: tick one box and the words of your movie are drawn on the Stage and in every export.

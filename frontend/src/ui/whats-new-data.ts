@@ -5,6 +5,14 @@ export interface Release { version: string; name: string; additions: Addition[] 
 
 export const RELEASES: readonly Release[] = [
   {
+    version: '0.34.0', name: 'First-session fixes',
+    additions: [
+      { title: 'Starter scenes in your movie', text: 'Add a starter scene\'s backdrop and props behind everything in the movie that is open, from Content, Add, Add Starter Scene to This Movie.', command: 'add-starter-scene' },
+      { title: 'Actions you can see and stretch', text: 'An action plays once when you apply it, and you can drag either edge of its strip on the Timeline to make it longer or shorter. Right-click a character for Apply Action.', command: 'action-apply' },
+      { title: 'Saved characters in the builder', text: 'The Character Builder lists the characters you saved under Mine, and Add to Movie closes the builder.', command: 'character.builder' },
+    ],
+  },
+  {
     version: '0.33.0', name: 'Subtitles',
     additions: [
       { title: 'Words on the picture', text: 'Tick Show subtitles in the video and the lines are drawn on the Stage and in every export, in the font, size, position and color you choose.', command: 'subtitles' },

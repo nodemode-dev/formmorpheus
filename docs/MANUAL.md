@@ -44,7 +44,7 @@ A movie is saved as a single `.fmo` file. It holds every track, drawing, picture
 - **Open Recent** in the File menu lists your latest movies.
 - **Share Movie File** downloads a `.fmo`; with history, it keeps the undo steps too.
 - **Autosave** can write the open movie every 10 seconds to 5 minutes (Preferences · General).
-- **Movie settings** (Ctrl+J): size up to 3840 pixels a side, frame rate presets from 12 to 120 and custom, duration by timecode, transparent background, and playback as loop, ping pong or one shot.
+- **Movie settings** (Ctrl+J): size up to 3840 pixels a side, frame rate presets from 12 to 120 and custom, duration by timecode, transparent background, and playback as loop, ping pong or one shot. Nothing in it is cut off at the right edge, and long labels wrap. Menus are never taller than the window: a long menu scrolls inside itself and uses compact rows.
 
 Where the library lives is shown in Preferences · General. The `FORMMORPHEUS_LIBRARY_DIR` variable moves it.
 
@@ -62,8 +62,9 @@ In Compose you build the structure of the movie.
 - **Delete** with Delete or Backspace. A Preferences option asks first.
 - **Right-click** a block for its options: opacity, volume, rename, highlight color, blend mode, mask, invert, reverse keyframes, convert to Flipbook, group, and track options.
 - **Right-click** a track name for track options: rename, show all, hide all, add track above, move up or down, remove an empty section, delete.
+- **Right-click** content on the Stage for the same menu as its block. A right-click on empty Stage opens the Stage's own menu. The menu has Duplicate and Delete, and an **Arrange** group: **Bring to Front**, **Bring Forward**, **Send Backward** and **Send to Back**. They move the content's track in the stack, since the track higher up is drawn in front, and each is one undo step. On a character the menu also has **Apply Action...** (see Actions).
 
-On the Stage, drag a selected block to move it, drag a corner handle to scale, and drag the rotate handle to turn it. Shift snaps rotation to 15 degrees. Moves snap to the centre and quarter lines.
+On the Stage, the selection box hugs what is drawn: a character's box is the character, and a drawing's box is its ink, not the whole movie frame. A click picks the content under the pointer, and a click on empty Stage selects nothing, even inside where an old big box was. A drag that starts on the selected content moves it and never selects something else; a plain click there picks what is on top. Drag a selected block to move it, drag a corner handle to scale, and drag the rotate handle to turn it. In Compose the corner and rotate handles work about the box's centre. Side nodes on a character or a group scale it whole and keep its proportions; hold Alt to stretch one way. Shift snaps rotation to 15 degrees. Moves snap to the centre and quarter lines.
 
 **Content options**: opacity, 26 blend modes (and passthrough for groups), clipping, alpha and luminance masks with invert, and highlight colors for finding blocks.
 
@@ -196,14 +197,14 @@ There are three ways to get one: build it in the **Character Builder** by choosi
 
 Choose **Build a character** at the top of the Characters panel, Content · **Character Builder...**, or Character Builder in command search. A large window opens in three columns.
 
-- **Presets** on the left: the built starter characters, grouped as Women, Men and Specials. Press one to start from it. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
+- **Presets** on the left: the built starter characters, grouped as Women, Men and Specials, under a first group, **Mine**, that lists the characters you saved. With none saved it reads "Characters you save appear here." Press one to start from it; a saved one opens again with its recipe. Its name and what it is (The optimist, Woodland fox, ...) show above the preview.
 - **The preview** in the middle shows the character as it will be added, redrawn as you change it.
 - **Look**: the name; the kind (Human, Robot, Alien, Monster, Fox, Dino or Sprout); skin; the body sliders Height, Build, Shoulders and Head size, and Frame A or B; and the face: eye color, Jaw, Lashes, Blush, Freckles, Earrings, Glasses, facial hair (None, Stubble, Mustache, Goatee, Full) and lip color. A kind dims the face options it does not draw: a robot has no jaw or lip color, for example. Each row of swatches ends in a custom color.
 - **Hair**: 16 styles and None, and the hair color. A fox shows a tuft between its ears for any style but None; for a dino the hair color paints its crest and the spikes on its tail, and for a sprout its leaves and petals, so their styles are dimmed. A note beside the last style says so.
 - **Outfit**: 16 outfits (Tee & Jeans, Hoodie & Joggers, Business Suit, Sundress, Athletic, Lab Coat, Chef, Hi-Vis Crew, Tuxedo, Winter Puffer, Hero Suit, Pajamas, Overalls, Varsity Jacket, Cardigan and Scrubs), each with a color for each of its three pieces. **Reset colors** puts back the outfit's own.
 - **Randomize** makes a new look of the same kind, and **Reset** goes back to the preset you started from.
 
-At the foot, **Add to Movie** puts the character in the open movie at the Playhead on a track of its own, in one undo step, at its own spot across the frame (on a starter scene's floor, standing on it). **Save to Characters** keeps it in Mine with its recipe, asking before it replaces a saved name. The window stays open, so you can add the same look again or change it and add another.
+At the foot, **Add to Movie** puts the character in the open movie at the Playhead on a track of its own, in one undo step, at its own spot across the frame (on a starter scene's floor, standing on it), and the builder closes. **Save to Characters** keeps it in Mine with its recipe, asking before it replaces a saved name; the new character shows in the Mine group at once, marked as the one you are working on. The window stays open after a save, so you can change the look and save or add it.
 
 ### A built character's parts
 
@@ -233,7 +234,8 @@ Draw the character in a vector app with **one group per part**, and open the SVG
 - **Names.** A part is named by its label in the editor, then its `data-name`, then its `id`, then Part 1, Part 2 and so on. A name used twice gets a number.
 - **Parts inside parts.** A group inside a group is a part of its own, parented to the part it sits in, so turning an arm turns its hand. A layer group of an editor, and a lone wrapper group that holds only groups, are opened and not made parts.
 - **Loose shapes.** An SVG with no groups does not become a track for every shape. Shapes outside any group that sit side by side (paths, rectangles, circles, ellipses, lines, polygons and polylines) are read as one part; a group, text or a picture between them ends the run and starts another. A single run is named after the file, several are Part 1, Part 2 and so on, and a run of one shape is a part named by its label.
-- **Hidden groups.** A group hidden in the file, whether hidden (`visibility="hidden"` or `collapse`) or not displayed (`display="none"`, or `display:none` in its style, as many vector apps hide a layer), arrives as a part that is hidden, with its art inside, so showing it brings the drawing back instead of an empty block. The parts of an editor layer that is not displayed arrive hidden the same way. A single shape that is not displayed is still left out, and so is a mouth drawing that is not displayed in a mouth chart.
+- **Hidden groups.** A group hidden in the file, whether hidden (`visibility="hidden"` or `collapse`) or not displayed (`display="none"`, or `display:none` in its style, as many vector apps hide a layer), arrives as a part that is hidden, with its art inside, so showing it brings the drawing back instead of an empty block. A group or shape with an opacity of 0, as some vector apps hide a layer, is kept hidden the same way. The parts of an editor layer that is not displayed arrive hidden the same way. A single shape hidden in the file (display none, visibility hidden, or opacity 0) arrives as a hidden shape in its part, not dropped. A mouth drawing that is not displayed in a mouth chart is still left out.
+- **Paint order.** The order of the file is the order of the Stage: what the file paints behind stays behind, and a part keeps its place in front or behind even when it sits in another part's group. A part the export wrote outside its parent's group names that parent in `data-fm-parent`, and it is parented to it again.
 - **Pivots.** A part turns about its pivot, so put it where the joint is: the shoulder for an arm, the hip for a leg, the neck for a head, the wrist for a hand. Draw a small mark inside the part's own art and give it the id `pivot`, an id that starts with `pivot-`, or `data-role="pivot"`; its centre becomes the pivot and the mark is left out of the art. A part with no mark turns about the middle of its box.
 - **Shapes and pictures.** Paths, rectangles, circles, ellipses, lines, polygons and polylines with solid, linear or radial paint open as Shapes you can still edit. A part that holds text, pictures, reused elements, filters, masks, clipping, patterns or markers, or a filled shape that cuts a hole in another, opens as a picture (a Drawing you can touch up in Draw and Paint). The notice after the import names each such part and says why.
 - **Size.** The art keeps its pixel size. It is shrunk only when it is larger than the movie, and is centered. When the file's `viewBox` and its width and height are not the same shape, its `preserveAspectRatio` decides where the drawing sits: aligned to a side of the size (`xMin`, `xMid`, `xMax` with `YMin`, `YMid`, `YMax`), or filling the size with `slice`. `none` stretches it, and a file that says nothing is centered.
@@ -289,7 +291,7 @@ An action is a named piece of motion for a character: Move and Bones keys for so
 
 ### Apply an action
 
-Select a character and choose Content · Actions · **Apply Action...**. A card lists the character's own actions, then the twelve **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
+Select a character and choose Content · Actions · **Apply Action...**, or right-click the character on the Stage and choose **Apply Action...**, which opens the card where you clicked. A card lists the character's own actions, then the twelve **Starter actions**: Idle, Nod, Shake head, Talk, Wave Hello, Point, Walk in place, Run, Jump, Cheer, Dance and Sit. A looping action is marked **Loop**.
 
 - With no loop range set, the action goes in once, from the Playhead.
 - With a loop range (Alt+I sets its start and Alt+O its end), the action starts at the range's start, and a looping action repeats as many times as fit.
@@ -299,11 +301,13 @@ Select a character and choose Content · Actions · **Apply Action...**. A card 
 - Keys outside the span the action takes are never touched. With a loop range the span ends at Out at the latest: a looping action repeats as many whole passes as fit and then one more cut at Out. Where a span is cut short, it gets a key at that frame with the action's own value there, so the motion stops cleanly instead of sliding toward the next key.
 - Where two actions touch, they share one frame and each keeps its own keys: the frame belongs to the later action on the parts it moves. Clearing one keeps the other's keys and removes its own.
 
-Each apply is one undo step.
+Each apply is one undo step. After an action is applied, or swapped, it plays once from its start and the Playhead goes back to where it was; a notice and the status line say "{action} applied to {character}". Playing it does not add an undo step, and pressing Stop ends it where you stopped.
 
 ### The strips
 
 An applied action shows as a labelled **strip** along the lower edge of the character's block, counted in the character's own frames, so moving or trimming the block keeps the strip and its keys together. Press a strip: the block is selected, the strip is marked, and the same card opens. Choose another action to **swap** it over the same frames, or **Clear Action** to remove it. A swap stays inside the strip: a longer action is cut at the strip's end, so an action that follows keeps every key it had. **Swap Action...** and **Clear Action** in Content · Actions work on the strip you pressed last. A swap is one undo step, and undo brings the first action back with its exact keys.
+
+To make a strip longer or shorter, select the character's block and drag either edge of the strip. A looping action plays for the new length, with its eases at both ends. A one-shot action is cut when you shorten it and holds its last pose when you make it longer. A strip stops at a neighbouring action. It is one undo step, **Action Length**.
 
 ### Your own actions
 
@@ -320,7 +324,9 @@ An action is a small text file you can keep, share and open in another movie.
 
 ## Starter scenes
 
-File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Choose one and a new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+File · **New from Starter Scene...** shows five original scenes as cards, each with a small picture and its number of props: Corner Street, Park, Kitchen, Classroom and Stage. Click a card to pick it and press **Create** to take it, or double-click a card to take it at once. A new movie opens, named Untitled Movie, 1920 by 1080 at 24 frames a second and ten seconds long.
+
+To add a scene to the movie that is open, choose Content · Add · **Add Starter Scene to This Movie...**. The same chooser opens, and its button reads **Add to Movie**. The scene's backdrop and props go behind everything already in the movie, each picture on its own track, fitted to the movie's size, in one undo step. The floor guide is taken only when the movie has none, and the scene's camera is left out so nothing already there moves.
 
 - Each layer is a picture on **its own track**, the background at the bottom and every prop above it, each as long as the movie, so you can move, hide or replace any of them.
 - The scene's **camera** is set at frame 0 and shows on the camera lane like any key.
@@ -342,9 +348,9 @@ Select a character and choose File · Round Trips · **Character as SVG for Vect
 - In the desktop app a folder dialog opens first. The file is written there, named after the character, and never replaces another file ("Name 2" when the name is taken). The character is then **linked** to the file, and the notice says so. Cancel in the dialog exports nothing.
 - Elsewhere (in a browser, and on iPad) the file is downloaded or shared and the character is not linked; use Update from Source... when you bring it back.
 
-The SVG has one `<g id="part name">` for each part, nested the way the parts are parented, at the movie's size, with the art at rest. Shapes are written as paths, pictures as embedded PNG, and each part has a small magenta circle that marks its pivot (`pivot-` and the part's name); FormMorpheus removes it again when the file comes back. Text, video and sound parts are written as empty groups with their pivot, so their names survive, and the notice names them. Moves and keys are not written: they stay in FormMorpheus. Stroke alignment inside or outside, and trim path, have no form in SVG, so the stroke is centered and the outline whole.
+The SVG has one `<g id="part name">` for each part, at the movie's size, with the art at rest. The parts are listed back to front exactly as the Stage draws them, so what is behind stays behind when the file is opened in a vector app. A part nests inside the group of the part it hangs from where that keeps the order; a part drawn far below its parent, hair behind the head for example, is written where it is drawn and names its parent in `data-fm-parent`. A part hidden in the movie is written hidden (`display:none`) and holds no other part. Shapes are written as paths, pictures as embedded PNG, and each part has a small magenta circle that marks its pivot (`pivot-` and the part's name); FormMorpheus removes it again when the file comes back. Text, video and sound parts are written as empty groups with their pivot, so their names survive, and the notice names them. Moves and keys are not written: they stay in FormMorpheus. Stroke alignment inside or outside, and trim path, have no form in SVG, so the stroke is centered and the outline whole.
 
-In the vector app, change the art, keep **one group per part** and keep each part's name, then save the file where it is.
+In the vector app, change the art, keep **one group per part** and keep each part's name, then save the file where it is. You can hide a part or a shape there; it comes back hidden, and the file's paint order is kept.
 
 ### The source link and Update from Source...
 
@@ -521,7 +527,7 @@ Every export downloads and is also kept in the engine's **Exports**, never overw
 
 ## Home
 
-Open Home with Shift+Ctrl+H, the Theater pill in the Timeline bar, or View · Theater (Theater is the menu's name for Home). The left list has:
+Open Home with Shift+Ctrl+H, the Theater button in the Timeline bar (a back chevron, named "Theater: back to your movies"), or View · Theater (Theater is the menu's name for Home). The left list has:
 
 - **Start**: New movie, New flipbook, Open, and a short guide.
 - **Recent**: the movies you opened lately.
@@ -622,6 +628,22 @@ The terminal panel runs a shell and the agent programs beside the Stage and the 
 - **Where they work**: Claude Code, Codex and Cursor work in the `Agent` folder inside your settings folder (Preferences · General shows where it is); `FORMMORPHEUS_AGENT_DIR` picks another. Antigravity works in a folder of its own there. When a program is installed but not found, set its path in `FORMMORPHEUS_CLAUDE_BIN`, `FORMMORPHEUS_CODEX_BIN`, `FORMMORPHEUS_CURSOR_BIN` or `FORMMORPHEUS_ANTIGRAVITY_BIN`.
 
 Closing FormMorpheus ends every tab.
+
+## New in 0.34.0
+
+**The selection box.** On the Stage the box hugs what is drawn: a character's box is the character, and a drawing's box is its ink. A click picks what is under the pointer, and a drag that starts on the selected content moves it without selecting something else. Side nodes on a character or group scale it whole and keep its proportions. See Compose.
+
+**Right-click on content.** The Stage opens that content's menu, with Apply Action... for a character and an Arrange group (Bring to Front, Bring Forward, Send Backward, Send to Back).
+
+**Actions.** An applied or swapped action plays once from its start and the Playhead goes back, with a notice "{action} applied to {character}". Drag either edge of an action's strip on a selected character block to make it longer or shorter. See Actions.
+
+**The Character Builder.** Mine lists the characters you saved, a saved one shows there at once, and Add to Movie closes the builder.
+
+**Starter scenes.** Content · Add · Add Starter Scene to This Movie... adds a scene's backdrop and props behind everything in the open movie. In the chooser a click picks a card and the button takes it; a double click takes it at once. See Starter scenes.
+
+**Character as SVG for Vector App.** The file lists the parts back to front as the Stage draws them, hidden parts are written hidden, and importing keeps that order and keeps parts and shapes hidden in the vector app hidden. See Working with a vector app.
+
+**Looks.** Block names on the Timeline are readable in the light themes, the Theater button says where it goes, Movie settings is not cut off, and menus never run taller than the window.
 
 ## New in 0.33.0
 
@@ -831,7 +853,7 @@ Closing FormMorpheus ends every tab.
 
 **The Stage.** Ctrl or Cmd with the wheel (or a trackpad pinch) zooms toward the pointer; the wheel pans, Space-drag or the middle button pans too; Ctrl or Cmd+0 or a double-click on the empty Stage fits; Alt+Ctrl with Left or Right turns the view in 15 degree steps; Shift+Ctrl+F shows the Stage alone and plays it (Esc leaves). The zoom cluster sits at the bottom right. Stage Options (View menu, Shift+Ctrl+J, or right-click the Stage) holds the background colour, transparency, Backstage visibility, the timecode and the movie's onion skins; Movie settings · Stage shows the same.
 
-**The Compose box.** Side nodes stretch one way; drag a side past the other to flip; the box's ··· menu and the content menu have Flip horizontal, Flip vertical and Reset. Alt with the arrow keys nudges 1 px (Shift 10 px). Hold Shift while moving or turning to snap to the movie's edges, centre and other contents (15 degree steps in Compose, 30 in Keyframe and Perform); Alt turns snapping off. Undo and Redo buttons sit beside the timecode; the undo depth is 250 steps.
+**The Compose box.** Side nodes stretch one way (on a character or a group they scale it whole and keep its proportions, and Alt stretches one way); drag a side past the other to flip; the box's ··· menu and the content menu have Flip horizontal, Flip vertical and Reset. Alt with the arrow keys nudges 1 px (Shift 10 px). Hold Shift while moving or turning to snap to the movie's edges, centre and other contents (15 degree steps in Compose, 30 in Keyframe and Perform); Alt turns snapping off. Undo and Redo buttons sit beside the timecode; the undo depth is 250 steps.
 
 **Keyboard Shortcuts.** Edit · Keyboard Shortcuts... (also in Preferences) lists every command: search, add or remove keys, and set them back. A key taken from another command says so.
 
