@@ -184,6 +184,70 @@ export function downloadBlob(blob: Blob, name: string): void {
   platform.files.download(blob, name);
 }
 
+// The browser folder exports go to (Export, Save to). A folder handle cannot go in localStorage, so it is kept in IndexedDB;
+// the browser may still ask the person again for leave to write there.
+const DIR_DB = 'formmorpheus.save-to', DIR_STORE = 'dirs', DIR_KEY = 'exports';
+type Perm = { mode: 'readwrite' };
+type AskedDir = FileSystemDirectoryHandle & { queryPermission?(p: Perm): Promise<PermissionState>; requestPermission?(p: Perm): Promise<PermissionState> };
+type SavePicker = (opts?: { suggestedName?: string; id?: string }) => Promise<FileSystemFileHandle>;
+
+function dirStore<T>(mode: IDBTransactionMode, act: (s: IDBObjectStore) => IDBRequest | void): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(DIR_DB, 1);
+    open.onupgradeneeded = () => { open.result.createObjectStore(DIR_STORE); };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      try {
+        const tx = db.transaction(DIR_STORE, mode);
+        const req = act(tx.objectStore(DIR_STORE));
+        tx.oncomplete = () => { db.close(); resolve(req ? (req.result as T) : undefined); };
+        tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+      } catch (e) { db.close(); reject(e); }
+    };
+  });
+}
+
+/** Keeps the folder exports are written into, or forgets it (null). False when the browser would not keep it. */
+export async function keepExportFolder(dir: FileSystemDirectoryHandle | null): Promise<boolean> {
+  try { await dirStore('readwrite', (s) => (dir ? s.put(dir, DIR_KEY) : s.delete(DIR_KEY))); return true; } catch { return false; }
+}
+
+/** The kept export folder, or null. */
+export async function keptExportFolder(): Promise<FileSystemDirectoryHandle | null> {
+  try { return (await dirStore<FileSystemDirectoryHandle>('readonly', (s) => s.get(DIR_KEY))) ?? null; } catch { return null; }
+}
+
+/** Whether the folder may be written now; with `ask`, asks the person again (the browser needs the click that started it). */
+export async function folderWritable(dir: FileSystemDirectoryHandle, ask: boolean): Promise<boolean> {
+  const d = dir as AskedDir;
+  try {
+    if (!d.queryPermission || (await d.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+    return ask && !!d.requestPermission && (await d.requestPermission({ mode: 'readwrite' })) === 'granted';
+  } catch { return false; }
+}
+
+const savePicker = (): SavePicker | undefined => (window as unknown as { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+export const canAskSaveFile = (): boolean => typeof savePicker() === 'function';
+
+/** The browser's save dialog for one file: its handle, null when the person cancels, 'unavailable' when it cannot be shown. */
+export async function askSaveFile(name: string): Promise<FileSystemFileHandle | null | 'unavailable'> {
+  const pick = savePicker();
+  if (!pick) return 'unavailable';
+  const t0 = performance.now();
+  try { return await pick.call(window, { suggestedName: name, id: 'fm-export' }); } catch (e) {
+    // an instant refusal (no click just before it, or no dialog here) is not a cancel
+    return e instanceof DOMException && e.name === 'AbortError' && performance.now() - t0 > 700 ? null : 'unavailable';
+  }
+}
+
+/** Writes the file the person named in the save dialog (they agreed there to replace one of that name). */
+export async function writeSavedFile(file: FileSystemFileHandle, blob: Blob): Promise<void> {
+  const w = await file.createWritable();
+  await w.write(blob);
+  await w.close();
+}
+
 /** Opens an export from the Exports page: downloads it. False when the path is not one of the kept exports. */
 export async function openOutput(path: string): Promise<boolean> {
   const name = exportName(path);
