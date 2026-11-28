@@ -115,9 +115,11 @@ export function spotX(movie: Movie, scale: number = STARTER_ART.scale): number {
 /** Stands a starter character (made for `movie` by the SVG importer, so centred on it and fitted) on the floor at y `floorY`, at half its drawn size, at its spot. */
 export function standOnFloor(group: Content, movie: Movie, floorY: number): Transform {
   const W = movie.width, H = movie.height;
-  const s = STARTER_ART.scale / Math.min(1, W / STARTER_ART.w, H / STARTER_ART.h);
+  // a scene covers the frame, so in a larger or smaller movie the character is sized by the same factor
+  const k = Math.max(W / 1920, H / 1080);
+  const s = (STARTER_ART.scale * k) / Math.min(1, W / STARTER_ART.w, H / STARTER_ART.h);
   const px = W / 2 + (group.pivot?.x ?? 0), py = H / 2 + (group.pivot?.y ?? 0);
   const tx = spotX(movie);
-  const ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale;
+  const ty = floorY - (STARTER_ART.feet - STARTER_ART.h / 2) * STARTER_ART.scale * k;
   return { ...group.transform, rotation: 0, scale: s, x: tx - px - s * (W / 2 - px), y: ty - py - s * (H / 2 - py) };
 }

@@ -260,6 +260,299 @@
         "panY": 40,
         "zoom": 1.1
       }
+    },
+    {
+      "id": "office",
+      "name": "Office",
+      "folder": "office",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#e4e9ec",
+      "floorY": 1000,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Plant",
+          "file": "plant.svg",
+          "x": 120,
+          "y": 813,
+          "scale": 1.0
+        },
+        {
+          "name": "Filing Cabinet",
+          "file": "filing-cabinet.svg",
+          "x": 1830,
+          "y": 833,
+          "scale": 1.0
+        },
+        {
+          "name": "Desk",
+          "file": "desk.svg",
+          "x": 1300,
+          "y": 902,
+          "scale": 1.0
+        },
+        {
+          "name": "Computer",
+          "file": "computer.svg",
+          "x": 1330,
+          "y": 735,
+          "scale": 1.0
+        },
+        {
+          "name": "Office Chair",
+          "file": "office-chair.svg",
+          "x": 1560,
+          "y": 869,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "castle-hall",
+      "name": "Castle Hall",
+      "folder": "castle-hall",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#b4ab9c",
+      "floorY": 960,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Armour",
+          "file": "armour.svg",
+          "x": 170,
+          "y": 728,
+          "scale": 1.0
+        },
+        {
+          "name": "Torch Left",
+          "file": "torch-stand.svg",
+          "x": 812,
+          "y": 748,
+          "scale": 1.0
+        },
+        {
+          "name": "Torch Right",
+          "file": "torch-stand.svg",
+          "x": 1108,
+          "y": 748,
+          "scale": 1.0
+        },
+        {
+          "name": "Throne",
+          "file": "throne.svg",
+          "x": 1520,
+          "y": 753,
+          "scale": 1.0
+        },
+        {
+          "name": "Chest",
+          "file": "chest.svg",
+          "x": 1790,
+          "y": 883,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "space-station",
+      "name": "Space Station",
+      "folder": "space-station",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#2e3a4e",
+      "floorY": 960,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Drone",
+          "file": "drone.svg",
+          "x": 300,
+          "y": 236,
+          "scale": 0.8
+        },
+        {
+          "name": "Robot",
+          "file": "robot.svg",
+          "x": 540,
+          "y": 823,
+          "scale": 1.0
+        },
+        {
+          "name": "Console",
+          "file": "console.svg",
+          "x": 1450,
+          "y": 818,
+          "scale": 1.0
+        },
+        {
+          "name": "Cargo Crates",
+          "file": "crates.svg",
+          "x": 1790,
+          "y": 818,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "beach",
+      "name": "Beach",
+      "folder": "beach",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#6ec1ea",
+      "floorY": 960,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "Palm Tree",
+          "file": "palm-tree.svg",
+          "x": 236,
+          "y": 578,
+          "scale": 1.0
+        },
+        {
+          "name": "Umbrella",
+          "file": "umbrella.svg",
+          "x": 1480,
+          "y": 720,
+          "scale": 1.0
+        },
+        {
+          "name": "Deckchair",
+          "file": "deckchair.svg",
+          "x": 1600,
+          "y": 858,
+          "scale": 1.0
+        },
+        {
+          "name": "Sandcastle",
+          "file": "sandcastle.svg",
+          "x": 1810,
+          "y": 883,
+          "scale": 1.0
+        },
+        {
+          "name": "Beach Ball",
+          "file": "beach-ball.svg",
+          "x": 820,
+          "y": 925,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "id": "living-room",
+      "name": "Living Room",
+      "folder": "living-room",
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "duration": 240,
+      "background": "#f0d6bf",
+      "floorY": 1000,
+      "layers": [
+        {
+          "name": "Background",
+          "file": "background.svg",
+          "x": 960,
+          "y": 540,
+          "scale": 1.0
+        },
+        {
+          "name": "TV Stand",
+          "file": "tv-stand.svg",
+          "x": 230,
+          "y": 838,
+          "scale": 1.0
+        },
+        {
+          "name": "Floor Lamp",
+          "file": "floor-lamp.svg",
+          "x": 1720,
+          "y": 748,
+          "scale": 1.0
+        },
+        {
+          "name": "Sofa",
+          "file": "sofa.svg",
+          "x": 1340,
+          "y": 878,
+          "scale": 1.0
+        },
+        {
+          "name": "Coffee Table",
+          "file": "coffee-table.svg",
+          "x": 1340,
+          "y": 983,
+          "scale": 1.0
+        },
+        {
+          "name": "Teapot",
+          "file": "teapot.svg",
+          "x": 1300,
+          "y": 891,
+          "scale": 1.0
+        }
+      ],
+      "camera": {
+        "panX": 0,
+        "panY": 0,
+        "zoom": 1
+      }
     }
   ]
 }

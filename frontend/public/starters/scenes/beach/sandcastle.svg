@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="170" viewBox="0 0 220 170">
+  <ellipse cx="110" cy="162" rx="106" ry="7" fill="#000000" fill-opacity="0.14"/>
+  <path d="M110 34 V4" fill="none" stroke="#7a5a3c" stroke-width="4" stroke-linecap="round"/>
+  <path d="M112 4 L144 12 L112 22 Z" fill="#e0574a"/>
+  <rect x="84" y="44" width="52" height="60" rx="4" fill="#dcb878"/>
+  <path d="M84 30 h12 v14 h-12 Z M104 30 h12 v14 h-12 Z M124 30 h12 v14 h-12 Z" fill="#dcb878"/>
+  <rect x="28" y="96" width="164" height="66" rx="4" fill="#e2c084"/>
+  <path d="M28 84 h14 v12 h-14 Z M54 84 h14 v12 h-14 Z M152 84 h14 v12 h-14 Z M178 84 h14 v12 h-14 Z" fill="#e2c084"/>
+  <rect x="6" y="64" width="62" height="98" rx="4" fill="#ecd096"/>
+  <path d="M6 50 h14 v14 h-14 Z M30 50 h14 v14 h-14 Z M54 50 h14 v14 h-14 Z" fill="#ecd096"/>
+  <rect x="152" y="64" width="62" height="98" rx="4" fill="#dcb878"/>
+  <path d="M152 50 h14 v14 h-14 Z M176 50 h14 v14 h-14 Z M200 50 h14 v14 h-14 Z" fill="#dcb878"/>
+  <path d="M94 162 V136 A16 16 0 0 1 126 136 V162 Z" fill="#b98f55"/>
+  <rect x="30" y="88" width="14" height="20" rx="7" fill="#b98f55"/>
+  <rect x="176" y="88" width="14" height="20" rx="7" fill="#b98f55"/>
+  <rect x="103" y="60" width="14" height="20" rx="7" fill="#b98f55"/>
+  <path d="M6 130 Q36 124 68 130 M152 140 Q184 134 214 140 M28 150 Q110 142 192 150" fill="none" stroke="#cfa868" stroke-width="4" stroke-linecap="round"/>
+</svg>
