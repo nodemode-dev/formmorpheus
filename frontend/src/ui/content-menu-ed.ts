@@ -8,7 +8,7 @@ import * as ops from '../engine/ops';
 import { canRetime, isFrozen, SPEED_MAX, SPEED_MIN, speedOf } from '../engine/retime';
 import * as rt from '../engine/retime-ops';
 import { defaultTransition, previousOf, TRANSITION_KINDS, MIN_TRANSITION } from '../engine/transitions';
-import type { Content, TransitionKind } from '../engine/types';
+import type { Content, Movie, TransitionKind } from '../engine/types';
 import { importSize, setImportSize } from '../media/import-size';
 import { el, q, setClass, setHidden, setText } from './dom';
 import { Popover, popRow, popSep, type PopRow } from './popover';
@@ -273,5 +273,80 @@ export class EdRows {
     if (tr && document.activeElement !== this.trLen) this.trLen.value = String(tr.duration);
     setHidden(this.trSep, !tr);
     setClass(this.keyTools.el, 'is-gone', !sel.some((c) => c.keys.length > 0));
+  }
+}
+
+// ---- arrange: what is in front is the track order (the first track draws last, on top). No content command moves a
+// block in front or behind, so these move the tracks holding the selection with ops.moveTrack, keeping their own order.
+export type ArrangeHow = 'front' | 'forward' | 'backward' | 'back';
+
+/** Indices of the tracks holding `ids`, top first. */
+function heldTracks(m: Movie, ids: string[]): number[] {
+  const want = new Set(ids), out: number[] = [];
+  m.tracks.forEach((t, i) => { if (t.content.some((c) => want.has(c.id))) out.push(i); });
+  return out;
+}
+
+/** Whether the tracks holding `ids` can still move that way: some other track lies above them (front) or below them (back). */
+export function canArrange(m: Movie | null, ids: string[], how: ArrangeHow): boolean {
+  if (!m || !ids.length) return false;
+  const held = heldTracks(m, ids);
+  if (!held.length) return false;
+  if (how === 'front' || how === 'forward') return held.some((ti, k) => ti !== k);
+  const n = m.tracks.length;
+  return held.some((ti, k) => ti !== n - held.length + k);
+}
+
+/** Moves the tracks holding `ids` to the front, one place forward, one place back, or to the back. */
+export function arrangeTracks(m: Movie, ids: string[], how: ArrangeHow): Movie {
+  const held = heldTracks(m, ids);
+  if (!held.length) throw new ops.OpError('That content no longer exists.');
+  const tid = held.map((i) => m.tracks[i].id);
+  const set = new Set(tid);
+  const at = (mv: Movie, id: string): number => mv.tracks.findIndex((t) => t.id === id);
+  let acc = m;
+  if (how === 'front') tid.forEach((id, k) => { acc = ops.moveTrack(acc, id, k); });
+  else if (how === 'back') for (let k = tid.length - 1; k >= 0; k--) acc = ops.moveTrack(acc, tid[k], acc.tracks.length - (tid.length - k));
+  else if (how === 'forward') {
+    for (const id of tid) { const i = at(acc, id); if (i > 0 && !set.has(acc.tracks[i - 1].id)) acc = ops.moveTrack(acc, id, i - 1); }
+  } else {
+    for (let k = tid.length - 1; k >= 0; k--) { const i = at(acc, tid[k]); if (i < acc.tracks.length - 1 && !set.has(acc.tracks[i + 1].id)) acc = ops.moveTrack(acc, tid[k], i + 1); }
+  }
+  return acc;
+}
+
+const ARRANGE: Array<[ArrangeHow, string]> = [
+  ['front', 'Bring to Front'],
+  ['forward', 'Bring Forward'],
+  ['backward', 'Send Backward'],
+  ['back', 'Send to Back'],
+];
+
+/** The Arrange submenu of the content menu: built once, patch() only enables and disables its four rows. */
+export class ArrangeRows {
+  readonly row: PopRow = popRow('layers', 'Arrange', { sub: true });
+  private readonly items = new Map<ArrangeHow, PopRow>();
+
+  constructor(private readonly engine: Engine, host: Popover, private readonly ids: () => string[], close: () => void) {
+    const panel = Popover.panel('fm-pop fm-cm-sub fm-pop-sub');
+    for (const [how, label] of ARRANGE) {
+      const r = popRow(null, label);
+      r.el.addEventListener('click', () => {
+        const ids = this.ids();
+        if (!canArrange(this.engine.movie, ids, how)) return;
+        // one undo step; the selection stays on the same blocks
+        this.engine.run(label, (m) => ({ movie: arrangeTracks(m, ids, how), select: ids }));
+        close();
+      });
+      this.items.set(how, r);
+      panel.appendChild(r.el);
+    }
+    host.attachSub(this.row.el, panel);
+  }
+
+  patch(): void {
+    const m = this.engine.movie, ids = this.ids();
+    setClass(this.row.el, 'is-gone', !ids.length);
+    for (const [how, r] of this.items) r.setDisabled(!canArrange(m, ids, how));
   }
 }
