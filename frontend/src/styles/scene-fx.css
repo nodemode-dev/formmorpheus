@@ -1,0 +1,66 @@
+/* Scene effects in the Build panel's Effects tab (ui/scene-fx-panel.ts). */
+.fm-scfx > .fm-build-sec:first-child { margin-block-start: var(--space-1); }
+.fm-scfx .fm-build-note[hidden] { display: none; }
+
+.fm-scfx-list { display: flex; flex-direction: column; gap: var(--space-1); }
+.fm-scfx-list:empty { display: none; }
+
+.fm-scfx-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+.fm-scfx-card.is-now { box-shadow: inset 0 0 0 1px var(--accent-line); }
+
+.fm-scfx-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.fm-scfx-swatch {
+  position: relative;
+  flex: 0 0 auto;
+  width: calc(var(--space-8) * 1.5);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--surface-1);
+}
+.fm-scfx-swatch canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fm-scfx-title { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.fm-scfx-name, .fm-scfx-range { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-scfx-name { color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; }
+.fm-scfx-range { color: var(--text-muted); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
+.fm-scfx-x {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.fm-scfx-x:hover { background: var(--bg-hover); color: var(--danger); }
+.fm-scfx-x:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -2px; }
+
+.fm-scfx-amt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) calc(var(--space-8) + var(--space-1));
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+.fm-scfx-amt input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent-color); }
+.fm-scfx-amt output { color: var(--text-muted); font-size: var(--fs-11); font-variant-numeric: tabular-nums; text-align: end; }
+
+.fm-scfx-btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+.fm-scfx-btns .cv-btn { min-width: 0; height: var(--ctl-sm); padding: 0 var(--space-1); font-size: var(--fs-11); overflow: hidden; text-overflow: ellipsis; }
+
+.fm-scfx-tiles { margin-block-end: var(--space-1); }
+.fm-scfx-tile:disabled { opacity: 0.5; }
